@@ -1,7 +1,8 @@
 # VDFQuery20
-Old VDFQuery library ported to DF20. Only to help migrate legacy applications to DF20.
 
 VDFQuery library for DataFlex 20.0
+
+... is the old VDFQuery library ported to DF20. Only to help migrate legacy applications to DF20.
 
 This library has been migrated to DF 20 in order to assist in migrating legacy
 applications that uses (older versions of) VDFQuery the same way.
