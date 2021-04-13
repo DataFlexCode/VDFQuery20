@@ -1,0 +1,48 @@
+// Use Spec0011.utl // Floating menues on the fly
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Windows.pkg
+
+desktop_section
+  object oSpec0011Arr is a cArray
+    item_property_list
+      item_property integer piMsg.i
+      item_property string  psText.i
+    end_item_property_list
+    procedure add_item integer iMsg string sVal
+      integer iRow
+      get row_count to iRow
+      set piMsg.i  iRow to iMsg
+      set psText.i iRow to sVal
+    end_procedure
+  end_object
+end_desktop_section
+
+procedure FLOATMENU_PrepareAddItem global integer iMsg string sVal
+  send add_item to (oSpec0011Arr(self)) iMsg sVal
+end_procedure
+
+class cSpec0011FloatingPopupMenu is a FloatingPopupMenu
+  procedure popup
+    forward send popup
+    send request_destroy_object
+  end_procedure
+end_class
+
+function FLOATMENU_Apply global integer iObj returns integer
+  integer iSelf iArr iRow iMax iObjFM
+  move self to iSelf
+  move (oSpec0011Arr(self)) to iArr
+  get row_count of iArr to iMax
+  move desktop to self
+  object oSpec0011_FM is a cSpec0011FloatingPopupMenu
+    for iRow from 0 to (iMax-1)
+      send add_item (piMsg.i(iArr,iRow)) (psText.i(iArr,iRow))
+      set aux_value item iRow to iObj
+    loop
+    move self to iObjFM
+  end_object
+  move iSelf to self
+  send delete_data to iArr
+  function_return iObjFM
+end_function

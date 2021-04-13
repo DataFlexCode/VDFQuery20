@@ -1,0 +1,259 @@
+// Use Mapper.pkg   // Dialog for mapping (fields)
+Use Mapper.nui   // Classes for (field) mapping
+Use GridUtil.utl // Grid and List utilities (not for dbGrid's or Table's)
+Use aps.pkg
+
+class cMapperListLeft is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    send GridPrepare_AddColumn "Fields in input file" AFT_ASCII25
+    send GridPrepare_Apply self
+    set select_mode to NO_SELECT
+    on_key KNEXT_ITEM send switch
+    on_key KPREVIOUS_ITEM send switch_back
+    property integer phMapper       0
+    property integer pbUnmappedOnly DFFALSE
+  end_procedure
+  procedure AddRow integer liAux string lsName string lsExtra
+    integer liBase
+    get item_count to liBase
+    send add_item MSG_NONE lsName
+    set aux_value item liBase to liAux
+  end_procedure
+  procedure fill_list
+    integer lhSelf
+    move self to lhSelf
+    set dynamic_update_state to DFFALSE
+    send delete_data
+    if (pbUnmappedOnly(self)) send DoCallback_UnmappedItems1 to (phMapper(self)) msg_AddRow lhSelf
+    else send DoCallback_AllItems1 to (phMapper(self)) msg_AddRow lhSelf
+    send Grid_SetEntryState self DFFALSE
+    set dynamic_update_state to DFTRUE
+  end_procedure
+  function iCurrentAux returns integer
+    integer liBase
+    get Grid_BaseItem self to liBase
+    function_return (aux_value(self,liBase))
+  end_function
+  procedure GotoAux integer liAux
+    integer liBase liRow liMax
+    get Grid_RowCount self to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get Grid_RowBaseItem self liRow to liBase
+      if (aux_value(self,liBase)=liAux) set current_item to liBase
+    loop
+  end_procedure
+end_class // cMapperListLeft
+
+class cMapperListRight is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer phMapper 0
+    send GridPrepare_AddColumn "Field in table" AFT_ASCII25
+    send GridPrepare_AddColumn "Reads data from this column in file"  AFT_ASCII25
+    send GridPrepare_Apply self
+    set select_mode to NO_SELECT
+    on_key KNEXT_ITEM send switch
+    on_key KPREVIOUS_ITEM send switch_back
+  end_procedure
+  procedure AddRow integer liAux string lsName string lsExtra integer lbMapped integer liMapAux string lsMapName string lsMapExtra
+    integer liBase
+    get item_count to liBase
+    send add_item MSG_NONE lsName
+    send add_item MSG_NONE lsMapName
+    set aux_value item liBase     to liAux
+    set aux_value item (liBase+1) to liMapAux
+  end_procedure
+  procedure prepare_list
+    integer lhSelf
+    move self to lhSelf
+    set dynamic_update_state to DFFALSE
+    send delete_data
+    send DoCallback_AllItems2 to (phMapper(self)) msg_AddRow lhSelf
+    set dynamic_update_state to DFTRUE
+    send Grid_SetEntryState self DFFALSE
+  end_procedure
+
+  function iFindAux integer liAux returns integer
+    integer liBase liRow liMax
+    get Grid_RowCount self to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get Grid_RowBaseItem self liRow to liBase
+      if (aux_value(self,liBase)=liAux) function_return liBase
+    loop
+    function_return -1
+  end_function
+
+  procedure AddUpdate integer liAux string lsName string lsExtra integer lbMapped integer liMapAux string lsMapName string lsMapExtra
+    integer liBase
+    get iFindAux liAux to liBase
+    set value item (liBase+1) to lsMapName
+    set aux_value item (liBase+1) to liMapAux
+  end_procedure
+
+  procedure fill_list
+    integer lhSelf
+    move self to lhSelf
+    send DoCallback_AllItems2 to (phMapper(self)) msg_AddUpdate lhSelf
+  end_procedure
+
+  procedure GotoAux integer liAux
+    integer liBase liRow liMax
+    get Grid_RowCount self to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get Grid_RowBaseItem self liRow to liBase
+      if (aux_value(self,liBase)=liAux) set current_item to liBase
+    loop
+  end_procedure
+
+  function iCurrentAux returns integer
+    integer liBase
+    get Grid_BaseItem self to liBase
+    function_return (aux_value(self,liBase))
+  end_function
+end_class // cMapperListRight
+
+class cMapperGridController is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer phGridLeft  0
+    property integer phGridRight 0
+    property integer phMapper    0
+  end_procedure
+  procedure DoInitialize
+    set phMapper of (phGridLeft(self))  to (phMapper(self))
+    set phMapper of (phGridRight(self)) to (phMapper(self))
+    send fill_list    to (phGridLeft(self))
+    send prepare_list to (phGridRight(self))
+    send fill_list    to (phGridRight(self))
+  end_procedure
+  procedure DoMap
+    integer liFileIdent liTableIdent
+    get iCurrentAux of (phGridLeft(self)) to liFileIdent
+    get iCurrentAux of (phGridRight(self)) to liTableIdent
+    send DoAddMap to (phMapper(self)) liFileIdent liTableIdent
+    send fill_list    to (phGridLeft(self))
+    send fill_list    to (phGridRight(self))
+    send key to (phGridRight(self)) kdownarrow
+  end_procedure
+  procedure DoMapClear
+    integer liFileIdent liTableIdent
+    get iCurrentAux of (phGridRight(self)) to liTableIdent
+    send DoClearMap to (phMapper(self)) liTableIdent
+    send fill_list    to (phGridLeft(self))
+    send fill_list    to (phGridRight(self))
+  end_procedure
+  procedure DoMapClearAll
+    send DoReset   to (phMapper(self))
+    send fill_list to (phGridLeft(self))
+    send fill_list to (phGridRight(self))
+  end_procedure
+  procedure DoAutoMap
+    send DoAutoMapName to (phMapper(self))
+    send fill_list to (phGridLeft(self))
+    send fill_list to (phGridRight(self))
+  end_procedure
+end_class
+
+object oMapperPanel is a aps.ModalPanel label "Map fields"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult 0
+  register_object oMapperGridController
+
+  on_key kClear send DoMapClear to (oMapperGridController(self))
+  on_key kClear_All send DoMapClearAll to (oMapperGridController(self))
+
+  procedure close_panel_ok
+    set piResult to 1
+    send close_panel
+  end_procedure
+
+  object oUnmappedGrid is a cMapperListLeft
+    set size to 140 0
+    on_key kEnter send DoMap to (oMapperGridController(self))
+    set Horz_Scroll_Bar_Visible_State to false
+  end_object
+
+  object oRadio is a aps.RadioContainer
+    object oRad1 is a aps.Radio label "Unmapped only" snap SL_DOWN
+    end_object
+    object oRad2 is a aps.Radio label "All" snap SL_RIGHT_SPACE
+    end_object
+    procedure notify_select_state integer liTo integer liFrom
+      set pbUnmappedOnly of (oUnmappedGrid(self)) to (not(liTo))
+      send fill_list to (oUnmappedGrid(self))
+    end_procedure
+  end_object
+
+  set p_cur_row to (p_top_margin(self))
+
+  object oBtnClearAll is a aps.Button snap SL_RIGHT relative_to (oUnmappedGrid(self))
+    set size to 14 30
+    on_item ">" send DoMap to (oMapperGridController(self))
+  end_object
+  send aps_relocate (oBtnClearAll(self)) 20 0
+  object oBtnClearOne is a aps.Button snap SL_DOWN
+    set size to 14 30
+    on_item "<" send DoMapClear to (oMapperGridController(self))
+  end_object
+  object oBtnAddOne is a aps.Button snap SL_DOWN
+    set size to 14 30
+    on_item "<<" send DoMapClearAll to (oMapperGridController(self))
+  end_object
+
+  set p_cur_row to (p_top_margin(self))
+
+  object oMapGrid is a cMapperListRight
+    set size to 150 0
+  end_object
+
+  object oMapperGridController is a cMapperGridController
+    set phGridLeft  to (oUnmappedGrid(self))
+    set phGridRight to (oMapGrid(self))
+  end_object
+
+  object oBtn1 is a aps.multi_button
+    on_item "OK" send close_panel_ok
+  end_object
+  object oBtn2 is a aps.multi_button
+    on_item "Auto map" send DoAutoMap to (oMapperGridController(self))
+  end_object
+  object oBtn3 is a aps.multi_button
+    on_item "Clear map" send DoMapClearAll to (oMapperGridController(self))
+  end_object
+  object oBtn4 is a aps.multi_button
+    on_item "Cancel" send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oMapGrid(self)) delta_rw# 0 // delta_cl#
+    send aps_resize (oUnmappedGrid(self)) delta_rw# 0 // delta_cl#
+    send aps_auto_locate_control (oRad1(oRadio(self))) SL_DOWN (oUnmappedGrid(self))
+    send aps_auto_locate_control (oRad2(oRadio(self))) SL_RIGHT_SPACE (oRad1(oRadio(self)))
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_register_multi_button (oBtn3(self))
+    send aps_register_multi_button (oBtn4(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+  set pMinimumSize to 150 0
+  procedure popup.shsss string lsTitle integer lhMapper string lsHeader1 string lsHeader2 string lsHeader3
+    set piResult to 0
+    send DoPushStatus to lhMapper
+    set phMapper of (oMapperGridController(self)) to lhMapper
+    send DoInitialize to (oMapperGridController(self))
+    send popup
+    ifnot (piResult(self)) send DoPopStatus to lhMapper
+  end_procedure
+end_object
+
+procedure DoMapperDialog global string lsTitle integer lhMapper string lsHeader1 string lsHeader2 string lsHeader3
+  send popup.shsss to (oMapperPanel(self)) lsTitle lhMapper lsHeader1 lsHeader2 lsHeader3
+end_procedure

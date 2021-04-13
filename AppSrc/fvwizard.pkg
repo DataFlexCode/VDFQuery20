@@ -1,0 +1,343 @@
+// Use FvWizard.pkg // FastView, Wizard for creating a FastView
+Use ApsWiz.pkg   // APS wizard classes
+Use FvVwEdit.pkg // Classes and objects for editing FastView-views
+
+object oFastViewWizard is a aps.WizardPanel label "Create new view"
+  send make_nice_size WIZSIZE_NORMAL
+  property integer phViewDefinition 0
+  object oPage1 is a aps.WizardPage
+    object oLabel1 is a aps.TextBox label "Enter view title as it should appear in the caption bar:"
+      set fixed_size to 10 200
+      set Fontweight to 900
+    end_object
+    send aps_goto_max_row
+
+    object oFrm1 is a aps.Form abstract AFT_ASCII60
+    end_object
+    send aps_goto_max_row
+    send aps_make_row_space 15
+    object oLabel2 is a aps.TextBox label "Specify view type:"
+      set fixed_size to 10 80
+      set Fontweight to 900
+    end_object
+    object oRad is a aps.RadioContainer
+      object oRad1 is a aps.Radio label "Form based view (F)"      snap SL_RIGHT_SPACE
+      end_object
+      object oRad2 is a aps.Radio label "Grid view (G)"            snap SL_DOWN
+      end_object
+      object oRad3 is a aps.Radio label "Header/Detail view (H/D)" snap SL_DOWN
+      end_object
+      procedure notify_select_state integer to# integer from#
+      end_procedure
+    end_object
+    send aps_goto_max_row
+    send aps_make_row_space 15
+    object oCb is a aps.CheckBox label "Use Workspace DD objects (if available)" snap 1
+      if (FVSetupValue(FVSETUP_WORKSPACE_NAME)="") set enabled_state to DFFALSE
+      procedure WS_OnOpenWorkSpace string lsWS
+        if (integer(FVSetupValue(FVSETUP_USER_BYPASS_WS_DD))) begin
+          if (FVSetupValue(FVSETUP_WORKSPACE_NAME)<>"") set enabled_state to (FastView_GenericDDsApplicable())
+        end
+        else begin
+          set checked_state to DFTRUE
+          set enabled_state to DFFALSE
+        end
+      end_procedure
+    end_object
+  end_object
+  object oPage2 is a aps.WizardPage
+    object oLabel1 is a aps.TextBox label "Select main table:"
+      set fixed_size to 10 200
+      set Fontweight to 900
+    end_object
+    send aps_goto_max_row
+    register_object oChildFile
+    object oMainFile is a cFastView.TableSelectorForm abstract AFT_ASCII40 snap 1
+      procedure OnChange
+        integer liFile
+        get Combo_Current_Aux_Value to liFile
+        send fill_list.i to (oChildFile(self)) liFile
+      end_procedure
+
+      function iFindAuxValue integer liFile returns integer
+        integer liItem liMax lhObj
+        move (oAux_Values(self)) to lhObj
+        get item_count of lhObj to liMax
+        decrement liMax
+        for liItem from 0 to liMax
+          if (value(lhObj,liItem)=liFile) function_return liItem
+        loop
+        function_return -1
+      end_function
+
+      function iValidateTable.i integer liFile returns integer
+        function_return (iFindAuxValue(self,liFile)<>-1)
+      end_function
+
+      procedure select_table
+        integer liFile lhSelf
+        string lsValue
+        move self to lhSelf
+        get Combo_Current_Aux_Value to liFile
+        move (iFdxSelectOneFileValidate(ghFDX,liFile,GET_iValidateTable.i,lhSelf)) to liFile
+        if liFile begin
+          get_attribute DF_FILE_DISPLAY_NAME of liFile to lsValue
+          set value item 0 to (rtrim(lsValue))
+          send OnChange
+        end
+      end_procedure
+    end_object
+
+    procedure AdvancedTableOpen
+      send select_table to (oMainFile(self))
+    end_procedure
+
+    object oToolButton is a aps.ToolButton snap SL_RIGHT
+      set p_extra_external_width to 1
+      send Add_Button ICO_STD_FIND msg_AdvancedTableOpen
+      send Add_ToolTip t.DfQuery.tt.AdvTableOpen
+    end_object
+    send aps_goto_max_row
+    send aps_make_row_space 15
+    object oLabel2 is a aps.TextBox label "Select child table:"
+      set fixed_size to 10 200
+      set Fontweight to 900
+    end_object
+    send aps_goto_max_row
+    object oChildFile is a cFastView.TableSelectorForm abstract AFT_ASCII40 snap 1
+    end_object
+
+    function iPageValidate returns integer
+      integer liViewType liMainFile liChildFile lbRval
+      get Combo_Current_Aux_Value of (oMainFile(self)) to liMainFile
+      get Combo_Current_Aux_Value of (oChildFile(self)) to liChildFile
+      get current_radio of (oRad(oPage1(self))) to liViewType
+      if liMainFile begin
+        if (liViewType=VT_HEADER_DETAIL) begin
+          if liChildFile move DFTRUE to lbRval
+          else begin
+            error 202 "You must select child table"
+            move DFFALSE to lbRval
+          end
+        end
+        else move DFTRUE to lbRval
+      end
+      else begin
+        error 201 "You must select main table"
+        move DFFALSE to lbRval
+      end
+      function_return lbRval
+    end_function
+    procedure DoInitialize
+      integer liViewType liCurrentAux
+      get current_radio of (oRad(oPage1(self))) to liViewType
+      set object_shadow_state of (oChildFile(self)) to (liViewType<>VT_HEADER_DETAIL)
+      if (liViewType=VT_HEADER_DETAIL) begin
+        send cursor_wait to (cursor_control(self))
+        get Combo_Current_Aux_Value of (oMainFile(self)) to liCurrentAux
+        send fill_list_parents_only to (oMainFile(self))
+        if liCurrentAux set Combo_Current_Aux_Value of (oMainFile(self)) to liCurrentAux
+        send cursor_ready to (cursor_control(self))
+      end
+      else begin
+        get Combo_Current_Aux_Value of (oMainFile(self)) to liCurrentAux
+        send cursor_wait to (cursor_control(self))
+        send fill_list to (oMainFile(self))
+        send cursor_ready to (cursor_control(self))
+        if liCurrentAux set Combo_Current_Aux_Value of (oMainFile(self)) to liCurrentAux
+        send Combo_Delete_Data to (oChildFile(self))
+        set value of (oChildFile(self)) item 0 to ""
+      end
+    end_procedure
+    procedure DoInitialize_PostPage // Called when the objects have been paged
+      send OnChange to (oMainFile(self))
+    end_procedure
+  end_object // oPage2
+  object oPage3 is a aps.WizardPage
+    send aps_make_row_space -10
+    object oLabel is a aps.TextBox label "Select fields from main table:"
+      set fixed_size to 10 200
+      set Fontweight to 900
+    end_object
+    send aps_goto_max_row
+    object oTree is a Fdx.TreeViewFieldSelector
+      set size to 133 160
+      set pbMultiSelectState to DFFALSE
+      set pbExcludeOverlaps to true
+      set pbExcludeRelatingFields to true
+      register_object oGrid
+      procedure OnFieldSelect integer liFile integer liField
+        send add_field to (oGrid(self)) liFile liField
+      end_procedure
+    end_object
+    object oGrid is a cFastView_FieldsGridSmall
+      set size to 115 0
+      on_key KNEXT_ITEM send switch
+      on_key KPREVIOUS_ITEM send switch_back
+    end_object
+    object oBtn1 is a aps.Button snap SL_DOWN
+      set size to 14 50
+      on_item "Delete" send DeleteRow to (oGrid(self))
+    end_object
+    object oBtn2 is a aps.Button snap SL_RIGHT
+      set size to 14 50
+      on_item "Move up" send MoveRowUp to (oGrid(self))
+    end_object
+    object oBtn3 is a aps.Button snap SL_RIGHT
+      set size to 14 50
+      on_item "Move down" send MoveRowDown to (oGrid(self))
+    end_object
+    procedure DoInitialize
+      integer liFile
+      send Write_view_definition
+      get Combo_Current_Aux_Value of (oMainFile(oPage2(self))) to liFile
+      send fill_list to (oTree(self)) ghFDX liFile DFTRUE
+      send delete_data to (oGrid(self))
+      send delete_data to (phServer(oGrid(self)))
+    end_procedure
+    function iPageValidate returns integer
+      ifnot (item_count(oGrid(self))) begin
+        error 203 "You have to select some fields!"
+        function_return DFFALSE
+      end
+      function_return DFTRUE
+    end_function
+  end_object
+  object oPage4 is a aps.WizardPage
+    send aps_make_row_space -10
+    object oLabel is a aps.TextBox label "Select fields from child table:"
+      set fixed_size to 10 200
+      set Fontweight to 900
+    end_object
+    send aps_goto_max_row
+    object oTree is a Fdx.TreeViewFieldSelector
+      set size to 133 160
+      set pbMultiSelectState to DFFALSE
+      set pbExcludeOverlaps to true
+      set pbExcludeRelatingFields to true
+      register_object oGrid
+      procedure OnFieldSelect integer liFile integer liField
+        send add_field to (oGrid(self)) liFile liField
+      end_procedure
+    end_object
+    object oGrid is a cFastView_FieldsGridSmall
+      set size to 115 0
+      on_key KNEXT_ITEM send switch
+      on_key KPREVIOUS_ITEM send switch_back
+    end_object
+    object oBtn1 is a aps.Button snap SL_DOWN
+      set size to 14 50
+      on_item "Delete" send DeleteRow to (oGrid(self))
+    end_object
+    object oBtn2 is a aps.Button snap SL_RIGHT
+      set size to 14 50
+      on_item "Move up" send MoveRowUp to (oGrid(self))
+    end_object
+    object oBtn3 is a aps.Button snap SL_RIGHT
+      set size to 14 50
+      on_item "Move down" send MoveRowDown to (oGrid(self))
+    end_object
+    procedure DoInitialize
+      integer liFile
+      get Combo_Current_Aux_Value of (oChildFile(oPage2(self))) to liFile
+      send fill_list to (oTree(self)) ghFDX liFile DFTRUE
+      send delete_data to (oGrid(self))
+      send delete_data to (phServer(oGrid(self)))
+    end_procedure
+    function iPageValidate returns integer
+      ifnot (item_count(oGrid(self))) begin
+        error 204 "You have to select some fields!"
+        function_return DFFALSE
+      end
+      function_return DFTRUE
+    end_function
+  end_object
+  object oPage99 is a aps.WizardPage
+    object oFinishText is an aps.Edit
+      set size to 110 300
+      set object_shadow_state to DFTRUE
+      set border_style to BORDER_NONE
+      set scroll_bar_visible_state to DFFALSE
+      set value item 0 to 'Click the "Finish" button to create the view.'
+      set value item 1 to ''
+      set value item 2 to 'Afterwards you may right click the view panel to edit the fields list and/or save the definition to file.'
+      set value item 3 to ''
+      set value item 4 to 'You may also use the following keys:'
+      set value item 5 to '    Ctrl+F for prompt lists in indexed fields'
+      set value item 6 to '    Ctrl+P to run a report on the current table'
+      set value item 7 to '    Ctrl+D for a calendar on date fields'
+      set value item 8 to '    Ctrl+N to clone the current view'
+    end_object
+    send aps_goto_max_row
+    set p_auto_column to 1
+    send tab_column_define 1  90 85 JMODE_LEFT
+    object oCb is a aps.CheckBox label "I want to save this definition to disk"
+    end_object
+  end_object
+  procedure DisplayPage integer liPage
+    integer liCurrentPage
+    get piCurrentPage to liCurrentPage
+    if (liPage=1) begin //
+      if (liCurrentPage<1) send DoInitialize to (oPage2(self))
+    end
+    if (liPage=2) begin // Select main file fields
+      if (liCurrentPage<2) send DoInitialize to (oPage3(self))
+    end
+    if (liPage=3) begin // Select main file fields
+      if (liCurrentPage<3) send DoInitialize to (oPage4(self))
+    end
+    forward send DisplayPage liPage
+    if (liPage=1) begin //
+      if (liCurrentPage<1) send DoInitialize_PostPage to (oPage2(self))
+    end
+  end_procedure
+  function iNextPage integer liCurrentPage returns integer
+    integer liViewType
+    get current_radio of (oRad(oPage1(self))) to liViewType
+    if (liCurrentPage=2) begin
+      if (liViewType=VT_HEADER_DETAIL) function_return 3
+      function_return 4
+    end
+    function_return (liCurrentPage+1)
+  end_function
+  procedure Write_view_definition // to definition object
+    integer lhViewDefinition
+    get phViewDefinition to lhViewDefinition
+    set psViewTitle of lhViewDefinition to (value(oFrm1(oPage1(self)),0))
+    set piViewType of lhViewDefinition to (current_radio(oRad(oPage1(self))))
+    set pbUseGenericDD of lhViewDefinition to (checked_state(oCb(oPage1(self))))
+
+    set piMainFile     of lhViewDefinition to (Combo_Current_Aux_Value(oMainFile(oPage2(self))))
+    set piChildFile    of lhViewDefinition to (Combo_Current_Aux_Value(oChildFile(oPage2(self))))
+  end_procedure
+  procedure Read_view_definition // from definition object
+    integer lhViewDefinition
+    get phViewDefinition to lhViewDefinition
+    set value of (oFrm1(oPage1(self))) item 0 to (psViewTitle(lhViewDefinition))
+    set current_radio of (oRad(oPage1(self))) to (piViewType(lhViewDefinition))
+    set checked_state of (oCb(oPage1(self))) to (pbUseGenericDD(lhViewDefinition))
+
+    send Combo_Delete_Data to (oMainFile(oPage2(self)))
+    send Combo_Delete_Data to (oChildFile(oPage2(self)))
+
+    set phServer of (oGrid(oPage3(self))) to (oMainFileFields(lhViewDefinition))
+    send fill_list to (oGrid(oPage3(self)))
+
+    set phServer of (oGrid(oPage4(self))) to (oChildFileFields(lhViewDefinition))
+    send fill_list to (oGrid(oPage4(self)))
+
+//    set phServer of (oChildFile(oPage2(self))) to (oChildFileFields(lhViewDefinition))
+  end_procedure
+  procedure popup.i integer lhDef
+    set phViewDefinition to lhDef
+    send Read_view_definition
+    send popup
+  end_procedure
+  procedure DoFinish
+    integer lhVw
+    send Write_view_definition
+    get iPopupPanel of (phViewDefinition(self)) to lhVw
+    if (checked_state(oCb(oPage99(self)))) send SaveDefinitionAs to lhVw
+  end_procedure
+end_object // oFastViewWizard
+

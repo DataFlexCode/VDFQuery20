@@ -1,0 +1,627 @@
+// Use dfm_importexport.pkg // The low layer of import/export function
+
+Use FList.nui    // A lot of FLIST- procedures and functions
+Use Files.nui    // Utilities for handling file related stuff (No User Interface)
+Use API_Attr.nui // Functions for querying API attributes (No User Interface)
+Use DBMS.nui     // Basic DBMS functions (No User Interface)
+Use FDX.nui      // cFDX class
+Use OpenStat.nui // cTablesOpenStatus class (formely cFileAllFiles) (No User Interface)
+Use FdxCompa.nui // Class for comparing table definitions
+Use FDX_Attr.nui // FDX compatible attribute functions
+Use FdxFldMp.utl // Field mapping dialog
+Use ErrorHnd.nui // cErrorHandlerRedirector class and oErrorHandlerQuiet object (No User Interface)
+Use Array.dbu    // Array Debugging (send Array_DoWriteToFile lhArray lsFileName)
+Use files01.nui // SEQ_DoChannelPositionsToLineCount - stuff
+Use MsgBox.utl   // obs procedure
+
+function DFM_IE_SuggestFolder global returns string
+  string lsRval
+  get FLIST_CurrentFileListFolder to lsRval
+  get Files_AppendPath lsRval "DumpAndLoad" to lsRval
+  function_return lsRval
+end_function
+
+object DFM_IE_ControlBlock is a cArray
+  property Integer pbExport false
+  property Integer pbErase  false
+  property Integer pbImport false
+  Property String  psFolder (DFM_IE_SuggestFolder())
+  Property Integer pbPauseOnErrors 0
+  Property Boolean pbProtectAsciiFields True
+  procedure OnChangeFDX_Broadcasted // Sent by DFM
+    set delegation_mode to DELEGATE_TO_PARENT
+    set psFolder to (DFM_IE_SuggestFolder())
+  end_procedure
+  procedure Close_Query_View // Sent by FastView
+    set delegation_mode to DELEGATE_TO_PARENT
+    set psFolder to (DFM_IE_SuggestFolder())
+  end_procedure
+end_object // DFM_IE_ControlBlock
+
+define t.importexport.eoh  for "-- End of header. Do not edit below this line --" // End of header tag
+define t.importexport.eo2h for "-eoh2-" // End of 2nd header tag
+define t.importexport.eor  for "-eor-" // End of record tag
+
+object DFM_IE_WorkHorse is a cArray
+
+  Property Boolean pbProtectAscOnRead
+
+  item_property_list
+    item_property integer piFile.i             // Number of table
+    item_property string  psRootName.i         // Root name as found in filelist.cfg
+    item_property string  psRootOfRoot.i       // Root name stripped of path and driver specification
+    item_property integer piCanOpen.i          // Can the table be opened
+    item_property integer pbImportFileFound.i  // Can the import file be found
+    item_property integer piTableRecordCount.i // Number of records in the table
+    item_property integer piFileRecordCount.i  // Number of records in the .asc file
+    item_property integer phTableFdx.i         // Fdx image of the table definition
+    item_property integer phFileFdx.i          // Fdx image of the table definition as recorded in the input file
+    item_property integer pbDefinitionMatch.i  // Does the FDX images match in terms of sequence of fields
+    item_property integer phFieldMapper.i      // Pointer to a field mapping object
+    item_property number  pnDumpTime.i         // Time (in seconds) it took to dump the table
+    item_property number  pnLoadTime.i         // Time (in seconds) it took to load the file
+    item_property integer piLoadErrors.i       // Number of errors during load operation
+  end_item_property_list
+
+  procedure DisplayStopMessage integer lbExport integer lbErase integer lbImport integer lbCancel
+    integer lbErrors liMax liRow
+    string lsValue
+    move 0 to lbErrors
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      if (piLoadErrors.i(self,liRow)) move 1 to lbErrors
+    loop
+
+    if lbErrors begin
+      send obs "Errors occured during loading of data." "Check the *.err files in the dump/load folder."
+    end
+    else begin
+      move "" to lsValue
+      if lbExport move (lsValue+" Dump ") to lsValue
+      if lbErase  move (lsValue+" Erase ") to lsValue
+      if lbImport move (lsValue+" Load ") to lsValue
+      move (trim(replaces("  ",lsValue,", "))+" performed successfully") to lsValue
+      send obs lsValue
+    end
+  end_procedure
+
+  procedure DoFieldMapperDialog integer liRow
+    integer lhFdxFrom lhFdxTo liFile lhMap
+    get piFile.i liRow to liFile
+    get phFileFdx.i liRow to lhFdxFrom
+    get phTableFdx.i liRow to lhFdxTo
+    if (lhFdxFrom and lhFdxTo) begin
+      get phFieldMapper.i liRow to lhMap
+      get DoFdxFieldMapperDialog lhMap lhFdxFrom liFile lhFdxTo liFile to lhMap
+      set phFieldMapper.i liRow to lhMap
+    end
+  end_procedure
+
+  // This function returns true if a manual mapping has been specified
+  function bMappingSpecified.i integer liRow returns integer
+    integer lhObj
+    get phFieldMapper.i liRow to lhObj
+    if lhObj function_return (item_count(lhObj))
+    function_return 0
+  end_function
+
+  // This function returns true if there is a a table FDX and a file FDX
+  function bCanMapFields integer liRow returns integer
+    integer lhFdxFrom lhFdxTo
+    get phFileFdx.i liRow to lhFdxFrom
+    get phTableFdx.i liRow to lhFdxTo
+    function_return (lhFdxFrom and lhFdxTo)
+  end_function
+
+  procedure Reset
+    integer liMax liRow lhObj
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get phFileFdx.i liRow to lhObj
+      if lhObj begin
+        send Reset to lhObj
+        send request_destroy_object to lhObj
+      end
+      get phTableFdx.i liRow to lhObj
+      if lhObj begin
+        send Reset to lhObj
+        send request_destroy_object to lhObj
+      end
+      get phFieldMapper.i liRow to lhObj
+      if lhObj begin
+        send request_destroy_object to lhObj
+      end
+    loop
+    send delete_data
+  end_procedure
+
+  procedure Callback_Filelist_Entry integer liFile integer lbSelected integer lbShaded
+    integer liRow
+    if (lbSelected and not(lbShaded)) begin
+      get row_count to liRow
+      set piFile.i liRow to liFile
+    end
+  end_procedure
+
+  procedure fill_array_using_object integer hObj
+    send Reset
+    send Callback_General to hObj msg_CallBack_Filelist_Entry self 1 0
+  end_procedure
+
+  procedure fill_array
+    integer lhLst
+    get DFMatrix_SelectorObject to lhLst
+    send fill_array_using_object lhLst
+  end_procedure
+
+  function sSequentialFileName.i integer liRow returns string
+    string lsFileName lsFolder
+    get psFolder of (DFM_IE_ControlBlock(self)) to lsFolder
+    get psRootOfRoot.i liRow to lsFileName
+    move ("Dfm-"+lsFileName) to lsFileName
+    get Files_AppendPath lsFolder lsFileName to lsFileName
+    function_return (lsFileName+".dmp")
+  end_function
+
+  function sErrorFileName.i integer liRow returns string
+    string lsErrorFile
+    get sSequentialFileName.i liRow to lsErrorFile
+    function_return (replace(".dmp",lsErrorFile,".err"))
+  end_function
+
+            function iDirectInput.s string lsFileName returns string
+              integer liChannel lbFound
+              string lsTemp
+
+              get SEQ_DirectInput lsFileName to liChannel
+              if (liChannel>=0) begin
+
+                If (SEQ_ReadLnProbe(liChannel)="Protect ASCII") Begin
+                  Readln channel liChannel lsTemp
+                  set pbProtectAscOnRead to True
+                End
+                Else Begin
+                  set pbProtectAscOnRead to False
+                End
+
+                get SEQ_ReadLnUntilValue liChannel t.importexport.eoh to lbFound
+                if lbFound get SEQ_ReadLnUntilValue liChannel t.importexport.eo2h to lbFound
+              end
+              else move 1 to lbFound
+              ifnot lbFound begin
+                send SEQ_CloseInput liChannel
+                move -2 to liChannel // -2 will signal that its not a compatible file
+              end
+              function_return liChannel
+            end_function
+
+            object oCompareResult is a cDummyCompareResultReciever
+            end_object
+
+  procedure PrepareValidate
+    integer liRow liMax liFile lbImport lbExport lbCanOpen liCount liChannel lhTableFdx lhFileFdx
+    integer lhCompareResult
+    string lsRoot lsFolder lsFileName
+
+    get pbExport of (DFM_IE_ControlBlock(self)) to lbExport
+    get pbImport of (DFM_IE_ControlBlock(self)) to lbImport
+    get psFolder of (DFM_IE_ControlBlock(self)) to lsFolder
+
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get piFile.i liRow to liFile
+
+      get API_AttrValue_FILELIST DF_FILE_ROOT_NAME liFile to lsRoot
+      set psRootName.i   liRow to lsRoot
+      get DBMS_StripPathAndDriver lsRoot to lsRoot
+      set PsRootOfRoot.i liRow to lsRoot
+
+      // Can we open the table?
+      get DBMS_OpenFile liFile DF_SHARE 0 to lbCanOpen
+      set piCanOpen.i liRow to lbCanOpen
+      if lbCanOpen begin
+        get API_AttrValue_FILE DF_FILE_RECORDS_USED liFile to liCount
+        set piTableRecordCount.i liRow to liCount
+
+        // Read FDX Object:
+        object oTableFDX is a cFdxFileDef
+          send Read_File_Definition.i liFile
+          move self to lhTableFdx
+        end_object
+        set phTableFdx.i liRow to lhTableFdx
+
+        close liFile
+
+        set pbImportFileFound.i liRow to (SEQ_FileExists(sSequentialFileName.i(self,liRow))=SEQIT_FILE)
+
+        if (pbImportFileFound.i(self,liRow) and lbImport) begin
+          // We must open the file and read the table definition and number
+          get sSequentialFileName.i liRow to lsFileName
+          get iDirectInput.s lsFileName to liChannel
+          if (liChannel>=0) begin
+
+            // Read FDX Object:
+            object oFileFDX is a cFdxFileDef
+              send Seq_Read liChannel
+              move self to lhFileFdx
+            end_object
+            send SEQ_CloseInput liChannel
+
+            // This handles the eventuality that the file number we wrote is
+            // different than the one we want to compare it to:
+            set piMainFile of lhFileFdx to liFile
+
+            set phFileFdx.i liRow to lhFileFdx
+            get FDX_AttrValue_FILE lhFileFdx DF_FILE_RECORDS_USED liFile to liCount
+            set piFileRecordCount.i liRow to liCount
+
+            // Now we will compare the FDX of the table and the file
+            move (oCompareResult(self)) to lhCompareResult
+            get iFdxCompareTables.iiiiii lhCompareResult lhTableFdx liFile lhFileFdx liFile FDXCOMP_MODE_ALL to lhCompareResult
+            set pbDefinitionMatch.i liRow to (not(piField_Sequence_Change(lhCompareResult)))
+
+          end
+          else if (liChannel=-2) send obs "Not a compatible file!" lsFileName
+        end
+      end
+    loop
+  end_procedure
+
+            object oErrorHandler is a cErrorHandlerRedirector
+              property string  psCurrentFile    ""
+              property integer piCurrentChannel 0
+              property integer piErrorCount     0
+              Property Integer pbPauseOnErrors  0
+              item_property_list
+                item_property integer piError.i     // DataFlex error number
+                item_property string  psErrorText.i // DataFlex error text
+                item_property integer piErrorLine.i // Line in DFMatrix program
+                item_property integer piLine.i      // While reading this line in the input file
+              end_item_property_list
+              procedure OnError integer liError string lsErrorText integer liErrorLine
+                integer liRow liLine
+                get row_count to liRow
+                set piErrorCount to (piErrorCount(self)+1)
+                if (liRow<100) begin // we only log the first 100 errors
+                  set piError.i     liRow to liError
+                  set psErrorText.i liRow to lsErrorText
+                  set piErrorLine.i liRow to liErrorLine
+                  get_channel_position (piCurrentChannel(self)) to liLine
+                  set piLine.i liRow to liLine // Overload
+                end
+                if (pbPauseOnErrors(self)) send Forward_Error_Report
+              end_procedure
+              procedure DoActivate
+                forward send DoActivate
+                set piErrorCount to 0
+              end_procedure
+              procedure DoDeactivate
+                integer liMax liRow
+                forward send DoDeactivate
+                // This piece of code translates the recorded channel-positions
+                // into real line numbers (according the the readln command).
+                send SEQ_DoChannelPositionsToLineCount_Reset
+                get row_count to liMax
+                decrement liMax
+                for liRow from 0 to liMax
+                  send SEQ_DoChannelPositionsToLineCount_Add liRow (piLine.i(self,liRow))
+                loop
+                send SEQ_DoChannelPositionsToLineCount_Resolve (psCurrentFile(self))
+                for liRow from 0 to liMax
+                  set piLine.i liRow to (SEQ_DoChannelPositionsToLineCount(liRow))
+                loop
+              end_procedure
+              procedure write_to_file integer liChannel
+                integer liMax liRow
+                string lsErrorLine
+                get row_count to liMax
+                decrement liMax
+                for liRow from 0 to liMax
+                  move "Error # (#) while reading line # (#)" to lsErrorLine
+                  move (replace("#",lsErrorLine,piError.i(self,liRow))) to lsErrorLine
+                  move (replace("#",lsErrorLine,piErrorLine.i(self,liRow))) to lsErrorLine
+                  move (replace("#",lsErrorLine,piLine.i(self,liRow))) to lsErrorLine
+                  move (replace("#",lsErrorLine,psErrorText.i(self,liRow))) to lsErrorLine
+                  writeln channel liChannel lsErrorLine
+                loop
+              end_procedure
+            end_object
+
+  function WriteTableData integer liRow integer liChannel returns integer
+    integer lhFdx liFile lbFound
+    integer liCount liMax lbCancel
+    boolean lbProtectAsciiFields
+
+    get phTableFdx.i liRow to lhFdx
+    send Seq_Write to lhFdx liChannel
+    get piFile.i liRow to liFile
+
+    move 0 to liCount
+    get piTableRecordCount.i liRow to liMax
+
+    get pbProtectAsciiFields of (DFM_IE_ControlBlock(self)) to lbProtectAsciiFields
+
+    clear liFile
+    repeat
+      vfind liFile 0 gt // Find next
+      move (found) to lbFound
+      if lbFound begin
+        if (lbProtectAsciiFields) begin
+          send SEQ_WriteRecordBuffer_LD_PA liChannel liFile
+        end
+        else begin
+          send SEQ_WriteRecordBuffer_LD liChannel liFile
+        end
+        writeln t.importexport.eor
+        increment liCount
+
+        if (mod(liCount,100)=0) set action_text of ghoStatusPanel to (string(liCount)+"/"+string(liMax))
+        get Check_StatusPanel of ghoStatusPanel to lbCancel
+        if lbCancel begin
+          send Stop_StatusPanel to ghoStatusPanel
+          get MB_Verify ("Cancel dump at "+string(liCount)+"/"+string(liMax)+"?") 0 to lbCancel
+          if lbCancel move 0 to lbFound
+          else send Start_StatusPanel to ghoStatusPanel
+        end
+
+      end
+    until (not(lbFound))
+    set action_text of ghoStatusPanel to (string(liCount)+"/"+string(liMax))
+    function_return lbCancel
+  end_function
+
+            object oFieldValuesArray is a cArray
+            end_object
+
+  function ReadTableData integer liRow integer liChannel returns integer
+    integer lhFdx liFile lbSeqEof lhFieldValuesArray lhMap liFileField
+    integer liMax liItem liField liGrb
+    integer liCount liMaxRead lbCancel
+    boolean lbProtectAscOnRead
+    string lsThrowAway
+
+    get phFileFdx.i liRow to lhFdx
+    ifnot lhFdx begin
+      object oFileFDX is a cFdxFileDef
+        move self to lhFdx
+      end_object
+      set phFileFdx.i liRow to lhFdx
+    end
+
+    get pbProtectAscOnRead to lbProtectAscOnRead
+
+    send Seq_Read to lhFdx liChannel // Skip through the header
+    get piFile.i liRow to liFile
+
+    move 0 to liCount
+    get piFileRecordCount.i liRow to liMaxRead
+
+    if (bMappingSpecified.i(self,liRow)) begin
+      move (oFieldValuesArray(self)) to lhFieldValuesArray
+      get phFieldMapper.i liRow to lhMap
+      get item_count of lhMap to liMax
+      decrement liMax
+      lock
+        repeat
+          clear liFile
+          // Read a record according to the FDX information in the header of the file (clever)
+          if (lbProtectAscOnRead) begin
+            Send FDX_ReadRecordBufferToArray_LD_PA lhFdx liChannel liFile lhFieldValuesArray lbProtectAscOnRead
+          end
+          else begin
+            send FDX_ReadRecordBufferToArray_LD lhFdx liChannel liFile lhFieldValuesArray
+          end
+          move (seqeof) to lbSeqEof
+          ifnot lbSeqEof begin
+            for liFileField from 1 to liMax // Not recnum!
+              get value of lhMap item liFileField to liField
+              if (liField>0) set_field_value liFile liField to (value(lhFieldValuesArray,liFileField))
+            loop
+            saverecord liFile
+
+            increment liCount
+            if (mod(liCount,100)=0) set action_text of ghoStatusPanel to (string(liCount)+"/"+string(liMaxRead))
+            get Check_StatusPanel of ghoStatusPanel to lbCancel
+            if lbCancel begin
+              send Stop_StatusPanel to ghoStatusPanel
+              get MB_Verify ("Cancel read at "+string(liCount)+"/"+string(liMaxRead)+"?") 0 to lbCancel
+              if lbCancel move 1 to lbSeqEof
+              else send Start_StatusPanel to ghoStatusPanel
+            end
+            readln channel liChannel lsThrowAway // Hopefully the t.importexport.eor tag
+            ifnot (lsThrowAway=t.importexport.eor) begin
+              error 812 "Record layout error"
+              get SEQ_ReadLnUntilValue liChannel t.importexport.eor to liGrb
+            end
+          end
+        until lbSeqEof
+      unlock
+    end
+    else begin
+      lock
+        repeat
+          clear liFile
+          if (lbProtectAscOnRead) begin
+            send SEQ_ReadRecordBuffer_LD_PA liChannel liFile
+          end
+          else begin
+            send SEQ_ReadRecordBuffer_LD liChannel liFile
+          end
+          move (seqeof) to lbSeqEof
+          ifnot lbSeqEof begin
+            saverecord liFile
+
+            increment liCount
+            if (mod(liCount,100)=0) set action_text of ghoStatusPanel to (string(liCount)+"/"+string(liMaxRead))
+            get Check_StatusPanel of ghoStatusPanel to lbCancel
+            if lbCancel begin
+              send Stop_StatusPanel to ghoStatusPanel
+              get MB_Verify ("Cancel read at "+string(liCount)+"/"+string(liMaxRead)+"?") 0 to lbCancel
+              if lbCancel move 1 to lbSeqEof
+              else send Start_StatusPanel to ghoStatusPanel
+            end
+            readln channel liChannel lsThrowAway // Hopefully the t.importexport.eor tag
+            ifnot (lsThrowAway=t.importexport.eor) begin
+              error 813 "Record layout error"
+              get SEQ_ReadLnUntilValue liChannel t.importexport.eor to liGrb
+            end
+          end
+        until lbSeqEof
+      unlock
+    end
+    set action_text of ghoStatusPanel to (string(liCount)+"/"+string(liMaxRead))
+    function_return lbCancel
+  end_function
+
+            object oTablesOpenStatus is a cTablesOpenStatus
+            end_object
+
+  function OpenAllTablesExclusive returns integer
+    integer liMax liRow liFile lbRval
+    send reset to (oTablesOpenStatus(self))
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get piFile.i liRow to liFile
+      send prepare_open to (oTablesOpenStatus(self)) liFile DF_EXCLUSIVE 0 ""
+    loop
+    get iOpen_Prepared of (oTablesOpenStatus(self)) to lbRval // Returns the number of the first file it could not open
+    function_return (not(lbRval))
+  end_function
+
+  procedure Execute
+    integer liRow liMax liFile lbExport lbImport lbErase liChannel
+    integer liInteger1 liInteger2 liInteger3 liInteger4 lbOk lbCancel lbPauseOnErrors
+    integer lhErrorHandler
+    string lsFileName lsDisplayName lsErrorFile
+
+    move (oErrorHandler(self)) to lhErrorHandler
+
+    get pbExport of (DFM_IE_ControlBlock(self)) to lbExport
+    get pbImport of (DFM_IE_ControlBlock(self)) to lbImport
+    get pbErase  of (DFM_IE_ControlBlock(self)) to lbErase
+    get pbPauseOnErrors of (DFM_IE_ControlBlock(self)) to lbPauseOnErrors
+
+    get_attribute DF_DATE_FORMAT to liInteger1
+    get_attribute DF_DATE_SEPARATOR to liInteger2
+    get_attribute DF_DECIMAL_SEPARATOR to liInteger3
+    get_date_attribute DATE4_STATE to liInteger4
+    set_attribute DF_DATE_FORMAT to DF_DATE_EUROPEAN
+    set_attribute DF_DATE_SEPARATOR to 45     // -
+    set_attribute DF_DECIMAL_SEPARATOR to 46  // .
+    set_date_attribute DATE4_STATE to 0
+
+
+    if lbErase get OpenAllTablesExclusive to lbOk
+    else move 1 to lbOk
+
+    if lbOk begin
+
+      send Initialize_StatusPanel to ghoStatusPanel "Status" "" ""
+      send Start_StatusPanel to ghoStatusPanel
+      move 0 to lbCancel
+
+      get row_count to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        set piLoadErrors.i liRow to 0
+      loop
+      for liRow from 0 to liMax
+        get piFile.i liRow to liFile
+        get psRootOfRoot.i liRow to lsDisplayName
+
+        ifnot lbErase get DBMS_OpenFile liFile DF_SHARE 0 to lbOk
+        else move 1 to lbOk
+
+        if lbOk begin
+          get sSequentialFileName.i liRow to lsFileName
+          ifnot lbCancel begin
+            if lbExport begin
+              set title_text of ghoStatusPanel to ("Dumping "+lsDisplayName)
+              set action_text of ghoStatusPanel to ""
+              get SEQ_DirectOutput lsFileName to liChannel
+              if (liChannel>=0) begin
+                if (pbProtectAsciiFields(DFM_IE_ControlBlock(self))) begin
+                  writeln channel liChannel "Protect ASCII"
+                end
+                writeln channel liChannel t.importexport.eoh
+                writeln channel liChannel t.importexport.eo2h
+                get WriteTableData liRow liChannel to lbCancel
+                send SEQ_CloseOutput liChannel
+              end
+            end
+          end
+          ifnot lbCancel begin
+            if lbErase begin
+              set title_text of ghoStatusPanel to ("Erasing "+lsDisplayName)
+              set action_text of ghoStatusPanel to ""
+              zerofile liFile
+            end
+          end
+          ifnot lbCancel begin
+            if lbImport begin
+              set title_text of ghoStatusPanel to ("Loading "+lsDisplayName)
+              set action_text of ghoStatusPanel to ""
+              get iDirectInput.s lsFileName to liChannel
+              if (liChannel>=0) begin
+                set psCurrentFile    of lhErrorHandler to lsFileName
+                set piCurrentChannel of lhErrorHandler to liChannel
+                set pbPauseOnErrors  of lhErrorHandler to lbPauseOnErrors
+
+                send Delete_data of lhErrorHandler
+                send DoActivate  of lhErrorHandler
+
+                get ReadTableData liRow liChannel to lbCancel
+                send DoDeActivate  of lhErrorHandler
+
+                send SEQ_CloseInput liChannel
+
+                set piLoadErrors.i liRow to (piErrorCount(lhErrorHandler))
+
+                if (piErrorCount(lhErrorHandler)) begin // If there were errors: write the file
+                  get sErrorFileName.i liRow to lsErrorFile
+                  get SEQ_DirectOutput lsErrorFile to liChannel
+                  if (liChannel>=0) begin
+                    send write_to_file to lhErrorHandler liChannel
+                    send SEQ_CloseOutput liChannel
+                  end
+                end
+              end
+              else if (liChannel=-2) send obs "Not a compatible file!" lsFileName
+            end
+          end
+          close liFile
+        end
+      loop
+      ifnot lbCancel send Stop_StatusPanel of ghoStatusPanel
+      send DisplayStopMessage lbExport lbErase lbImport lbCancel
+    end
+    else send obs "Exclusive access could not be obtained"
+
+    set_attribute DF_DATE_FORMAT to liInteger1
+    set_attribute DF_DATE_SEPARATOR to liInteger2
+    set_attribute DF_DECIMAL_SEPARATOR to liInteger3
+    set_date_attribute DATE4_STATE to liInteger4
+  end_procedure
+
+end_object // DFM_IE_WorkHorse
+
+// Fill array and return number of tables
+function DFM_IE_GetListOfFiles global returns integer
+  integer lbRval
+  send fill_array to (DFM_IE_WorkHorse(self))
+  get row_count of (DFM_IE_WorkHorse(self)) to lbRval
+  function_return lbRval
+end_function
+
+// Validate
+procedure DFM_IE_ValidateFunction global
+  send PrepareValidate to (DFM_IE_WorkHorse(self))
+end_procedure
+
+procedure DFM_IE_ExecuteFunctions global
+  send Execute to (DFM_IE_WorkHorse(self))
+end_procedure

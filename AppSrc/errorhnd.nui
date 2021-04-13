@@ -1,0 +1,149 @@
+// Use ErrorHnd.nui // cErrorHandlerRedirector class and oErrorHandlerQuiet object (No User Interface)
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+
+use dfError
+define ErrorHnd$NES for 1 // NES = New Error System
+
+use Version.nui
+
+class cErrorHandlerRedirector is a cArray
+  procedure construct_object integer liImg
+    forward send construct_object liImg
+    property integer phPreviousErrorHandler -1
+    property integer error_processing_state DFFALSE
+    // These properties are used internally to enable forwarding of
+    // errors to the previous error handler.
+    #IF ErrorHnd$NES
+     property integer piError      0
+     property integer piErrorLine  0
+     property string  psErrMsg     ""
+    #ELSE
+     property integer piError_Info 0
+     property string  psErrMsg     ""
+    #ENDIF
+  end_procedure
+
+  item_property_list
+    item_property integer piError.i
+    item_property string  psErrorText.i
+    item_property integer piErrorLine.i
+  end_item_property_list cErrorHandlerRedirector
+
+  #IF ErrorHnd$NES
+   procedure Forward_Error_Report
+     integer lhPreviousErrorHandler
+     get phPreviousErrorHandler to lhPreviousErrorHandler
+     if (lhPreviousErrorHandler<>-1) send error_report to lhPreviousErrorHandler (piError(self)) (piErrorLine(self)) (psErrMsg(self))
+   end_procedure
+  #ELSE
+   procedure Forward_Error_Report
+     integer lhPreviousErrorHandler
+     get phPreviousErrorHandler to lhPreviousErrorHandler
+     if (lhPreviousErrorHandler<>-1) send error_report to lhPreviousErrorHandler (piError_Info(self)) (psErrMsg(self))
+   end_procedure
+  #ENDIF
+
+  procedure OnError integer liError string lsErrorText integer liErrorLine
+    integer liRow
+    get row_count to liRow
+    set piError.i     liRow to liError
+    set psErrorText.i liRow to lsErrorText
+    set piErrorLine.i liRow to liErrorLine
+  end_procedure
+
+  procedure DoReset
+    send delete_data
+  end_procedure
+
+  procedure DoActivate
+    send delete_data
+    if (phPreviousErrorHandler(self)=-1) begin
+      set phPreviousErrorHandler to Error_Object_Id
+      move self to Error_Object_Id
+    end
+  end_procedure
+  procedure DoDeactivate
+    if (phPreviousErrorHandler(self)<>-1) begin
+      get phPreviousErrorHandler to Error_Object_Id
+      set phPreviousErrorHandler to -1
+    end
+  end_procedure
+  //#IFDEF msg_Extended_Error_Message // New error system
+  #IF ErrorHnd$NES
+   procedure Error_Report integer liError integer liErrorLine string lsErrMsg
+     string  lsErrorText
+     integer lhObj
+     if (error_processing_state(self)) procedure_return // this prevents recursion
+     set error_processing_state to DFTRUE
+
+     set piError     to liError
+     set piErrorLine to liErrorLine
+     set psErrMsg    to lsErrMsg
+
+     get phPreviousErrorHandler to lhObj
+
+     move (Error_Description(lhObj,liError,lsErrMsg)) to lsErrorText
+     send OnError liError lsErrorText liErrorLine
+     set error_processing_state to DFFALSE
+   end_procedure
+  #ELSE // Old error system
+   procedure Error_Report integer liError_Info string lsErrMsg
+     integer liError liErrorLine
+     string  lsErrorText
+     integer lhObj
+     If (error_processing_state(self)) procedure_return // this prevents recursion
+     set error_processing_state to DFTRUE
+
+     set piError_Info to liError_Info
+     set psErrMsg     to lsErrMsg
+
+     get phPreviousErrorHandler to lhObj
+     move (hi(liError_Info))  to liError
+     move (low(liError_Info)) to liErrorLine
+     move (Error_Description(lhObj,liError,lsErrMsg)) to lsErrorText
+     send OnError liError lsErrorText liErrorLine
+     set error_processing_state to DFFALSE
+   end_procedure
+  #ENDIF
+end_class // cErrorHandlerRedirector
+
+desktop_section
+  object oErrorHandlerQuiet is a cErrorHandlerRedirector
+  end_object
+end_desktop_section
+
+procedure ErrorHnd_Quiet_Activate global
+  send DoActivate  to (oErrorHandlerQuiet(self))
+end_procedure
+procedure ErrorHnd_Quiet_Deactivate global
+  send DoDeactivate to (oErrorHandlerQuiet(self))
+end_procedure
+function ErrorHnd_Quiet_ErrorCount global returns integer
+  function_return (row_count(oErrorHandlerQuiet(self)))
+end_function
+
+// This commmand is only for use after "open"ing a table that
+// has all the listed fields as columns. Unfortunately, this
+// package does not include the means of making use of that.
+#COMMAND Set_ErrorLogTable
+  define ErrorLogTable                 for !1
+  define ErrorLogTable.file_number     for !1.file_number
+  define ErrorLogTable.recnum          for !1.recnum
+  define ErrorLogTable.module          for !1.module
+  define ErrorLogTable.user_id         for !1.user_id
+  define ErrorLogTable.error_date      for !1.error_date
+  define ErrorLogTable.error_time      for !1.error_time
+  define ErrorLogTable.error_no        for !1.error_no
+  define ErrorLogTable.error_line      for !1.error_line
+  define ErrorLogTable.error_text      for !1.error_text
+  define ErrorLogTable.error_class     for !1.error_class
+  define ErrorLogTable.modul_comp_date for !1.modul_comp_date
+  define ErrorLogTable.modul_comp_time for !1.modul_comp_time
+  define ErrorLogTable.modul_init_id   for !1.modul_init_id
+  define ErrorLogTable.function        for !1.function
+  define ErrorLogTable.object_name     for !1.object_name
+  define ErrorLogTable.current_item    for !1.current_item
+  define ErrorLogTable.data_file       for !1.data_file
+  define ErrorLogTable.data_field      for !1.data_field
+#ENDCOMMAND
+

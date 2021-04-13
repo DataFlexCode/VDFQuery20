@@ -1,0 +1,1491 @@
+// RichEditComponentToolbar.pkg
+// RichEdit Toolbar that can be placed inside a component (e.g. dbView) via a Use statement
+
+//  New16.bmp         = New16.bmp
+//  Open16.bmp        = Open16.bmp
+//  Save16.bmp        = Save16.bmp
+//  Bold16.bmp        = Bold16.bmp
+//  Italics16.bmp     = Italics16.bmp
+//  Underline16.bmp   = Underline16.bmp
+//  AlignLeft16.bmp   = AlignLeft16.bmp
+//  AlignCenter16.bmp = AlignCenter16.bmp
+//  AlignRight16.bmp  = AlignRight16.bmp
+//  Numbering16.bmp   = Numbering16.bmp
+//  Bullets16.bmp     = Bullets16.bmp
+//  Indent16.bmp      = Indent16.bmp
+//  Outdent16.bmp     = Outdent16.bmp
+//  Cut16.bmp         = Cut16.bmp
+//  Copy16.bmp        = Copy16.bmp
+//  Paste16.bmp       = Paste16.bmp
+//  Undo16.bmp        = Undo16.bmp
+//  Redo16.bmp        = Redo16.bmp
+//  Prompt16.bmp      = Prompt16.bmp
+//  FindReplace16.bmp = FindReplace16.bmp
+
+Use Aps.pkg
+Use cToolbar.Pkg
+Use cImageList.Pkg
+Use Language.pkg
+
+Register_Object oNumbering
+
+// these procedures are defined in the RichEdit control that will use this toolbar
+Register_Procedure ToggleNumbering
+Register_Procedure DoIndent
+Register_Procedure DoOutdent
+Register_Procedure AlignLeft
+Register_Procedure AlignCenter
+Register_Procedure AlignRight
+Register_Procedure ToggleBullets
+Register_Procedure DoNewDocument
+Register_Procedure DoOpenDocument
+Register_Procedure DoSaveDocument
+Register_Procedure DoFind
+Register_Procedure DoFindReplace
+Register_Procedure DoFont
+// Register all objects
+Register_Object oCancelButton
+Register_Object oFindButton
+Register_Object oMatchCase
+Register_Object oMatchWholeWord
+Register_Object oReplaceAllButton
+Register_Object oReplaceButton
+Register_Object oReplaceText
+Register_Object oRichEditFindReplace
+Register_Object oSearchText
+Register_Object oStartAtTop
+
+object oRTF_Cleaner is a cArray
+  function CleanRTF string lsValue returns string
+    move (replaces("\'e5\'d8\'e5",lsValue,"")) to lsValue // õèõ
+    move (replaces("\'f8\v\",lsValue,"\")) to lsValue     // õ
+    move (replaces("\v0\",lsValue,"\")) to lsValue        // Hidden text
+    move (replaces("\v\",lsValue,"\")) to lsValue         // Hidden text
+    function_return lsValue
+  end_function
+end_object
+
+//> The purpose of this function is to clean away noise that
+//> comes from nowhere.
+//>
+//> The string 'ÜùÜ' (\'e5\'d8\'e5) mysteriously gets inserted sometimes. And
+//> codes for hidden text (\v and \v0)
+function RTF_Clean global string lsRTF returns string
+  get CleanRTF of oRTF_Cleaner lsRTF to lsRTF
+  function_return lsRTF
+end_function
+
+Object oRichEditFind is a ModalPanel
+    on_key KCANCEL send close_panel
+
+
+    On_Key Key_Alt+Key_F send KeyAction of oFindButton
+    On_Key Key_Alt+Key_C send KeyAction of oCancelButton
+
+    // handle of invoking object (RichEdit control)
+    Property handle phoControl
+
+
+    Set Border_Style to Border_Thick
+    Set Label to "Find"
+    Set Location to 6 4
+    Set Size to 88 217
+    Set piMaxSize to 86 1000
+    Set piMinSize to 86 217
+
+
+
+
+    Object oSearchText is a Form
+#IF LNG_DEFAULT=LNG_DANISH
+        Set Label to "Sõg:"
+#ELSE
+        Set Label to "What:"
+#ENDIF
+        Set Size to 13 123
+        Set Location to 9 28
+        Set peAnchors to anTopLeftRight
+        Set Label_Col_Offset to 0
+        Set Label_Justification_Mode to jMode_Right
+
+        //OnChange will be called on every changed character
+        //Procedure OnChange
+        //    String sValue
+        //
+        //    Get Value To sValue
+        //End_Procedure // OnChange
+
+    End_Object    // oSearchText
+
+    Object oFindButton is a Button
+        Set Label to "&Find"
+        Set Location to 9 158
+        Set peAnchors to anBottomRight
+        Set Default_State to TRUE
+
+
+        Procedure OnClick
+            integer eSearchOptions
+            boolean bMatchWholeWord bMatchCase bStartAtTop
+            string sSearchText
+            handle hoControl
+
+            get phoControl of oRichEditFind to hoControl
+
+            get Value of oSearchText to sSearchText
+            get Checked_State of oStartAtTop to bStartAtTop
+
+            get Checked_State of oMatchWholeWord to bMatchWholeWord
+            get Checked_State of oMatchCase to bMatchCase
+
+            if ((bMatchWholeWord = True) AND (bMatchCase = True)) ;
+                move (FR_WHOLEWORD + FR_MATCHCASE) to eSearchOptions
+            else if ((bMatchWholeWord = True) AND (bMatchCase = False)) ;
+                move FR_WHOLEWORD to eSearchOptions
+            else if ((bMatchWholeWord = False) AND (bMatchCase = True)) ;
+                move FR_MATCHCASE to eSearchOptions
+            else ;
+                move 0 to eSearchOptions
+
+            // start at top of control?
+            if (bStartAtTop = True) begin
+                send Beginning_of_Data of hoControl
+                // turn this off after first find
+                set Checked_State of oStartAtTop to False
+            end
+
+            Send DoSearch of hoControl sSearchText eSearchOptions
+        End_Procedure // OnClick
+
+    End_Object    // oFindButton
+
+    Object oMatchWholeWord is a CheckBox
+#IF LNG_DEFAULT=LNG_DANISH
+        Set Label to "Hele ord"
+#ELSE
+        Set Label to "Match Whole Word"
+#ENDIF
+        Set Size to 10 79
+        Set Location to 26 12
+
+        //Procedure OnChange
+        //    Boolean bChecked
+
+        //    Get Checked_State To bChecked
+        //End_Procedure // OnChange
+
+    End_Object    // oMatchWholeWord
+
+    Object oMatchCase is a CheckBox
+#IF LNG_DEFAULT=LNG_DANISH
+        Set Label to "Forskel pÜ store og smÜ bogstaver"
+#ELSE
+        Set Label to "Match Case"
+#ENDIF
+        Set Size to 10 130
+        Set Location to 40 12
+
+        //Procedure OnChange
+        //    Boolean bChecked
+
+        //    Get Checked_State To bChecked
+        //End_Procedure // OnChange
+
+    End_Object    // oMatchCase
+
+    Object oStartAtTop is a CheckBox
+#IF LNG_DEFAULT=LNG_DANISH
+        Set Label to "Start fra top"
+#ELSE
+        Set Label to "Start at Top of Control"
+#ENDIF
+        Set Size to 10 86
+        Set Location to 54 12
+
+        //Procedure OnChange
+        //    Boolean bChecked
+
+        //    Get Checked_State To bChecked
+        //End_Procedure // OnChange
+
+    End_Object    // oStartAtTop
+
+    Object oCancelButton is a Button
+#IF LNG_DEFAULT=LNG_DANISH
+        Set Label to "Luk"
+#ELSE
+        Set Label to "&Close"
+#ENDIF
+        Set Location to 47 158
+        Set peAnchors to anBottomRight
+
+        Procedure OnClick
+           Send Close_Panel
+        End_Procedure // OnClick
+
+    End_Object    // oCancelButton
+
+
+
+    // store handle of invoking object on startup
+    Procedure DoSearch handle hoControl
+        set phoControl to hoControl
+
+        send Popup_Modal
+    End_Procedure  // DoSearch
+
+
+End_Object    // oRichEditFind
+
+
+Object oRichEditFindReplace is a ModalPanel
+    on_key KCANCEL send close_panel
+
+    On_Key Key_Alt+Key_F send KeyAction of oFindButton
+    On_Key Key_Alt+Key_C send KeyAction of oCancelButton
+    On_Key Key_Alt+Key_R send KeyAction of oReplaceButton
+    On_Key Key_Alt+Key_A send KeyAction of oReplaceAllButton
+
+    // handle of invoking object (RichEdit control)
+    Property handle phoControl
+
+
+    Set Border_Style to Border_Thick
+#IF LNG_DEFAULT=LNG_DANISH
+    Set Label to "Sõg og erstat"
+#ELSE
+    Set Label to "Find & Replace"
+#ENDIF
+    Set Location to 6 4
+    Set Size to 110 232
+    Set piMaxSize to 110 1000
+    Set piMinSize to 110 232
+
+
+
+
+    Object oSearchText is a Form
+#IF LNG_DEFAULT=LNG_DANISH
+        Set Label to "Sõg:"
+#ELSE
+        Set Label to "What:"
+#ENDIF
+        Set Size to 13 110
+        Set Location to 9 53
+        Set peAnchors to anTopLeftRight
+        Set Label_Col_Offset to 0
+        Set Label_Justification_Mode to jMode_Right
+
+        //OnChange will be called on every changed character
+        //Procedure OnChange
+        //    String sValue
+        //
+        //    Get Value To sValue
+        //End_Procedure // OnChange
+
+    End_Object    // oSearchText
+
+    Object oReplaceText is a Form
+#IF LNG_DEFAULT=LNG_DANISH
+        Set Label to "Erstat med:"
+#ELSE
+        Set Label to "Replace with:"
+#ENDIF
+        Set Size to 13 99
+        Set Location to 25 53
+        Set peAnchors to anTopLeftRight
+        Set Label_Col_Offset to 0
+        Set Label_Justification_Mode to jMode_Right
+
+        //OnChange will be called on every changed character
+        //Procedure OnChange
+        //    String sValue
+        //
+        //    Get Value To sValue
+        //End_Procedure // OnChange
+
+    End_Object    // oReplaceText
+
+    Object oFindButton is a Button
+#IF LNG_DEFAULT=LNG_DANISH
+        Set Label to "&Find nëste"
+#ELSE
+        Set Label to "&Find Next"
+#ENDIF
+        Set Location to 7 170
+        Set peAnchors to anBottomRight
+        Set Default_State to TRUE
+
+
+        Procedure OnClick
+            integer eSearchOptions
+            boolean bMatchWholeWord bMatchCase bStartAtTop
+            string sSearchText
+            handle hoControl
+
+            get phoControl to hoControl
+
+            get Value of oSearchText to sSearchText
+            get Checked_State of oStartAtTop to bStartAtTop
+
+            get Checked_State of oMatchWholeWord to bMatchWholeWord
+            get Checked_State of oMatchCase to bMatchCase
+
+            if ((bMatchWholeWord = True) AND (bMatchCase = True)) ;
+                move (FR_WHOLEWORD + FR_MATCHCASE) to eSearchOptions
+            else if ((bMatchWholeWord = True) AND (bMatchCase = False)) ;
+                move FR_WHOLEWORD to eSearchOptions
+            else if ((bMatchWholeWord = False) AND (bMatchCase = True)) ;
+                move FR_MATCHCASE to eSearchOptions
+            else ;
+                move 0 to eSearchOptions
+
+            // start at top of control?
+            if (bStartAtTop = True) begin
+                send Beginning_of_Data of hoControl
+                // turn this off after first find
+                set Checked_State of oStartAtTop to False
+            end
+
+            Send DoSearch of hoControl sSearchText eSearchOptions
+        End_Procedure // OnClick
+
+    End_Object    // oFindButton
+
+    Object oReplaceButton is a Button
+#IF LNG_DEFAULT=LNG_DANISH
+        Set Label to "Erstat"
+#ELSE
+        Set Label to "&Replace"
+#ENDIF
+        Set Location to 27 170
+        Set peAnchors to anBottomRight
+
+
+        Procedure OnClick
+            string sSearchText sReplaceText
+            handle hoControl
+
+            get phoControl to hoControl
+
+            // if no text is currently selected in invoking control,
+            // act like search and simply find the search text
+            get Value of oSearchText to sSearchText
+            if (sSearchText = "") begin
+                // find next occurence of search text (via oFindButton)
+                send KeyAction of oFindButton
+            end
+
+            // if text is currently selected in invoking control,
+            // replace the text, then find the next occurence of the search text
+            else begin
+                get Value of oReplaceText to sReplaceText
+
+                Send DoReplace of hoControl sSearchText sReplaceText False
+
+                // find next occurence of search text (via oFindButton)
+                send KeyAction of oFindButton
+            end
+        End_Procedure // OnClick
+
+    End_Object    // oReplaceButton
+
+    Object oReplaceAllButton is a Button
+#IF LNG_DEFAULT=LNG_DANISH
+        Set Label to "Erstal &alle"
+#ELSE
+        Set Label to "Replace &All"
+#ENDIF
+        Set Location to 47 170
+        Set peAnchors to anBottomRight
+
+
+        Procedure OnClick
+            string sSearchText sReplaceText
+            handle hoControl
+
+            get phoControl to hoControl
+
+            get Value of oSearchText to sSearchText
+            get Value of oReplaceText to sReplaceText
+
+            Send DoReplace of hoControl sSearchText sReplaceText True
+        End_Procedure // OnClick
+
+    End_Object    // oReplaceAllButton
+
+    Object oMatchWholeWord is a CheckBox
+#IF LNG_DEFAULT=LNG_DANISH
+        Set Label to "Kun hele ord"
+#ELSE
+        Set Label to "Match Whole Word"
+#ENDIF
+        Set Size to 10 79
+        Set Location to 46 12
+
+        //Procedure OnChange
+        //    Boolean bChecked
+
+        //    Get Checked_State To bChecked
+        //End_Procedure // OnChange
+
+    End_Object    // oMatchWholeWord
+
+    Object oMatchCase is a CheckBox
+#IF LNG_DEFAULT=LNG_DANISH
+        Set Label to "Forskel pÜ smÜ og store bogstaver"
+#ELSE
+        Set Label to "Match Case"
+#ENDIF
+        Set Size to 10 130
+        Set Location to 60 12
+
+        //Procedure OnChange
+        //    Boolean bChecked
+
+        //    Get Checked_State To bChecked
+        //End_Procedure // OnChange
+
+    End_Object    // oMatchCase
+
+    Object oStartAtTop is a CheckBox
+#IF LNG_DEFAULT=LNG_DANISH
+        Set Label to "Start fra top"
+#ELSE
+        Set Label to "Start at Top of Control"
+#ENDIF
+        Set Size to 10 86
+        Set Location to 74 12
+
+        //Procedure OnChange
+        //    Boolean bChecked
+
+        //    Get Checked_State To bChecked
+        //End_Procedure // OnChange
+
+    End_Object    // oStartAtTop
+
+    Object oCancelButton is a Button
+#IF LNG_DEFAULT=LNG_DANISH
+        Set Label to "Luk"
+#ELSE
+        Set Label to "&Close"
+#ENDIF
+        Set Location to 68 170
+        Set peAnchors to anBottomRight
+
+        Procedure OnClick
+           Send Close_Panel
+        End_Procedure // OnClick
+
+    End_Object    // oCancelButton
+
+
+
+    // store handle of invoking object on startup
+    Procedure DoReplace handle hoControl
+        set phoControl to hoControl
+
+        send Popup_Modal
+    End_Procedure  // DoReplace
+
+End_Object    // oRichEditFindReplace
+
+
+
+
+
+Object oRTFOpenDialog1 is a OpenDialog
+#IF LNG_DEFAULT=LNG_DANISH
+    Set Dialog_Caption to "Select a file"
+    Set Filter_String to "RTF Documents (*.rtf)|*.rtf|All Files (*.*)|*.*"
+#ELSE
+    Set Dialog_Caption to "Vëlg en fil"
+    Set Filter_String to "RTF dokumenter (*.rtf)|*.rtf|Alle filer (*.*)|*.*"
+#ENDIF
+
+
+End_Object    // oOpenDialog1
+
+Object oRTFSaveAsDialog1 is a SaveAsDialog
+    Set FileMustExist_State to FALSE
+#IF LNG_DEFAULT=LNG_DANISH
+    Set Filter_String to "RTF dokumenter (*.rtf)|*.rtf"
+#ELSE
+    Set Filter_String to "RTF Documents (*.rtf)|*.rtf"
+#ENDIF
+
+
+End_Object    // oRTFSaveAsDialog1
+
+
+// dropdown menu for Numbering options
+
+class RTF_NumberingMenu is a DFBaseEditPullDown
+  procedure construct_object // RTF_NumberingMenu
+    forward send construct_object
+    send delete_data
+  end_procedure
+
+    // drop down menu methods for oNumbering
+    Procedure OnNumbersNone
+        handle hoFocus
+        get Focus of Desktop to hoFocus
+        Send DoNumbering of hoFocus buNone
+    End_Procedure
+
+    Procedure OnNumbersArabicNumbers
+        handle hoFocus
+        get Focus of Desktop to hoFocus
+        Send DoNumbering of hoFocus buArabicNumbers
+    End_Procedure
+
+    Procedure OnNumbersLowerLetters
+        handle hoFocus
+        get Focus of Desktop to hoFocus
+        Send DoNumbering of hoFocus buLowerLetters
+    End_Procedure
+
+    Procedure OnNumbersUpperLetters
+        handle hoFocus
+        get Focus of Desktop to hoFocus
+        Send DoNumbering of hoFocus buUpperLetters
+    End_Procedure
+
+    Procedure OnNumbersLowerRomans
+        handle hoFocus
+        get Focus of Desktop to hoFocus
+        Send DoNumbering of hoFocus buLowerRomans
+    End_Procedure
+
+    Procedure OnNumbersUpperRomans
+        handle hoFocus
+        get Focus of Desktop to hoFocus
+        Send DoNumbering of hoFocus buUpperRomans
+    End_Procedure
+
+
+    Procedure DoPopup
+        // Problem: need to display the menu underneath the button
+        Integer iVoid iLeft iTop iBottom iButtonCount lhToolBar
+
+        String sRect
+        Pointer lpsRect
+
+        move (parent(parent(self))) to lhToolBar
+
+        ZeroType tRect To sRect
+        GetAddress of sRect To lpsRect
+
+        // iButtonCount needs to contain the number (0-based) of the button under which this menu should appear,
+        // which should be the same as the piImage used, if the imagelist is set up in button order
+        get piImage of (oNumbering(lhToolBar)) to iButtonCount
+        // adjust iButtonCount by the number of spacer buttons before this button (one in this case)
+        increment iButtonCount
+
+        Send Windows_Message of lhToolBar TB_GETITEMRECT iButtonCount lpsRect // get bounding rectangle of the button
+
+        GetBuff from sRect at tRect.Bottom To iBottom
+        Put iBottom To sRect at tRect.Top
+
+        Move (ClientToScreen(window_handle(lhToolBar), lpsRect)) To iVoid // convert Client to Screen coordinates
+
+        GetBuff from sRect at tRect.left To iLeft
+        GetBuff from sRect at tRect.top To iTop
+
+        Set GuiLocation To iTop iLeft
+        Send Popup
+    End_Procedure  // DoPopup
+    procedure end_construct_object
+      forward send end_construct_object
+    // drop down menu items for oNumbering
+#IF LNG_DEFAULT=LNG_DANISH
+    Send Add_Item msg_OnNumbersNone "Ingen"
+    Set Aux_Value 0 To self
+    Send Add_Item msg_OnNumbersArabicNumbers "Arabiske tal"
+    Set Aux_Value 1 To self
+    Send Add_Item msg_OnNumbersLowerLetters "SmÜ bogstaver"
+    Set Aux_Value 2 To self
+    Send Add_Item msg_OnNumbersUpperLetters "Store bogstaver"
+    Set Aux_Value 3 To self
+    Send Add_Item msg_OnNumbersLowerRomans "Romertal (smÜ bogst)"
+    Set Aux_Value 4 To self
+    Send Add_Item msg_OnNumbersUpperRomans "Romertal (store bogst)"
+    Set Aux_Value 5 To self
+#ELSE
+    Send Add_Item msg_OnNumbersNone "None"
+    Set Aux_Value 0 To self
+    Send Add_Item msg_OnNumbersArabicNumbers "Arabic Numbers"
+    Set Aux_Value 1 To self
+    Send Add_Item msg_OnNumbersLowerLetters "Lowercase Letters"
+    Set Aux_Value 2 To self
+    Send Add_Item msg_OnNumbersUpperLetters "Uppercase Letters"
+    Set Aux_Value 3 To self
+    Send Add_Item msg_OnNumbersLowerRomans "Lowercase Roman Numerals"
+    Set Aux_Value 4 To self
+    Send Add_Item msg_OnNumbersUpperRomans "Uppercase Roman Numerals"
+    Set Aux_Value 5 To self
+#ENDIF
+  end_procedure
+end_class // RTF_NumberingMenu
+
+
+
+class cRTF_ToolbarButton is a cToolbarButton
+  procedure construct_object // cRTF_ToolbarButton
+    forward send construct_object
+    property integer phMsg 0
+    property integer phDropDownPopup 0
+    Object oNumberingMenu is a RTF_NumberingMenu
+    End_Object   // oNumberingMenu
+  end_procedure
+  Procedure OnClick
+    integer lhMsg lhObj
+    get phMsg to lhMsg
+    delegate get phRichEdit to lhObj
+    if lhMsg send lhMsg of lhObj
+  End_Procedure
+  Procedure OnDropDown
+    // the drop-down arrow has been clicked
+    integer lhObj
+    get phDropDownPopup to lhObj
+    if lhObj Send DoPopup of lhObj
+  End_Procedure
+end_class // cRTF_ToolbarButton
+
+class cRTF_ImageList is a cImageList
+  Procedure OnCreate
+      Integer iVoid
+      Get AddTransparentImage "New16.bmp"         clFuchsia To iVoid // 0
+      Get AddTransparentImage "Open16.bmp"        clFuchsia To iVoid // 1
+      Get AddTransparentImage "Save16.bmp"        clFuchsia To iVoid // 2
+      Get AddTransparentImage "Bold16.bmp"        clFuchsia To iVoid // 3
+      Get AddTransparentImage "Italics16.bmp"     clFuchsia To iVoid // 4
+      Get AddTransparentImage "Underline16.bmp"   clFuchsia To iVoid // 5
+      Get AddTransparentImage "AlignLeft16.bmp"   clFuchsia To iVoid // 6
+      Get AddTransparentImage "AlignCenter16.bmp" clFuchsia To iVoid // 7
+      Get AddTransparentImage "AlignRight16.bmp"  clFuchsia To iVoid // 8
+      Get AddTransparentImage "Numbering16.bmp"   clFuchsia To iVoid // 9
+      Get AddTransparentImage "Bullets16.bmp"     clFuchsia To iVoid // 10
+      Get AddTransparentImage "Indent16.bmp"      clFuchsia To iVoid // 11
+      Get AddTransparentImage "Outdent16.bmp"     clFuchsia To iVoid // 12
+      Get AddTransparentImage "Cut16.bmp"         clFuchsia To iVoid // 13
+      Get AddTransparentImage "Copy16.bmp"        clFuchsia To iVoid // 14
+      Get AddTransparentImage "Paste16.bmp"       clFuchsia To iVoid // 15
+      Get AddTransparentImage "Undo16.bmp"        clFuchsia To iVoid // 16
+      Get AddTransparentImage "Redo16.bmp"        clFuchsia To iVoid // 17
+      Get AddTransparentImage "Prompt16.bmp"      clFuchsia To iVoid // 18
+      Get AddTransparentImage "FindReplace16.bmp" clFuchsia To iVoid // 19
+      Get AddTransparentImage "Font.bmp"          clFuchsia To iVoid // 20
+
+  End_Procedure
+end_class // cRTF_ImageList
+
+// toolbar to be placed inside component
+class cRTF_ToolBar is a cToolBar
+    // set this to False, since this toolbar will be Use'd inside a view
+    procedure construct_object // cRTF_ToolBar
+      forward send construct_object
+      set pbInMdiPanel to False
+      set peAlign to alNone // Then we can locate it manually
+      property integer phRichEdit
+
+      Object oImages is a cRTF_ImageList
+          Set piMaxImages To 20
+      End_Object
+
+      Set phoImageList To oImages
+
+      Object oNew is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Nyt tomt dokument (Ctrl+N)'
+          Set psStatusHelp To 'Opertter et nyt tomt dokument (fjerner nuvërende indhold)'
+#ELSE
+          Set psTooltip To 'New Blank Document (Ctrl+N)'
+          Set psStatusHelp To 'Creates a new blank document (clears control)'
+#ENDIF
+          Set piImage To 0
+          set phMsg to msg_DoNewDocument
+      End_Object
+
+      Object oOpen is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'èbn (Ctrl+O)'
+          Set psStatusHelp To 'èbner et dokument'
+#ELSE
+          Set psTooltip To 'Open (Ctrl+O)'
+          Set psStatusHelp To 'Opens a document'
+#ENDIF
+          Set piImage To 1
+          set phMsg to msg_DoOpenDocument
+      End_Object
+
+      Object oSave is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip to 'Gem (Ctrl+S)'
+          Set psStatusHelp to 'Gemmer det aktuelle dokument'
+#ELSE
+          Set psTooltip to 'Save (Ctrl+S)'
+          Set psStatusHelp to 'Saves current document'
+#ENDIF
+          Set piImage To 2
+          set phMsg to msg_DoSaveDocument
+      End_Object
+
+      Object oBold is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip to 'Fed skrift(Ctrl+B)'
+          Set psStatusHelp to 'Skifter den markerede tekst mellem fed og normel'
+#ELSE
+          Set psTooltip to 'Bold (Ctrl+B)'
+          Set psStatusHelp to 'Toggles selected text between bold and normal font'
+#ENDIF
+          Set piImage To 3
+          set phMsg to msg_ToggleBold
+      End_Object
+
+      Object oItalics is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Kursiv (Ctrl+I)'
+          Set psStatusHelp To 'Skifter den markerede tekst mellem kursiv og normel'
+#ELSE
+          Set psTooltip To 'Italics (Ctrl+I)'
+          Set psStatusHelp To 'Toggles selected text between italic and normal font'
+#ENDIF
+          Set piImage To 4
+          set phMsg to msg_ToggleItalics
+      End_Object
+
+      Object oUnderline is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Understregning (Ctrl+U)'
+          Set psStatusHelp To 'Skifter den markerede tekst mellem understreget og normel'
+#ELSE
+          Set psTooltip To 'Underline (Ctrl+U)'
+          Set psStatusHelp To 'Toggles selected text between underlined and normal font'
+#ENDIF
+          Set piImage To 5
+          set phMsg to msg_ToggleUnderline
+      End_Object
+
+      Object oSeparator is a cRTF_ToolbarButton
+          Set peStyle To bsSeparator
+      End_Object
+
+      Object oAlignLeft is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Juster til venstre'
+          Set psStatusHelp To 'Venstre-justerer den valgte tekst'
+#ELSE
+          Set psTooltip To 'Align Left'
+          Set psStatusHelp To 'Left-aligns selected text'
+#ENDIF
+          Set piImage To 6
+          set phMsg to msg_AlignLeft
+      End_Object
+
+      Object oAlignCenter is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Centrer'
+          Set psStatusHelp To 'Centrer den valgte tekst'
+#ELSE
+          Set psTooltip To 'Center'
+          Set psStatusHelp To 'Centers selected text'
+#ENDIF
+          Set piImage To 7
+          set phMsg to msg_AlignCenter
+      End_Object
+
+      Object oAlignRight is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Juster til hõjre'
+          Set psStatusHelp To 'Hõjre-justerer den valgte tekst'
+#ELSE
+          Set psTooltip To 'Align right'
+          Set psStatusHelp To 'Right-aligns selected text'
+#ENDIF
+          Set piImage To 8
+          set phMsg to msg_AlignRight
+      End_Object
+
+      Object oNumbering is a cRTF_ToolbarButton
+          Set peStyle To bsDropDown
+          Set pbAutoSize To True
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psLabel To 'Nummerering'
+          Set psTooltip To 'Nummerering'
+          Set psStatusHelp To 'Tilfõjer nummerering til den valgte tekst'
+#ELSE
+          Set psLabel To 'Numbering'
+          Set psTooltip To 'Numbering'
+          Set psStatusHelp To 'Applies numbering to selected text'
+#ENDIF
+          Set piImage To 9
+          set phMsg to msg_ToggleNumbering
+          set phDropDownPopup to (oNumberingMenu(self))
+      End_Object  // oViews
+
+      Object oBullets is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Bullets'
+          Set psStatusHelp To 'Applies bullets to selected text'
+#ELSE
+          Set psTooltip To 'Bullets'
+          Set psStatusHelp To 'Applies bullets to selected text'
+#ENDIF
+          Set piImage To 10
+          set phMsg to msg_ToggleBullets
+      End_Object
+
+      Object oOutdent is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Ryk ud'
+          Set psStatusHelp To 'Ophëver indrykning pÜ den valgte tekst'
+#ELSE
+          Set psTooltip To 'Decrease Indent'
+          Set psStatusHelp To 'Decreases indentation of selected text'
+#ENDIF
+          Set piImage To 11
+          set phMsg to msg_DoOutdent
+      End_Object
+
+      Object oIndent is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Ryk ind'
+          Set psStatusHelp To 'Indrykker den valgte tekst'
+#ELSE
+          Set psTooltip To 'Increase Indent'
+          Set psStatusHelp To 'Increases indentation of selected text'
+#ENDIF
+          Set piImage To 12
+          set phMsg to msg_DoIndent
+      End_Object
+
+      Object oSeparator2 is a cRTF_ToolbarButton
+          Set peStyle To bsSeparator
+      End_Object
+
+      Object oCut is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Klip (Ctrl+X)'
+          Set psStatusHelp To 'Klipper den valgte tekst til udklipsholderen (Ctrl+X)'
+#ELSE
+          Set psTooltip To 'Cut (Ctrl+X)'
+          Set psStatusHelp To 'Cuts the selection and puts it on the Clipboard (Ctrl+X)'
+#ENDIF
+          Set piImage To 13
+          set phMsg to msg_cut
+      End_Object
+
+      Object oCopy is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Kopier (Ctrl+C)'
+          Set psStatusHelp To 'Kopierer den valgte tekst til udklipsholderen (Ctrl+C)'
+#ELSE
+          Set psTooltip To 'Copy (Ctrl+C)'
+          Set psStatusHelp To 'Copies the selection and puts it on the Clipboard (Ctrl+C)'
+#ENDIF
+          Set piImage To 14
+          set phMsg to msg_copy
+      End_Object
+
+      Object oPaste is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Sët ind (Ctrl+V)'
+          Set psStatusHelp To 'Indsëtter indholdet af udklipsholderen (Ctrl+V)'
+#ELSE
+          Set psTooltip To 'Paste (Ctrl+V)'
+          Set psStatusHelp To 'Inserts Clipboard contents (Ctrl+V)'
+#ENDIF
+          Set piImage To 15
+          set phMsg to msg_paste
+      End_Object
+
+      Object oUndo is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Fortryd (Ctrl+Z)'
+          Set psStatusHelp To 'Fortryder den sidste handling'
+#ELSE
+          Set psTooltip To 'Undo Typing (Ctrl+Z)'
+          Set psStatusHelp To 'Undoes typing operation(s)'
+#ENDIF
+          Set piImage To 16
+          set phMsg to msg_Undo
+      End_Object
+
+      Object oRedo is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Annuller fortryd (Ctrl+Y)'
+          Set psStatusHelp To 'Annullerer fortryd'
+#ELSE
+          Set psTooltip To 'Redo Typing (Ctrl+Y)'
+          Set psStatusHelp To 'Redoes typing operation(s)'
+#ENDIF
+          Set piImage To 17
+          set phMsg to msg_Redo
+      end_object
+
+      object oFind is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Find Tekst (Ctrl+F)'
+          Set psStatusHelp To 'Sõger tekst i dokumentet'
+#ELSE
+          Set psTooltip To 'Find Text (Ctrl+F)'
+          Set psStatusHelp To 'Find text in control'
+#ENDIF
+          Set piImage To 18
+          set phMsg to msg_DoFind
+      end_object
+
+      object oFindReplace is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Sõg && erstat (Ctrl+H)'
+          Set psStatusHelp To 'Erstatter en tekst i dokumentet'
+#ELSE
+          Set psTooltip To 'Find && Replace Text (Ctrl+H)'
+          Set psStatusHelp To 'Find and replace text in control'
+#ENDIF
+          Set piImage To 19
+          set phMsg to msg_DoFindReplace
+      end_object
+
+      Object oOutdent is a cRTF_ToolbarButton
+#IF LNG_DEFAULT=LNG_DANISH
+          Set psTooltip To 'Font og fontstõrrelse'
+          Set psStatusHelp To 'Sëtter font og fontstõrrelse pÜ den valgte tekst'
+#ELSE
+          Set psTooltip To 'Font and font size'
+          Set psStatusHelp To 'Set font and font size for selected text'
+#ENDIF
+          Set piImage To 20
+          set phMsg to msg_DoFont
+      End_Object
+
+    end_procedure
+
+End_class // cRTF_ToolBar
+
+        class cRTF_FloatMenu is a FloatingPopupMenu
+          procedure construct_object // cRTF_FloatMenu
+            forward send construct_object
+#IF LNG_DEFAULT=LNG_DANISH
+            Send Add_Item msg_Undo "&Fortryd"
+            Send Add_Item msg_Redo "&Annuller fortryd"
+            Send Add_Item msg_None "" // create a spacer
+            Send Add_Item msg_Cut "Klip"
+            Send Add_Item msg_Copy "Kopier"
+            Send Add_Item msg_Paste "&Indsët"
+            Send Add_Item msg_None "" // create a spacer
+            Send Add_Item msg_Select_All "Vëlg &alt"
+#ELSE
+            Send Add_Item msg_Undo "&Undo"
+            Send Add_Item msg_Redo "&Redo"
+            Send Add_Item msg_None "" // create a spacer
+            Send Add_Item msg_Cut "Cu&t"
+            Send Add_Item msg_Copy "&Copy"
+            Send Add_Item msg_Paste "&Paste"
+            Send Add_Item msg_None "" // create a spacer
+            Send Add_Item msg_Select_All "Select &All"
+#ENDIF
+          end_procedure
+
+          Procedure Popup
+              integer iFocus
+              boolean bCanUndo bCanRedo
+
+              Get Focus to iFocus // the object that called us
+
+              // shadow Undo item if no undo operations available
+              Get pbCanUndo of iFocus to bCanUndo
+              Set Shadow_State 0 to (not(bCanUndo))
+              // shadow Redo item if no redo operations available
+              Get pbCanRedo of iFocus to bCanRedo
+              Set Shadow_State 1 to (not(bCanRedo))
+
+              forward send Popup
+          End_Procedure  // Popup
+        end_class
+
+    #IFDEF GET_SHELLEXECUTE
+    #ELSE
+
+    // external function call used in Procedure DoStartDocument
+    External_Function ShellExecute "ShellExecuteA" shell32.dll ;
+        Handle hWnd ;
+        String lpOperation ;
+        String lpFile ;
+        String lpParameters ;
+        String lpDirectory ;
+        Dword iShowCmd Returns Handle
+    #ENDIF
+
+class cRTF_Mixin is a mixin
+  procedure define_rtf_mixin
+    // define additional shortcut keys for control
+    On_Key Key_Ctrl+Key_N send DoNewDocument
+    On_Key Key_Ctrl+Key_O send DoOpenDocument
+    On_Key Key_Ctrl+Key_S send DoSaveDocument
+    On_Key Key_Ctrl+Key_F send DoFind
+    On_Key Key_Ctrl+Key_H send DoFindReplace
+
+    object oRTF_FloatMenu is a cRTF_FloatMenu
+    end_object
+    set Floating_Menu_Object to oRTF_FloatMenu
+
+    // object id of toolbar "attached to"/"used by" control
+    Property Integer piToolbar 0 // (oRichEditToolBar(Self))
+    // tracks current document name
+    // if blank (""), no existing document has been opened or saved
+    Property String psCurrentDocument
+  end_procedure
+        procedure RemoveGarbage
+        Integer liStart liEnd
+          Get SelStart to liStart
+          Get SelEnd to liEnd
+          set value to (RTF_Clean(value(self)))
+          Send SetSel liStart liEnd
+        end_procedure
+        // initialize control when entering
+        // Entering is called each time the user navigates into the control.
+        // Since this view only contains one control, this will happen only once,
+        // when opening the view.
+        Procedure Entering
+            forward send Entering
+
+            // make sure undo buffer is clear when we initialize control
+            send ClearUndoBuffer
+
+            // disable undo & redo buttons
+            if (piToolbar(self)) begin
+              set pbEnabled of (oUndo(piToolbar(Self))) to False
+              set pbEnabled of (oRedo(piToolbar(Self))) to False
+            end
+        End_Procedure  // Entering
+
+
+        // left aligns selected paragraph(s)
+        // called from toolbar
+        Procedure AlignLeft
+            set peAlignment to alLeft
+        End_Procedure  // AlignLeft
+
+        // centers selected paragraph(s)
+        // called from toolbar
+        Procedure AlignCenter
+            set peAlignment to alCenter
+        End_Procedure  // AlignCenter
+
+        // right aligns selected paragraph(s)
+        // called from toolbar
+        Procedure AlignRight
+            set peAlignment to alRight
+        End_Procedure  // AlignRight
+
+        // indents selected paragraph(s) by 0.5 inches
+        // called from toolbar
+        Procedure DoIndent
+            integer iTwipsPerInch iCurrentIndent
+
+            // number of twips per inch
+            move 1440 to iTwipsPerInch
+
+            // indent 0.5 inches from current indentation
+            get piFirstLineIndent to iCurrentIndent
+            set piFirstLineIndent to (iCurrentIndent + (iTwipsPerInch * 0.5))
+        End_Procedure  // DoIndent
+
+        // indents selected paragraph(s) by 0.5 inches
+        Procedure DoOffsetIndent
+            integer iTwipsPerInch iCurrentIndent
+
+            // number of twips per inch
+            move 1440 to iTwipsPerInch
+
+            // indent 0.5 inches from current indentation
+            get piFirstLineIndent to iCurrentIndent
+            set piFirstLineIndent to (iCurrentIndent + (iTwipsPerInch * 0.5))
+            // indent 2nd and subsequent lines 0.5 inches from 1st line
+            set piOffsetIndent to (iCurrentIndent - (iTwipsPerInch * 0.5))
+        End_Procedure  // DoOffsetIndent
+
+        // outdents selected paragraph(s) by 0.5 inches
+        // called from toolbar
+        Procedure DoOutdent
+            integer iTwipsPerInch iCurrentIndent
+
+            // number of twips per inch
+            move 1440 to iTwipsPerInch
+
+            // outdent 0.5 inches from current indentation
+            get piFirstLineIndent to iCurrentIndent
+            set piFirstLineIndent to (iCurrentIndent - (iTwipsPerInch * 0.5))
+        End_Procedure  // DoOutdent
+
+        // sets numbering style of selected paragraph(s) to passed in style
+        // called from toolbar
+        Procedure DoNumbering integer iStyle
+            set peBullets to iStyle
+        End_Procedure  // DoNumbering
+
+        // toggles numbering on or off for selected paragraph(s)
+        // called from toolbar
+        Procedure ToggleNumbering
+            integer iBullets
+
+            // default numbering style to "number followed by period"
+            set peBulletStyle to busPeriod
+
+            // default to 1 for numbering
+            set piBulletStart to 1
+
+            get peBullets to iBullets
+
+            // if we currently have nothing or bullets, set style to Arabic numbers
+            if ((iBullets = buNone) OR (iBullets = buBullets)) ;
+                set peBullets to buArabicNumbers
+
+            // otherwise, set style to nothing (no bullets or numbering)
+            else ;
+                set peBullets to buNone
+        End_Procedure  // ToggleNumbering
+
+        // toggles bullets on or off for selected paragraph(s)
+        // called from toolbar
+        Procedure ToggleBullets
+            integer iBullets
+
+            get peBullets to iBullets
+
+            // if style is currently not bullets, set it to bullets
+            if (iBullets <> buBullets) ;
+                set peBullets to buBullets
+
+            // otherwise, set style to nothing (no bullets or numbering)
+            else ;
+                set peBullets to buNone
+        End_Procedure  // ToggleBullets
+
+        // launches clicked link in default application as defined in Windows
+        Procedure OnLinkClicked integer iPositionStart integer iPositionEnd
+            handle hInstance hWnd
+            string sLinkText
+
+            get TextRange iPositionStart iPositionEnd to sLinkText
+
+            if (sLinkText <> "") begin
+                Get Window_Handle To hWnd
+                Move (ShellExecute (hWnd, "open", (Trim (sLinkText)), '', '', 1)) To hInstance
+                If (hInstance <= 32) Begin
+                    Send Stop_Box ;
+                        ("The attachment could not be opened.\nThe returned error is:" * String (hInstance)) "Open document/file failed"
+                End
+            end
+        End_Procedure  // OnLinkClicked
+
+        // open document
+        // called from toolbar
+        Procedure DoOpenDocument
+            Boolean bOk bOkToOpen
+            integer eResponse
+            string sFileName
+
+            move False to bOkToOpen
+
+            // there are changes
+            if (not(pbCanUndo(Self))) begin
+                move True to bOkToOpen
+            end
+            // if there are changes, ask user whether to abandon them or not
+            else begin
+#IF LNG_DEFAULT=LNG_DANISH
+                move (YesNo_Box("Teksten er ëndret. Fortryd rettelser og Übn et nyt dokument?", "Fortryd retteler?", MB_DEFBUTTON2)) to eResponse
+#ELSE
+                move (YesNo_Box("Changes Exist. Abandon changes and open new document?", "Abandon Changes?", MB_DEFBUTTON2)) to eResponse
+#ENDIF
+                if (eResponse = MBR_YES) begin
+                    move True to bOkToOpen
+                end
+                else begin
+                    move False to bOkToOpen
+                end
+            end
+
+            if (bOkToOpen = True) begin
+                Get Show_Dialog of  oRTFOpenDialog1 To bOk
+                if (bOk = True) begin
+                    get File_Name of oRTFOpenDialog1 to sFileName
+                    send Read sFileName
+
+                    // set psCurrentDocument to selected file name
+                    set psCurrentDocument to sFileName
+
+                    // clear undo buffer
+                    // we want undo buffer to only apply to the new document
+                    send ClearUndoBuffer
+                    send RemoveGarbage
+                end
+            end
+        End_Procedure  // DoOpenDocument
+
+        // save current document, or ask user to create new RTF document
+        // called from toolbar
+        Procedure DoSaveDocument
+            string sFileName
+            integer eResponse
+            Boolean bOk bOkToSave
+
+            move False to bOkToSave
+
+            // there are changes
+            if (pbCanUndo(Self) = True) begin
+                // if current document, just save it
+                if (psCurrentDocument(Self) <> "") begin
+                    move True to bOkToSave
+                end
+
+                // if no current document, pop up save dialog
+                else begin
+                    Get Show_Dialog of oRTFSaveAsDialog1 To bOk
+
+                    // if user saves file, set psCurrentDocument to new file name and save it
+                    if (bOk = True) begin
+                        get File_Name of oRTFSaveAsDialog1 to sFileName
+                        set psCurrentDocument to sFileName
+                        move True to bOkToSave
+                    end
+                    // user did not save new file
+                    else begin
+                        move False to bOkToSave
+                    end
+                end  // else
+            end  // if (pbCanUndo(Self) = True) begin
+
+            // perform operations required for save
+            if (bOkToSave = True) begin
+                if (psCurrentDocument(Self) <> "") begin
+                    // write the file out
+                    send Write (psCurrentDocument(Self))
+                end
+
+                // clear undo buffer on save
+                // we want undo buffer to only apply to the new document
+                send ClearUndoBuffer
+
+                // fire OnChange to update state of toolbar buttons
+                send OnChange
+            end
+        End_Procedure  // DoSaveDocument
+
+        // clear control (to the user, this looks like we're starting a new document)
+        // called from toolbar
+        Procedure DoNewDocument
+            Integer eResponse
+            Boolean bOkToClear
+
+            move False to bOkToClear
+
+            // there are changes
+            if (not(pbCanUndo(Self))) begin
+                move True to bOkToClear
+            end
+            // if there are changes, ask user whether to abandon them or not
+            else begin
+#IF LNG_DEFAULT=LNG_DANISH
+                move (YesNo_Box("Teksten er ëndret. Fortryd rettelser og Übn et nyt dokument?", "Fortryd retteler?", MB_DEFBUTTON2)) to eResponse
+#ELSE
+                move (YesNo_Box("Changes Exist. Abandon changes and open new document?", "Abandon Changes?", MB_DEFBUTTON2)) to eResponse
+#ENDIF
+                if (eResponse = MBR_YES) begin
+                    move True to bOkToClear
+                end
+                else begin
+                    move False to bOkToClear
+                end
+            end
+
+            if (bOkToClear = True) begin
+                // clear control
+                send Delete_Data
+
+                // set psCurrentDocument to new document (which is "" until it is saved)
+                set psCurrentDocument to ""
+
+                // clear undo buffer
+                // we want undo buffer to only apply to the new document
+                send ClearUndoBuffer
+
+                // fire OnChange to update state of toolbar buttons
+                send OnChange
+            end
+            send RemoveGarbage
+        End_Procedure  // DoNewDocument
+
+        // enable or disable undo and redo buttons on toolbar as user types
+        Procedure OnChange // Mixin
+          if (piToolbar(self)) begin
+            if (pbCanUndo(self)) set pbEnabled of (oUndo(piToolbar(self))) to TRUE
+                            else set pbEnabled of (oUndo(piToolbar(self))) to FALSE
+            if (pbCanRedo(self)) set pbEnabled of (oRedo(piToolbar(self))) to TRUE
+                            else set pbEnabled of (oRedo(piToolbar(self))) to FALSE
+          end
+        End_Procedure  // OnChange
+
+        // calls find dialog (RichEditFind.dg)
+        // called from shortcut key
+        Procedure DoFind
+            send DoSearch of oRichEditFind Self
+        End_Procedure  // DoFind
+
+        // gets called from find dialog (RichEditFind.dg)
+        // with user's parameters for the search
+        Procedure DoSearch string sSearchText integer eSearchOptions
+            integer iStart iSelEnd
+
+            get FindText sSearchText eSearchOptions to iStart
+            // was search successful?
+            if (iStart <> -1) begin
+                // get length of search text
+                move (length(sSearchText)+iStart) to iSelEnd
+                // select search text found
+                send SetSel iStart iSelEnd
+            end
+#IF LNG_DEFAULT=LNG_DANISH
+            else send Info_Box ("Tekster '" + sSearchText + "' ikke fundet") "Find tekst"
+#ELSE
+            else send Info_Box ("Text '" + sSearchText + "' not found") "Find Text"
+#ENDIF
+        End_Procedure // DoSearch
+
+        // calls find & replace dialog (RichEditFindReplace.dg)
+        // called from toolbar
+        Procedure DoFindReplace
+            send DoReplace of oRichEditFindReplace Self
+            send RemoveGarbage
+        End_Procedure  // DoFindReplace
+
+       //procedure DoFindReplace
+       //  forward send DoFindReplace
+       //end_procedure
+
+        // gets called from find & replace dialog (RichEditFindReplace.dg)
+        // with user's parameters for the search and replace
+        Procedure DoReplace string sSearchText string sReplaceText boolean bAll
+            integer iReplacementCount
+
+            // do not replace all
+            if (not(bAll)) begin
+                send ReplaceSel sReplaceText
+            end
+            // do replace all
+            else begin
+                get ReplaceAll sSearchText sReplaceText to iReplacementCount
+                // tell user how many replacements were made
+#IF LNG_DEFAULT=LNG_DANISH
+                send Info_Box (string(iReplacementCount) + " erstatninger foretaget") "Erstat alle"
+#ELSE
+                send Info_Box (string(iReplacementCount) + " replacements made") "Replace All"
+#ENDIF
+            end
+        end_procedure // DoReplace
+
+        procedure DoFont
+          integer lbSelected lhFontDlg
+          integer liFontSize liFontWeight liBold
+          string lsTypeFace
+          boolean lbItalics lbBold
+
+          //*** Create a font dialog object
+          object oFontDialog is a FontDialog
+            set Effects_State to FALSE
+            set TTOnly_State  to TRUE
+
+            //Seed the Dialog
+            get psTypeFace    to lsTypeFace
+            get piFontSize    to liFontSize
+            get piFontWeight  to liFontWeight
+            get pbItalics     to lbItalics
+            get pbBold        to lbBold
+
+            set FaceName      to lsTypeFace
+            set FontHeight    to (liFontSize/20)
+            if lbBold set FontWeight to 700
+            else      set FontWeight to 400
+            set FontItalic to lbItalics
+            move self To lhFontDlg
+          end_object // oFontDialog
+
+          //Let the user select a font, if one was selected,
+          //copy selection to the RichEdit
+          get FontDialog of lhFontDlg to lbSelected
+
+          if lbSelected begin
+            set psTypeFace      to (FaceName(lhFontDlg))
+            set piFontSize      to (abs(20*(FontHeight(lhFontDlg))))
+            set pbItalics       to (FontItalic(lhFontDlg))
+            move (FontWeight(lhFontDlg)) to liBold
+            if (liBold>=700) set pbBold to TRUE
+            else set pbBold to FALSE
+          end
+
+          //Destroy the font dialog object
+          send Destroy_object of lhFontDlg
+        end_procedure
+
+//       procedure DoNewDocument
+//       end_procedure
+//
+//       procedure DoSaveDocument
+//       end_procedure
+//
+//       procedure ToggleBold
+//       end_procedure
+//
+//       procedure ToggleItalics
+//       end_procedure
+//
+//       procedure ToggleUnderline
+//       end_procedure
+//
+//       procedure AlignLeft
+//       end_procedure
+//
+//       procedure AlignCenter
+//       end_procedure
+//
+//       procedure AlignRight
+//       end_procedure
+//
+//       procedure ToggleNumbering
+//       end_procedure
+//
+//       procedure ToggleBullets
+//       end_procedure
+//
+//       procedure DoOutdent
+//       end_procedure
+//
+//       procedure DoIndent
+//       end_procedure
+
+         procedure paste
+           forward send paste
+           send RemoveGarbage
+         end_procedure
+
+end_class // cRTF_Mixin
+
+class cRTF_dbRichEdit is a aps.dbRichEdit
+  procedure construct_object // cRTF_dbRichEdit
+    forward send construct_object
+    send define_rtf_mixin
+  end_procedure
+  import_class_protocol cRTF_Mixin
+end_class // cRTF_dbRichEdit
+
+class cRTF_RichEdit is a aps.RichEdit
+  procedure construct_object // cRTF_RichEdit
+    forward send construct_object
+    send define_rtf_mixin
+  end_procedure
+  import_class_protocol cRTF_Mixin
+end_class // cRTF_dbRichEdit

@@ -1,0 +1,133 @@
+// **********************************************************************
+// Use Wait.utl     // Something to put on screen while batching.
+//
+// By Sture Andersen & Jakob Kruse
+//
+// Create: Sat  10-05-1997 -
+// Update: Fri  03-04-1998 - Top-most-thing added by Jakob Kruse
+//         Wed  03-03-1999 - Procedure batch_on now initalizes all text areas
+//
+// ***********************************************************************
+
+//Use statpnl.pkg
+Use Strings.nui  // String manipulation for VDF
+//Use OldStatPnl.pkg // load the old status panel. Status_Panel is now this old object
+Use buttons.utl
+Use cProcessStatusPanel.pkg
+
+#IF LNG_DEFAULT=LNG_DUTCH
+ #REPLACE t.Wait.Question      "Vraag"
+ #REPLACE t.Wait.Cancel        "Operatie afbreken?"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SPANISH // 03/10/2002 25/01/2004 Pepe Guimar∆es Moose Software  pg@moose-software.com
+ #REPLACE t.Wait.Question      "Pregunta"
+ #REPLACE t.Wait.Cancel        "®Cancelar Operaci¢n?"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ENGLISH
+ #REPLACE t.Wait.Question      "Question"
+ #REPLACE t.Wait.Cancel        "Cancel operation?"
+#ENDIF
+#IF LNG_DEFAULT=LNG_DANISH
+ #REPLACE t.Wait.Question      "SpõrgsmÜl"
+ #REPLACE t.Wait.Cancel        "ùnsker du at afbryde?"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SWEDISH
+ #REPLACE t.Wait.Question      "Question"
+ #REPLACE t.Wait.Cancel        "Cancel operation?"
+#ENDIF
+#IF LNG_DEFAULT=LNG_NORWEGIAN   // 22.04.1999 torkild.resheim@emmaedb.no
+ #REPLACE t.Wait.Question      "SpõrsmÜl"
+ #REPLACE t.Wait.Cancel        "Avbryt jobben?"
+#ENDIF
+#IF LNG_DEFAULT=LNG_GERMAN
+ #REPLACE t.Wait.Question      "Frage"
+ #REPLACE t.Wait.Cancel        "Verarbeitung abbrechen?"
+#ENDIF
+#IF LNG_DEFAULT=LNG_PORTUGUESE
+ #REPLACE t.Wait.Question      "Confirme"
+ #REPLACE t.Wait.Cancel        "Cancelar operaá∆o?"
+#ENDIF
+#If LNG_DEFAULT=LNG_FRENCH // by Arnaud Mallick (Fr) (Arnaud.mallick@wanadoo.fr)
+ #Replace t.Wait.Question      "Question"
+ #Replace t.Wait.Cancel        "Annuler opÇration?"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ITALIAN // 16/10/2002 Paolo Zanni CO.AS.CO.
+ #REPLACE t.Wait.Question      "Conferma"
+ #REPLACE t.Wait.Cancel        "Annulla operazione?"
+#ENDIF
+
+class cBatchCompanion is a cProcessStatusPanel
+  Procedure Construct_Object
+    Forward Send Construct_Object
+    Set Button_Text of ghoStatusPanel to t.btn.cancel
+    Property String pCancelQuestionCaption t.Wait.Question
+    Property String pCancelQuestion        t.Wait.Cancel
+  End_Procedure
+  Procedure batch_on String caption#
+    Set Caption_text of ghoStatusPanel to caption#
+    Set Title_Text   of ghoStatusPanel to ""
+    Set Message_Text of ghoStatusPanel to ""
+    Set Action_Text  of ghoStatusPanel to ""
+    Send Start_StatusPanel of ghoStatusPanel
+  End_Procedure
+  Procedure batch_off
+    Send Stop_StatusPanel of ghoStatusPanel
+  End_Procedure
+  Procedure batch_update String str#
+    Set Message_Text of ghoStatusPanel to str#
+  End_Procedure
+  Procedure batch_update2 String str#
+    Set Action_Text of ghoStatusPanel to str#
+  End_Procedure
+  Procedure batch_update3 String str#
+    Set title_text of ghoStatusPanel to str#
+  End_Procedure
+  Function batch_interrupt Returns Integer
+    Integer cancel#
+    Get Check_StatusPanel of ghoStatusPanel to cancel#
+    If cancel# Begin
+      Send stop_statuspanel of ghoStatusPanel
+      Move (yesno_box(pCancelQuestion(Self),pCancelQuestionCaption(Self),MB_DEFBUTTON2)) to cancel#
+      Move (cancel#=mbr_yes) to cancel#
+      If cancel# Function_Return 1
+      Send Start_StatusPanel of ghoStatusPanel
+    End
+  End_Function
+
+  Function Check_StatusPanel returns integer
+    integer iRval
+    get Check_StatusPanel of ghoStatusPanel to iRval
+    function_return iRval
+  End_Function
+
+  Procedure Start_StatusPanel
+      Send Start_StatusPanel of ghoStatusPanel
+  End_Procedure
+
+  Procedure Stop_StatusPanel
+      Send Stop_StatusPanel of ghoStatusPanel
+  End_Procedure
+
+  procedure set Caption_text string sValue
+    set Caption_text of ghoStatusPanel to sValue
+  End_Procedure
+  procedure set Title_Text string sValue
+    set Title_Text of ghoStatusPanel to sValue
+  End_Procedure
+  procedure set Message_Text string sValue
+    set Message_Text of ghoStatusPanel to sValue
+  End_Procedure
+  procedure set Action_Text string sValue
+    set Action_Text of ghoStatusPanel to sValue
+  End_Procedure
+End_Class // cBatchCompanion
+Procedure ScreenEndWait_On Integer min# Integer max#
+End_Procedure
+Procedure ScreenEndWait_Update Integer pos#
+end_procedure
+Procedure ScreenEndWait_SetText String str#
+end_procedure
+Procedure ScreenEndWait_SetText2 String str#
+End_Procedure
+Procedure ScreenEndWait_Off
+End_Procedure

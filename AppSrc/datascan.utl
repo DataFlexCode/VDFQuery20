@@ -1,0 +1,1192 @@
+// **********************************************************************
+// Use DataScan.utl // Data scan classes
+//
+// By Sture Andersen
+//
+// Create: Sun  28-12-1997 -
+// Update: Fri  02-04-1998 - Descending segments are not seeded anymore.
+//         Sat  20-06-1998 - cReport_info class moved to here from VDFQUERY.UTL.
+//         Sat  29-08-1998 - Breaking ability added to cReport_info class.
+//         Sat  13-02-1999 - cReportTotals class added
+//         Wed  27-04-1999 - Fixed jump out error on numeric segments
+//                         - Fix for descending segments
+//                         - Objects oJumpInValues and oJumpOutValues needs
+//                           recoding. Currently it is next to un-readable
+//         Mon  10-05-1999 - Fixes for VDF 6 (Vincent Oorsprong)
+//         Tue  31-07-2001 - Made good for file numbers up to 4095
+//         Wed  08-08-2001 - Fixed jump out error
+//         Wed  07-05-2003 - Fixed SC_COMP_CBETWEEN criteria
+//
+//
+//  "Or" criteria in conventional selection criteria
+//
+//
+//
+//
+// ***********************************************************************
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use DataView.utl // Classes for analyzing db structures
+//Use FdxField.nui // FDX Field things
+//Use FdxIndex.utl // Index analysing functions
+Use FieldInf.pkg // Global field info objects
+Use Strings.nui  // String manipulation for VDF
+Use Dates.nui    // Date manipulation for VDF and DF3.2
+Use QryExpr.utl  // Expression handling for queries
+
+#REPLACE DATASCAN$TEST        0
+
+#COMMAND DATASCAN$SHOWLN
+ #IF DATASCAN$TEST
+  showln !1 !2 !3 !4 !5 !6 !7 !8 !9
+ #ENDIF
+#ENDCOMMAND
+
+#REPLACE RS_NO_RELATE         0
+#REPLACE RS_GENERIC_RELATE    1
+#REPLACE RS_CUSTOM_RELATE     2
+
+#REPLACE SC_COMP_LT           1
+#REPLACE SC_COMP_LE           2
+#REPLACE SC_COMP_EQ           3
+#REPLACE SC_COMP_GE           4
+#REPLACE SC_COMP_GT           5
+#REPLACE SC_COMP_NE           6
+#REPLACE SC_COMP_BETWEEN      7
+#REPLACE SC_COMP_CBETWEEN     8
+#REPLACE SC_COMP_IN           9
+#REPLACE SC_COMP_CIN         10
+#REPLACE SC_COMP_CONTAINS    11
+#REPLACE SC_COMP_CCONTAINS   12
+#REPLACE SC_COMP_NOT_BLANK   13
+#REPLACE SC_COMP_BLANK       14
+#REPLACE SC_COMP_OR_LIST     15 // or-list
+
+#REPLACE SC_TYPE_FUNCTION     1
+#REPLACE SC_TYPE_BOOLEAN_EXPR 2
+#REPLACE SC_TYPE_ASCII        3
+#REPLACE SC_TYPE_DATE         4
+#REPLACE SC_TYPE_NUMERIC      5
+
+// Function iTranslate_DFTYPE translates from DF attributes to
+// selection criteria types.
+Function iTranslate_DFTYPE Integer iType Returns Integer
+  If (iType=DF_ASCII)   Function_Return SC_TYPE_ASCII
+  If (iType=DF_BCD)     Function_Return SC_TYPE_NUMERIC
+  If (iType=DF_DATE)    Function_Return SC_TYPE_DATE
+  If (iType=DF_OVERLAP) Function_Return SC_TYPE_ASCII
+  If (iType=DF_TEXT)    Function_Return SC_TYPE_ASCII
+  If (iType=DF_BINARY)  Function_Return SC_TYPE_ASCII
+End_Function
+
+// A cBasicDataScanner sets up the sceleton for more complex scanning
+// classes. It was not meant for instantiation. It allows for setting
+// up pMainFile, search order and custom sort order for outputting.
+Class cBasicDataScanner is a cArray
+  procedure construct_object
+    forward send construct_object
+    property integer pMainFile            0
+    property integer pOrdering            0
+    property integer phDataSetObject      0
+    property integer pRecordCount         0 // How many records have been selected?
+    property integer pScanCount           0 // How many records have been scanned?
+    property integer pInterrupted         0 // 1=user interrupt, 2=error interrupt
+    property integer pRelate_State_Select RS_GENERIC_RELATE // RS_NO_RELATE
+    property integer pRelate_State        RS_GENERIC_RELATE // RS_NO_RELATE
+    property integer pCustom_Sort_State   0
+    property integer pCustom_Sort_Object  0
+    property integer pFixedLengthRowID    8 // Enough to hold a record number
+    property integer pCustom_Sort_Dir     ASCENDING
+    object Custom_Sort_Array is a cArray
+    end_object
+  end_procedure
+
+  procedure initialize
+    set pRecordCount to 0
+    set pScanCount   to 0
+    set pInterrupted to 0
+    send delete_data to (Custom_Sort_Array(self))
+  end_procedure
+
+  procedure reset
+    send initialize
+  end_procedure
+
+  procedure jump_in
+    clear (pMainFile(self))
+  end_procedure
+
+  function iselect returns integer
+    function_return 1
+  end_function
+
+  function ijump_out returns integer
+  end_function
+
+  procedure scan_starts // Sent unconditionally at the beginning of a scan
+  end_procedure
+
+  procedure scan_ended // Sent unconditionally at the end of a scan
+  end_procedure
+
+  procedure scan_complete  // Sent at the end of a scan if scan was complete
+  end_procedure
+
+  procedure scan_pInterrupted  // Sent at the end of a scan if scan was
+  end_procedure                // pInterrupted
+
+  procedure record_selected // Sent when a record is selected
+  end_procedure
+
+  procedure record_not_selected // Sent if record_selected is not sent
+  end_procedure
+
+  procedure record_found // Sent for each record found. This message is sent before
+  end_procedure          // it is determined if the record is selected or not.
+
+  function Custom_Sort_Value returns string
+    // This function must return the value to be sorted by if property
+    // pCustom_Sort_State has been set to true
+   integer obj#
+   get pCustom_Sort_Object to obj#
+   send ReadValues to obj#
+   function_return (sIndexValue(obj#))
+  end_function
+
+  procedure Custom_Relate
+  end_procedure
+
+  function sRecordID returns integer
+    // This function should return a unik identification of the active record.
+    integer rec#
+    get_field_value (pMainFile(self)) 0 to rec#
+    function_return rec#
+  end_function
+
+  procedure run
+    integer file# ord# pScanCount# pRecordCount# fin# found#
+    integer Custom_Sort_State# Generic_Relate# Custom_Relate#
+    integer Custom_Sort_Array# FixedLengthRowID# itm# max#
+    integer Generic_Relate_Select# Custom_Relate_Select#
+    integer IsSystemFile# lhDDO
+
+    get pCustom_Sort_State to Custom_Sort_State#
+    get pFixedLengthRowID  to FixedLengthRowID#
+
+    move (Custom_Sort_Array(self)) to Custom_Sort_Array#
+
+    get pRelate_State to Generic_Relate#
+    move (Generic_Relate# iand RS_CUSTOM_RELATE) to Custom_Relate#
+    move (Generic_Relate# iand RS_GENERIC_RELATE) to Generic_Relate#
+
+    get pRelate_State_Select to Generic_Relate_Select#
+    move (Generic_Relate_Select# iand RS_CUSTOM_RELATE) to Custom_Relate_Select#
+    move (Generic_Relate_Select# iand RS_GENERIC_RELATE) to Generic_Relate_Select#
+
+    // If relates needs to be performed before the iSelect function we must
+    // prevent it from happening after as well:
+    ifnot Custom_Sort_State# begin
+      if Custom_Relate_Select# move 0 to Custom_Relate#
+      if Generic_Relate_Select# move 0 to Generic_Relate#
+    end
+
+    get phDataSetObject to lhDDO
+
+    if lhDDO begin
+      get main_file of lhDDO to file#
+      get ordering of lhDDO to ord#
+    end
+    else begin
+      get pMainFile to file#
+      get pOrdering to ord#
+    end
+
+    get_attribute DF_FILE_IS_SYSTEM_FILE of file# to IsSystemFile#
+
+    move 0 to pRecordCount#
+    move 0 to pScanCount#
+    move 0 to fin#
+    send initialize
+    send scan_starts
+    ifnot IsSystemFile# begin
+      send jump_in
+      if lhDDO send request_read to lhDDO FIRST_RECORD file# ord#
+      else vfind file# ord# ge // Find first
+    end
+    else indicate found TRUE
+    repeat
+      if (pInterrupted(self)) indicate found FALSE
+      move (found) to found#
+      if found# move (not(ijump_out(self))) to found#
+      ifnot found# move 1 to fin#
+      else begin
+        increment pScanCount#
+        set pScanCount to pScanCount#
+        send record_found
+
+        if Generic_Relate_Select# relate file#
+        if Custom_Relate_Select# send Custom_Relate
+
+        if (iSelect(self)) begin
+          if Custom_Sort_State# set value of Custom_Sort_Array# item (item_count(Custom_Sort_Array#)) to (Custom_Sort_Value(self)+pad(sRecordID(self),FixedLengthRowID#))
+          else begin
+            if Generic_Relate# relate file#
+            if Custom_Relate# send Custom_Relate
+            send record_selected
+          end
+          increment pRecordCount#
+          set pRecordCount to pRecordCount#
+        end
+        else send record_not_selected
+        if IsSystemFile# indicate found FALSE
+        else begin
+          if lhDDO send request_read to lhDDO GT file# ord#
+          else vfind file# ord# gt // Find next
+        end
+      end
+    until fin#
+    if Custom_Sort_State# begin
+      ifnot (pInterrupted(self)) begin
+        send sort_items to Custom_Sort_Array# (pCustom_Sort_Dir(self))
+        get item_count of Custom_Sort_Array# to max#
+        for itm# from 0 to (max#-1)
+          clear file#
+          set_field_value file# 0 to (right(value(Custom_Sort_Array#,itm#),FixedLengthRowID#))
+          vfind file# 0 eq
+          if Generic_Relate# relate file#
+          if Custom_Relate# send Custom_Relate
+          send record_selected
+        loop
+      end
+      send delete_data to Custom_Sort_Array# // Release memory
+    end
+    send scan_ended
+    if (pInterrupted(self)) send scan_pInterrupted
+    else send scan_complete
+    set phDataSetObject to 0
+  end_procedure
+
+  procedure run.ii integer file# integer idx#
+    set pMainFile to file#
+    set pOrdering to idx#
+    send run
+  end_procedure
+end_class // cBasicDataScanner
+
+// This class is capable of evaluating a series of conditions set up
+// to decide which records should go in a report or a batch. The
+// conditions are logically AND'ed.
+//
+// Format: 0. type  SIMPLE     FUNCTION     BOOLEAN
+//         1.       file       function ID  Boolean expression
+//         2.       field.     object       -
+//         3        type       -            -
+//         4.       comp       -            -
+//         5.       value 1    -            -
+//         6.       value 2    -            -
+//
+Class cSelectionCriteriaArray is a cArray
+  Procedure construct_object
+    Forward Send construct_object
+    Property Integer pMainFile 0
+    Property Integer pOrdering 0
+    Send define_db_structure_layer_mixin
+    Object oJumpInValues is a cArray
+    End_Object
+    Object oJumpOutValues is a cArray
+    End_Object
+    Object oMustBeDestroyed is a cArray // or-list
+    End_Object
+  End_Procedure
+  Import_Class_Protocol db_structure_layer_mixin
+  Procedure show_Criteria
+  End_Procedure
+  Procedure show_JumpInValues
+    Integer obj# itm# max# base# comp#
+    String val#
+    DATASCAN$SHOWLN ("Jump-in values: "+idx_field_names(oIndexAnalyzer#,pOrdering(self),1,0))
+    Move (oJumpInValues(Self)) to obj#
+    Move (item_count(obj#)/4-1) to max#
+    For itm# from 1 to max#
+      Move (itm#*4) to base#
+      Get value of obj# item (base#+1) to val#
+      Get value of obj# item (base#+2) to comp#
+      DATASCAN$SHOWLN ("  Segment "+string(itm#)+" ("+string(comp#)+"): "+val#)
+    Loop
+  End_Procedure
+  Procedure show_JumpOutValues
+    Integer obj# itm# max# base# comp#
+    String val#
+    DATASCAN$SHOWLN ("Jump-out values: "+idx_field_names(oIndexAnalyzer#,pOrdering(self),1,0))
+    Move (oJumpOutValues(Self)) to obj#
+    Move (item_count(obj#)/4-1) to max#
+    For itm# from 1 to max#
+      Move (itm#*4) to base#
+      Get value of obj# item (base#+1) to val#
+      Get value of obj# item (base#+2) to comp#
+      DATASCAN$SHOWLN ("  Segment "+string(itm#)+" ("+string(comp#)+"): "+val#)
+    Loop
+  End_Procedure
+  Procedure reset
+    Integer lhMustBeDestroyed liMax liItm lhObj
+    Send Delete_Data
+    Send Delete_Data to (oJumpInValues(Self))
+    Send Delete_Data to (oJumpOutValues(Self))
+    Move (oMustBeDestroyed(Self)) to lhMustBeDestroyed // or-list
+    Get Item_Count of lhMustBeDestroyed to liMax
+    Decrement liMax
+    For liItm from 0 to liMax
+      Get value of lhMustBeDestroyed item liItm to lhObj
+      Send request_destroy_object to lhObj
+    Loop
+    Send delete_data to lhMustBeDestroyed
+  End_Procedure
+  Procedure add_criteria_boolean_expr String str#
+    Set value item (item_count(Self)) to (SC_TYPE_BOOLEAN_EXPR*16384*16384)
+    Set value item (item_count(Self)) to str#
+  End_Procedure
+  // or-list
+            Function convert_orlist_to_array String lsValues Returns Integer
+              Integer liMax liItm lhArray lhMustBeDestroyed
+              String lsItem
+              Object oOrListArray is a cArray
+                Move Self to lhArray
+              end_object
+              Get HowManyWords lsValues "|" to liMax
+              For liItm from 1 to liMax
+                Get ExtractWord lsValues "|" liItm to lsItem
+                Set value of lhArray item (liItm-1) to lsItem
+              Loop
+              Move (oMustBeDestroyed(Self)) to lhMustBeDestroyed
+              Set value of lhMustBeDestroyed item (item_count(lhMustBeDestroyed)) to lhArray
+              Function_Return lhArray
+            End_Function
+  Procedure add_criteria_orlist Integer liFile Integer liField String lsValues // or-list
+    Integer type# composite# base# lhArray
+    Move (FieldInf_FieldType(liFile,liField)) to type#
+    Get iTranslate_DFTYPE type# to composite#
+    Move (composite#*64+SC_COMP_OR_LIST*4096+liFile*1024+liField) to composite#
+    Get item_count to base#
+    Set value item  base#    to composite#
+    Get convert_orlist_to_array lsValues to lhArray
+    Set value item (base#+1) to lhArray
+  End_Procedure
+  Procedure add_criteria_function Integer msg# Integer obj#
+    Set Value item (item_count(Self)) to (SC_TYPE_FUNCTION*16384+msg#*16384+obj#)
+  End_Procedure
+  Procedure add_criteria_simple Integer file# Integer fld# Integer comp# String val1# String val2#
+    Integer type# composite# base#
+    Move (FieldInf_FieldType(file#,fld#)) to type#
+    Get iTranslate_DFTYPE type# to composite#
+//  move (composite#*256+comp#*1024+file#*1024+fld#) to composite#
+    Move (composite#*64+comp#*4096+file#*1024+fld#) to composite#
+    Get item_count to base#
+    Set value item  base#    to composite#
+    Set value item (base#+1) to val1#
+    If (comp#=SC_COMP_BETWEEN or comp#=SC_COMP_CBETWEEN) Set value item (base#+2) to val2#
+  End_Procedure
+
+  // or-list
+       Function bEvalOrListString Integer liFile Integer liField Integer lhArray String lsValue Returns Integer
+         Integer liMax liItm
+         Get item_count of lhArray to liMax
+         Decrement liMax
+         For liItm from 0 to liMax
+           If (lsValue=value(lhArray,liItm)) Function_Return 1
+         Loop
+         Function_Return 0
+       End_Function
+
+       Function bEvalOrListDate Integer liFile Integer liField Integer lhArray Date ldValue Returns Integer
+         Integer liMax liItm
+         Get Item_Count of lhArray to liMax
+         Decrement liMax
+         For liItm from 0 to liMax
+           If (ldValue=value(lhArray,liItm)) Function_Return 1
+         Loop
+         Function_Return 0
+       End_Function
+
+       Function bEvalOrListNumber Integer liFile Integer liField Integer lhArray Number lnValue Returns Integer
+         Integer liMax liItm
+         Get Item_Count of lhArray to liMax
+         Decrement liMax
+         For liItm from 0 to liMax
+           If (lnValue=value(lhArray,liItm)) Function_Return 1
+         loop
+         Function_Return 0
+       End_Function
+  //*************************************************************************
+  //  1      1
+  //  2      2
+  //  3      4                 3          2          1
+  //  4      8               21098765 43210987 65432109 87654321
+  //  5     16               xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx
+  //  6     32
+  //  7     64    Type-------TTTT
+  //  8    128    Field------------------------------FF FFFFFFFF
+  //  9    256    File--------------------FFFF FFFFFF
+  // 10    512    Comperator-----CCCC CCCC
+  // 11   1024
+  // 12   2048
+  // 13   4096
+  // 14   8192
+  // 15  16384
+  // 16  32768
+  // 17  65536
+  function iEvaluate returns integer
+    integer itm# max# sc_type# file# fld# comp# ok# composite# lhOrList
+    date    dat1# dat2# dat_val#
+    number  num1# num2# num_val#
+    string  str1# str2# str_val#
+    get item_count to max#
+    move 0 to itm#
+    while itm# lt max#
+      get value item itm# to composite#
+      increment itm#
+      move (composite#/16384/16384) to sc_type#
+      if sc_type# eq SC_TYPE_BOOLEAN_EXPR begin
+        get value item itm# to ok# // Overload (expression id)
+        get sEvalExpression of (Query_ExprEvaluator(self)) ok# to ok#
+        ifnot ok# function_return 0
+        increment itm#
+      end
+      else begin
+        if sc_type# eq SC_TYPE_FUNCTION begin
+          // In this section variable file# and fld# are treated as obj# and msg#
+          move (composite# iand 16383) to file#
+          move (composite# iand (16383*16384)) to fld#
+          get fld# of file# to ok#
+          ifnot ok# function_return 0
+        end
+        else begin //
+          move (composite# iand 1023) to fld#
+          move ((composite# iand (4095*1024))/1024) to file#
+          move ((composite# iand (63*4096*1024))/4096/1024) to comp#
+
+          if comp# eq SC_COMP_OR_LIST get value item itm# to lhOrList // or-list
+
+          if sc_type# eq SC_TYPE_ASCII begin
+            get value item itm# to str1#
+            increment itm#
+            if (comp#=SC_COMP_BETWEEN or comp#=SC_COMP_CBETWEEN) begin
+              get value item itm# to str2#
+              increment itm#
+            end
+            //get_field_value file# fld# to str_val#
+            move (FieldInf_FieldValue(file#,fld#)) to str_val#
+            if comp# eq SC_COMP_LT        move (str_val#<str1#) to ok#
+            if comp# eq SC_COMP_LE        move (str_val#<=str1#) to ok#
+            if comp# eq SC_COMP_EQ        move (str_val#=str1#) to ok#
+            if comp# eq SC_COMP_GE        move (str_val#>=str1#) to ok#
+            if comp# eq SC_COMP_GT        move (str_val#>str1#) to ok#
+            if comp# eq SC_COMP_NE        move (str_val#<>str1#) to ok#
+            if comp# eq SC_COMP_BETWEEN   move (str_val#>=str1# and str_val#<=str2#) to ok#
+            if comp# eq SC_COMP_IN        begin
+              if str1# in str_val# move 1 to ok#
+              else move 0 to ok#
+            end
+            if comp# eq SC_COMP_CONTAINS  move (str_val# contains str1#) to ok#
+            if comp# eq SC_COMP_CBETWEEN  move (str_val#<str1# or str_val#>str2#) to ok#
+            if comp# eq SC_COMP_CIN       begin
+//            move (not(str1# contains str_val#)) to ok#
+              if str1# in str_val# move 0 to ok#
+              else move 1 to ok#
+            end
+            if comp# eq SC_COMP_CCONTAINS move (not(str_val# contains str1#)) to ok#
+            if comp# eq SC_COMP_NOT_BLANK move (trim(str_val#)<>"") to ok#
+            if comp# eq SC_COMP_BLANK     move (trim(str_val#)="") to ok#
+            if comp# eq SC_COMP_OR_LIST   get bEvalOrListString file# fld# lhOrList str_val# to ok# // or-list
+          end
+          If sc_type# eq SC_TYPE_DATE Begin
+            If (comp#<>SC_COMP_OR_LIST) Begin
+                Get value item itm# to dat1#
+            End
+            increment itm#
+            if (comp#=SC_COMP_BETWEEN or comp#=SC_COMP_CBETWEEN) begin
+              get value item itm# to dat2#
+              increment itm#
+            end
+            //get_field_value file# fld# to dat_val#
+            move (FieldInf_FieldValue(file#,fld#)) to dat_val#
+            if comp# eq SC_COMP_LT       move (dat_val#<dat1#) to ok#
+            if comp# eq SC_COMP_LE       move (dat_val#<=dat1#) to ok#
+            if comp# eq SC_COMP_EQ       move (dat_val#=dat1#) to ok#
+            if comp# eq SC_COMP_GE       move (dat_val#>=dat1#) to ok#
+            if comp# eq SC_COMP_GT       move (dat_val#>dat1#) to ok#
+            if comp# eq SC_COMP_NE       move (dat_val#<>dat1#) to ok#
+            if comp# eq SC_COMP_BETWEEN  move (dat_val#>=dat1# and dat_val#<=dat2#) to ok#
+            if comp# eq SC_COMP_CBETWEEN move (dat_val#<dat1# or dat_val#>dat2#) to ok#
+            if comp# eq SC_COMP_OR_LIST  get bEvalOrListDate file# fld# lhOrList dat_val# to ok# // or-list
+          end
+          if sc_type# eq SC_TYPE_NUMERIC begin
+            If (comp#<>SC_COMP_OR_LIST) Begin
+                Get value item itm# to num1#
+            End
+            increment itm#
+            if (comp#=SC_COMP_BETWEEN or comp#=SC_COMP_CBETWEEN) begin
+              get value item itm# to num2#
+              increment itm#
+            end
+            //get_field_value file# fld# to num_val#
+            move (FieldInf_FieldValue(file#,fld#)) to num_val#
+            if comp# eq SC_COMP_LT       move (num_val#<num1#) to ok#
+            if comp# eq SC_COMP_LE       move (num_val#<=num1#) to ok#
+            if comp# eq SC_COMP_EQ       move (num_val#=num1#) to ok#
+            if comp# eq SC_COMP_GE       move (num_val#>=num1#) to ok#
+            if comp# eq SC_COMP_GT       move (num_val#>num1#) to ok#
+            if comp# eq SC_COMP_NE       move (num_val#<>num1#) to ok#
+            if comp# eq SC_COMP_BETWEEN  move (num_val#>=num1# and num_val#<=num2#) to ok#
+            if comp# eq SC_COMP_CBETWEEN move (num_val#<num1# or num_val#>num2#) to ok#
+            if comp# eq SC_COMP_OR_LIST  get bEvalOrListNumber file# fld# lhOrList num_val# to ok# // or-list
+          end
+          ifnot ok# function_return 0
+        end
+      end
+    end
+    function_return 1
+  end_function
+  procedure AnalyzeJumpInOutValuesHelp integer testfile# integer testfld# ;
+                                       integer testsegm#
+    integer itm# max# sc_type# file# fld# comp# composite# current_segments#
+    integer oJumpInValues# oJumpOutValues# AnyJumpIn# AnyJumpOut# hit#
+    integer JumpInComp# JumpOutComp# TestType#
+    date    dat1# dat2# JumpInDat# JumpOutDat#
+    number  num1# num2# JumpInNum# JumpOutNum#
+    string  str1# str2# JumpInStr# JumpOutStr#
+    move 0 to AnyJumpIn#
+    move 0 to AnyJumpOut#
+    get item_count to max#
+    move 0 to itm#
+    while itm# lt (max#-1)
+      get value item itm# to composite#
+      increment itm#
+      move (composite#/16384/16384) to sc_type#
+      if sc_type# eq SC_TYPE_BOOLEAN_EXPR increment itm#
+      else begin
+        if sc_type# ne SC_TYPE_FUNCTION begin
+          move (composite# iand 1023) to fld#
+          move ((composite# iand (4095*1024))/1024) to file#
+          move ((composite# iand (63*4096*1024))/4096/1024) to comp#
+          move (file#=testfile# and fld#=testfld# and comp#<>SC_COMP_OR_LIST) to hit#
+          if hit# begin
+            move sc_type# to TestType#
+            if sc_type# eq SC_TYPE_ASCII begin
+              get value item itm# to str1#
+              increment itm#
+              if comp# eq SC_COMP_BETWEEN begin
+                get value item itm# to str2#
+                increment itm#
+              end
+              if comp# eq SC_COMP_LT begin
+                ifnot AnyJumpOut# move str1# to JumpOutStr#
+                else if str1# lt JumpOutStr# move str1# to JumpOutStr#
+                move 1 to AnyJumpOut#
+                move SC_COMP_LT to JumpOutComp#
+              end
+              if comp# eq SC_COMP_LE begin
+                ifnot AnyJumpOut# move str1# to JumpOutStr#
+                else if str1# lt JumpOutStr# move str1# to JumpOutStr#
+                move 1 to AnyJumpOut#
+                move SC_COMP_LE to JumpOutComp#
+              end
+              if comp# eq SC_COMP_EQ begin
+                ifnot AnyJumpOut# move str1# to JumpOutStr#
+                else if str1# lt JumpOutStr# move str1# to JumpOutStr#
+                ifnot AnyJumpIn# move str1# to JumpInStr#
+                else if str1# gt JumpInStr# move str1# to JumpInStr#
+                move 1 to AnyJumpOut#
+                move 1 to AnyJumpIn#
+                move SC_COMP_GE to JumpInComp#
+                move SC_COMP_LE to JumpOutComp#
+              end
+              if comp# eq SC_COMP_GE begin
+                ifnot AnyJumpIn# move str1# to JumpInStr#
+                else if str1# gt JumpInStr# move str1# to JumpInStr#
+                move 1 to AnyJumpIn#
+                move SC_COMP_GE to JumpInComp#
+              end
+              if comp# eq SC_COMP_GT begin
+                ifnot AnyJumpIn# move str1# to JumpInStr#
+                else if str1# gt JumpInStr# move str1# to JumpInStr#
+                move 1 to AnyJumpIn#
+                move SC_COMP_GT to JumpInComp#
+              end
+              if comp# eq SC_COMP_BETWEEN begin
+                ifnot AnyJumpIn# move str1# to JumpInStr#
+                else if str1# gt JumpInStr# move str1# to JumpInStr#
+                ifnot AnyJumpOut# move str2# to JumpOutStr#
+                else if str2# lt JumpOutStr# move str2# to JumpOutStr#
+                move 1 to AnyJumpOut#
+                move 1 to AnyJumpIn#
+                move SC_COMP_GE to JumpInComp#
+                move SC_COMP_LE to JumpOutComp#
+              end
+            end // SC_TYPE_ASCII
+            if sc_type# eq SC_TYPE_DATE begin
+              if (item_count(self)>itm#) get value item itm# to Dat1#
+              else move 06/05/1962 to Dat1# // Let's just assume that you haven't a single data item on my birth date.
+              increment itm#
+              if comp# eq SC_COMP_BETWEEN begin
+                get value item itm# to Dat2#
+                increment itm#
+              end
+              if comp# eq SC_COMP_LT begin
+                ifnot AnyJumpOut# move Dat1# to JumpOutDat#
+                else if Dat1# lt JumpOutDat# move Dat1# to JumpOutDat#
+                move 1 to AnyJumpOut#
+                move SC_COMP_LT to JumpOutComp#
+              end
+              if comp# eq SC_COMP_LE begin
+                ifnot AnyJumpOut# move Dat1# to JumpOutDat#
+                else if Dat1# lt JumpOutDat# move Dat1# to JumpOutDat#
+                move 1 to AnyJumpOut#
+                move SC_COMP_LE to JumpOutComp#
+              end
+              if comp# eq SC_COMP_EQ begin
+                ifnot AnyJumpOut# move Dat1# to JumpOutDat#
+                else if Dat1# lt JumpOutDat# move Dat1# to JumpOutDat#
+                ifnot AnyJumpIn# move Dat1# to JumpInDat#
+                else if Dat1# gt JumpInDat# move Dat1# to JumpInDat#
+                move 1 to AnyJumpOut#
+                move 1 to AnyJumpIn#
+                move SC_COMP_GE to JumpInComp#
+                move SC_COMP_LE to JumpOutComp#
+              end
+              if comp# eq SC_COMP_GE begin
+                ifnot AnyJumpIn# move Dat1# to JumpInDat#
+                else if Dat1# gt JumpInDat# move Dat1# to JumpInDat#
+                move 1 to AnyJumpIn#
+                move SC_COMP_GE to JumpInComp#
+              end
+              if comp# eq SC_COMP_GT begin
+                ifnot AnyJumpIn# move Dat1# to JumpInDat#
+                else if Dat1# gt JumpInDat# move Dat1# to JumpInDat#
+                move 1 to AnyJumpIn#
+                move SC_COMP_GT to JumpInComp#
+              end
+              if comp# eq SC_COMP_BETWEEN begin
+                ifnot AnyJumpIn# move Dat1# to JumpInDat#
+                else if Dat1# gt JumpInDat# move Dat1# to JumpInDat#
+                ifnot AnyJumpOut# move Dat2# to JumpOutDat#
+                else if Dat2# lt JumpOutDat# move Dat2# to JumpOutDat#
+                move 1 to AnyJumpOut#
+                move 1 to AnyJumpIn#
+                move SC_COMP_GE to JumpInComp#
+                move SC_COMP_LE to JumpOutComp#
+              end
+            end // SC_TYPE_DATE
+            if sc_type# eq SC_TYPE_NUMERIC begin
+              get value item itm# to Num1#
+              increment itm#
+              if comp# eq SC_COMP_BETWEEN begin
+                get value item itm# to Num2#
+                increment itm#
+              end
+              if comp# eq SC_COMP_LT begin
+                ifnot AnyJumpOut# move Num1# to JumpOutNum#
+                else if Num1# lt JumpOutNum# move Num1# to JumpOutNum#
+                move 1 to AnyJumpOut#
+                move SC_COMP_LT to JumpOutComp#
+              end
+              if comp# eq SC_COMP_LE begin
+                ifnot AnyJumpOut# move Num1# to JumpOutNum#
+                else if Num1# lt JumpOutNum# move Num1# to JumpOutNum#
+                move 1 to AnyJumpOut#
+                move SC_COMP_LE to JumpOutComp#
+              end
+              if comp# eq SC_COMP_EQ begin
+                ifnot AnyJumpOut# move Num1# to JumpOutNum#
+                else if Num1# lt JumpOutNum# move Num1# to JumpOutNum#
+                ifnot AnyJumpIn# move Num1# to JumpInNum#
+                else if Num1# gt JumpInNum# move Num1# to JumpInNum#
+                move 1 to AnyJumpOut#
+                move 1 to AnyJumpIn#
+                move SC_COMP_GE to JumpInComp#
+                move SC_COMP_LE to JumpOutComp#
+              end
+              if comp# eq SC_COMP_GE begin
+                ifnot AnyJumpIn# move Num1# to JumpInNum#
+                else if Num1# gt JumpInNum# move Num1# to JumpInNum#
+                move 1 to AnyJumpIn#
+                move SC_COMP_GE to JumpInComp#
+              end
+              if comp# eq SC_COMP_GT begin
+                ifnot AnyJumpIn# move Num1# to JumpInNum#
+                else if Num1# gt JumpInNum# move Num1# to JumpInNum#
+                move 1 to AnyJumpIn#
+                move SC_COMP_GT to JumpInComp#
+              end
+              if comp# eq SC_COMP_BETWEEN begin
+                ifnot AnyJumpIn# move Num1# to JumpInNum#
+                else if Num1# gt JumpInNum# move Num1# to JumpInNum#
+                ifnot AnyJumpOut# move Num2# to JumpOutNum#
+                else if Num2# lt JumpOutNum# move Num2# to JumpOutNum#
+                move 1 to AnyJumpOut#
+                move 1 to AnyJumpIn#
+                move SC_COMP_GE to JumpInComp#
+                move SC_COMP_LE to JumpOutComp#
+              end
+            end // SC_TYPE_NUMERIC
+          end
+          else begin
+            increment itm#
+            if comp# eq SC_COMP_BETWEEN increment itm#
+          end
+        end
+      end
+    end
+
+    if AnyJumpIn# begin
+      move (oJumpInValues(self)) to oJumpInValues#
+      get value of oJumpInValues# item 0 to current_segments#
+      if current_segments# eq (testsegm#-1) begin
+        set value of oJumpInValues# item 0 to testsegm#
+                                        set value of oJumpInValues# item (testsegm#*4+0) to TestType#
+        if TestType# eq SC_TYPE_ASCII   set value of oJumpInValues# item (testsegm#*4+1) to JumpInStr#
+        if TestType# eq SC_TYPE_DATE    set value of oJumpInValues# item (testsegm#*4+1) to JumpInDat#
+        if TestType# eq SC_TYPE_NUMERIC set value of oJumpInValues# item (testsegm#*4+1) to JumpInNum#
+                                        set value of oJumpInValues# item (testsegm#*4+2) to JumpInComp#
+                                        set value of oJumpInValues# item (testsegm#*4+3) to TestFld#
+      end
+    end
+    if AnyJumpOut# begin
+      move (oJumpOutValues(self)) to oJumpOutValues#
+      get value of oJumpOutValues# item 0 to current_segments#
+      if current_segments# eq (testsegm#-1) begin
+        set value of oJumpOutValues# item 0 to testsegm#
+                                        set value of oJumpOutValues# item (testsegm#*4+0) to TestType#
+        if TestType# eq SC_TYPE_ASCII   set value of oJumpOutValues# item (testsegm#*4+1) to JumpOutStr#
+        if TestType# eq SC_TYPE_DATE    set value of oJumpOutValues# item (testsegm#*4+1) to JumpOutDat#
+        if TestType# eq SC_TYPE_NUMERIC set value of oJumpOutValues# item (testsegm#*4+1) to JumpOutNum#
+                                        set value of oJumpOutValues# item (testsegm#*4+2) to JumpOutComp#
+                                        set value of oJumpOutValues# item (testsegm#*4+3) to TestFld#
+      end
+    end // While
+  end_procedure
+
+  procedure seed_lowest_possible integer file# integer fld# integer dir# integer seg#
+    integer len# type# dec# oJumpInValues#
+    date seeding_date#
+    number seeding_number#
+    string seeding_string#
+    get_attribute DF_FIELD_TYPE      of file# fld# to type#
+    if type# eq DF_BCD begin
+      get_attribute DF_FIELD_LENGTH    of file# fld# to len#
+      get_attribute DF_FIELD_PRECISION of file# fld# to dec#
+      move (len#-dec#) to len#
+      if dir# eq DF_DESCENDING begin // Highest possible
+        if dec# move (repeat("9",len#)+CurrentDecimalSeparator()+repeat("9",dec#)) to seeding_string#
+        else    move (repeat("9",len#)) to seeding_string#
+      end
+      else begin // Lowest possible
+        decrement len#
+        if dec# move ("-"+repeat("9",len#)+CurrentDecimalSeparator()+repeat("9",dec#)) to seeding_string#
+        else    move ("-"+repeat("9",len#)) to seeding_string#
+      end
+      move seeding_string# to seeding_number#
+    end
+    if type# eq DF_DATE if dir# eq DF_DESCENDING move LargestPossibleDate to seeding_date#
+
+    get iTranslate_DFTYPE type# to type#
+    move (oJumpInValues(self)) to oJumpInValues#
+                                set value of oJumpInValues# item (seg#*4+0) to Type#
+    if Type# eq SC_TYPE_ASCII   set value of oJumpInValues# item (seg#*4+1) to seeding_string#
+    if Type# eq SC_TYPE_DATE    set value of oJumpInValues# item (seg#*4+1) to seeding_date#
+    if Type# eq SC_TYPE_NUMERIC set value of oJumpInValues# item (seg#*4+1) to seeding_number#
+                                set value of oJumpInValues# item (seg#*4+2) to SC_COMP_GE
+                                set value of oJumpInValues# item (seg#*4+3) to Fld#
+    set value of oJumpInValues# item 0 to (value(oJumpInValues#,0)+1)
+  end_procedure
+
+  procedure AnalyzeJumpInOutValues integer file# integer idx#
+    integer segment# max# fld# dir# stop#
+    integer last_segment_seeded#
+    string lsFields
+    set pMainFile to file#
+    set pOrdering to idx#
+
+  //get FDX_IndexAsFields 0 file# idx# to lsFields
+  //get FDX_FieldsTranslateOverlaps 0 file# lsFields to lsFields
+  //if dir# eq DF_DESCENDING move ("-"+fname#) to fname#
+  //get FDX_AttrValue_IDXSEG oFDX# DF_INDEX_SEGMENT_DIRECTION file# index# segment# to dir#
+
+
+    send read_file_definition to oIndexAnalyzer# file#
+    send idx_translate_overlaps_all to oIndexAnalyzer#
+    get idx_max_segment of oIndexAnalyzer# idx# to max#
+    move 0 to stop#
+    move 0 to last_segment_seeded#
+
+    for segment# from 1 to max#
+      get idx_Segment_Direction of oIndexAnalyzer# idx# segment# to dir#
+      if dir# eq DF_DESCENDING move 1 to stop# // Stop seeding if descending segment.
+      ifnot stop# begin
+        get idx_segment of oIndexAnalyzer# idx# segment# to fld#
+        send AnalyzeJumpInOutValuesHelp file# fld# segment#
+        move segment# to last_segment_seeded#
+      end
+    loop
+
+    if last_segment_seeded# lt max# begin // If not all segments were seeded
+      // Get number of first field not seeded:
+      get idx_segment of oIndexAnalyzer# idx# (last_segment_seeded#+1) to fld#
+      // Get direction of first segment not seeded:
+      get idx_Segment_Direction of oIndexAnalyzer# idx# (last_segment_seeded#+1) to dir#
+      // Seed
+      send seed_lowest_possible file# fld# dir# (last_segment_seeded#+1)
+    end
+  end_procedure
+
+  procedure seed_buffer.i integer file#
+    integer Segment# max# oJumpInValues# type# Fld#
+    number JumpInNum#
+    date   JumpInDat#
+    string JumpInStr#
+    move (oJumpInValues(self)) to oJumpInValues#
+    get value of oJumpInValues# item 0 to max#
+    for Segment# from 1 to max#
+      get value of oJumpInValues# item (Segment#*4+0) to type#
+      if type# eq SC_TYPE_ASCII   get value of oJumpInValues# item (Segment#*4+1) to JumpInStr#
+      if type# eq SC_TYPE_DATE    get value of oJumpInValues# item (Segment#*4+1) to JumpInDat#
+      if type# eq SC_TYPE_NUMERIC get value of oJumpInValues# item (Segment#*4+1) to JumpInNum#
+      get value of oJumpInValues# item (Segment#*4+3) to Fld#
+      if type# eq SC_TYPE_ASCII   set_field_value file# fld# to JumpInStr#
+      if type# eq SC_TYPE_DATE    set_field_value file# fld# to JumpInDat#
+      if type# eq SC_TYPE_NUMERIC set_field_value file# fld# to JumpInNum#
+    loop
+  end_procedure
+
+  function iJumpOut.i integer file# returns integer
+    integer Segment# max# oJumpOutValues# Type# Fld# Comp# lbEnough
+    number JumpOutNum# nCurrentVal#
+    date   JumpOutDat# dCurrentVal#
+    string JumpOutStr# sCurrentVal#
+    move (oJumpOutValues(self)) to oJumpOutValues#
+    get value of oJumpOutValues# item 0 to max#
+    move DFFALSE to lbEnough
+    for Segment# from 1 to max#
+      ifnot lbEnough begin
+        get value of oJumpOutValues# item (Segment#*4+0) to Type#
+        get value of oJumpOutValues# item (Segment#*4+2) to Comp#
+        get value of oJumpOutValues# item (Segment#*4+3) to Fld#
+        if type# eq SC_TYPE_ASCII begin
+          get value of oJumpOutValues# item (Segment#*4+1) to JumpOutStr#
+          get_field_value file# fld# to sCurrentVal#
+          if comp# eq SC_COMP_LT if sCurrentVal# GE JumpOutStr# function_return 1
+          if comp# eq SC_COMP_LE if sCurrentVal# GT JumpOutStr# function_return 1
+          if sCurrentVal# NE JumpOutStr# move DFTRUE to lbEnough
+        end
+        else if type# eq SC_TYPE_DATE begin
+          get value of oJumpOutValues# item (Segment#*4+1) to JumpOutDat#
+          get_field_value file# fld# to dCurrentVal#
+          if comp# eq SC_COMP_LT if dCurrentVal# GE JumpOutDat# function_return 1
+          if comp# eq SC_COMP_LE if dCurrentVal# GT JumpOutDat# function_return 1
+          if dCurrentVal# NE JumpOutDat# move DFTRUE to lbEnough
+        end
+        else if type# eq SC_TYPE_NUMERIC begin
+          get value of oJumpOutValues# item (Segment#*4+1) to JumpOutNum#
+          get_field_value file# fld# to nCurrentVal#
+          if comp# eq SC_COMP_LT if nCurrentVal# GE JumpOutNum# function_return 1
+          if comp# eq SC_COMP_LE if nCurrentVal# GT JumpOutNum# function_return 1
+          if nCurrentVal# NE JumpOutNum# move DFTRUE to lbEnough
+        end
+      end
+    loop
+  end_function
+end_class // cSelectionCriteriaArray
+
+class cDataScanner is a cBasicDataScanner
+  procedure construct_object
+    forward send construct_object
+    object oSelectionCriteriaArray is a cSelectionCriteriaArray
+    end_object
+  end_procedure
+  procedure jump_in
+    integer file# idx#
+    get pMainFile to file#
+    get pOrdering to idx#
+    forward send jump_in // Clears the record buffer
+    send seed_buffer.i to (oSelectionCriteriaArray(self)) file#
+  end_procedure
+  function iSelect returns integer
+    function_return (iEvaluate(oSelectionCriteriaArray(self)))
+  end_function
+  function iJump_Out returns integer
+    function_return (iJumpOut.i(oSelectionCriteriaArray(self),pMainFile(self)))
+  end_function
+  procedure reset_crit
+    send reset to (oSelectionCriteriaArray(self))
+  end_procedure
+  procedure reset
+    forward send reset
+    send reset_crit
+  end_procedure
+  procedure add_criteria_boolean_expr string str#
+    send add_criteria_boolean_expr to (oSelectionCriteriaArray(self)) str#
+  end_procedure
+  procedure add_criteria_function integer msg# integer obj#
+    send add_criteria_function to (oSelectionCriteriaArray(self)) msg# obj#
+  end_procedure
+  procedure add_criteria_simple integer file# integer fld# integer comp# string val1# string val2#
+    send add_criteria_simple to (oSelectionCriteriaArray(self)) file# fld# comp# val1# val2#
+  end_procedure
+  // or-list
+  procedure add_criteria_orlist integer file# integer fld# string lsValues
+    send add_criteria_orlist to (oSelectionCriteriaArray(self)) file# fld# lsValues
+  end_procedure
+  procedure run
+    send AnalyzeJumpInOutValues to (oSelectionCriteriaArray(self)) (pMainFile(self)) (pOrdering(self))
+    send show_JumpInValues      to (oSelectionCriteriaArray(self))
+    send show_JumpOutValues     to (oSelectionCriteriaArray(self))
+    forward send run
+  end_procedure
+end_class // cDataScanner
+
+#REPLACE BRK_BEGIN -1
+#REPLACE BRK_END   -2
+class cBreakHandler is a cArray
+  procedure construct_object
+    forward send construct_object
+    property integer prv.piFirstRec DFTRUE
+  end_procedure
+  item_property_list
+    item_property integer piFile.i      // What file? (always main file)
+    item_property integer piField.i     // What field? (If file is 0 then Break field is a function ID)
+    item_property integer phExprArr.i
+    item_property integer piExprRow.i
+    item_property integer piLevel.i     // A change in value triggers a break in what level?
+    item_property string  psPreviousValue.i
+  end_item_property_list cBreakHandler
+  procedure add_break_field integer liFile integer liField integer liExprRow integer lhExprArr
+    integer liRow
+    get row_count to liRow
+    set piFile.i      liRow to liFile
+    set piField.i     liRow to liField
+    set phExprArr.i   liRow to lhExprArr
+    set piExprRow.i   liRow to liExprRow
+    set psPreviousValue.i item liRow to ""
+  end_procedure
+  function break_level returns integer
+    integer liMax liRow liLevel liFile lhExprArr liExprRow
+    string lsValue
+    move 0 to liLevel
+    get row_count to liMax
+    decrement liMax
+    if (prv.piFirstRec(self)) begin
+      set prv.piFirstRec to DFFALSE
+      if (Row_Count(self)) move BRK_BEGIN to liLevel
+      else move 0 to liLevel
+    end
+    else begin
+      for liRow from 0 to liMax
+        get piFile.i liRow to liFile
+        if liFile get FieldInf_FieldValue liFile (piField.i(self,liRow)) to lsValue
+        else begin
+          get phExprArr.i liRow to lhExprArr
+          get piExprRow.i liRow to liExprRow
+          get sEvalExpression of (Query_ExprEvaluator(self)) (piExprId.i(lhExprArr,liExprRow)) to lsValue
+        end
+        if lsValue ne (psPreviousValue.i(self,liRow)) begin
+          move (liRow+1) to liLevel
+          move liMax to liRow // Break the loop!
+        end
+      loop
+    end
+    if liLevel begin // If a break was detected we update our 'previous' values
+      for liRow from 0 to liMax
+        get piFile.i liRow to liFile
+        if liFile get FieldInf_FieldValue liFile (piField.i(self,liRow)) to lsValue
+        else begin
+          get phExprArr.i liRow to lhExprArr
+          get piExprRow.i liRow to liExprRow
+          get sEvalExpression of (Query_ExprEvaluator(self)) (piExprId.i(lhExprArr,liExprRow)) to lsValue
+        end
+        set psPreviousValue.i item liRow to lsValue
+      loop
+    end
+    function_return liLevel // 0=No break
+  end_function
+  procedure reset
+    send delete_data
+    set prv.piFirstRec to DFTRUE
+  end_procedure
+end_class // cBreakHandler
+
+class cReportTotals is a cArray
+  procedure construct_object
+    forward send construct_object
+    property integer piNumberOfColumns 0
+    property integer piCurrentLevel    0
+  end_procedure
+  procedure reset
+    send delete_data
+    set piCurrentLevel to 0
+  end_procedure
+  function nRcl_Data.i integer liColumn returns number
+    function_return (value(self,piNumberOfColumns(self)*piCurrentLevel(self)+liColumn))
+  end_function
+  procedure Sum_Data.in integer liColumn number lnValue
+    integer liItem lhSelf
+    move self to lhSelf
+    move (piNumberOfColumns(lhSelf)*piCurrentLevel(lhSelf)+liColumn) to liItem
+    //showln lnValue " " (number(value(lhSelf,liItem)))
+    set value item liItem to (lnValue+number(value(lhSelf,liItem)))
+  end_procedure
+  procedure Sto_Data.in integer liColumn number lnValue
+    set value item (piNumberOfColumns(self)*piCurrentLevel(self)+liColumn) to lnValue
+  end_procedure
+  procedure New_Level
+    integer liNumberOfColumns liCurrentLevel liBase liItem
+    get piNumberOfColumns to liNumberOfColumns
+    get piCurrentLevel to liCurrentLevel
+    increment liCurrentLevel
+    move (liCurrentLevel*liNumberOfColumns) to liBase
+    for liItem from liBase to (liBase+liNumberOfColumns-1)
+      set value item liItem to 0
+    loop
+    set piCurrentLevel to liCurrentLevel
+  end_procedure
+  procedure Drop_Level
+    integer liNumberOfColumns liCurrentLevel liBase liItem
+    get piNumberOfColumns to liNumberOfColumns
+    get piCurrentLevel to liCurrentLevel
+    decrement liCurrentLevel
+    move (liCurrentLevel*liNumberOfColumns) to liBase
+    for liItem from liBase to (liBase+liNumberOfColumns-1)
+      set value item liItem to (number(value(self,liItem))+number(value(self,liItem+liNumberOfColumns)))
+    loop
+    set piCurrentLevel to liCurrentLevel
+  end_procedure
+end_class // cReportTotals
+
+class cReport_Info is a cDataScanner
+  procedure construct_object
+    forward send construct_object
+    property string  pReportTitle "Un-titled"
+    property string  pBottomText  ""
+    property integer pOnlyMostSignificantBreakLevel false
+    object oBreaks is a cBreakHandler
+    end_object
+  end_procedure
+
+  item_property_list
+    item_property integer rpt_field_file
+    item_property integer rpt_field_field
+    item_property string  rpt_field_name
+    item_property integer rpt_field_cr
+    item_property number  rpt_field_start
+    item_property number  rpt_field_width
+    item_property string  rpt_field_font
+    item_property integer rpt_field_fontsize
+    item_property integer rpt_field_sum
+    item_property integer rpt_field_fontstyle
+    item_property integer rpt_field_type
+    item_property integer rpt_field_decpoints
+    item_property integer rpt_field_expr_array
+    item_property integer rpt_field_expr_row
+  end_item_property_list cReport_info
+
+  procedure check_break
+    integer brk#
+    get break_level of (oBreaks(self)) to brk#
+    if brk# send handle_break brk#
+  end_procedure
+
+  procedure subheader integer level#
+    DATASCAN$SHOWLN ("Subheader level: "+string(level#))
+  end_procedure
+
+  procedure subtotal integer level#
+    DATASCAN$SHOWLN ("SubTotal level: "+string(level#))
+  end_procedure
+
+  procedure handle_break integer brk#
+    integer oBreaks# levels# level#
+    move (oBreaks(self)) to oBreaks#
+    if brk# begin
+      if (pOnlyMostSignificantBreakLevel(self)) begin
+        if brk# eq BRK_BEGIN send subheader 1
+        if brk# eq BRK_END send subtotal 1
+        if brk# gt 0 begin
+          send subtotal brk#
+          send subheader brk#
+        end
+      end
+      else begin
+        get row_count of oBreaks# to levels#
+        if (brk#>0 or brk#=BRK_END) begin
+          for_ex level# from levels# down_to 1
+            send subtotal level#
+          loop
+        end
+        if (brk#>0 or brk#=BRK_BEGIN) begin
+          for level# from 1 to levels#
+            send subheader level#
+          loop
+        end
+      end
+    end
+  end_procedure
+
+  procedure add_break_field integer file# integer field# integer liExprRow integer lhExprArr
+    send add_break_field to (oBreaks(self)) file# field# liExprRow lhExprArr
+  end_procedure
+
+  procedure reset_breaks
+    send reset to (oBreaks(self))
+  end_procedure
+
+  procedure reset
+    forward send reset
+    send reset_crit
+    send reset_breaks
+  end_procedure
+
+  procedure DoReset
+    send reset
+    send delete_data
+  end_procedure
+
+  procedure add_field integer file# integer field# string name# integer cr# number start# number width# string font# integer fontsize# integer sum# integer fontstyle# integer lhExprArr integer liExprRow
+    integer row#
+    get row_count to row#
+    set rpt_field_file       row# to file#
+    set rpt_field_field      row# to field#
+    set rpt_field_name       row# to name#
+    set rpt_field_cr         row# to cr#
+    set rpt_field_start      row# to start#
+    set rpt_field_width      row# to width#
+    set rpt_field_font       row# to font#
+    set rpt_field_fontsize   row# to fontsize#
+    set rpt_field_sum        row# to sum#
+    set rpt_field_fontstyle  row# to fontstyle#
+    set rpt_field_expr_array row# to lhExprArr
+    set rpt_field_expr_row   row# to liExprRow
+    if file# begin
+      set rpt_field_type       row# to (FieldInf_FieldType(file#,field#))
+      set rpt_field_decpoints  row# to (FieldInf_DecPoints(file#,field#))
+    end
+    else begin
+      set rpt_field_type       row# to (piType.i(lhExprArr,liExprRow))
+      set rpt_field_decpoints  row# to (piDecimals.i(lhExprArr,liExprRow))
+    end
+  end_procedure
+
+  function rpt_field_count returns integer
+    function_return (row_count(self))
+  end_function
+  procedure record_not_selected
+//  showln ("NOT SELECT: "+idx_field_value(oIndexAnalyzer#,pOrdering(self),1,1))
+  end_procedure
+  procedure Record_Selected
+    send check_break
+//  showln (idx_field_value(oIndexAnalyzer#,pOrdering(self),1,1))
+  end_procedure
+  procedure scan_starts // Sent unconditionally at the beginning of a scan
+//    send handle_break BRK_BEGIN
+  end_procedure
+  procedure scan_ended // Sent unconditionally at the end of a scan
+    send handle_break BRK_END
+  end_procedure
+end_class // cReport_Info

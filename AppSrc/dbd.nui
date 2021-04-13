@@ -1,0 +1,652 @@
+// Use DBD.nui      // cDBD_System, cDBD_TableAccess and cDBD_Updater classes
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use DBMS.nui     // Basic DBMS functions (No User Interface)
+Use TblDynAc.nui // Table, dynamic access (cDynamicTableAccess class)
+Use FdxField.nui // FDX Field things
+Use OpenStat.nui // cTablesOpenStatus class (formely cFileAllFiles) (No User Interface)
+Use Batchdd.pkg  // DAW class
+
+enumeration_list
+  define DBDTABLE_SYSTEM
+  define DBDTABLE_TABLE
+  define DBDTABLE_FIELD
+  define DBDTABLE_INDEX
+end_enumeration_list
+
+class cDBD_System is a cArray
+  procedure construct_object integer liImg
+    forward send construct_object liImg
+    property integer phTableAccessObject    // Opens the tables
+    property integer phTableUpdater         // Takes care of updating according to table definitions
+  end_procedure
+end_class // cDBD_System
+
+class cDBD_TableAccess is a cDynamicTableAccess
+  procedure construct_object
+    forward send construct_object
+
+    set psRootNamePrefix to "db"
+
+    set TableBaseData DBDTABLE_SYSTEM to "system" "DBD - System" 0
+    set TableBaseData DBDTABLE_TABLE  to "table"  "DBD - Tables" 0
+    set TableBaseData DBDTABLE_FIELD  to "field"  "DBD - Fields" 0
+    set TableBaseData DBDTABLE_INDEX  to "index"  "DBD - Indices" 0
+  end_procedure
+
+  procedure OnAllTablesOpened // Do the relationships on the newly opened tables
+    integer liTableFile liFieldFile liIndexFile
+    get piFile.i DBDTABLE_TABLE to liTableFile
+    get piFile.i DBDTABLE_FIELD to liFieldFile
+    get piFile.i DBDTABLE_INDEX to liIndexFile
+    set_attribute DF_FIELD_RELATED_FILE  of liFieldFile 1 to liTableFile
+    set_attribute DF_FIELD_RELATED_FIELD of liFieldFile 1 to 1
+    set_attribute DF_FIELD_RELATED_FILE  of liIndexFile 1 to liTableFile
+    set_attribute DF_FIELD_RELATED_FIELD of liIndexFile 1 to 1
+  end_procedure
+
+  procedure Callback_One_Table integer liFile integer lhMsg integer lhObj
+    integer liTableFile
+    integer liId liNot_found
+    string  lsName lsLogic_name lsPhysic_name lsOpenas_path lsDescription
+    get piFile.i DBDTABLE_TABLE to liTableFile
+    clear liTableFile
+    set_field_value liTableFile 1 to liFile
+    vfind liTableFile 1 EQ
+    get_field_value liTableFile 1 to liId           // dbTable.TBL_ID
+    get_field_value liTableFile 2 to lsName         // dbTable.TBL_NAME
+    get_field_value liTableFile 3 to lsLogic_name   // dbTable.TBL_LOGIC_NAME
+    get_field_value liTableFile 4 to lsPhysic_name  // dbTable.TBL_PHYSIC_NAME
+    get_field_value liTableFile 5 to liNot_found    // dbTable.TBL_NOT_FOUND
+    get_field_value liTableFile 6 to lsOpenas_path  // dbTable.TBL_OPENAS_PATH
+    get_field_value liTableFile 7 to lsDescription  // dbTable.TBL_DESCRIPTION
+    send lhMsg to lhObj liId lsName lsLogic_name lsPhysic_name liNot_found lsOpenas_path lsDescription
+  end_procedure
+
+  procedure Callback_All_Tables integer lhMsg integer lhObj
+    integer liTableFile lbFound
+    integer liId liNot_found
+    string  lsName lsLogic_name lsPhysic_name lsOpenas_path lsDescription
+    get piFile.i DBDTABLE_TABLE to liTableFile
+    clear liTableFile
+    repeat
+      vfind liTableFile 1 GT
+      move (found) to lbFound
+      if lbFound begin
+        get_field_value liTableFile 1 to liId           // dbTable.TBL_ID
+        get_field_value liTableFile 2 to lsName         // dbTable.TBL_NAME
+        get_field_value liTableFile 3 to lsLogic_name   // dbTable.TBL_LOGIC_NAME
+        get_field_value liTableFile 4 to lsPhysic_name  // dbTable.TBL_PHYSIC_NAME
+        get_field_value liTableFile 5 to liNot_found    // dbTable.TBL_NOT_FOUND
+        get_field_value liTableFile 6 to lsOpenas_path  // dbTable.TBL_OPENAS_PATH
+        get_field_value liTableFile 7 to lsDescription  // dbTable.TBL_DESCRIPTION
+        send lhMsg to lhObj liId lsName lsLogic_name lsPhysic_name liNot_found lsOpenas_path lsDescription
+        // procedure PrintTable integer liId string lsName string lsLogic_name string lsPhysic_name integer liNot_found string lsOpenas_path string lsDescription
+      end
+    until (not(lbFound))
+  end_procedure
+
+  procedure Callback_TableFields integer liFile integer lhMsg integer lhObj integer liIndex
+    integer liFieldFile liTest lbFound
+    integer liTbl_Id liFld_Pos liFld_Not_Found
+    string  lsFld_Description lsSuggested_Label lsFld_Definition lsFld_Name
+    get piFile.i DBDTABLE_FIELD to liFieldFile
+    clear liFieldFile
+    set_field_value liFieldFile 1 to liFile
+    repeat
+      vfind liFieldFile liIndex GT // liIndex=1: Name  liIndex=2: Pos
+      move (found) to lbFound
+      if lbFound begin
+        get_field_value liFieldFile 1 to liTest
+        move (liTest=liFile) to lbFound
+      end
+      if lbFound begin
+        get_field_value liFieldFile 1 to liTbl_Id          // dbField.TBL_ID
+        get_field_value liFieldFile 2 to liFld_Pos         // dbField.FLD_POS
+        get_field_value liFieldFile 3 to lsFld_Name        // dbField.FLD_NAME
+        get_field_value liFieldFile 4 to liFld_Not_Found   // dbField.FLD_NOT_FOUND
+        get_field_value liFieldFile 5 to lsFld_Description // dbField.FLD_DESCRIPTION
+        get_field_value liFieldFile 6 to lsSuggested_Label // dbField.SUGGESTED_LABEL
+        get_field_value liFieldFile 7 to lsFld_Definition  // dbField.FLD_DEFINITION
+        send lhMsg to lhObj liTbl_Id liFld_Pos lsFld_Name liFld_Not_Found lsFld_Description lsSuggested_Label lsFld_Definition
+        // procedure PrintField integer liTbl_Id integer liFld_Pos string lsFld_Name integer liFld_Not_Found string lsFld_Description string lsSuggested_Label string lsFld_Definition
+      end
+    until (not(lbFound))
+  end_procedure
+
+  function DoZerofileAllTables returns integer // (Except the system table)
+    integer lbSuccess liFile
+    move DFFALSE to lbSuccess
+    if (pbAllTablesAreOpen(self)) begin
+      send DoCloseTables
+
+      if (DoOpenTablesExclusive(self)) begin
+        get piFile.i DBDTABLE_TABLE to liFile
+        zerofile liFile
+        get piFile.i DBDTABLE_FIELD to liFile
+        zerofile liFile
+        get piFile.i DBDTABLE_INDEX to liFile
+        zerofile liFile
+        move DFTRUE to lbSuccess
+      end
+      else send DeclareOpenError "Exclusive access could not be obtained (#)"
+      ifnot (DoOpenTables(self)) send DeclareOpenError "DBD tables could not be re-opened (#)"
+    end
+    function_return lbSuccess
+  end_function
+
+  function iNextAvailableFieldPosCurrentTable returns integer
+    integer liTableFile liFieldFile liTableId liFieldTableId  liPos lbFound
+    get piFile.i DBDTABLE_TABLE to liTableFile
+    get piFile.i DBDTABLE_FIELD to liFieldFile
+    get_field_value liTableFile 1 to liTableId // dbTable.TBL_ID
+    clear liFieldFile
+    set_field_value liFieldFile 1 to liTableId // dbField.TBL_ID
+    set_field_value liFieldFile 2 to 9999      // dbField.FLD_POS
+    vfind liFieldFile 2 LT
+    if (found) begin
+      get_field_value liFieldFile 1 to liFieldTableId // dbField.TBL_ID
+      indicate found as liFieldTableId eq liTableId
+    end
+    get_field_value liFieldFile 2 to liPos // dbField.FLD_POS
+    clear liFieldFile
+    move (found) to lbFound
+    ifnot lbFound function_return 1
+    function_return (liPos+1)
+  end_function
+
+  procedure end_construct_object
+    integer lhSelf
+    forward send end_construct_object
+    move self to lhSelf
+    set phTableAccessObject to lhSelf // This is resolved in the encapsulating cDBD_System object
+  end_procedure
+end_class // cDBD_TableAccess
+
+
+Use FdxGlObj.nui // Global FDX object (ghFDX)
+Use FdxField.nui // FDX Field things
+Use FdxIndex.nui // Index analysing functions
+
+object oDBD_PredefinedLibraries is a cArray
+  // This object is just used for defining ghost tables that just acts
+  // as place holders for libraries
+  item_property_list
+    item_property integer piTableNo.i
+    item_property string  psDisplayName.i
+    item_property string  psTableText.i
+    item_property string  psColumnHeader.i
+  end_item_property_list
+  procedure add_library integer liTable string lsName string lsText string lsColumnHeader
+    integer liRow
+    get row_count to liRow
+    set piTableNo.i      liRow to liTable
+    set psDisplayName.i  liRow to lsName
+    set psTableText.i    liRow to lsText
+    set psColumnHeader.i liRow to lsColumnHeader
+  end_procedure
+
+  define DBDLIB_DICTIONARY for 5001
+  define DBDLIB_CALENDAR   for 5002
+  define DBDLIB_ARTICLES   for 5003
+  send add_library DBDLIB_DICTIONARY "Dictionary" "Use to define terms that are used in describing this system." "Term"
+  send add_library DBDLIB_CALENDAR   "Calendar"   "Use this to enter time-line related things about the system"  "Date"
+  send add_library DBDLIB_ARTICLES   "Articles"   "Use this to enter general articles about the system"          "Name"
+  procedure CreatePredefinedLibraries integer liTableFile
+    integer liRow liMax liTable
+    string lsName lsText lsColumnHeader
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get piTableNo.i      liRow to liTable
+      get psDisplayName.i  liRow to lsName
+      get psTableText.i    liRow to lsText
+      get psColumnHeader.i liRow to lsColumnHeader
+      clear liTableFile
+      set_field_value liTableFile 1 to liTable // move liFile to dbTable.Tbl_Id
+      vfind liTableFile 1 EQ                   // find eq dbTable by index.1
+      set_field_value liTableFile 2 to lsName  // move lsUserName to dbTable.tbl_name
+      set_field_value liTableFile 3 to "N/A"   // move lsDFName   to dbTable.tbl_logic_name
+      set_field_value liTableFile 4 to "N/A"   // move lsRoot     to dbTable.tbl_physic_name
+      set_field_value liTableFile 5 to 0       // move 0          to dbTable.tbl_not_found
+      set_field_value liTableFile 6 to "N/A"   // dbTable.tbl_openas_path
+      set_field_value liTableFile 7 to lsText  // dbTable.tbl_description
+      saverecord liTableFile // dbTable
+    loop
+  end_procedure
+  function iFindPredefinedTableRow integer liTable returns integer
+    integer liRow liMax
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      if (piTableno.i(self,liRow)=liTable) function_return liRow
+    loop
+    function_return -1 // Not found
+  end_function
+end_object // oDBD_PredefinedLibraries
+
+class cDBD_Updater is a cArray
+  procedure construct_object
+    forward send construct_object
+    property integer phFDX ghFDX
+  end_procedure
+
+            procedure OnHandleTable string lsMsg
+            end_procedure
+            procedure OnHandleField string lsMsg
+            end_procedure
+            procedure OnHandleIndex string lsMsg
+            end_procedure
+            procedure OnUpdateBegin
+            end_procedure
+            procedure OnUpdateEnd
+            end_procedure
+
+            procedure HandleIndex integer liFile integer liIndex string lsIndexDef integer liIndexType
+              integer liIndexFile lhFDX
+              string lsValue
+              get phFDX to lhFDX
+              send OnHandleIndex ("Index: "+string(liIndex))
+              get piFile.i of (phTableAccessObject(self)) DBDTABLE_INDEX to liIndexFile
+
+              get FDX_FieldsTranslateOverlaps lhFdx liFile lsIndexDef to lsIndexDef
+              get FDX_FieldNames lhFdx liFile lsIndexDef to lsValue
+              lock
+                clear liIndexFile                         // clear dbIndex
+                set_field_value liIndexFile 1 to liFile   // move liFile to dbIndex.Tbl_Id
+                set_field_value liIndexFile 2 to liIndex  // move liIndex to dbIndex.Idx_Pos
+                vfind liIndexFile 1 EQ                    // find eq dbIndex by index.1
+                set_field_value liIndexFile 5 to 0        // move 0 to dbIndex.idx_not_found
+                set_field_value liIndexFile 3 to lsValue  // move lsValue to dbIndex.Idx_Name
+                saverecord liIndexFile                    // saverecord dbIndex
+              unlock
+            end_procedure
+
+            procedure HandleField integer liFile integer liField string lsName integer liType integer liLen integer liPrec integer liRelFile integer liRelField integer liIndex integer liOffSet
+              integer liFieldFile
+              send OnHandleField ("Field: "+string(liField)*lsName)
+              get piFile.i of (phTableAccessObject(self)) DBDTABLE_FIELD to liFieldFile
+              lock
+                clear liFieldFile // clear dbField
+                set_field_value liFieldFile 1 to liFile  // move liFile to dbField.Tbl_Id
+                set_field_value liFieldFile 3 to lsName  // move lsName to dbField.Fld_Name
+                vfind liFieldFile 1 EQ                   // find eq dbField by index.1
+                set_field_value liFieldFile 2 to liField // move liField to dbField.Fld_Pos
+                set_field_value liFieldFile 4 to 0       // move 0 to dbField.fld_not_found
+                set_field_value liFieldFile 7 to (FDX_FieldTypeAndLengthName2(phFdx(self),liFile,liField))
+                saverecord liFieldFile // saverecord dbField
+              unlock
+            end_procedure
+
+            procedure HandleTable integer liFile string lsRoot string lsDFName string lsUserName
+              integer liTableFile lhFDX
+              string lsPath
+              if (liFile<>49 and liFile<>50) begin
+                get phFDX to lhFDX
+                if (iCanOpen.i(lhFdx,liFile)) begin
+                  send OnHandleTable ("Table: "+string(liFile)*lsDFName)
+                  get piFile.i of (phTableAccessObject(self)) DBDTABLE_TABLE to liTableFile
+                  get sDatPath.i of lhFdx liFile to lsPath
+                  lock
+                    clear liTableFile // dbTable
+                    set_field_value liTableFile 1 to liFile     // move liFile to dbTable.Tbl_Id
+                    vfind liTableFile 1 EQ                      // find eq dbTable by index.1
+                    set_field_value liTableFile 2 to lsUserName // move lsUserName to dbTable.tbl_name
+                    set_field_value liTableFile 3 to lsDFName   // move lsDFName   to dbTable.tbl_logic_name
+                    set_field_value liTableFile 4 to lsRoot     // move lsRoot     to dbTable.tbl_physic_name
+                    set_field_value liTableFile 5 to 0          // move 0          to dbTable.tbl_not_found
+                    set_field_value liTableFile 6 to lsPath     // dbTable.tbl_openas_path
+                    saverecord liTableFile // dbTable
+                  unlock
+                  send FDX_FieldCallBack lhFdx liFile MSG_HandleField self // Protected against relating file not present
+                  send FDX_IndexCallBack lhFdx liFile DF_INDEX_TYPE_ONLINE MSG_HandleIndex self
+                  send FDX_IndexCallback lhFdx liFile DF_INDEX_TYPE_BATCH MSG_HandleIndex self
+                end
+              end
+            end_procedure
+
+  procedure DoUpdateDatabase
+    integer liTableFile liFieldFile lbFound lbSuccess
+
+    send OnUpdateBegin
+
+    // At this point we will flag all tables (except the DBD tables) read_only
+    // in order not to lock the DB for too long (happened when running this
+    // rutine in FastView towards a DF3.2 Linux system on a slow network)
+
+    send OpenStat_RegisterFiles
+    send OpenStat_CloseAllFiles
+    get DoOpenTables of (phTableAccessObject(self)) to lbSuccess
+    ifnot lbSuccess send obs "DoOpenTables of dbd.nui failed to fulfil its purpose." "What happens from now on is anybodys guess..." "(nothing that can damage the database, I promise)"
+    else begin
+      lock // First we mark everything as if it no longer exists:
+        get piFile.i of (phTableAccessObject(self)) DBDTABLE_TABLE to liTableFile
+        clear liTableFile                // s.reg_scan dbTable by index.1
+        repeat                           //   move 1 to dbTable.tbl_not_found
+          vfind liTableFile 1 GT         //   saverecord dbTable
+          move (found) to lbFound        // s.reg_scan dbTable loop
+          if lbFound begin
+            set_field_value liTableFile 5 to 1 // dbTable.tbl_not_found
+            saverecord liTableFile
+          end
+        until (not(lbFound))
+
+        get piFile.i of (phTableAccessObject(self)) DBDTABLE_FIELD to liFieldFile
+        clear liFieldFile                // s.reg_scan dbField by index.1
+        repeat                           //   move 1 to dbField.fld_not_found
+          vfind liFieldFile 1 GT         //   saverecord dbField
+          move (found) to lbFound        // s.reg_scan dbField loop
+          if lbFound begin
+            set_field_value liFieldFile 4 to 1 // dbField.tbl_not_found
+            saverecord liFieldFile
+          end
+        until (not(lbFound))
+      unlock
+      send Callback.ii to (phFDX(self)) MSG_HandleTable self
+      // Here we finally make sure that a few standrad libraries are defined
+      lock
+        send CreatePredefinedLibraries to (oDBD_PredefinedLibraries(self)) liTableFile
+      unlock
+      send OnUpdateEnd
+    end
+    send OpenStat_RestoreFiles
+  end_procedure
+
+  procedure DoUpdateCurrentDefinitions
+    send FDXGL_ReadCurrentFileList FDX_ALL_FILES
+    send DoUpdateDatabase
+  end_procedure
+
+  procedure end_construct_object
+    integer lhSelf
+    forward send end_construct_object
+    move self to lhSelf
+    set phTableUpdater to lhSelf // This is resolved in the encapsulating cDBD_System object
+  end_procedure
+
+end_class // cDBD_Updater
+
+  Use Flexml.pkg
+
+  object dbDocBPOXML_Read is a BusinessProcess
+    set Display_Error_State to TRUE
+    set Status_Panel_State to TRUE
+    property string  psInFileName "dbdoc.xml"
+    property integer phTableAccessObject 0
+
+    procedure DoProcess_FileName string lsFile integer lhDBDSystem
+      set psInFileName to lsFile
+      set phTableAccessObject to (phTableAccessObject(lhDBDSystem))
+      send DoProcess
+    end_procedure
+
+    function sXML_FieldValue handle hoNode string lsFieldName returns string
+      handle hoTmp
+      string lsValue
+      get FindNode of hoNode lsFieldName to hoTmp
+      if (hoTmp<>0) begin
+        get psText of hoTmp to lsValue
+        send destroy of hoTmp
+      end
+      else move "" to lsValue
+      function_return lsValue
+    end_function
+
+    procedure OnProcess
+      integer lbTest lbFin
+      integer lbOK liFile
+      handle hoRoot hoXML hoFields hoIndices
+      handle hoTable hoNextTable
+      handle hoField hoNextField
+      handle hoIndex hoNextIndex
+      string lsInFile lsValue
+      integer liTableFileNumber liFieldFileNumber liIndexFileNumber
+
+      get piFile.i of (phTableAccessObject(self)) DBDTABLE_TABLE to liTableFileNumber
+      get piFile.i of (phTableAccessObject(self)) DBDTABLE_FIELD to liFieldFileNumber
+      get piFile.i of (phTableAccessObject(self)) DBDTABLE_INDEX to liIndexFileNumber
+
+      get psInFileName to lsInFile
+      get Create U_cXMLDOMDocument to hoXML
+      set psDocumentName of hoXML to lsInFile
+
+      set pbValidateOnParse of hoXML to True
+      get LoadXMLDocument of hoXml to lbOK
+
+      ifnot lbOK begin
+        send BasicParseErrorReport of hoXml
+        send Destroy of hoXML
+        procedure_return
+      end
+
+      get DocumentElement of hoXml to hoRoot
+      if (hoRoot=0) begin
+        error 10001 "Cannot get the root node for the XML document test.xml"
+        send Destroy of hoXml
+        procedure_return
+      end
+
+      lock
+        get firstchild of hoRoot to hoTable
+        while (hoTable<>0)
+
+          get sXML_FieldValue hoTable "TBL_ID" to liFile
+          if liFile begin
+
+            clear liTableFileNumber                       // clear dbTable
+            set_field_value liTableFileNumber 1 to liFile // move liFile to dbTable.Tbl_Id
+            vfind liTableFileNumber 1 EQ // find eq dbTable by index.1
+
+            set_field_value liTableFileNumber 2 to (sXML_FieldValue(self,hoTable,"TBL_NAME"       )) // get sXML_FieldValue hoTable "TBL_NAME"        to dbTable.TBL_NAME
+            set_field_value liTableFileNumber 3 to (sXML_FieldValue(self,hoTable,"TBL_LOGIC_NAME" )) // get sXML_FieldValue hoTable "TBL_LOGIC_NAME"  to dbTable.TBL_LOGIC_NAME
+            set_field_value liTableFileNumber 4 to (sXML_FieldValue(self,hoTable,"TBL_PHYSIC_NAME")) // get sXML_FieldValue hoTable "TBL_PHYSIC_NAME" to dbTable.TBL_PHYSIC_NAME
+            set_field_value liTableFileNumber 5 to (sXML_FieldValue(self,hoTable,"TBL_NOT_FOUND"  )) // get sXML_FieldValue hoTable "TBL_NOT_FOUND"   to dbTable.TBL_NOT_FOUND
+            set_field_value liTableFileNumber 6 to (sXML_FieldValue(self,hoTable,"TBL_OPENAS_PATH")) // get sXML_FieldValue hoTable "TBL_OPENAS_PATH" to dbTable.TBL_OPENAS_PATH
+            get sXML_FieldValue hoTable "TBL_DESCRIPTION" to lsValue
+            if (lsValue<>"") set_field_value liTableFileNumber 7 to lsValue // move lsValue to dbTable.tbl_description
+            saverecord liTableFileNumber
+
+            // *** FIELDS ***************************************************************
+            get FindNode of hoTable "Fields" to hoFields
+            if (hoFields<>0) begin
+              get firstchild of hoFields to hoField
+              while (hoField<>0)
+
+                clear liFieldFileNumber       // clear dbField
+                set_field_value liFieldFileNumber 1 to (sXML_FieldValue(self,hoField,"TBL_ID"))          // get sXML_FieldValue hoField "TBL_ID"           to dbField.TBL_ID
+                set_field_value liFieldFileNumber 3 to (sXML_FieldValue(self,hoField,"FLD_NAME"))        // get sXML_FieldValue hoField "FLD_NAME"         to dbField.FLD_NAME
+                vfind liFieldFileNumber 1 EQ  // find eq dbField by index.1
+                set_field_value liFieldFileNumber 2 to (sXML_FieldValue(self,hoField,"FLD_POS"))         // get sXML_FieldValue hoField "FLD_POS"          to dbField.FLD_POS
+                set_field_value liFieldFileNumber 4 to (sXML_FieldValue(self,hoField,"FLD_NOT_FOUND"))   // get sXML_FieldValue hoField "FLD_NOT_FOUND"    to dbField.FLD_NOT_FOUND
+                get sXML_FieldValue hoField "FLD_DESCRIPTION"  to lsValue
+                if (lsValue<>"") set_field_value liFieldFileNumber 5 to lsValue // move lsValue to dbField.FLD_DESCRIPTION
+                set_field_value liFieldFileNumber 6 to (sXML_FieldValue(self,hoField,"SUGGESTED_LABEL")) // get sXML_FieldValue hoField "SUGGESTED_LABEL"  to dbField.SUGGESTED_LABEL
+                set_field_value liFieldFileNumber 7 to (sXML_FieldValue(self,hoField,"FLD_DEFINITION"))  // get sXML_FieldValue hoField "FLD_DEFINITION"  to dbField.FLD_DEFINITION
+                saverecord liFieldFileNumber
+
+                get NextSibling of hoField to hoNextField
+                send Destroy of hoField
+                move hoNextField to hoField
+              loop
+
+              send destroy of hoFields
+            end
+
+            // *** INDICES *************************************************************
+
+            get FindNode of hoTable "Indices" to hoIndices
+            if (hoIndices<>0) begin
+              get firstchild of hoIndices to hoIndex
+              while (hoIndex<>0)
+                clear liIndexFileNumber // clear dbIndex
+                set_field_value liIndexFileNumber 1 to (sXML_FieldValue(self,hoIndex,"TBL_ID"))          // get sXML_FieldValue hoIndex "TBL_ID"  to dbIndex.TBL_ID
+                set_field_value liIndexFileNumber 2 to (sXML_FieldValue(self,hoIndex,"IDX_POS"))         // get sXML_FieldValue hoIndex "IDX_POS" to dbIndex.IDX_POS
+                vfind liIndexFileNumber 1 EQ // find eq dbIndex by indexdfc.1
+                get sXML_FieldValue hoIndex "IDX_DESCRIPTION"  to lsValue
+                if (lsValue<>"") set_field_value liIndexFileNumber 4 to lsValue // move lsValue to dbIndex.IDX_DESCRIPTION
+                saverecord liIndexFileNumber
+
+                get NextSibling of hoIndex to hoNextIndex
+                send Destroy of hoIndex
+                move hoNextIndex to hoIndex
+              loop
+
+              send destroy of hoIndices
+            end
+
+          end
+
+          get NextSibling of hoTable to hoNextTable
+          send Destroy of hoTable
+          move hoNextTable to hoTable
+        loop
+      unlock
+
+      send Destroy of hoRoot
+      send Destroy of hoXML
+
+    end_procedure
+  end_object // dbDocBPOXML_Read
+
+  object dbDocBPOXML_Write is a BusinessProcess
+    set Display_Error_State to TRUE
+    set Status_Panel_State to TRUE
+    property string  psOutFileName "dbdoc.xml"
+    property integer phTableAccessObject 0
+
+    procedure DoProcess_FileName string lsFile integer lhDBDSystem
+      set phTableAccessObject to (phTableAccessObject(lhDBDSystem))
+      set psOutFileName to lsFile
+      send DoProcess
+    end_procedure
+
+    Function Encode string sDat Returns string
+      Move (Replaces("&",sDat,"&amp;"))          to sDat
+      Move (Replaces("<",sDat,"&lt;"))           to sDat
+      Move (Replaces(">",sDat,"&gt;"))           to sDat
+      Move (Replaces('"',sDat,"&quot;"))         to sDat
+      Function_Return sDat
+    End_Function
+
+    procedure AddRecord integer liFile string lsLogicName integer hoNode
+      integer liField liFields liType
+      handle hoRecord hoField
+      string lsValue lsName
+      showln "AddRecord " liFile " " hoNode
+//      get_attribute DF_FILE_LOGICAL_NAME of liFile to lsValue
+      move lsLogicName to lsValue
+      move (trim(lsValue)) to lsValue
+      get AddElement of hoNode lsValue "" to hoRecord
+      showln "  Value: " lsValue
+      showln " hoRecord: " hoRecord
+      get_attribute DF_FILE_NUMBER_FIELDS of liFile to liFields
+      for liField from 1 to liFields
+        Get_Attribute DF_FIELD_TYPE of liFile liField to liType
+
+        If (liType<>DF_OVERLAP) Begin
+          get_field_value liFile liField to lsValue
+          move (trim(lsValue)) to lsValue
+          get_attribute DF_FIELD_NAME of liFile liField to lsName
+
+          get AddElement of hoRecord lsName "" to hoField
+          if (liType=DF_TEXT or liType=DF_ASCII) ;
+              Send AddCDataSection of hoField lsValue
+          Else Begin
+              Get Encode lsValue to lsValue // encode < > ; and "
+
+              Send AddChildTextNode of hoField lsValue
+          End
+
+          //Send AddAttribute Of hoField "Field-number" iField
+          //Send AddAttribute Of hoField "Name" sTag
+          Send Destroy of hoField
+
+        End
+      loop
+      send Destroy of hoRecord
+    end_procedure
+
+    procedure OnProcess
+      integer lbTest lbFin
+      integer lbAnythingOnRecord
+      handle hoRoot hoXML hoFields hoIndices
+      handle hoTable hoField hoIndex hoTmp
+      string lsOutFile lsValue
+      integer lbTableFound lbFieldFound lbIndexFound
+      integer liTableFileNumber liFieldFileNumber liIndexFileNumber
+
+      get piFile.i of (phTableAccessObject(self)) DBDTABLE_TABLE to liTableFileNumber
+      get piFile.i of (phTableAccessObject(self)) DBDTABLE_FIELD to liFieldFileNumber
+      get piFile.i of (phTableAccessObject(self)) DBDTABLE_INDEX to liIndexFileNumber
+
+      get psOutFileName to lsOutFile
+
+      get Create U_cXMLDOMDocument to hoXML
+      set psDocumentName of hoXML to lsOutFile  //(lsDataPath - "\dbdoc.xml")
+      get CreateDocumentElement of hoXML "dbDoc" to hoRoot
+
+      clear liTableFileNumber
+      repeat
+        vfind liTableFileNumber 1 GT
+        move (found) to lbTableFound
+        if lbTableFound begin
+
+          get AddElement of hoRoot "Table" "" to hoTable
+          get_field_value liTableFileNumber 1 to lsValue // dbTable.TBL_ID
+          send AddElement of hoTable "TBL_ID"           (trim(lsValue))
+          get_field_value liTableFileNumber 2 to lsValue // dbTable.TBL_NAME
+          send AddElement of hoTable "TBL_NAME"         (trim(lsValue))
+          get_field_value liTableFileNumber 3 to lsValue // dbTable.TBL_LOGIC_NAME
+          send AddElement of hoTable "TBL_LOGIC_NAME"   (trim(lsValue))
+          get_field_value liTableFileNumber 4 to lsValue // dbTable.TBL_PHYSIC_NAME
+          send AddElement of hoTable "TBL_PHYSIC_NAME"  (trim(lsValue))
+          get_field_value liTableFileNumber 5 to lsValue // dbTable.TBL_NOT_FOUND
+          send AddElement of hoTable "TBL_NOT_FOUND"    lsValue
+          get_field_value liTableFileNumber 6 to lsValue // dbTable.TBL_OPENAS_PATH
+          send AddElement of hoTable "TBL_OPENAS_PATH"  (trim(lsValue))
+          get_field_value liTableFileNumber 7 to lsValue // dbTable.TBL_DESCRIPTION
+          send AddElement of hoTable "TBL_DESCRIPTION"  lsValue
+          move (lsValue<>"") to lbAnythingOnRecord
+
+          get AddElement of hoTable "Fields" "" to hoFields
+          clear liFieldFileNumber
+          repeat
+            vfind liFieldFileNumber 2 GT
+            move (found) to lbFieldFound
+            if lbFieldFound begin
+              get_field_value liFieldFileNumber 5 to lsValue // dbField.TBL_DESCRIPTION
+              if (lsValue<>"") begin
+                send AddRecord liFieldFileNumber "Field" hoFields
+                move true to lbAnythingOnRecord
+              end
+            end
+          until (not(lbFieldFound))
+          send Destroy of hoFields
+
+          get AddElement of hoTable "Indices" "" to hoIndex
+          clear liIndexFileNumber
+          repeat
+            vfind liIndexFileNumber 1 GT
+            move (found) to lbIndexFound
+            if lbIndexFound begin
+              get_field_value liFieldFileNumber 4 to lsValue // dbIndex.idx_description
+              if (lsValue<>"") begin
+                send AddRecord liIndexFileNumber "Index" hoIndex
+                move true to lbAnythingOnRecord
+              end
+            end
+          until (not(lbIndexFound))
+          send Destroy of hoIndex
+
+          ifnot lbAnythingOnRecord get RemoveNode of hoRoot hoTable to hoTable
+
+          send Destroy of hoTable
+        end
+      until (not(lbTableFound))
+
+      send Destroy Of hoRoot
+      get  SaveXMLDocument of hoXML to lbTest
+      send Destroy Of hoXML
+    end_procedure
+  end_object // dbDocBPOXML_Write
+
+

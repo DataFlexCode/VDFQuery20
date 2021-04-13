@@ -1,0 +1,219 @@
+// Use SetDir.pkg   // cSetOfDirectories class
+Use SetDir.nui   // cSetOfDirectories class
+Use GridUtil.utl // Grid and List utilities
+Use Files.utl    // Utilities for handling file related stuff
+
+Use aps.pkg// Auto Positioning and Sizing classes for VDF
+class cSetOfDirectoriesList is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piSetOfDirectoriesObject 0
+    send GridPrepare_AddColumn "Folders" AFT_ASCII70
+    send GridPrepare_Apply self
+    set gridline_mode to GRID_VISIBLE_NONE
+    set Header_Visible_State to DFFALSE
+    set highlight_row_state to DFTRUE
+    on_key KNEXT_ITEM              send switch
+    on_key KPREVIOUS_ITEM          send switch_back
+    on_key KEY_CTRL+KEY_W          send DoWriteToFile
+    on_key KEY_CTRL+KEY_UP_ARROW   send MoveItemUp
+    on_key KEY_CTRL+KEY_DOWN_ARROW send MoveItemDown
+  end_procedure
+
+  procedure MoveItemUp
+//  send Grid_SwapCurrentRowUp self
+  end_procedure
+  procedure MoveItemDown
+//  send Grid_SwapCurrentRowDown self
+  end_procedure
+
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+  procedure fill_list string lsDir
+    integer liItem liMax lhObj liCurrentItem
+    string lsTemp lsValue
+    if NUM_ARGUMENTS move lsDir to lsTemp
+    else move "" to lsTemp
+    move (lowercase(lsTemp)) to lsTemp
+    send delete_data
+    move -1 to liCurrentItem
+    set dynamic_update_state to DFFALSE
+    get piSetOfDirectoriesObject to lhObj
+    get item_count of lhObj to liMax
+    decrement liMax
+    for liItem from 0 to liMax
+      get value of lhObj item liItem to lsValue
+      send add_item msg_none lsValue
+      if (lowercase(lsValue)=lsTemp) move liItem to liCurrentItem
+    loop
+    send Grid_SetEntryState self DFFALSE
+    if (liCurrentItem<>-1) set current_item to liCurrentItem
+    set dynamic_update_state to DFTRUE
+    send OnListChanged (item_count(self))
+  end_procedure
+  procedure OnListChanged integer liItems
+  end_procedure
+  procedure DoReset
+    send DoReset to (piSetOfDirectoriesObject(self))
+    send fill_list
+  end_procedure
+  procedure DoAddDirectory
+    string lsDir
+    get SEQ_SelectDirectory "Select folder" to lsDir
+    if (lsDir<>"") begin
+      send DoAddDirectory to (piSetOfDirectoriesObject(self)) lsDir
+      send fill_list lsDir
+    end
+  end_procedure
+  procedure DoAddSubDirectories
+    string lsDir
+    get SEQ_SelectDirectory "Select root folder" to lsDir
+    if (lsDir<>"") begin
+      send DoAddSubDirectories to (piSetOfDirectoriesObject(self)) lsDir
+      send fill_list lsDir
+    end
+  end_procedure
+  procedure DoRemoveDirectory
+    integer liItemCount liCurrentItem liNextItem
+    string lsDir lsNextDir
+    get item_count to liItemCount
+    if liItemCount begin
+      get current_item to liCurrentItem
+
+      move -1 to liNextItem
+      if (liCurrentItem<(liItemCount-1)) move (liCurrentItem+1) to liNextItem
+      else if (liCurrentItem>0) move (liCurrentItem-1) to liNextItem
+
+      get value item liCurrentItem to lsDir
+      send DoRemoveDirectory to (piSetOfDirectoriesObject(self)) lsDir
+      if (liNextItem<>-1) begin
+        get value item liNextItem to lsNextDir
+        send fill_list lsNextDir
+      end
+      else send fill_list
+    end
+  end_procedure
+  procedure DoAddSearchPath string lsPath
+    send DoAddSearchPath to (piSetOfDirectoriesObject(self)) lsPath
+    send fill_list
+  end_procedure
+  procedure DoFindFileCallback string lsFileMask integer lbFirstOnly integer liMsg integer liObj
+    send DoFindFileCallback to (piSetOfDirectoriesObject(self)) lsFileMask lbFirstOnly liMsg liObj
+  end_procedure
+  procedure DoFindFileBySetOfMasksCallback integer lhSetOfMasks integer lbFirstOnly integer liMsg integer liObj
+    send DoFindFileBySetOfMasksCallback to (piSetOfDirectoriesObject(self)) lhSetOfMasks lbFirstOnly liMsg liObj
+  end_procedure
+  procedure DoFindFilesCompilerListingCallback string lsPrnFile integer lbFirstOnly integer liMsg integer liObj
+    send DoFindFilesCompilerListingCallback to (piSetOfDirectoriesObject(self)) lsPrnFile lbFirstOnly liMsg liObj
+  end_procedure
+end_class // cSetOfDirectoriesList
+
+class cSetOfFilesListNew is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piSOF_Object    0
+    property string  psConstrainPath ""
+    property string  prv.psDir       ""
+    set select_mode to NO_SELECT
+    send GridPrepare_AddColumn "Filename"  AFT_ASCII12
+    send GridPrepare_AddColumn "Type"      AFT_ASCII4
+    send GridPrepare_AddColumn "Size"      AFT_ASCII6
+    send GridPrepare_AddColumn "Modified"  AFT_ASCII20
+    send GridPrepare_AddColumn "Folder"    AFT_ASCII60
+    send GridPrepare_Apply self
+    set gridline_mode to GRID_VISIBLE_NONE
+    set highlight_row_state to true
+    on_key KNEXT_ITEM     send switch
+    on_key KPREVIOUS_ITEM send switch_back
+    on_key KEY_CTRL+KEY_R send user_sort
+    on_key KEY_CTRL+KEY_W send DoWriteToFile
+    on_key KEY_CTRL+KEY_C send DoCopyFiles
+  end_procedure
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+  procedure DoCopyFiles
+    string lsTargetDir
+    get SEQ_SelectDirectory "Select target directory" to lsTargetDir
+    if (lsTargetDir<>"") begin
+      if (SEQ_FileExists(lsTargetDir)=SEQIT_DIRECTORY) send DoCopyFiles to (piSOF_Object(self)) lsTargetDir
+      else send obs "Illegal target directory"
+    end
+  end_procedure
+  procedure fill_list
+    integer lhObj liRow liMax liFileCount liBase
+    number lnTotalBytes liFileSize
+    string lsConstrainPath lsPath
+    get psConstrainPath to lsConstrainPath
+    get piSOF_Object to lhObj
+    if lhObj begin
+      move 0 to lnTotalBytes
+      move 0 to liFileCount
+      get row_count of lhObj to liMax
+      decrement liMax
+      send delete_data
+      set dynamic_update_state to DFFALSE
+      for liRow from 0 to liMax
+        move (psFilePath.i(lhObj,liRow)) to lsPath
+        if (lsConstrainPath="" or lsConstrainPath=lsPath) begin
+          get item_count to liBase
+          send add_item msg_none (psFileName.i(lhObj,liRow))
+          set aux_value item liBase to liRow
+          send add_item msg_none (psFileType.i(lhObj,liRow))
+          move (piFileSize.i(lhObj,liRow)) to liFileSize
+          send add_item msg_none (SEQ_FileSizeToString(liFileSize))
+          send add_item msg_none (TS_ConvertToString(pnFileTime.i(lhObj,liRow)))
+          send add_item msg_none lsPath
+          move (lnTotalBytes+liFileSize) to lnTotalBytes
+          increment liFileCount
+        end
+      loop
+      send Grid_SetEntryState self DFFALSE
+      set dynamic_update_state to DFTRUE
+      send OnListFilled liFileCount lnTotalBytes
+    end
+  end_procedure
+  procedure OnListFilled integer liFileCount number lnBytes
+  end_procedure
+  procedure sort_by_column integer liColumn
+    if liColumn eq 0 send DoSort to (piSOF_Object(self)) SOF_ORDERING_NAME
+    if liColumn eq 1 send DoSort to (piSOF_Object(self)) SOF_ORDERING_TYPE
+    if liColumn eq 2 send DoSort to (piSOF_Object(self)) SOF_ORDERING_SIZE
+    if liColumn eq 3 send DoSort to (piSOF_Object(self)) SOF_ORDERING_TIME
+    if liColumn eq 4 send DoSort to (piSOF_Object(self)) SOF_ORDERING_PATH
+    send fill_list
+  end_procedure
+  procedure header_mouse_click integer liItem
+    send sort_by_column liItem
+    forward send header_mouse_click liItem
+  end_procedure
+  procedure user_sort
+    integer liItem
+    get current_item to liItem
+    send sort_by_column (liItem-((liItem/5)*5))
+  end_procedure
+  procedure DoReset
+    send DoReset to (piSOF_Object(self))
+    send fill_list
+  end_procedure
+  procedure DoCopyFilesToDirectory_help string lsFile string lsPath
+    integer liRval
+    string lsTargetDir
+    get prv.psDir to lsTargetDir
+    get SEQ_CopyFile (SEQ_ComposeAbsoluteFileName(lsPath,lsFile)) (SEQ_ComposeAbsoluteFileName(lsTargetDir,lsFile)) to liRval
+    ifnot liRval send obs "Error! File could not be copied." (SEQ_ComposeAbsoluteFileName(lsPath,lsFile)) "to" (SEQ_ComposeAbsoluteFileName(lsTargetDir,lsFile))
+  end_procedure
+  procedure DoCopyFilesToDirectory
+    string lsDir
+    if (item_count(self)) begin
+      get SEQ_SelectDirectory "Copy files to folder" to lsDir
+      if (lsDir<>"") begin
+        set prv.psDir to lsDir
+        send DoCallback to (piSOF_Object(self)) msg_DoCopyFilesToDirectory_help self
+      end
+    end
+    else send obs "No files to copy"
+  end_procedure
+end_class // cSetOfFilesListNew
+

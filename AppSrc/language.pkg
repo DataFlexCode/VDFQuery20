@@ -1,0 +1,86 @@
+// Use Language     // Default language setup
+// Sets default languange
+
+Use LangSymb.pkg // Language symbols
+
+#IFDEF LNG_DEFAULT
+#ELSE
+ define LNG_DEFAULT for LNG_ENGLISH // <-- Change default language here
+#ENDIF
+
+#IFSAME _LANGUAGE_ $DUTCH$ $SPANISH$ $ENGLISH$ $DANISH$ $SWEDISH$ $NORWEGIAN$ $GERMAN$ $PORTUGUESE$ $FRENCH$ $ITALIAN$ $PAPIAMENTU$
+#ELSE
+ #IF LNG_DEFAULT=LNG_DUTCH
+  define _LANGUAGE_ for $DUTCH$
+ #ENDIF
+ #IF LNG_DEFAULT=LNG_SPANISH
+  define _LANGUAGE_ for $SPANISH$
+ #ENDIF
+ #IF LNG_DEFAULT=LNG_ENGLISH
+  define _LANGUAGE_ for $ENGLISH$
+ #ENDIF
+ #IF LNG_DEFAULT=LNG_DANISH
+  define _LANGUAGE_ for $DANISH$
+ #ENDIF
+ #IF LNG_DEFAULT=LNG_SWEDISH
+  define _LANGUAGE_ for $SWEDISH$
+ #ENDIF
+ #IF LNG_DEFAULT=LNG_NORWEGIAN
+  define _LANGUAGE_ for $NORWEGIAN$
+ #ENDIF
+ #IF LNG_DEFAULT=LNG_GERMAN
+  define _LANGUAGE_ for $GERMAN$
+ #ENDIF
+ #IF LNG_DEFAULT=LNG_PORTUGUESE
+  define _LANGUAGE_ for $PORTUGUESE$
+ #ENDIF
+ #IF LNG_DEFAULT=LNG_FRENCH
+  define _LANGUAGE_ for $FRENCH$
+ #ENDIF
+ #IF LNG_DEFAULT=LNG_ITALIAN
+  define _LANGUAGE_ for $ITALIAN$
+ #ENDIF
+ #IF LNG_DEFAULT=LNG_PAPIAMENTU
+  define _LANGUAGE_ for $PAPIAMENTU$
+ #ENDIF
+#ENDIF
+
+#REM LANGUAGE SET BY LANGUAGE.PKG: _LANGUAGE_
+
+#COMMAND INCLUDE_LANGUAGE_FILE R .
+ #PUSH !e
+ #SET E$ LNG_DEFAULT
+ #INCLUDE !1.!e
+ #POP E$
+#ENDCOMMAND
+#COMMAND USE_LANGUAGE_FILE R .
+ #PUSH !e
+ #SET E$ LNG_DEFAULT
+ USE !1.!e
+ #POP E$
+#ENDCOMMAND
+
+integer giLanguage
+move LNG_DEFAULT to giLanguage
+
+class cLanguageValues is an Array
+  procedure set language_value integer liLanguage integer liConst string lsValue
+    set value item (liLanguage*LNG_MAX+liConst) to lsValue
+  end_procedure
+  function language_value integer liConst returns string
+    string lsValue
+    get value item (giLanguage*LNG_MAX+liConst) to lsValue
+    if (lsValue="") function_return (value(self,LNG_DEFAULT*LNG_MAX+liConst))
+    function_return lsValue
+  end_function
+  function language_coded_value integer liConst returns string
+    function_return ("LV."+string(liConst))
+  end_function
+  function language_decoded_value string lsValue returns string
+    if (left(lsValue,3)="LV.") begin
+      move (replace("LV.",lsValue,"")) to lsValue
+      get language_value (integer(lsValue)) to lsValue
+    end
+    function_return lsValue
+  end_function
+end_class

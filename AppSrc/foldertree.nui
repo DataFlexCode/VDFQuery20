@@ -1,0 +1,266 @@
+// use foldertree.nui // cFolderTree class
+
+use treenode.nui // Defines the cTreeNode class.
+use Files.nui    // Utilities for handling file related stuff (No User Interface)
+use Strings.nui  // String manipulation for VDF (No User Interface)
+use WinFolder.nui // WinFolder_ReadFolder message
+
+enumeration_list
+  define FTSU_READ_FOLDER_CB_OBJECT
+  define FTSU_READ_FOLDER_CB_MESSAGE
+end_enumeration_list
+
+desktop_section
+object oFolderTreeSetup is a cArray
+  procedure DoReset
+    set value item FTSU_READ_FOLDER_CB_OBJECT  to 0
+    set value item FTSU_READ_FOLDER_CB_MESSAGE to 0
+  end_procedure
+  send DoReset
+end_object
+end_desktop_section
+
+procedure FolderTreeSetup_Reset global
+  send DoReset of oFolderTreeSetup
+end_procedure
+function FolderTreeSetup_Value global integer liItem returns string
+  function_return (value(oFolderTreeSetup(self),liItem))
+end_function
+procedure set FolderTreeSetup_Value global integer liItem string lsValue
+  set value of (oFolderTreeSetup(self)) item liItem to lsValue
+end_procedure
+
+enumeration_list
+  define FLDS_PARENT_FOLDER        // Path to parent folder
+  define FLDS_FOLDER_NAME          // Folder name
+  define FLDS_FOLDER_NAME_PATH     // Folder name including full path
+
+  // The folder itself
+  define FLDS_FILE_COUNT           // File count
+  define FLDS_FOLDER_SIZE          // Folder size
+  define FLDS_MIN_FILESZ           // Minimum file size
+  define FLDS_MAX_FILESZ           // Maximum file size
+  define FLDS_MIN_TIME             // Time of oldest file
+  define FLDS_MAX_TIME             // Time of newest file
+
+  // The folder including its subfolders
+  define FLDSX_FILE_COUNT          // File count
+  define FLDSX_FOLDER_SIZE         // Folder size
+  define FLDSX_MIN_FILESZ          // Minimum file size
+  define FLDSX_MAX_FILESZ          // Maximum file size
+  define FLDSX_MIN_TIME            // Time of oldest file
+  define FLDSX_MAX_TIME            // Time of newest file
+end_enumeration_list
+
+function FolderTree_DataTreeLabel global integer lhData integer lbExpanded returns string
+  integer liFileCount
+  number lnFolderSize
+  string lsValue
+  get value of lhData item FLDS_FOLDER_NAME to lsValue
+  move (lsValue+" (# in # files)") to lsValue
+  if lbExpanded begin
+    get value of lhData item FLDS_FILE_COUNT  to liFileCount
+    get value of lhData item FLDS_FOLDER_SIZE to lnFolderSize
+  end
+  else begin
+    get value of lhData item FLDSX_FILE_COUNT  to liFileCount
+    get value of lhData item FLDSX_FOLDER_SIZE to lnFolderSize
+  end
+  move (replace("#",lsValue,replace(",",SEQ_FileSizeToString(lnFolderSize),"."))) to lsValue
+  move (replace("#",lsValue,liFileCount)) to lsValue
+  function_return lsValue
+end_function // FolderTree_DataTreeLabel
+
+class cFolderData is a cTreeNodeDataObject
+
+  procedure ReadDataFromFolder string lsFolder
+    integer liRow liMax lhWinFolderEntries lbFirst lhMsg lhObj
+    number  lnFolderSz lnSizeMin lnSizeMax lnTimeMin lnTimeMax lnSize lnTime
+    string lsParentFolder
+
+    set value item FLDS_FOLDER_NAME_PATH to lsFolder
+
+    get SEQ_ExtractPathFromFileName lsFolder to lsParentFolder
+    get SEQ_RemovePathFromFileName  lsFolder to lsFolder
+
+    set value item FLDS_PARENT_FOLDER     to lsParentFolder
+    set value item FLDS_FOLDER_NAME       to lsFolder
+
+    get FolderTreeSetup_Value FTSU_READ_FOLDER_CB_MESSAGE to lhMsg
+    if lhMsg begin
+      get FolderTreeSetup_Value FTSU_READ_FOLDER_CB_OBJECT to lhObj
+      send lhMsg of lhObj lsParentFolder lsFolder
+    end
+
+    move 1 to lbFirst
+    move 0 to lnFolderSz
+    move 0 to lnSizeMin
+    move 0 to lnSizeMax
+    move 0 to lnTimeMin
+    move 0 to lnTimeMax
+    move (oWinFolderEntries(self)) to lhWinFolderEntries
+    get row_count of lhWinFolderEntries to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      ifnot (pbFolder.i(lhWinFolderEntries,liRow)) begin // Files only
+        get pnFileSz.i of lhWinFolderEntries liRow to lnSize
+        get pnLastWrite.i of lhWinFolderEntries liRow to lnTime
+        if lbFirst begin
+          move lnSize to lnSizeMin
+          move lnSize to lnSizeMax
+          move lnTime to lnTimeMin
+          move lnTime to lnTimeMax
+          move 0 to lbFirst
+        end
+        else begin
+          move (lnSizeMin min lnSize) to lnSizeMin
+          move (lnSizeMax max lnSize) to lnSizeMax
+          move (lnTimeMin min lnTime) to lnTimeMin
+          move (lnTimeMax max lnTime) to lnTimeMax
+        end
+        move (lnFolderSz+lnSize) to lnFolderSz
+      end
+    loop
+
+    set value item FLDS_FILE_COUNT        to (piFileCount(lhWinFolderEntries))
+    set value item FLDS_FOLDER_SIZE       to lnFolderSz
+    set value item FLDS_MIN_FILESZ        to lnSizeMin
+    set value item FLDS_MAX_FILESZ        to lnSizeMax
+    set value item FLDS_MIN_TIME          to lnTimeMin
+    set value item FLDS_MAX_TIME          to lnTimeMax
+
+    // Initial X values:
+    set value item FLDSX_FILE_COUNT        to (piFileCount(lhWinFolderEntries))
+    set value item FLDSX_FOLDER_SIZE       to lnFolderSz
+    set value item FLDSX_MIN_FILESZ        to lnSizeMin
+    set value item FLDSX_MAX_FILESZ        to lnSizeMax
+    set value item FLDSX_MIN_TIME          to lnTimeMin
+    set value item FLDSX_MAX_TIME          to lnTimeMax
+  end_procedure
+
+  function TreeViewLabel returns string
+    function_return (FolderTree_DataTreeLabel(self,1))
+  end_function
+end_class // cFolderData
+
+class cFolderTree is a cTreeNode
+  procedure construct_object
+    forward send construct_object
+    set phNodeClass to U_cFolderTree
+    set phDataClass to U_cFolderData
+    object oTemp is a cArray
+    end_object
+  end_procedure
+
+            procedure BuildListOfSubFolders string lsRootFolder
+              integer lhTmp liItm liRow liMax lhWinFolderEntries
+              string lsFolderName
+              move 0 to liItm
+              move (oTemp(self)) to lhTmp
+              send delete_data to lhTmp
+              move (oWinFolderEntries(self)) to lhWinFolderEntries
+              get row_count of lhWinFolderEntries to liMax
+              decrement liMax
+              for liRow from 0 to liMax
+                if (pbFolder.i(lhWinFolderEntries,liRow)) begin
+                  get psFileName.i of lhWinFolderEntries liRow to lsFolderName
+                  get Files_AppendPath lsRootFolder lsFolderName to lsFolderName
+                  set value of lhTmp item liItm to lsFolderName
+                  increment liItm
+                end
+              loop
+            end_procedure
+
+  procedure build_folder_tree string lsRootFolder
+    integer lhSelf lhData lhTmp liItem liMax lhChildNode
+    integer liFileCount liSubFolderFileCount lbFirst
+    number lnSize lnSubFolderSize
+    number lnMinSize lnSubFolderMinSize
+    number lnMaxSize lnSubFolderMaxSize
+    number lnMinTime lnSubFolderMinTime
+    number lnMaxTime lnSubFolderMaxTime
+    move (oTemp(self)) to lhTmp
+
+    send WinFolder_ReadFolder lsRootFolder
+
+    get hCreateDataObject to lhData
+    send ReadDataFromFolder to lhData lsRootFolder
+
+    send BuildListOfSubFolders lsRootFolder
+
+    get item_count of lhTmp to liMax
+    decrement liMax
+    move 0 to lnSubFolderSize
+    move 0 to liSubFolderFileCount
+    move 0 to lnSubFolderMinSize
+    move 0 to lnSubFolderMaxSize
+    move 0 to lnSubFolderMinTime
+    move 0 to lnSubFolderMaxTime
+    move 1 to lbFirst
+    for liItem from 0 to liMax
+      get hAddChildNode to lhChildNode
+      send build_folder_tree to lhChildNode (value(lhTmp,liItem))
+
+      // Calculate subfolder totals
+      get DataObject_Array_Value of lhChildNode FLDSX_FILE_COUNT to liFileCount
+      move (liSubFolderFileCount+liFileCount) to liSubFolderFileCount
+      get DataObject_Array_Value of lhChildNode FLDSX_FOLDER_SIZE to lnSize
+      move (lnSubFolderSize+lnSize) to lnSubFolderSize
+
+      if liFileCount begin
+        get DataObject_Array_Value of lhChildNode  FLDSX_MIN_FILESZ to lnMinSize
+        get DataObject_Array_Value of lhChildNode  FLDSX_MAX_FILESZ to lnMaxSize
+        get DataObject_Array_Value of lhChildNode  FLDSX_MIN_TIME   to lnMinTime
+        get DataObject_Array_Value of lhChildNode  FLDSX_MAX_TIME   to lnMaxTime
+        if lbFirst begin
+          move lnMinSize to lnSubFolderMinSize
+          move lnMaxSize to lnSubFolderMaxSize
+          move lnMinTime to lnSubFolderMinTime
+          move lnMaxTime to lnSubFolderMaxTime
+          move 0 to lbFirst
+        end
+        else begin
+          if (lnMinSize<lnSubFolderMinSize) move lnMinSize to lnSubFolderMinSize
+          if (lnMaxSize>lnSubFolderMaxSize) move lnMaxSize to lnSubFolderMaxSize
+          if (lnMinTime<lnSubFolderMinTime) move lnMinTime to lnSubFolderMinTime
+          if (lnMaxTime>lnSubFolderMaxTime) move lnMaxTime to lnSubFolderMaxTime
+        end
+      end
+    loop
+    send delete_data to lhTmp
+    // Update X values here:
+    if (liMax=>0) begin
+      get DataObject_Array_Value FLDSX_FILE_COUNT to liFileCount
+      if liSubFolderFileCount begin
+        get DataObject_Array_Value FLDSX_MIN_FILESZ to lnMinSize
+        get DataObject_Array_Value FLDSX_MAX_FILESZ to lnMaxSize
+        get DataObject_Array_Value FLDSX_MIN_TIME   to lnMinTime
+        get DataObject_Array_Value FLDSX_MAX_TIME   to lnMaxTime
+
+        if liFileCount begin
+          if (lnSubFolderMinSize<lnMinSize) move lnSubFolderMinSize to lnMinSize
+          if (lnSubFolderMaxSize>lnMaxSize) move lnSubFolderMaxSize to lnMaxSize
+          if (lnSubFolderMinTime<lnMinTime) move lnSubFolderMinTime to lnMinTime
+          if (lnSubFolderMaxTime>lnMaxTime) move lnSubFolderMaxTime to lnMaxTime
+        end
+        else begin
+          move lnSubFolderMinSize to lnMinSize
+          move lnSubFolderMaxSize to lnMaxSize
+          move lnSubFolderMinTime to lnMinTime
+          move lnSubFolderMaxTime to lnMaxTime
+        end
+
+        set DataObject_Array_Value FLDSX_MIN_FILESZ to lnMinSize
+        set DataObject_Array_Value FLDSX_MAX_FILESZ to lnMaxSize
+        set DataObject_Array_Value FLDSX_MIN_TIME   to lnMinTime
+        set DataObject_Array_Value FLDSX_MAX_TIME   to lnMaxTime
+      end
+      move (liSubFolderFileCount+liFileCount) to liFileCount
+      set DataObject_Array_Value FLDSX_FILE_COUNT to liFileCount
+
+      get DataObject_Array_Value FLDSX_FOLDER_SIZE to lnSize
+      move (lnSubFolderSize+lnSize) to lnSize
+      set DataObject_Array_Value FLDSX_FOLDER_SIZE to lnSize
+    end
+  end_procedure
+end_class // cFolderTree

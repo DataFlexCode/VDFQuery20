@@ -1,0 +1,270 @@
+//use treenode.nui // Defines the cTreeNode class.
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+
+class cTreeNodeDataObject is a cArray
+  procedure DoReset
+    // This needs to be defined because the cTreeNode will send this
+    // message as preparation for destroying the object.
+  end_procedure
+  procedure SEQ_Read integer liChannel
+  end_procedure
+  procedure SEQ_Write integer liChannel
+  end_procedure
+  function TreeViewLabel returns string
+    function_return "No label"
+  end_function
+end_class // cTreeNodeDataObject
+
+class cTreeNode is a cArray
+  //> The items of this array holds pointers to child nodes
+  procedure construct_object
+    forward send construct_object
+    //> Pointer to the parent node. Only the ultimate parent will have a 0 value in this property
+    property integer phParentNode 0
+
+    //> This Points to an object that holds the data of this particular node:
+    property integer phDataObject 0
+
+    //> All data objects created as children of this object will be of this class:
+    property integer phDataClass U_cTreeNodeDataObject
+
+    //> All child node objects created as children of this object will be of this class:
+    property integer phNodeClass U_cTreeNode
+  end_procedure
+
+                procedure insert_item integer liInsertItem
+                  // Insert an empty item in the list of childnodes (aux procedure for
+                  // the hInsertChildNode function.
+                  integer liItem liMax
+                  get item_count to liMax
+                  for_ex liItem from liMax down_to (liInsertItem+1)
+                    set value item liItem to (value(self,liItem-1))
+                  loop
+                  set value item liInsertItem to 0
+                end_procedure
+
+                function hCreateChildNode returns integer
+                  integer lhObject lhClass
+                  get phNodeClass to lhClass
+                  name lhClass U_cTreeNodeClass
+                  object oTreeNode is a cTreeNodeClass 
+                    move self to lhObject
+                  end_object
+                  function_return lhObject
+                end_function
+
+  //> Create and append a child node. The function returns the object id of the
+  //> new child node.
+  function hAddChildNode returns integer
+    integer liItem lhObject
+    get item_count to liItem
+    get hCreateChildNode to lhObject
+    set phParentNode of lhObject to self
+    set value item liItem to lhObject
+    function_return lhObject
+  end_function
+  //> Create and insert a node in the list of child nodes. The function returns the object
+  //> id of the new child node.
+  function hInsertChildNode integer liItem returns integer
+    integer lhObject
+    send insert_item liItem
+
+    get hCreateChildNode to lhObject
+
+    set phParentNode of lhObject to self
+    set value item liItem to lhObject
+    function_return lhObject
+  end_function
+
+  //> Delete and destroy all data referenced by this object (except the object itself).
+  procedure DoReset
+    integer liItem liMax
+    get item_count to liMax
+    decrement liMax
+    for liItem from 0 to liMax
+      send DoDestroy to (integer(value(self,liItem)))
+    loop
+    send delete_data
+  end_procedure
+
+            procedure DestroyDataObject
+              integer lhData
+              get phDataObject to lhData
+              if lhData begin
+                send DoReset to lhData // Prepare the object for destroying
+                send request_destroy_object to lhData
+                set phDataObject to 0
+              end
+            end_procedure
+
+            function iParentNodeIndex returns integer
+              integer lhSelf lhParentNode liMax liItem
+              move self to lhSelf
+              get phParentNode to lhParentNode
+              get item_count of lhParentNode to liMax
+              decrement liMax
+              for liItem from 0 to liMax
+                if (integer(value(lhParentNode,liItem))=lhSelf) function_return liItem
+              loop
+              function_return -1
+            end_function
+
+  //> Function Request_SwitchUp will attempt to switch positions with the
+  //> preceeding sibling. If successful, true will be returned.
+  function Request_SwitchUp returns integer
+
+  end_function
+
+  procedure DoDestroy
+    send DoReset
+    send DestroyDataObject
+    send request_destroy_object // Destroy yourself
+  end_procedure
+
+  procedure DoDestroyItem integer liItem
+    send DoDestroy to (integer(value(self,liItem)))
+    send delete_item liItem
+  end_procedure
+
+  //> Instantiate a data object for this node (of the cTreeNodeDataClass class)
+  function hCreateDataObject returns integer
+    integer lhObject lhDataClass
+    get phDataObject to lhObject
+    ifnot lhObject begin
+      get phDataClass to lhDataClass
+      name lhDataClass U_cTreeNodeDataClass
+      object oTreeNodeDataClass is a cTreeNodeDataClass
+        move self to lhObject
+      end_object
+      set phDataObject to lhObject
+    end
+    function_return lhObject
+  end_function
+
+  //> This function may be used as a shortcut to retrieve data
+  //> from an array based data object
+  function DataObject_Array_Value integer liItem returns string
+    integer lhObject
+    get phDataObject to lhObject
+    if lhObject function_return (value(lhObject,liItem))
+    function_return ""
+  end_function
+  procedure set DataObject_Array_Value integer liItem string lsValue
+    integer lhObject
+    get phDataObject to lhObject
+    ifnot lhObject get hCreateDataObject to lhObject
+    set value of lhObject item liItem to lsValue
+  end_procedure
+
+  enumeration_list // Tree traverser order
+    define TTO_PARENT_FIRST
+    define TTO_CHILDREN_FIRST
+  end_enumeration_list
+
+  //> Send message lhMsg to this node object and all children.
+  procedure BroadcastNodeMessage integer liTraverseOrder integer lhMsg integer liLevel
+    integer liItem liMax lhChildNode lhSelf
+    move self to lhSelf
+    if (liTraverseOrder=TTO_PARENT_FIRST) send lhMsg liLevel lhSelf // The lhSelf parameter will be handy if the message is caught via delegation
+    get item_count to liMax
+    decrement liMax
+    for liItem from 0 to liMax
+      get value item liItem to lhChildNode
+      send BroadcastNodeMessage to lhChildNode liTraverseOrder lhMsg (liLevel+1)
+    loop
+    if (liTraverseOrder=TTO_CHILDREN_FIRST) send lhMsg liLevel lhSelf // The lhSelf parameter will be handy if the message is caught via delegation
+  end_procedure
+
+  //> Send message lhMsg to the data object of this node and all of
+  //> the children of this node. The message will only be sent
+  //> if the nodes do actually have a data object.
+  procedure BroadcastDataMessage integer liTraverseOrder integer lhMsg integer liLevel
+    integer liItem liMax lhChildNode lhSelf lhDataObject
+    get phDataObject to lhDataObject
+    move self to lhSelf
+    if lhDataObject begin
+      if (liTraverseOrder=TTO_PARENT_FIRST) send lhMsg to lhDataObject liLevel lhSelf lhDataObject // The lhSelf and lhDataObject parameters will be handy if the message is via through delegation
+    end
+    get item_count to liMax
+    decrement liMax
+    for liItem from 0 to liMax
+      get value item liItem to lhChildNode
+      send BroadcastDataMessage to lhChildNode liTraverseOrder lhMsg (liLevel+1)
+    loop
+    if lhDataObject begin
+      if (liTraverseOrder=TTO_CHILDREN_FIRST) send lhMsg to lhDataObject liLevel lhSelf lhDataObject // The lhSelf and lhDataObject parameters will be handy if the message is via through delegation
+    end
+  end_procedure
+
+  function ChildCount returns integer
+    function_return (item_count(self))
+  end_function
+  function ChildNodeObject integer liItem returns integer
+    function_return (value(self,liItem))
+  end_function
+end_class // cTreeNode
+
+
+//
+//  --- Typical example of treenode subclassing
+//
+//  enumeration_list // Popup Menu Data item
+//    define PMD_TEXT       // Menu item text
+//    define PMD_MESSAGE    // Message to be sent
+//    define PMD_OBJECT     // Object to receive the message
+//    define PMD_PARAMETER  // Parameters to be passed to object
+//  end_enumeration_list
+//
+//  class cPopupMenuDataObject is a cTreeNodeDataObject
+//  end_class // cPopupMenuDataObject
+//
+//  class cPopupMenuTreeNode is  a cTreeNode
+//    procedure construct_object
+//      forward send construct_object
+//
+//      set phNodeClass to U_cPopupMenuTreeNode
+//      set phDataClass to U_cPopupMenuDataObject
+//    end_procedure
+//  end_class // cPopupMenuTreeNode
+
+//
+//  --- Small test sample
+//
+//  object oTestTree is a cTreeNode
+//              procedure MakeThreeChildNodes integer lhNode
+//                integer lhChildNode
+//                get hAddChildNode of lhNode to lhChildNode
+//                get hAddChildNode of lhNode to lhChildNode
+//                get hAddChildNode of lhNode to lhChildNode
+//              end_procedure
+//
+//    procedure DoPopulate
+//      integer lhChildNode lhGrandChildnode
+//
+//      get hAddChildNode of self to lhChildNode
+//          get hAddChildNode of lhChildNode to lhGrandChildnode
+//          get hAddChildNode of lhChildNode to lhGrandChildnode
+//          get hAddChildNode of lhChildNode to lhGrandChildnode
+//      get hAddChildNode of self to lhChildNode
+//          get hAddChildNode of lhChildNode to lhGrandChildnode
+//          get hAddChildNode of lhChildNode to lhGrandChildnode
+//          get hAddChildNode of lhChildNode to lhGrandChildnode
+//          get hAddChildNode of lhChildNode to lhGrandChildnode
+//      get hAddChildNode of self to lhChildNode
+//          get hAddChildNode of lhChildNode to lhGrandChildnode
+//          get hAddChildNode of lhChildNode to lhGrandChildnode
+//          get hAddChildNode of lhChildNode to lhGrandChildnode
+//          get hAddChildNode of lhChildNode to lhGrandChildnode
+//          get hAddChildNode of lhChildNode to lhGrandChildnode
+//    end_procedure
+//
+//    procedure ShowlnYourself integer liLevel integer lhNode
+//      showln (repeat("  ",liLevel)+string(lhNode))
+//    end_procedure
+//
+//    send DoPopulate
+//    send BroadcastNodeMessage TTO_PARENT_FIRST MSG_ShowlnYourself 0
+//    inkey windowindex
+//  end_object
+

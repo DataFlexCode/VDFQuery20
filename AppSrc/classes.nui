@@ -1,0 +1,176 @@
+// Use Classes.nui  // Class characteristics
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use cDbRichEdit.pkg
+
+// Start off by enumerating all kinds of object classes that can be
+// thought of. These are just symbols that will be used for indexing
+// within arrays:
+
+Enumeration_List
+  Define class.View
+  Define class.dbView
+  Define class.ModalPanel
+  Define class.dbModalPanel
+  Define class.Group
+  Define class.dbGroup
+  Define class.Container3d
+  Define class.dbContainer3d
+  Define class.TabDialog
+  Define class.dbTabDialog
+  Define class.TabPage
+  Define class.dbTabPage
+  Define class.RadioGroup
+  Define class.Form
+  Define class.dbForm
+  Define class.ComboForm
+  Define class.dbComboForm
+  Define class.SpinForm
+  Define class.dbSpinForm
+  Define class.CheckBox
+  Define class.dbCheckBox
+  Define class.Edit
+  Define class.dbEdit
+  Define class.TextBox
+  Define class.Button
+  Define class.Radio
+  Define class.List
+  Define class.dbList
+  Define class.Grid
+  Define class.dbGrid
+  Define class.Multi_Button
+  Define class.BitmapContainer
+  Define class.ToolButton
+  Define class.DataDictionary
+  Define class.ImageViewer       // This one I have completely forgotten about
+  Define class.GraphArea
+  Define class.RichEdit
+  Define class.dbRichEdit
+  Define class.TextEdit
+  Define class.dbTextEdit
+  Define class.User              // This one just marks the end
+End_Enumeration_List
+
+#COMMAND ClassReveal
+ function Cls_ObjectClass for !1 returns integer
+   function_return !2
+ end_function
+#ENDCOMMAND
+
+ClassReveal cObject         -1
+ClassReveal View            class.View
+ClassReveal dbView          class.dbView
+ClassReveal ModalPanel      class.ModalPanel
+ClassReveal dbModalPanel    class.dbModalPanel
+ClassReveal Group           class.Group
+ClassReveal dbGroup         class.dbGroup
+ClassReveal Container3d     class.Container3d
+ClassReveal dbContainer3d   class.dbContainer3d
+ClassReveal TabDialog       class.TabDialog
+ClassReveal dbTabDialog     class.dbTabDialog
+ClassReveal TabPage         class.TabPage
+ClassReveal dbTabPage       class.dbTabPage
+ClassReveal RadioGroup      class.RadioGroup
+ClassReveal Form            class.Form
+ClassReveal dbForm          class.dbForm
+ClassReveal ComboForm       class.ComboForm
+ClassReveal dbComboForm     class.dbComboForm
+ClassReveal SpinForm        class.SpinForm
+ClassReveal dbSpinForm      class.dbSpinForm
+ClassReveal CheckBox        class.CheckBox
+ClassReveal dbCheckBox      class.dbCheckBox
+ClassReveal Edit            class.Edit
+ClassReveal dbEdit          class.dbEdit
+ClassReveal TextBox         class.TextBox
+ClassReveal Button          class.Button
+ClassReveal Radio           class.Radio
+ClassReveal List            class.List
+ClassReveal dbList          class.dbList
+ClassReveal Grid            class.Grid
+ClassReveal dbGrid          class.dbGrid
+ClassReveal BitmapContainer class.BitmapContainer
+ClassReveal DataDictionary  class.DataDictionary
+ClassReveal cRichEdit       class.RichEdit
+ClassReveal cdbRichEdit     class.dbRichEdit
+ClassReveal cTextEdit       class.TextEdit
+ClassReveal cdbTextEdit     class.dbTextEdit
+
+
+
+desktop_section
+object oVdfClasses is a cArray
+  item_property_list
+    item_property string  psName.i
+    item_property integer pbDbAware.i
+    item_property integer pbContainer.i
+    item_property integer pbVisible.i
+    item_property integer pbMultiItem.i
+  end_item_property_list
+  procedure AddClass integer liClass string lsName integer lbDBAware integer lbContainer integer lbVisible integer lbMultiItem
+    set psName.i      liClass to lsName
+    set pbDbAware.i   liClass to lbDBAware
+    set pbContainer.i liClass to lbContainer
+    set pbVisible.i   liClass to lbVisible
+    set pbMultiItem.i liClass to lbMultiItem
+  end_procedure
+  send AddClass class.View            "View"           0 1 1 0
+  send AddClass class.dbView          "dbView"         1 1 1 0
+  send AddClass class.ModalPanel      "ModalPanel"     0 1 1 0
+  send AddClass class.dbModalPanel    "dbModalPanel"   1 1 1 0
+  send AddClass class.Group           "Group"          0 1 1 0
+  send AddClass class.dbGroup         "dbGroup"        1 1 1 0
+  send AddClass class.Container3d     "Container3d"    0 1 1 0
+  send AddClass class.dbContainer3d   "dbContainer3d"  1 1 1 0
+  send AddClass class.TabDialog       "TabDialog"      0 1 1 0
+  send AddClass class.dbTabDialog     "dbTabDialog"    1 1 1 0
+  send AddClass class.TabPage         "TabPage"        0 1 1 0
+  send AddClass class.dbTabPage       "dbTabPage"      1 1 1 0
+  send AddClass class.RadioGroup      "RadioGroup"     0 1 1 0
+  send AddClass class.Form            "Form"           0 0 1 0
+  send AddClass class.dbForm          "dbForm"         1 0 1 0
+  send AddClass class.ComboForm       "ComboForm"      0 0 1 0
+  send AddClass class.dbComboForm     "dbComboForm"    1 0 1 0
+  send AddClass class.SpinForm        "SpinForm"       0 0 1 0
+  send AddClass class.dbSpinForm      "dbSpinForm"     1 0 1 0
+  send AddClass class.CheckBox        "CheckBox"       0 0 1 0
+  send AddClass class.dbCheckBox      "dbCheckBox"     1 0 1 0
+  send AddClass class.Edit            "Edit"           0 0 1 0
+  send AddClass class.dbEdit          "dbEdit"         1 0 1 0
+  send AddClass class.TextBox         "TextBox"        0 0 1 0
+  send AddClass class.Button          "Button"         0 0 1 0
+  send AddClass class.Radio           "Radio"          0 0 1 0
+  send AddClass class.List            "List"           0 0 1 0
+  send AddClass class.dbList          "dbList"         1 0 1 1
+  send AddClass class.Grid            "Grid"           0 0 1 1
+  send AddClass class.dbGrid          "dbGrid"         1 0 1 1
+  send AddClass class.Multi_Button    "Multi_Button"   0 0 1 0
+  send AddClass class.BitmapContainer "BitmapContainer"0 0 1 0
+  send AddClass class.ToolButton      "ToolButton"     0 0 1 0
+  send AddClass class.DataDictionary  "DataDictionary" 1 0 0 0
+  send AddClass class.ImageViewer     "ImageViewer"    0 0 1 0
+  send AddClass class.GraphArea       "GraphArea"      0 0 1 0
+  send AddClass class.RichEdit        "RichEdit  "     0 0 1 0
+  send AddClass class.dbRichEdit      "dbRichEdit"     1 0 1 0
+  send AddClass class.TextEdit        "TextEdit  "     0 0 1 0
+  send AddClass class.dbTextEdit      "dbTextEdit"     1 0 1 0
+  send AddClass class.User            "User"           0 0 0 0
+end_object
+end_desktop_section
+
+function Cls_ClassName global integer liClass returns string
+  function_return (psName.i(oVdfClasses(self),liClass))
+end_function
+function Cls_ClassIsDbAware global integer liClass returns integer
+  function_return (pbDbAware.i(oVdfClasses(self),liClass))
+end_function
+function Cls_ClassIsContainer global integer liClass returns integer
+  function_return (pbContainer.i(oVdfClasses(self),liClass))
+end_function
+function Cls_ClassIsVisible global integer liClass returns integer
+  function_return (pbVisible.i(oVdfClasses(self),liClass))
+end_function
+function Cls_ClassIsMultiItem global integer liClass returns integer
+  function_return (pbMultiItem.i(oVdfClasses(self),liClass))
+end_function
+
+
+

@@ -1,0 +1,372 @@
+// Use XmlBuilder.nui // cXmlBuilder class
+// Part of VDFQuery by Sture ApS
+
+//> pkgdoc.begin
+//> The XmlBuilder.nui packages defines three classes for facilitating the building of XML documents:
+//>
+//> 1. The cXmlBuilder class for the actual building
+//> 2. The cXmlSequence class that is capable of defining a sequence of XML for adding to a document multiple times
+//> 3. The cXmlParamArray class that defines a set of parameters for use with an object of the cXmlSequence class.
+//>
+//> The cXmlBuilder class may be used for adding elements to an XML DOM tree in a way that relieves
+//> you of having to deal with a myriad of handle type variables in your code. This is not to mention
+//> the house keeping of destroying all the element objects again.
+//>
+//> As an alternative it may be used to write directly to a sequential file without building
+//> a DOM object in memory. It is a question of which method you use for initiating the
+//> XML builing (either use begin_xml_add_to_dom or begin_xml_write_seq)
+//>
+//> <tip legend="Writing XHTML code">
+//> If used in the sequential file output mode, all output is written by the write method. I use this
+//> when I write XTHML directly from within a WebApp application because I can augment just one
+//> method and have it write to the WebApp output stream..
+//> </tip>
+//>
+//> This piece of code:
+//> <pkgdoc:code>
+//> use Files.nui    // Utilities for handling file related stuff (No User Interface)
+//> object oTestBuilder is a cXmlBuilder
+//>   procedure DoTest
+//>     integer liChannel
+//>     get SEQ_DirectOutput "test.xml" to liChannel
+//>     if (liChannel>=0) begin
+//>       // Manually write this line:
+//>       write channel liChannel '<?xml version="1.0" encoding="iso-8859-1"?>'
+//>       send begin_xml_write_seq liChannel //
+//>       send add_open_element "response"
+//>            send add_attribute "xmlns:service" "http://www.sture.dk/2004/service/"
+//>       send add_open_element   "function"
+//>            send add_attribute "name" "login"
+//>       send add_open_element     "result"
+//>       send add_open_element       "fieldset"
+//>       send add_closed_element       "legend" "Login"
+//>       send add_closed_element       "span" "UserName"
+//>       send add_open_element         "span"
+//>       send add_closed_element         "input" ""
+//>            send add_attribute "type" "text"
+//>       send close_element            // "span"
+//>       send add_closed_element       "span" "Password"
+//>       send add_open_element         "span"
+//>       send add_closed_element         "input" ""
+//>            send add_attribute  "type" "password"
+//>       send close_element            // span
+//>       send close_element          // fieldset
+//>       send close_element        // result
+//>       send close_element      // function
+//>       send close_element    // response
+//>       send end_xml
+//>       send SEQ_CloseOutput liChannel
+//>     end
+//>   end_procedure
+//>   send DoTest
+//> end_object
+//> </pkgdoc:code>
+//>
+//> will write this to a file called test.xml:
+//>
+//> <pkgdoc:code>
+//> <?xml version="1.0" encoding="iso-8859-1"?>
+//> <response xmlns:service="http://www.sture.dk/2004/service/">
+//>   <function name="login">
+//>     <result>
+//>       <fieldset>
+//>         <legend>Login</legend>
+//>         <span>Username</span>
+//>         <span><input type="text" /></span>
+//>         <span>Password</span>
+//>         <span><input type="password" /></span>
+//>       </fieldset>>
+//>     </result>
+//>   </function>
+//> </response>
+//> </pkgdoc:code>
+//>
+//> (line feeds and indentation has been added for readability)
+//>
+//> <pkgdoc:note>
+//> This class is not able to handle mixed-content elements except by the use of the
+//> pbProtectValueData property.
+//> </pkgdoc:note>
+//>
+//> pkgdoc.end
+//>
+//> And here it comes:
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Dates.nui    // Date routines (No User Interface)
+Use FleXML.pkg
+Use ExtendedItemProp.nui // cExtendedItemPropertyArray class
+
+class cXmlBuilder is a cStack
+  procedure construct_object
+    forward send construct_object
+    property integer priv.pbWriteModeSeq        false
+    property integer priv.piChannel             false
+    property handle  priv.phCurrentNode         0
+    property string  priv.psWriteBuffer         ""
+    property integer priv.pbOpen                false
+    property integer priv.pbCData               false
+    property integer priv.ClosedElement         false
+    property integer priv.pbWebAppStream        false
+    //> This property has been introduced because the textarea element in (X)HTML is not allowed to be closed
+    //> in this way "<textarea />" when it's empty. Totally not understandable! But it must be written as
+    //> "<textarea></textarea>".
+    property integer pbTextAreaException        false
+    //> This property has been introduced because the script element in (X)HTML is not allowed to be closed
+    //> in this way "<script />" when it's empty. Must be written as "<script></script>". IE 6 problem
+    property integer pbScriptException          false
+    //> The pbProtectValueData property controls whether <, > and & characters written to the XML as data
+    //> is HTML encoded ("&lt;", "&gt;" and "&amp;") or not. Its default value is to do this encoding (true).
+    //> The reason for (temporarily) setting it to false when generating XHTML code is making it able to handle
+    //> when the data itself represents XHTML code. In this case it is not OK to encode these characters.
+    property integer pbProtectValueData         true
+    object oArray is a cArray
+      // This array is used when building XML in a string
+    end_object
+  end_procedure
+
+  //> If object is initiated using the begin_xml_write_seq method all output will be sent to this procedure.
+  procedure write string lsValue
+    integer liChannel lhArr
+    get priv.piChannel to liChannel
+    if (liChannel>=0) write channel (priv.piChannel(self)) lsValue
+    else begin
+      if (priv.pbWebAppStream(self)) begin
+        #IFDEF IS$WebApp
+          send OutputString To ghInetSession lsValue
+        #ENDIF
+      end
+      else begin
+        move (oArray(self)) to lhArr
+        set value of lhArr item (item_count(lhArr)) to lsValue
+      end
+    end
+  end_procedure
+
+            procedure flush_buffer // Private
+              handle hoNode
+              integer lbCDATA lbException
+              string lsBuffer lsValue lsElement
+              if (priv.pbWriteModeSeq(self)) begin
+                get priv.psWriteBuffer to lsBuffer
+                if (lsBuffer<>"") begin // If there's anything in the buffer
+                  if (priv.pbOpen(self)) send write (lsBuffer+">") // If we're writing an opening tag
+                  else begin // We're dealing with writing a data element (including a closing tag)
+                    get iPop to lbCDATA
+                    get sPop to lsElement
+                    get sPop to lsValue
+                    if (lsValue="" and ((lowercase(lsElement)<>"textarea" or pbTextAreaException(self)=0) and (lowercase(lsElement)<>"script" or pbScriptException(self)=0) )) send write (lsBuffer+" />") // If no value, we're writing the shorthand open-close tag.
+                    else begin
+                      if lbCDATA begin
+                        send write (lsBuffer+"><![CDATA["+lsValue+"]]></"+lsElement+">")
+                      end
+                      else begin
+                        if (pbProtectValueData(self)) begin
+                          move (replaces("&",lsValue,"&amp;")) to lsValue
+                          move (replaces("<",lsValue,"&lt;")) to lsValue
+                          move (replaces(">",lsValue,"&gt;")) to lsValue
+                        end
+                        send write (lsBuffer+">"+lsValue+"</"+lsElement+">")
+                      end
+                    end
+                  end
+                  set priv.psWriteBuffer to ""
+                  set priv.pbCData to false
+                end
+              end
+              else begin
+                if (priv.ClosedElement(self)) begin
+                  send destroy of (priv.phCurrentNode(self))
+                  set priv.phCurrentNode to (iPop(self))
+                  set priv.ClosedElement to false
+                end
+              end
+            end_procedure
+
+  procedure stream string lsValue
+    if (priv.pbWriteModeSeq(self)) begin
+      send flush_buffer
+      send write lsValue
+    end
+  end_procedure
+
+  //> Adds an element that contains other elements
+  procedure add_open_element string lsElement
+    handle hoParentNode lhChildNode
+    if (priv.pbWriteModeSeq(self)) begin
+      send flush_buffer
+      set priv.psWriteBuffer to ("<"+lsElement)
+      send push.s lsElement
+      set priv.pbOpen to true
+    end
+    else begin
+      send flush_buffer
+      get priv.phCurrentNode to hoParentNode
+//      get AddElementNS of hoParentNode "" lsElement "" to lhChildNode
+      get AddElement of hoParentNode lsElement "" to lhChildNode
+      send push.i hoParentNode
+      set priv.phCurrentNode to lhChildNode
+    end
+  end_procedure
+
+  //> Adds a data element (an element with no children)
+  procedure add_closed_element string lsElement string lsValue
+    handle hoParentNode lhChildNode
+    if (priv.pbWriteModeSeq(self)) begin
+      send flush_buffer
+      set priv.psWriteBuffer to ("<"+lsElement)
+      send push.s lsValue
+      send push.s lsElement
+      send push.i 0 // not cdata
+      set priv.pbOpen to false
+    end
+    else begin
+      send flush_buffer
+      get priv.phCurrentNode to hoParentNode
+//      get AddElementNS of hoParentNode "" lsElement "" to lhChildNode
+      get AddElement of hoParentNode lsElement lsValue to lhChildNode
+      send push.i hoParentNode
+      set priv.phCurrentNode to lhChildNode
+      set priv.ClosedElement to true
+    end
+  end_procedure
+
+  //> Same as add_closed_element but marks up the data in lsValue as CDATA.
+  procedure add_closed_element_cdata string lsElement string lsValue
+    handle hoParentNode lhChildNode
+    if (priv.pbWriteModeSeq(self)) begin
+      send flush_buffer
+      set priv.psWriteBuffer to ("<"+lsElement)
+      send push.s lsValue
+      send push.s lsElement
+      send push.i 1 // cdata
+      set priv.pbOpen to false
+    end
+    else begin
+      send flush_buffer
+      get priv.phCurrentNode to hoParentNode
+      get AddElement of hoParentNode lsElement "" to lhChildNode
+      send AddCDataSection of lhChildNode lsValue
+      send push.i hoParentNode
+      set priv.phCurrentNode to lhChildNode
+      set priv.ClosedElement to true
+    end
+  end_procedure
+
+  //> Close an element previously added by the add_open_element method
+  procedure close_element // Public
+    string lsElement
+    if (priv.pbWriteModeSeq(self)) begin
+      send flush_buffer
+      get sPop to lsElement
+      send write ("</"+lsElement+">")
+    end
+    else begin
+      send flush_buffer
+      send destroy of (priv.phCurrentNode(self))
+      set priv.phCurrentNode to (iPop(self))
+    end
+  end_procedure
+
+  //> Add an attribute to the element that was most recently added (whether it's an open or a closed element)
+  procedure add_attribute string lsAttr string lsValue
+    string lsBuffer
+    if (priv.pbWriteModeSeq(self)) begin
+      get priv.psWriteBuffer to lsBuffer
+      set priv.psWriteBuffer to (lsBuffer+' '+lsAttr+'="'+lsValue+'"')
+    end
+    else begin
+//      send AddAttributeNS of (priv.phCurrentNode(self)) "" lsAttr lsValue
+      send AddAttribute of (priv.phCurrentNode(self)) lsAttr lsValue
+    end
+  end_procedure
+
+  //> Send this to initiate the process of writing XML to the sequential channel
+  procedure begin_xml_write_seq integer liChannel
+    send delete_data // clear the stack
+    set priv.pbOpen               to false
+    set priv.pbWriteModeSeq       to true
+    set priv.piChannel            to liChannel
+    set priv.phCurrentNode        to -1
+    set priv.psWriteBuffer        to ""
+    set pbProtectValueData        to true
+  end_procedure
+
+  //>
+  procedure begin_xml_write_seq_custom
+    send delete_data // clear the stack
+    set priv.pbOpen               to false
+    set priv.pbWriteModeSeq       to true
+    set priv.piChannel            to -1
+    set priv.phCurrentNode        to -1
+    set priv.psWriteBuffer        to ""
+    set pbProtectValueData        to true
+    set priv.pbWebAppStream       to false
+  end_procedure
+
+  // Only use this from within an webapp
+  procedure begin_xml_write_webapp_stream
+    send begin_xml_write_seq_custom
+    set priv.pbWebAppStream to true
+    #IFNDEF IS$WebApp
+      error 323 "Must be a WebApp (XmlBuilder.pkg)"
+    #ENDIF
+  end_procedure
+
+  //> Send this to initiate the process of adding to XML DOM node
+  procedure begin_xml_add_to_dom integer hoNode
+    send delete_data // clear the stack
+    set priv.pbOpen         to false
+    set priv.pbWriteModeSeq to false
+    set priv.piChannel      to -1
+    set priv.phCurrentNode  to hoNode
+    set priv.psWriteBuffer  to ""
+    set priv.ClosedElement  to false
+    set pbProtectValueData  to true
+  end_procedure
+
+  //> If you want the XML to be returned as a string you should use this
+  //> method to initate the process.
+  procedure begin_xml_build_string_value
+    send delete_data of (oArray(self))
+    send begin_xml_write_seq_custom
+  end_procedure
+
+  //> Send this to conclude the process of building the XML sequence.
+  procedure end_xml
+    send flush_buffer
+  end_procedure
+
+  //> If theXML building was initiated by the begin_xml_build_string_value
+  //> message you can use this function to retrieve the value. Calling this
+  //> function resets the content of the internal array.
+  function sXmlValue returns string
+    integer lhArr liMax liItm
+    string lsValue
+    move "" to lsValue
+    move (oArray(self)) to lhArr
+    get item_count of lhArr to liMax
+    decrement liMax
+    for liItm from 0 to liMax
+      move (lsValue+value(lhArr,liItm)) to lsValue
+    loop
+    send delete_data of lhArr // You can only get its value once!
+    function_return lsValue
+  end_function
+
+  //> Same as add_closed_element but formats the number with "." as decimal separator
+  procedure add_closed_element_number string lsElement number lnValue // Public
+    string lsValue
+    move lnValue to lsValue
+    move (replace(",",lsValue,".")) to lsValue
+    send add_closed_element lsValue
+  end_procedure
+
+  //> Same as add_closed_element but formats the date according to ISO 8601 (YYYY-MM-DD)
+  procedure add_closed_element_date string lsElement date ldValue
+    string lsValue
+    get DateToStr ldValue DF_DATE_MILITARY true "-" to lsValue // International Standard ISO 8601
+    send add_closed_element lsValue
+  end_procedure
+end_class // cXmlBuilder
+

@@ -1,0 +1,1120 @@
+﻿// Use Dates.nui    // Date routines (No User Interface)
+
+// The functions and procedures of this packages may be used with WebApp, VDF 7 or higher and DF3.2 or higher
+
+// Update: Tue  02-10-2001 - Fixed Module_Compile_Date function for VDF7
+//         Mon  21-02-2002 - Error in 2 digit year datecompose fixed (Jan Morgils)
+//         Fri  24-02-2002 - New function DateIsValid
+//         Thu  14-11-2002 - Function DateDistance added
+//         Fri  13-02-2004 - Procedure MilliSeconds_Wait added
+//         Mon  01-08-2005 - Added #DN2 code to DateAsText function (Pieter van Dieren)
+//         Wed  02-05-2007 - Functions renamed: DayName       -> vdfq_DayName
+//                                              DateDayName   -> vdfq_DateDayName
+//                                              MonthName     -> vdfq_MonthName
+//                                              DateMonthName -> vdfq_DateMonthName
+//
+
+Use VdfBase.pkg // Define FMAC_VERSION and FMAC_REVISION
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+Use language.pkg // Set default languange if not set by compiler command line
+Use seq_chnl.pkg // Defines global sequential device management operations (DAW)
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+Use ErrorHnd.nui // cErrorHandlerRedirector class and oErrorHandlerQuiet object (No User Interface)
+
+// Påske søndag: Forårsjævndøgn -> Fuldmåne -> Søndag
+
+#IF LNG_DEFAULT=LNG_DUTCH
+ define t.calendar.year           for "Jaar"                                           // LNG_DUTCH
+ define t.calendar.month          for "Maand"                                          // LNG_DUTCH
+ define t.calendar.day            for "Dag"                                            // LNG_DUTCH
+ define t.calendar.week           for "Wk."                                            // LNG_DUTCH
+ define t.calendar.calendar_popup for "Kalender Popup"                                 // LNG_DUTCH
+ define t.calendar.Monday         for "Maandag"                                        // LNG_DUTCH
+ define t.calendar.Tuesday        for "Dinsdag"                                        // LNG_DUTCH
+ define t.calendar.Wednesday      for "Woensdag"                                       // LNG_DUTCH
+ define t.calendar.Thursday       for "Donderdag"                                      // LNG_DUTCH
+ define t.calendar.Friday         for "Vrijdag"                                        // LNG_DUTCH
+ define t.calendar.Saturday       for "Zaterdag"                                       // LNG_DUTCH
+ define t.calendar.Sunday         for "Zondag"                                         // LNG_DUTCH
+ define t.calendar.January        for "Januari"                                        // LNG_DUTCH
+ define t.calendar.February       for "Februari"                                       // LNG_DUTCH
+ define t.calendar.March          for "Maart"                                          // LNG_DUTCH
+ define t.calendar.April          for "April"                                          // LNG_DUTCH
+ define t.calendar.May            for "Mei"                                            // LNG_DUTCH
+ define t.calendar.June           for "Juni"                                           // LNG_DUTCH
+ define t.calendar.July           for "Juli"                                           // LNG_DUTCH
+ define t.calendar.August         for "Augustus"                                       // LNG_DUTCH
+ define t.calendar.September      for "September"                                      // LNG_DUTCH
+ define t.calendar.October        for "Oktober"                                        // LNG_DUTCH
+ define t.calendar.November       for "November"                                       // LNG_DUTCH
+ define t.calendar.December       for "December"                                       // LNG_DUTCH
+ define t.calendar.ok             for "OK"                                             // LNG_DUTCH
+ define t.calendar.Cancel         for "Annuleren"                                      // LNG_DUTCH
+ define t.calendar.Activate       for "Activeer popup kalender (Ctrl+D)"               // LNG_DUTCH
+#ENDIF
+#IF LNG_DEFAULT=LNG_ITALIAN
+ define t.calendar.year           for "Anno"                                           // LNG_ITALIAN
+ define t.calendar.month          for "Mese"                                           // LNG_ITALIAN
+ define t.calendar.day            for "Giorno"                                         // LNG_ITALIAN
+ define t.calendar.week           for "Set."                                           // LNG_ITALIAN
+ define t.calendar.calendar_popup for "Calendario Popup"                               // LNG_ITALIAN
+ define t.calendar.Monday         for "Lunedý"                                         // LNG_ITALIAN
+ define t.calendar.Tuesday        for "Martedý"                                        // LNG_ITALIAN
+ define t.calendar.Wednesday      for "Mercoledý"                                      // LNG_ITALIAN
+ define t.calendar.Thursday       for "Giovedý"                                        // LNG_ITALIAN
+ define t.calendar.Friday         for "Venerdý"                                        // LNG_ITALIAN
+ define t.calendar.Saturday       for "Sabato"                                         // LNG_ITALIAN
+ define t.calendar.Sunday         for "Domenica"                                       // LNG_ITALIAN
+ define t.calendar.January        for "Gennaio"                                        // LNG_ITALIAN
+ define t.calendar.February       for "Febbraio"                                       // LNG_ITALIAN
+ define t.calendar.March          for "Marzo"                                          // LNG_ITALIAN
+ define t.calendar.April          for "Aprile"                                         // LNG_ITALIAN
+ define t.calendar.May            for "Maggio"                                         // LNG_ITALIAN
+ define t.calendar.June           for "Giugno"                                         // LNG_ITALIAN
+ define t.calendar.July           for "Luglio"                                         // LNG_ITALIAN
+ define t.calendar.August         for "Agosto"                                         // LNG_ITALIAN
+ define t.calendar.September      for "Settembre"                                      // LNG_ITALIAN
+ define t.calendar.October        for "Ottobre"                                        // LNG_ITALIAN
+ define t.calendar.November       for "Novembre"                                       // LNG_ITALIAN
+ define t.calendar.December       for "Dicembre"                                       // LNG_ITALIAN
+ define t.calendar.ok             for "OK"                                             // LNG_ITALIAN
+ define t.calendar.Cancel         for "Annulla"                                        // LNG_ITALIAN
+ define t.calendar.Activate       for "Attiva calendario popup (Ctrl+D)"               // LNG_ITALIAN
+#ENDIF
+#IF LNG_DEFAULT=LNG_SPANISH  // 03/10/2002 25/01/2004 Pepe Guimarães Moose Software  pg@moose-software.com
+ define t.calendar.year           for "Año"                                            // LNG_SPANISH
+ define t.calendar.month          for "Mes"                                            // LNG_SPANISH
+ define t.calendar.day            for "Día"                                            // LNG_SPANISH
+ define t.calendar.week           for "Sem"                                            // LNG_SPANISH
+ define t.calendar.calendar_popup for "Popup del calendario"                           // LNG_SPANISH
+ define t.calendar.Monday         for "Lunes"                                          // LNG_SPANISH
+ define t.calendar.Tuesday        for "Martes"                                         // LNG_SPANISH
+ define t.calendar.Wednesday      for "Miércoles"                                      // LNG_SPANISH
+ define t.calendar.Thursday       for "Jueves"                                         // LNG_SPANISH
+ define t.calendar.Friday         for "Viernes"                                        // LNG_SPANISH
+ define t.calendar.Saturday       for "Sábado"                                         // LNG_SPANISH
+ define t.calendar.Sunday         for "Domingo"                                        // LNG_SPANISH
+ define t.calendar.January        for "Enero"                                          // LNG_SPANISH
+ define t.calendar.February       for "Febrero"                                        // LNG_SPANISH
+ define t.calendar.March          for "Marzo"                                          // LNG_SPANISH
+ define t.calendar.April          for "Abril"                                          // LNG_SPANISH
+ define t.calendar.May            for "Mayo"                                           // LNG_SPANISH
+ define t.calendar.June           for "Junio"                                          // LNG_SPANISH
+ define t.calendar.July           for "Julio"                                          // LNG_SPANISH
+ define t.calendar.August         for "Agosto"                                         // LNG_SPANISH
+ define t.calendar.September      for "Septiembre"                                     // LNG_SPANISH
+ define t.calendar.October        for "Octubre"                                        // LNG_SPANISH
+ define t.calendar.November       for "Noviembre"                                      // LNG_SPANISH
+ define t.calendar.December       for "Diciembre"                                      // LNG_SPANISH
+ define t.calendar.ok             for "Aceptar"                                        // LNG_SPANISH
+ define t.calendar.Cancel         for "Cancelar"                                       // LNG_SPANISH
+ define t.calendar.Activate       for "Active el calendario del popup (Ctrl+D)"        // LNG_SPANISH
+#ENDIF
+#IF LNG_DEFAULT=LNG_ENGLISH
+ define t.calendar.year           for "Year"                                           // LNG_ENGLISH
+ define t.calendar.month          for "Month"                                          // LNG_ENGLISH
+ define t.calendar.day            for "Day"                                            // LNG_ENGLISH
+ define t.calendar.week           for "Wk."                                            // LNG_ENGLISH
+ define t.calendar.calendar_popup for "Calendar Popup"                                 // LNG_ENGLISH
+ define t.calendar.Monday         for "Monday"                                         // LNG_ENGLISH
+ define t.calendar.Tuesday        for "Tuesday"                                        // LNG_ENGLISH
+ define t.calendar.Wednesday      for "Wednesday"                                      // LNG_ENGLISH
+ define t.calendar.Thursday       for "Thursday"                                       // LNG_ENGLISH
+ define t.calendar.Friday         for "Friday"                                         // LNG_ENGLISH
+ define t.calendar.Saturday       for "Saturday"                                       // LNG_ENGLISH
+ define t.calendar.Sunday         for "Sunday"                                         // LNG_ENGLISH
+ define t.calendar.January        for "January"                                        // LNG_ENGLISH
+ define t.calendar.February       for "February"                                       // LNG_ENGLISH
+ define t.calendar.March          for "March"                                          // LNG_ENGLISH
+ define t.calendar.April          for "April"                                          // LNG_ENGLISH
+ define t.calendar.May            for "May"                                            // LNG_ENGLISH
+ define t.calendar.June           for "June"                                           // LNG_ENGLISH
+ define t.calendar.July           for "July"                                           // LNG_ENGLISH
+ define t.calendar.August         for "August"                                         // LNG_ENGLISH
+ define t.calendar.September      for "September"                                      // LNG_ENGLISH
+ define t.calendar.October        for "October"                                        // LNG_ENGLISH
+ define t.calendar.November       for "November"                                       // LNG_ENGLISH
+ define t.calendar.December       for "December"                                       // LNG_ENGLISH
+ define t.calendar.ok             for "OK"                                             // LNG_ENGLISH
+ define t.calendar.Cancel         for "Cancel"                                         // LNG_ENGLISH
+ define t.calendar.Activate       for "Activate popup calendar (Ctrl+D)"               // LNG_ENGLISH
+#ENDIF
+#IF LNG_DEFAULT=LNG_DANISH
+ define t.calendar.year           for "År"                                             // LNG_DANISH
+ define t.calendar.month          for "Måned"                                          // LNG_DANISH
+ define t.calendar.day            for "Dag"                                            // LNG_DANISH
+ define t.calendar.week           for "Uge"                                            // LNG_DANISH
+ define t.calendar.calendar_popup for "Kalender"                                       // LNG_DANISH
+ define t.calendar.Monday         for "Mandag"                                         // LNG_DANISH
+ define t.calendar.Tuesday        for "Tirsdag"                                        // LNG_DANISH
+ define t.calendar.Wednesday      for "Onsdag"                                         // LNG_DANISH
+ define t.calendar.Thursday       for "Torsdag"                                        // LNG_DANISH
+ define t.calendar.Friday         for "Fredag"                                         // LNG_DANISH
+ define t.calendar.Saturday       for "Lørdag"                                         // LNG_DANISH
+ define t.calendar.Sunday         for "Søndag"                                         // LNG_DANISH
+ define t.calendar.January        for "Januar"                                         // LNG_DANISH
+ define t.calendar.February       for "Februar"                                        // LNG_DANISH
+ define t.calendar.March          for "Marts"                                          // LNG_DANISH
+ define t.calendar.April          for "April"                                          // LNG_DANISH
+ define t.calendar.May            for "Maj"                                            // LNG_DANISH
+ define t.calendar.June           for "Juni"                                           // LNG_DANISH
+ define t.calendar.July           for "Juli"                                           // LNG_DANISH
+ define t.calendar.August         for "August"                                         // LNG_DANISH
+ define t.calendar.September      for "September"                                      // LNG_DANISH
+ define t.calendar.October        for "Oktober"                                        // LNG_DANISH
+ define t.calendar.November       for "November"                                       // LNG_DANISH
+ define t.calendar.December       for "December"                                       // LNG_DANISH
+ define t.calendar.ok             for "OK"                                             // LNG_DANISH
+ define t.calendar.Cancel         for "Annuller"                                       // LNG_DANISH
+ define t.calendar.Activate       for "Aktiver popup kalender (Ctrl+D)"                // LNG_DANISH
+#ENDIF
+#IF LNG_DEFAULT=LNG_SWEDISH
+ define t.calendar.year           for "År"                                             // LNG_SWEDISH
+ define t.calendar.month          for "Månad"                                          // LNG_SWEDISH
+ define t.calendar.day            for "Dag"                                            // LNG_SWEDISH
+ define t.calendar.week           for "Vck"                                            // LNG_SWEDISH
+ define t.calendar.calendar_popup for "Kalender"                                       // LNG_SWEDISH
+ define t.calendar.Monday         for "Måndag"                                         // LNG_SWEDISH
+ define t.calendar.Tuesday        for "Tisdag"                                         // LNG_SWEDISH
+ define t.calendar.Wednesday      for "Onsdag"                                         // LNG_SWEDISH
+ define t.calendar.Thursday       for "Torsdag"                                        // LNG_SWEDISH
+ define t.calendar.Friday         for "Fredag"                                         // LNG_SWEDISH
+ define t.calendar.Saturday       for "Lördag"                                         // LNG_SWEDISH
+ define t.calendar.Sunday         for "Söndag"                                         // LNG_SWEDISH
+ define t.calendar.January        for "Januari"                                        // LNG_SWEDISH
+ define t.calendar.February       for "Februari"                                       // LNG_SWEDISH
+ define t.calendar.March          for "Mars"                                           // LNG_SWEDISH
+ define t.calendar.April          for "April"                                          // LNG_SWEDISH
+ define t.calendar.May            for "Maj"                                            // LNG_SWEDISH
+ define t.calendar.June           for "Juni"                                           // LNG_SWEDISH
+ define t.calendar.July           for "Juli"                                           // LNG_SWEDISH
+ define t.calendar.August         for "Augusti"                                        // LNG_SWEDISH
+ define t.calendar.September      for "September"                                      // LNG_SWEDISH
+ define t.calendar.October        for "Oktober"                                        // LNG_SWEDISH
+ define t.calendar.November       for "November"                                       // LNG_SWEDISH
+ define t.calendar.December       for "December"                                       // LNG_SWEDISH
+ define t.calendar.ok             for "OK"                                             // LNG_SWEDISH
+ define t.calendar.Cancel         for "Avbryt"                                         // LNG_SWEDISH
+ define t.calendar.Activate       for "Aktivera popup kalendar (Ctrl+D)"               // LNG_SWEDISH
+#ENDIF
+#IF LNG_DEFAULT=LNG_NORWEGIAN   // 22.04.1999 torkild.resheim@emmaedb.no (noen mindre endringer)
+ define t.calendar.year           for "År"                                             // LNG_NORWEGIAN
+ define t.calendar.month          for "Måned"                                          // LNG_NORWEGIAN
+ define t.calendar.day            for "Dag"                                            // LNG_NORWEGIAN
+ define t.calendar.week           for "Uke"                                            // LNG_NORWEGIAN
+ define t.calendar.calendar_popup for "Kalender"                                       // LNG_NORWEGIAN
+ define t.calendar.Monday         for "Mandag"                                         // LNG_NORWEGIAN
+ define t.calendar.Tuesday        for "Tirsdag"                                        // LNG_NORWEGIAN
+ define t.calendar.Wednesday      for "Onsdag"                                         // LNG_NORWEGIAN
+ define t.calendar.Thursday       for "Torsdag"                                        // LNG_NORWEGIAN
+ define t.calendar.Friday         for "Fredag"                                         // LNG_NORWEGIAN
+ define t.calendar.Saturday       for "Lørdag"                                         // LNG_NORWEGIAN
+ define t.calendar.Sunday         for "Søndag"                                         // LNG_NORWEGIAN
+ define t.calendar.January        for "Januar"                                         // LNG_NORWEGIAN
+ define t.calendar.February       for "Februar"                                        // LNG_NORWEGIAN
+ define t.calendar.March          for "Mars"                                           // LNG_NORWEGIAN
+ define t.calendar.April          for "April"                                          // LNG_NORWEGIAN
+ define t.calendar.May            for "Mai"                                            // LNG_NORWEGIAN
+ define t.calendar.June           for "Juni"                                           // LNG_NORWEGIAN
+ define t.calendar.July           for "Juli"                                           // LNG_NORWEGIAN
+ define t.calendar.August         for "August"                                         // LNG_NORWEGIAN
+ define t.calendar.September      for "September"                                      // LNG_NORWEGIAN
+ define t.calendar.October        for "Oktober"                                        // LNG_NORWEGIAN
+ define t.calendar.November       for "November"                                       // LNG_NORWEGIAN
+ define t.calendar.December       for "Desember"                                       // LNG_NORWEGIAN
+ define t.calendar.ok             for "OK"                                             // LNG_NORWEGIAN
+ define t.calendar.Cancel         for "Annuller"                                       // LNG_NORWEGIAN
+ define t.calendar.Activate       for "Aktiver kalender (Ctrl+D)"                      // LNG_NORWEGIAN
+#ENDIF
+#IF LNG_DEFAULT=LNG_GERMAN
+ define t.calendar.year           for "Jahr"                                           // LNG_GERMAN
+ define t.calendar.month          for "Monat"                                          // LNG_GERMAN
+ define t.calendar.day            for "Tag"                                            // LNG_GERMAN
+ define t.calendar.week           for "Wo."                                            // LNG_GERMAN
+ define t.calendar.calendar_popup for "Kalender"                                       // LNG_GERMAN
+ define t.calendar.Monday         for "Montag"                                         // LNG_GERMAN
+ define t.calendar.Tuesday        for "Dienstag"                                       // LNG_GERMAN
+ define t.calendar.Wednesday      for "Mittwoch"                                       // LNG_GERMAN
+ define t.calendar.Thursday       for "Donnerstag"                                     // LNG_GERMAN
+ define t.calendar.Friday         for "Freitag"                                        // LNG_GERMAN
+ define t.calendar.Saturday       for "Samstag"                                        // LNG_GERMAN
+ define t.calendar.Sunday         for "Sonntag"                                        // LNG_GERMAN
+ define t.calendar.January        for "Januar"                                         // LNG_GERMAN
+ define t.calendar.February       for "Februar"                                        // LNG_GERMAN
+ define t.calendar.March          for "März"                                           // LNG_GERMAN
+ define t.calendar.April          for "April"                                          // LNG_GERMAN
+ define t.calendar.May            for "Mai"                                            // LNG_GERMAN
+ define t.calendar.June           for "Juni"                                           // LNG_GERMAN
+ define t.calendar.July           for "Juli"                                           // LNG_GERMAN
+ define t.calendar.August         for "August"                                         // LNG_GERMAN
+ define t.calendar.September      for "September"                                      // LNG_GERMAN
+ define t.calendar.October        for "Oktober"                                        // LNG_GERMAN
+ define t.calendar.November       for "November"                                       // LNG_GERMAN
+ define t.calendar.December       for "Dezember"                                       // LNG_GERMAN
+ define t.calendar.ok             for "OK"                                             // LNG_GERMAN
+ define t.calendar.Cancel         for "Abbrechen"                                      // LNG_GERMAN
+ define t.calendar.Activate       for "Popupkalender aktivieren (Ctrl+D)"              // LNG_GERMAN
+#ENDIF
+#IF LNG_DEFAULT=LNG_PORTUGUESE
+ define t.calendar.year           for "Ano"                                            // LNG_PORTUGUESE
+ define t.calendar.month          for "Mês"                                            // LNG_PORTUGUESE
+ define t.calendar.day            for "Day"                                            // LNG_PORTUGUESE
+ define t.calendar.week           for "Sem."                                           // LNG_PORTUGUESE
+ define t.calendar.calendar_popup for "Calendário suspenso"                            // LNG_PORTUGUESE
+ define t.calendar.Monday         for "Segunda"                                        // LNG_PORTUGUESE
+ define t.calendar.Tuesday        for "Terça"                                          // LNG_PORTUGUESE
+ define t.calendar.Wednesday      for "Quarta"                                         // LNG_PORTUGUESE
+ define t.calendar.Thursday       for "Quinta"                                         // LNG_PORTUGUESE
+ define t.calendar.Friday         for "Sexta"                                          // LNG_PORTUGUESE
+ define t.calendar.Saturday       for "Sábado"                                         // LNG_PORTUGUESE
+ define t.calendar.Sunday         for "Domingo"                                        // LNG_PORTUGUESE
+ define t.calendar.January        for "Janeiro"                                        // LNG_PORTUGUESE
+ define t.calendar.February       for "Fevereiro"                                      // LNG_PORTUGUESE
+ define t.calendar.March          for "Março"                                          // LNG_PORTUGUESE
+ define t.calendar.April          for "Abril"                                          // LNG_PORTUGUESE
+ define t.calendar.May            for "Maio"                                           // LNG_PORTUGUESE
+ define t.calendar.June           for "Junho"                                          // LNG_PORTUGUESE
+ define t.calendar.July           for "Julho"                                          // LNG_PORTUGUESE
+ define t.calendar.August         for "Agosto"                                         // LNG_PORTUGUESE
+ define t.calendar.September      for "Setembro"                                       // LNG_PORTUGUESE
+ define t.calendar.October        for "Outubro"                                        // LNG_PORTUGUESE
+ define t.calendar.November       for "Novembro"                                       // LNG_PORTUGUESE
+ define t.calendar.December       for "Dezembro"                                       // LNG_PORTUGUESE
+ define t.calendar.ok             for "OK"                                             // LNG_PORTUGUESE
+ define t.calendar.Cancel         for "Cancelar"                                       // LNG_PORTUGUESE
+ define t.calendar.Activate       for "Ativar calendário suspenso (Ctrl+D)"            // LNG_PORTUGUESE
+#ENDIF
+#IF LNG_DEFAULT=LNG_FRENCH
+ Define t.calendar.year           For "Année"                                          // LNG_FRENCH
+ Define t.calendar.month          For "Mois"                                           // LNG_FRENCH
+ Define t.calendar.day            For "Jour"                                           // LNG_FRENCH
+ Define t.calendar.week           For "Sem."                                           // LNG_FRENCH
+ Define t.calendar.calendar_popup For "Calendrier"                                     // LNG_FRENCH
+ Define t.calendar.Monday         For "Lundi"                                          // LNG_FRENCH
+ Define t.calendar.Tuesday        For "Mardi"                                          // LNG_FRENCH
+ Define t.calendar.Wednesday      For "Mercredi"                                       // LNG_FRENCH
+ Define t.calendar.Thursday       For "Jeudi"                                          // LNG_FRENCH
+ Define t.calendar.Friday         For "Vendredi"                                       // LNG_FRENCH
+ Define t.calendar.Saturday       For "Samedi"                                         // LNG_FRENCH
+ Define t.calendar.Sunday         For "Dimanche"                                       // LNG_FRENCH
+ Define t.calendar.January        For "Janvier"                                        // LNG_FRENCH
+ Define t.calendar.February       For "Février"                                        // LNG_FRENCH
+ Define t.calendar.March          For "Mars"                                           // LNG_FRENCH
+ Define t.calendar.April          For "Avril"                                          // LNG_FRENCH
+ Define t.calendar.May            For "Mai"                                            // LNG_FRENCH
+ Define t.calendar.June           For "Juin"                                           // LNG_FRENCH
+ Define t.calendar.July           For "Juillet"                                        // LNG_FRENCH
+ Define t.calendar.August         For "Août"                                           // LNG_FRENCH
+ Define t.calendar.September      For "Septembre"                                      // LNG_FRENCH
+ Define t.calendar.October        For "Octobre"                                        // LNG_FRENCH
+ Define t.calendar.November       For "Novembre"                                       // LNG_FRENCH
+ Define t.calendar.December       For "Décembre"                                       // LNG_FRENCH
+ Define t.calendar.ok             For "OK"                                             // LNG_FRENCH
+ Define t.calendar.Cancel         For "Annuler"                                        // LNG_FRENCH
+ Define t.calendar.Activate       For "Ouverture du calendrier (Ctrl+D)"               // LNG_FRENCH
+#ENDIF
+
+define LargestPossibleDate for 913490 // December 31st 2500
+define Jan1st1900          for 693975
+define Jan1st2000          for 730500
+define Jan1st1930          for 704933
+define Jan1st1000          for 365250
+define Jan1st105           for 38352
+define Jan1st100           for 36525
+
+#IFNDEF DS_DAY
+  enumeration_list // Date Segments. Sequence of definition determined granularity
+    define DS_DAY
+    define DS_WEEK
+    define DS_MONTH
+    define DS_QUARTER
+    define DS_YEAR
+  end_enumeration_list
+#ENDIF
+
+integer Dates$Year Dates$Month Dates$Day // internal use
+
+procedure DateDecompose global date ldDate //very internal!!
+  integer liPos1 liPos2 liFormat
+  string lsValue lsSep
+  move (date(ldDate)) to ldDate
+  get_attribute DF_DATE_FORMAT to liFormat
+  get_attribute DF_DATE_SEPARATOR to liPos1 // overload
+  character liPos1 to lsSep                  // end overload
+  move ldDate to lsValue
+  replace lsSep in lsValue with "$"
+  move strmark to liPos1
+  if [found] begin
+    replace lsSep in lsValue with "$"
+    move strmark to liPos2
+  end
+  else begin
+    move 0 to Dates$Year
+    move 0 to Dates$Month
+    move 0 to Dates$Day
+  end
+  [ found] begin
+    if liFormat eq DF_DATE_EUROPEAN ;
+          left lsValue to Dates$Day    (liPos1-1)
+    if liFormat eq DF_DATE_USA begin
+          mid  lsValue to Dates$Day    (liPos2-liPos1-1) (liPos1+1)
+          left lsValue to Dates$Month  (liPos1-1)
+    end
+    else  mid  lsValue to Dates$Month  (liPos2-liPos1-1) (liPos1+1)
+
+    if liFormat eq DF_DATE_MILITARY begin
+          mid  lsValue to Dates$Day  2 (liPos2+1)
+          left lsValue to Dates$Year   (liPos1-1)
+    end
+    else  mid  lsValue to Dates$Year 4 (liPos2+1)
+  end
+  //showln ""
+  //showln (string(date#)+": "+string(Dates$Day)+","+string(Dates$Month)+","+string(Dates$Year))
+end_procedure
+
+function DateCompose global integer liDay integer liMonth integer liYear returns date
+  integer liFormat
+  date ldDate
+  string lsSep
+  ifnot (liDay*liMonth) function_return 0
+//  ifnot (liDay*liMonth*liYear) function_return 0
+  get_attribute DF_DATE_SEPARATOR to liFormat // overload
+  character liFormat to lsSep                 // end overload
+  get_attribute DF_DATE_FORMAT to liFormat
+  if liDay gt 28 begin
+    if liFormat eq DF_DATE_EUROPEAN move (date(string(liDay)+lsSep+string(liMonth)+lsSep+string(liYear))) to ldDate // DMY
+    if liFormat eq DF_DATE_USA      move (date(string(liMonth)+lsSep+string(liDay)+lsSep+string(liYear))) to ldDate // MDY
+    if liFormat eq DF_DATE_MILITARY move (date(string(liYear)+lsSep+string(liMonth)+lsSep+string(liDay))) to ldDate // YMD
+    send DateDecompose ldDate
+    if Dates$Month ne liMonth move (liDay-Dates$Day) to liDay
+  end
+  if liFormat eq DF_DATE_EUROPEAN function_return (date(string(liDay)+lsSep+string(liMonth)+lsSep+string(liYear))) // DMY
+  if liFormat eq DF_DATE_USA function_return (date(string(liMonth)+lsSep+string(liDay)+lsSep+string(liYear))) // MDY
+  function_return (date(string(liYear)+lsSep+string(liMonth)+lsSep+string(liDay))) // YMD
+end_function
+
+function DateIsLegalComponents global integer liDay integer liMonth integer liYear returns integer
+  date ldDate
+  get Year2to4 liYear to liYear
+  if liDay gt 31 function_return DFFALSE
+  if liMonth gt 12 function_return DFFALSE
+  if liYear gt 2500 function_return DFFALSE
+  get DateCompose liDay liMonth liYear to ldDate
+  send DateDecompose ldDate
+  function_return (Dates$Year=liYear and Dates$Month=liMonth and Dates$Day=liDay)
+end_function
+
+function DateFormatName global integer liFormat returns string
+  if liFormat eq DF_DATE_EUROPEAN function_return "European"
+  if liFormat eq DF_DATE_USA      function_return "United States"
+  if liFormat eq DF_DATE_MILITARY function_return "Military"
+end_function
+
+function DateCurrentSeparator global returns string
+  integer liRval
+  get_attribute DF_DATE_SEPARATOR to liRval
+  function_return (character(liRval))
+end_function
+
+function DateCurrentFormat global returns integer
+  integer liRval
+  get_attribute DF_DATE_FORMAT to liRval
+  function_return liRval
+end_function
+
+function DateFormatAsString global integer liFormat integer lbLong string lsSep returns string
+  string lsRval lsLetter
+  if liFormat eq DF_DATE_EUROPEAN move "3342241111" to lsRval
+  if liFormat eq DF_DATE_USA      move "2243341111" to lsRval
+  if liFormat eq DF_DATE_MILITARY move "1111422433" to lsRval
+  left t.calendar.year to lsLetter 1
+  replace "1" in lsRval with lsLetter
+  replace "1" in lsRval with lsLetter
+  ifnot lbLong move "" to lsLetter
+  move (replaces("1",lsRval,lsLetter)) to lsRval
+  move (replaces("2",lsRval,left(t.calendar.month,1))) to lsRval
+  move (replaces("3",lsRval,left(t.calendar.day,1))) to lsRval
+  if lsSep eq "" begin
+    get_attribute DF_DATE_SEPARATOR to liFormat
+    character liFormat to lsSep
+  end
+  move (replaces("4",lsRval,lsSep)) to lsRval
+  function_return lsRval
+end_function
+
+function StrToDate global string lsDate integer liFormat integer lbLong string lsSep returns date
+  integer liSepLen liDay liMonth liYear
+  move (length(lsSep)) to liSepLen
+  if lbLong move 4 to lbLong // ugly overload
+  else move 2 to lbLong
+  if liFormat eq DF_DATE_EUROPEAN begin // DMY
+    move (mid(lsDate,2,1)) to liDay
+    move (mid(lsDate,2,3+liSepLen)) to liMonth
+    move (mid(lsDate,lbLong,5+liSepLen+liSepLen)) to liYear
+  end
+  if liFormat eq DF_DATE_USA begin // MDY
+    move (mid(lsDate,2,1)) to liMonth
+    move (mid(lsDate,2,3+liSepLen)) to liDay
+    move (mid(lsDate,lbLong,5+liSepLen+liSepLen)) to liYear
+  end
+  if liFormat eq DF_DATE_MILITARY begin // YMD
+    move (mid(lsDate,lbLong,1)) to liYear
+    move (mid(lsDate,2,1+lbLong+liSepLen)) to liMonth
+    move (mid(lsDate,2,3+lbLong+liSepLen+liSepLen)) to liDay
+  end
+  get Year2to4 liYear to liYear
+  function_return (DateCompose(liDay,liMonth,liYear))
+end_function
+
+function DateToStr global date ldDate integer liFormat integer lbLong string lsSep returns string
+  string lsRval lsDay lsMonth lsYear
+  get Date2to4 ldDate to ldDate
+  if (integer(ldDate)) begin
+    send DateDecompose ldDate
+    move Dates$Day to lsDay
+    if Dates$Day lt 10 insert "0" in lsDay at 1
+    move Dates$Month to lsMonth
+    if Dates$Month lt 10 insert "0" in lsMonth at 1
+    move Dates$Year to lsYear
+    ifnot lbLong move (right(lsYear,2)) to lsYear
+    if liFormat eq DF_DATE_EUROPEAN move (lsDay+lsSep+lsMonth+lsSep+lsYear) to lsRval // DMY
+    if liFormat eq DF_DATE_USA      move (lsMonth+lsSep+lsDay+lsSep+lsYear) to lsRval // MDY
+    if liFormat eq DF_DATE_MILITARY move (lsYear+lsSep+lsMonth+lsSep+lsDay) to lsRval // YMD
+  end
+  else move "" to lsRval
+  function_return lsRval
+end_function
+
+//> The DateIsValid takes one string parameter and returns TRUE if its value
+//> constitutes a date.
+function DateIsValid global string lsValue returns integer
+  date ldDate
+  send ErrorHnd_Quiet_Activate     // Deactivate error handler
+  move lsValue to ldDate           // Move the value to a date variable
+  send ErrorHnd_Quiet_Deactivate   // Re-activate the normal error handler
+  ifnot (ErrorHnd_Quiet_ErrorCount()) function_return (integer(ldDate))
+  function_return DFFALSE
+end_function
+
+// Function DateAsString is only here for compatibility with earlier versions.
+// Use function DateToStr instead.
+function DateAsString global date ldDate integer liFormat integer lbLong string lsSep returns string
+  function_return (DateToStr(ldDate,liFormat,lbLong,lsSep))
+end_function
+
+//> Use DateIncr to add or subtract a number of months, years, days or
+//> weeks from a given date.
+//>
+//>  date ldDate        is the date to which the time interval will be added or subtracted
+//>
+//>  integer liSegment  may be one of these constants: DS_YEAR, DS_MONTH, DS_DAY or DS_WEEK
+//>
+//>  integer liAmount   is the (positive or negative) amount of units (indicated by liSegment) to be added.
+function DateIncr global date ldDate integer liSegment integer liAmount returns date
+  if (ldDate=0) function_return 0
+  if liSegment eq DS_QUARTER function_return (DateIncr(ldDate,DS_MONTH,liAmount*3))
+  if liSegment eq DS_WEEK function_return (ldDate+(liAmount*7)) //weeks
+  if (liSegment<>DS_DAY) begin // months or years
+    send DateDecompose ldDate
+    if liSegment eq DS_MONTH begin //months
+      move (Dates$Month+liAmount) to Dates$Month
+      if liAmount ge 0 function_return (DateCompose(Dates$Day,Dates$Month-(((Dates$Month-1)/12)*12),Dates$Year+((Dates$Month-1)/12)))
+      function_return (DateCompose(Dates$Day,Dates$Month-(((Dates$Month-12)/12)*12),Dates$Year+((Dates$Month-12)/12)))
+    end //years:
+    if liSegment eq DS_YEAR function_return (DateCompose(Dates$Day,Dates$Month,Dates$Year+liAmount))
+  end
+  else function_return (ldDate+liAmount) //days
+end_function
+
+function vdfq_DateSegment global date ldDate integer liSegment returns integer
+  send DateDecompose ldDate
+  if liSegment eq DS_DAY     function_return Dates$Day
+  if liSegment eq DS_MONTH   function_return Dates$Month
+  if liSegment eq DS_YEAR    function_return Dates$Year
+  if liSegment eq DS_QUARTER function_return (Dates$Month+2/3)
+end_function
+
+function DateToInteger global date ldDate returns integer // 20011231
+  send DateDecompose ldDate
+  function_return (Dates$Year*100+Dates$Month*100+Dates$Day)
+end_function
+
+function FirstDayInMonth global date ldDate returns date
+  integer liMonth liYear
+  move (vdfq_DateSegment(ldDate,DS_MONTH)) to liMonth
+  move (vdfq_DateSegment(ldDate,DS_YEAR)) to liYear
+  function_return (DateCompose(1,liMonth,liYear))
+end_function
+
+function LastDayInMonth global date ldDate returns date
+  move (DateIncr(ldDate,DS_MONTH,1)) to ldDate
+  function_return (FirstDayInMonth(ldDate)-1)
+end_function
+
+function FirstDayInYear global date ldDate returns date
+  integer liYear
+  move (vdfq_DateSegment(ldDate,DS_YEAR)) to liYear
+  function_return (DateCompose(1,1,liYear))
+end_function
+
+function LastDayInYear global date ldDate returns date
+  move (DateIncr(ldDate,DS_YEAR,1)) to ldDate
+  function_return (FirstDayInYear(ldDate)-1)
+end_function
+
+function DateDistance global date ldDate1 date ldDate2 integer liSegment returns integer
+  integer lbNegative liDistance liDay liYear1 liYear2 liMonth1 liMonth2
+  date ldTemp
+  if (ldDate1>ldDate2) begin
+    move ldDate1 to ldTemp
+    move ldDate2 to ldDate1
+    move ldTemp to ldDate2
+    move DFTRUE to lbNegative
+  end
+  else move DFFALSE to lbNegative
+  if (liSegment=DS_DAY) move (integer(ldDate2)-integer(ldDate1)) to liDistance
+  if (liSegment=DS_WEEK) begin
+    get DateDayNumber ldDate1 to liDay
+    move (date(integer(ldDate1)-liDay+1)) to ldDate1 // Now a monday
+    get DateDayNumber ldDate2 to liDay
+    move (date(integer(ldDate2)-liDay+1)) to ldDate2 // Now a monday
+    move (integer(ldDate2)-integer(ldDate1)) to liDistance
+    move (liDistance/7) to liDistance
+  end
+  if (liSegment=DS_MONTH) begin
+    move (vdfq_DateSegment(ldDate1,DS_MONTH)) to liMonth1
+    move (vdfq_DateSegment(ldDate1,DS_YEAR)) to liYear1
+    move (vdfq_DateSegment(ldDate2,DS_MONTH)) to liMonth2
+    move (vdfq_DateSegment(ldDate2,DS_YEAR)) to liYear2
+    move (liYear2-liYear1*12+liMonth2-liMonth1) to liDistance
+  end
+  if (liSegment=DS_QUARTER) begin
+    move (vdfq_DateSegment(ldDate1,DS_QUARTER)) to liMonth1 // Overload
+    move (vdfq_DateSegment(ldDate1,DS_YEAR)) to liYear1
+    move (vdfq_DateSegment(ldDate2,DS_QUARTER)) to liMonth2 // Overload
+    move (vdfq_DateSegment(ldDate2,DS_YEAR)) to liYear2
+    move (liYear2-liYear1*4+liMonth2-liMonth1) to liDistance
+  end
+  if (liSegment=DS_YEAR) begin
+    move (vdfq_DateSegment(ldDate1,DS_YEAR)) to liYear1
+    move (vdfq_DateSegment(ldDate2,DS_YEAR)) to liYear2
+    move (liYear2-liYear1) to liDistance
+  end
+  if lbNegative move (0-liDistance) to liDistance
+  function_return liDistance
+end_function
+
+function DateWeekNumber global date ldDate returns integer
+  Integer liWeek liFirstWeekDay liDayOfYear liYear liWeekDay
+  
+  If (Integer(ldDate)=0) ;
+        Function_Return 0
+
+  get Date2to4 ldDate to ldDate
+  get DateDayNumber ldDate to liWeekDay
+  move (vdfq_DateSegment(ldDate-liWeekDay+1,DS_YEAR)) to liYear
+
+  get DateDayNumber (FirstDayInYear(ldDate)) to liFirstWeekDay
+  move (ldDate-FirstDayInYear(ldDate)) to liDayOfYear
+  move (liDayOfYear-1-7+liFirstWeekDay) to liDayOfYear
+  If (liDayOfYear/7.0) ge 0 ; 
+        Move (liDayOfYear/7+1) to liWeek
+  Else ;
+        Move 0 to liWeek
+  if liFirstWeekDay le 4 increment liWeek
+  if liWeek gt 52 begin
+    move 1 to liWeek
+    If liFirstWeekDay eq 4 ;
+            Move 53 to liWeek
+    If liFirstWeekDay eq 3 ;
+        If ((liYear/4)*4) eq liYear ;
+            ifnot ((liYear/100)*100) eq liYear ;
+                Move 53 to liWeek
+  end
+  if liWeek eq 0 begin
+    // Week 52 or 53
+    get DateDayNumber (DateIncr(FirstDayInYear(ldDate),DS_YEAR,-1)) to liFirstWeekDay
+    move 52 to liWeek
+    If liFirstWeekDay eq 4 ;
+            Move 53 to liWeek
+    If liFirstWeekDay eq 3 ;
+            If ((liYear/4)*4) eq liYear ifnot ((liYear/100)*100) eq liYear Move 53 to liWeek
+  end
+  Function_Return liWeek
+End_Function
+
+//> Set value of gbSundayIsFirstDayOfWeek to control
+//> the popup calendar appearance. Garret Mott solved
+//> the puzzle.
+Global_Variable Boolean gbSundayIsFirstDayOfWeek
+Move False to gbSundayIsFirstDayOfWeek
+
+Function vdfq_DayName Global Integer liWeekDay Returns String
+  If (gbSundayIsFirstDayOfWeek) Begin 
+    If liWeekDay eq 1 Function_Return t.calendar.Sunday
+    If liWeekDay eq 2 Function_Return t.calendar.Monday
+    If liWeekDay eq 3 Function_Return t.calendar.Tuesday
+    If liWeekDay eq 4 Function_Return t.calendar.Wednesday
+    If liWeekDay eq 5 Function_Return t.calendar.Thursday
+    If liWeekDay eq 6 Function_Return t.calendar.Friday
+    If liWeekDay eq 7 Function_Return t.calendar.Saturday
+  End
+  Else Begin
+    If liWeekDay eq 1 Function_Return t.calendar.Monday
+    If liWeekDay eq 2 Function_Return t.calendar.Tuesday
+    If liWeekDay eq 3 Function_Return t.calendar.Wednesday
+    If liWeekDay eq 4 Function_Return t.calendar.Thursday
+    If liWeekDay eq 5 Function_Return t.calendar.Friday
+    If liWeekDay eq 6 Function_Return t.calendar.Saturday
+    If liWeekDay eq 7 Function_Return t.calendar.Sunday
+  End
+  Function_Return ""
+end_function
+
+Function DateDayNumber Global Date ldDate Returns Integer
+  Integer liRval // 1=Monday, ... , 7=Sunday
+  Get Date2to4 ldDate to ldDate
+  Move ldDate to liRval
+  If (gbSundayIsFirstDayOfWeek) Begin
+    If liRval Begin
+      If liRval gt 693975 Move (liRval-2) to liRval
+      Move (liRval-((liRval/7)*7)) to liRval
+      Move (liRval+1) to liRval       //GM 02/24/2012 for US Week Display (Sunday First) - Added this line
+      If liRval eq 0 Move 7 to liRval
+    End
+  End
+  Else Begin
+    If liRval Begin
+      If liRval gt 693975 Move (liRval-2) to liRval
+      Move (liRval-((liRval/7)*7)) to liRval
+      If liRval eq 0 Move 7 to liRval
+    End
+  End 
+  Function_Return liRval
+End_Function
+
+function vdfq_DateDayName global date ldDate returns string
+  function_return (vdfq_DayName(DateDayNumber(ldDate)))
+end_function
+
+function YearMaxWeek global integer liYear returns integer
+  integer liWeek1 liWeek2
+  get DateWeekNumber (DateCompose(31,12,liYear)) to liWeek1
+  get DateWeekNumber (DateCompose(24,12,liYear)) to liWeek2
+  function_return (liWeek1 max liWeek2)
+end_function
+
+function WeekToDate global integer liYear integer liWeek returns date
+  date ldDate
+  move (DateCompose(1,1,liYear)) to ldDate
+  if (DateWeekNumber(ldDate)) ne 1 move (ldDate+7) to ldDate // week 52 or 53
+  move (ldDate-DateDayNumber(ldDate)+1) to ldDate // Now it's a Monday
+  function_return (liWeek-1*7+ldDate)
+end_function
+
+function vdfq_MonthName global integer liMonth returns string
+  if liMonth eq  1 function_return t.calendar.January
+  if liMonth eq  2 function_return t.calendar.February
+  if liMonth eq  3 function_return t.calendar.March
+  if liMonth eq  4 function_return t.calendar.April
+  if liMonth eq  5 function_return t.calendar.May
+  if liMonth eq  6 function_return t.calendar.June
+  if liMonth eq  7 function_return t.calendar.July
+  if liMonth eq  8 function_return t.calendar.August
+  if liMonth eq  9 function_return t.calendar.September
+  if liMonth eq 10 function_return t.calendar.October
+  if liMonth eq 11 function_return t.calendar.November
+  if liMonth eq 12 function_return t.calendar.December
+  function_return ""
+end_function
+
+function vdfq_MonthNumber global string lsMonth returns Integer // By Michael Mullan
+  move (Uppercase(lsMonth)) to lsMonth
+  if lsMonth eq (Uppercase(t.calendar.January  )) function_return   1
+  if lsMonth eq (Uppercase(t.calendar.February )) function_return   2
+  if lsMonth eq (Uppercase(t.calendar.March    )) function_return   3
+  if lsMonth eq (Uppercase(t.calendar.April    )) function_return   4
+  if lsMonth eq (Uppercase(t.calendar.May      )) function_return   5
+  if lsMonth eq (Uppercase(t.calendar.June     )) function_return   6
+  if lsMonth eq (Uppercase(t.calendar.July     )) function_return   7
+  if lsMonth eq (Uppercase(t.calendar.August   )) function_return   8
+  if lsMonth eq (Uppercase(t.calendar.September)) function_return   9
+  if lsMonth eq (Uppercase(t.calendar.October  )) function_return  10
+  if lsMonth eq (Uppercase(t.calendar.November )) function_return  11
+  if lsMonth eq (Uppercase(t.calendar.December )) function_return  12
+  function_return 0 // No match
+end_function
+
+function vdfq_DateMonthName global date ldDate returns string
+  function_return (vdfq_MonthName(vdfq_DateSegment(ldDate,DS_MONTH)))
+end_function
+
+// May be used like this:
+//  get DateAsText 06/06/2006 "#D-#MN3-#Y4" to lsValue
+//  => lsValue = 6-Jul-2006
+function DateAsText global date ldDate string lsFormat returns string
+  integer liDay liMonth liYear liYearTmp
+  if ldDate eq 0 function_return ""
+  move (replace("#DN3",lsFormat,left(vdfq_DateDayName(ldDate),3)))   to lsFormat
+  move (replace("#DN2",lsFormat,left(vdfq_DateDayName(ldDate),2)))   to lsFormat // Dutch request. 01/08/2005
+  move (replace("#MN3",lsFormat,left(vdfq_DateMonthName(ldDate),3))) to lsFormat
+  move (replace("#DN", lsFormat,vdfq_DateDayName(ldDate)))           to lsFormat
+  move (replace("#MN", lsFormat,vdfq_DateMonthName(ldDate)))         to lsFormat
+  move (replace("#WN", lsFormat,DateWeekNumber(ldDate)))        to lsFormat
+  move (vdfq_DateSegment(ldDate,DS_DAY))   to liDay
+  move (vdfq_DateSegment(ldDate,DS_MONTH)) to liMonth
+  move (vdfq_DateSegment(ldDate,DS_YEAR))  to liYear
+  move (replace("#D2", lsFormat,if(liDay<10,"0"+string(liDay),string(liDay)))) to lsFormat
+  move (replace("#D",  lsFormat,string(liDay))) to lsFormat
+
+  get Year4to2 liYear to liYearTmp
+  move (replace("#Y2", lsFormat,if(liYearTmp<10,"0"+string(liYearTmp),string(liYearTmp)))) to lsFormat
+
+  get Year2to4 liYear to liYearTmp
+  move (replace("#Y4", lsFormat,string(liYearTmp))) to lsFormat
+
+  move (replace("#M2", lsFormat,if(liMonth<10,"0"+string(liMonth),string(liMonth)))) to lsFormat
+  move (replace("#M",  lsFormat,string(liMonth))) to lsFormat
+  function_return lsFormat
+end_function
+
+function Year2to4 global integer liYear returns integer
+  integer liEpochValue
+  get_date_attribute EPOCH_VALUE to liEpochValue
+  if liYear lt 100 begin
+    if liYear gt liEpochValue function_return (liYear+1900)
+    function_return (liYear+2000)
+  end
+  function_return liYear // No conversion done!
+end_function
+
+function Year4to2 global integer liYear returns integer
+  function_return (right(string(liYear),2))
+end_function
+
+function Date2to4 global date ldDate returns date
+  integer liEpochValue
+  move (date(ldDate)) to ldDate
+  get_date_attribute EPOCH_VALUE to liEpochValue
+  if ldDate gt 0 begin // Only if there is a date to convert
+    if (vdfq_DateSegment(ldDate,DS_YEAR)) lt 105 begin
+      if Dates$Year gt liEpochValue function_return (DateIncr(ldDate,DS_YEAR,1900))
+      function_return (DateIncr(ldDate,DS_YEAR,2000))
+    end
+    function_return ldDate // No conversion done!
+  end
+end_function
+
+function Date4to2 global date ldDate returns date
+  integer liEpochValue liYear
+  get_date_attribute EPOCH_VALUE to liEpochValue
+  if ldDate gt 0 begin // Only if there is a date to convert
+    move (vdfq_DateSegment(ldDate,DS_YEAR)) to liYear
+    if liYear ge 100 begin // Only then conversion is needed!
+      if (liYear>=(1900+liEpochValue) and liYear<(2000+liEpochValue)) begin
+        if liYear lt 2000 function_return (DateIncr(ldDate,DS_YEAR,-1900))
+        else             function_return (DateIncr(ldDate,DS_YEAR,-2000))
+      end
+      else error 301 "Date is out of epoch range"
+    end
+  end
+  function_return ldDate // No conversion done!
+end_function
+
+function dSysDate global returns date
+  date ldDate
+  sysdate4 ldDate
+  function_return ldDate
+end_function
+
+function iSysYear global returns integer
+  date ldDate
+  sysdate4 ldDate
+  function_return (vdfq_DateSegment(ldDate,DS_YEAR))
+end_function
+
+#IFDEF U_DataDictionary
+ use Datadict.pkg // Just to satisfy the studio parser. Obviously it's already been used.
+ procedure FieldSysdate for DataDictionary integer liField
+   date ldDate
+   get field_current_value liField to ldDate
+   if ldDate eq 0 begin
+     sysdate4 ldDate
+     set field_changed_value liField to ldDate
+   end
+ end_procedure
+
+ procedure FieldDate2to4 for DataDictionary integer liField
+   integer liYear
+   date ldDate ldNewDate
+   get field_current_value liField to ldDate
+
+   move (vdfq_DateSegment(ldDate,DS_YEAR)) to liYear
+   if (liYear=0 and ldDate<>0) move (DateIncr(ldDate,3,iSysYear())) to ldNewDate
+   else move ldDate to ldNewDate
+
+   move (Date2to4(ldNewDate)) to ldNewDate
+   move (vdfq_DateSegment(ldNewDate,3)) to liYear
+   if (liYear>99 and liYear <=999) begin
+     error 15 // Illegal entry in this window
+     procedure_return 1
+   end
+   if ldNewDate ne ldDate set field_changed_value liField to ldNewDate
+ end_procedure
+
+ procedure FieldYear2to4 for DataDictionary integer liField
+   integer liYear liNewYear lbChanged
+   get field_current_value liField to liYear
+   get field_changed_state liField to lbChanged
+   if lbChanged begin
+     if (liYear>99 and liYear<1000) begin
+       error 15 // Illegal entry in this window
+       procedure_return 1
+     end
+     move (Year2to4(liYear)) to liNewYear
+     if liNewYear ne liYear set field_changed_value liField to liNewYear
+   end
+ end_procedure
+#ENDIF
+
+#IFDEF get_SysDate
+#ELSE
+ function SysDate global returns date
+   function_return (dSysDate())
+ end_function
+#ENDIF
+
+function sSysTime global returns string
+  integer h# m# s#
+  sysdate4 h# h# m# s#
+  function_return (if(h#<10,"0","")+string(h#)+":"+if(m#<10,"0","")+string(m#)+":"+if(s#<10,"0","")+string(s#))
+end_function
+
+function TS_SysTime global returns number
+  integer liDate liHour liMinute liSecond
+  sysdate4 liDate liHour liMinute liSecond
+  function_return (liDate*24.0+liHour*60+liMinute*60+liSecond)
+end_function
+
+//> This function returns a TS value composed from the date and time
+//> passed to it. Note that the time variable must be of the format
+//> "hh:mm:ss".
+function TS_Compose global date ldDate string lsTime returns number
+  integer liHour liMinute liSecond
+  left lsTime to liHour 2
+  mid lsTime to liMinute 2 4
+  mid lsTime to liSecond 2 7
+  function_return (integer(ldDate)*24.0+liHour*60+liMinute*60+liSecond)
+end_function
+
+function TS_Compose2 global date ldDate integer liHour integer liMinute integer liSecond returns number
+  function_return (integer(ldDate)*24.0+liHour*60+liMinute*60+liSecond)
+end_function
+
+function TS_ExtractDate global number lnTime returns date
+  function_return (lnTime/86400) // 86400=24*60*60
+end_function
+
+function TS_ExtractTime global number lnTime returns string
+  integer liHour liMinute liSecond
+  move (lnTime-(86400.0*integer(TS_ExtractDate(lnTime)))) to liSecond
+  move (liSecond/3600) to liHour
+  move (liSecond-(liHour*3600)) to liSecond
+  move (liSecond/60) to liMinute
+  move (liSecond-(liMinute*60)) to liSecond
+  function_return (if(liHour<10,"0","")+string(liHour)+":"+if(liMinute<10,"0","")+string(liMinute)+":"+if(liSecond<10,"0","")+string(liSecond))
+end_function
+
+function TS_ConvertToString global number lnTime returns string
+  date ldDate
+  if (lnTime=0) function_return ""
+  move (TS_ExtractDate(lnTime)) to ldDate
+  if (integer(ldDate)) function_return (string(ldDate)+" "+TS_ExtractTime(lnTime))
+  else function_return (TS_ExtractTime(lnTime))
+end_function
+
+function TS_ConvertStringToTS global string lsValue returns number
+  string lsDate lsTime
+  move (ExtractWord(lsValue," ",1)) to lsDate
+  move (ExtractWord(lsValue," ",2)) to lsTime
+  function_return (TS_Compose(lsDate,lsTime))
+end_function
+
+function TS_ConvertToStringNoDate global number lnTS returns string
+  integer liHour liMinute
+  if (lnTS=0) function_return ""
+  move (lnTS/3600) to liHour
+  move (lnTS-(liHour*3600)) to lnTS
+  move (lnTS/60) to liMinute
+  move (lnTS-(liMinute*60)) to lnTS
+  function_return (if(liHour<10,"0","")+string(liHour)+":"+if(liMinute<10,"0","")+string(liMinute)+":"+if(lnTS<10,"0","")+string(lnTS))
+end_function
+
+// This procedure is used when a TS-variable must be displayed on screen.
+procedure TS_UI_Update global number lnTS integer lhObj1 integer liItm1 integer lhTmpObj2 integer liTmpItm2
+  integer lhObj2 liItm2
+  if num_arguments gt 3 begin
+    move lhTmpObj2 to lhObj2
+    move liTmpItm2 to liItm2
+  end
+  else begin
+    move lhObj1 to lhObj2
+    move (liItm1+1) to liItm2
+  end
+  set value of lhObj1 item liItm1 to (TS_ExtractDate(lnTS))
+  set value of lhObj2 item liItm2 to (TS_ExtractTime(lnTS))
+end_procedure
+
+class TS_TimeEstimator is an array
+  procedure construct_object
+    forward send construct_object
+    set delegation_mode to delegate_to_parent
+    property number  pnTotal   0 // Seconds needed to run the loop.
+    property number  pnElapsed 0 // Seconds elapsed so far.
+    property number  pnLeft    0 // Number of seconds left
+    property number  pnStart   0
+    property number  pnPause   0
+    property number  pnPercent 0
+    property integer piMin     0
+    property integer piMax     0
+  end_procedure
+
+  procedure TS_Start integer liMin integer liMax
+    set piMin to liMin
+    set piMax to liMax
+    set pnStart to (TS_SysTime())
+    set pnElapsed to 0
+    set pnPercent to 0
+  end_procedure
+
+  procedure TS_Calculate integer liPos
+    integer liMin liMax
+    get piMin to liMin
+    get piMax to liMax
+    set pnElapsed to (TS_SysTime()-pnStart(self))
+    set pnTotal   to (pnElapsed(self)*(liMax-liMin)/number(liPos-liMin))
+    set pnLeft    to (pnTotal(self)-pnElapsed(self))
+    set pnPercent to (100.0*(liPos-liMin)/(liMax-liMin))
+  end_procedure
+
+  procedure TS_Pause
+    set pnPause to (TS_SysTime())
+  end_procedure
+
+  procedure TS_Continue
+    set pnStart to (pnStart(self)+TS_SysTime()-pnPause(self))
+  end_procedure
+end_class
+
+function TS_Module_Compile_Time global string lsPath returns number
+  date ldDate
+  integer liHour liMin liSec
+  string lsAppName
+  move (ToOem(SysConf(SYSCONF_RUNTIME_NAME))) to lsAppName
+  get_file_mod_time (ToOem(lsAppName)) to ldDate liHour liMin liSec
+  function_return (TS_Compose2(ldDate,liHour,liMin,liSec))
+end_function
+
+string Dates$Module_Compile_Time
+move "" to Dates$Module_Compile_Time
+
+function Module_Compile_Date global returns date
+  number lnTS
+  string lsValue
+  get module_name to lsValue // 'module_name' is most likely the name of the .flx file.
+  get TS_Module_Compile_Time lsValue to lnTS
+  move (TS_ExtractTime(lnTS)) to Dates$Module_Compile_Time
+  function_return (TS_ExtractDate(lnTS))
+end_function
+
+function Module_Compile_Time global returns string
+  date ldGarbage
+  // Module_Compile_Date must be called before this one!
+  if Dates$Module_Compile_Time eq "" move (Module_Compile_Date()) to ldGarbage
+  function_return Dates$Module_Compile_Time
+end_function
+
+date   Dates$ModuleStartDate
+string Dates$ModuleStartTime 8
+move (dSysDate()) to Dates$ModuleStartDate
+move (sSysTime()) to Dates$ModuleStartTime
+
+function Module_Start_Date global returns date
+  function_return Dates$ModuleStartDate
+end_function
+
+function Module_Start_Time global returns string
+  function_return Dates$ModuleStartTime
+end_function
+
+
+// The necessary information to do the following comes from Oliver Nelson
+
+Type Dates$SystemTime
+  field Dates$SystemTime.iYear As Word
+  field Dates$SystemTime.iMonth As Word
+  field Dates$SystemTime.iDayOfWeek As Word
+  field Dates$SystemTime.iDay As Word
+  field Dates$SystemTime.iHour As Word
+  field Dates$SystemTime.iMinute As Word
+  field Dates$SystemTime.iSecond As Word
+  field Dates$SystemTime.iMilliseconds As Word
+End_Type
+external_function Dates.GetSystemTime "GetSystemTime" kernel32.dll Pointer lpGST Returns VOID_TYPE
+       
+function MilliSeconds_Systime global returns string
+  integer liGrb
+  string lsTimeData
+  Pointer lpST
+  ZeroType Dates$SystemTime to lsTimeData
+  getAddress of lsTimeData to lpST
+  move (Dates.GetSystemTime(lpST)) to liGrb
+  function_return lsTimeData
+  //getbuff from TimeData as SystemTime.IVAL to var
+end_function
+
+function MilliSeconds_Elapsed global string lsStart string lsStop returns integer
+  integer liYear1 liMonth1 liDay1 liHour1 liMinute1 liSecond1 liMilli1
+  integer liYear2 liMonth2 liDay2 liHour2 liMinute2 liSecond2 liMilli2
+  date    ldDate1 ldDate2
+
+  getbuff from lsStart at Dates$SystemTime.iYear         to liYear1
+  getbuff from lsStart at Dates$SystemTime.iMonth        to liMonth1
+  getbuff from lsStart at Dates$SystemTime.iDay          to liDay1
+  getbuff from lsStart at Dates$SystemTime.iHour         to liHour1
+  getbuff from lsStart at Dates$SystemTime.iMinute       to liMinute1
+  getbuff from lsStart at Dates$SystemTime.iSecond       to liSecond1
+  getbuff from lsStart at Dates$SystemTime.iMilliseconds to liMilli1
+  getbuff from lsStop  at Dates$SystemTime.iYear         to liYear2
+  getbuff from lsStop  at Dates$SystemTime.iMonth        to liMonth2
+  getbuff from lsStop  at Dates$SystemTime.iDay          to liDay2
+  getbuff from lsStop  at Dates$SystemTime.iHour         to liHour2
+  getbuff from lsStop  at Dates$SystemTime.iMinute       to liMinute2
+  getbuff from lsStop  at Dates$SystemTime.iSecond       to liSecond2
+  getbuff from lsStop  at Dates$SystemTime.iMilliseconds to liMilli2
+  get DateCompose liDay1 liMonth1 liYear1 to ldDate1
+  get DateCompose liDay2 liMonth2 liYear2 to ldDate2
+
+  move (ldDate2  -ldDate1  ) to liDay1
+  move (liHour2  -liHour1  ) to liHour1
+  move (liMinute2-liMinute1) to liMinute1
+  move (liSecond2-liSecond1) to liSecond1
+  move (liMilli2 -liMilli1 ) to liMilli1
+
+  function_return (liDay1*24+liHour1*60+liMinute1*60+liSecond1*1000+liMilli1)
+end_function
+
+procedure MilliSeconds_Wait global integer liMS
+  string lsSys lsNow
+  get MilliSeconds_Systime to lsSys
+  repeat
+    get MilliSeconds_Systime to lsNow
+  until (MilliSeconds_Elapsed(lsSys,lsNow)>=liMS)
+end_procedure
+
+

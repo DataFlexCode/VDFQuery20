@@ -1,0 +1,117 @@
+// Use Nomencla.nui // Define nomenclature
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Language     // Default language setup
+
+#IF LNG_DEFAULT=LNG_DUTCH
+  define t.nomencla.record           for "record"                                 // PvM
+  define t.nomencla.save_changes     for "Bewaar wijzigingen voor dit #?"         // PvM
+  define t.nomencla.create_new       for "Aanmaken nieuw #?"                      // PvM
+  define t.nomencla.delete_this      for "Verwijder dit #?"                       // PvM
+  define t.nomencla.no_active_delete for "Geen actief # om te verwijderen"        // PvM
+  define t.nomencla.cpy_no_active    for "Geen # om te kopi‰ren"                  // PvM
+  define t.nomencla.cpy_save_before  for "Bewaar # voor het kopi‰ren"             // PvM
+#ENDIF
+#IF LNG_DEFAULT=LNG_SPANISH                 // 26/01/2004 Pepe GuimarÆes  Moose Software pg@moose-software.com
+  define t.nomencla.record           for "registro"
+  define t.nomencla.save_changes     for "¨Grabar cambios de este #?"
+  define t.nomencla.create_new       for "¨Crear nuevo #?"
+  define t.nomencla.delete_this      for "¨Borrar este #?"
+  define t.nomencla.no_active_delete for "No hay # activo para borrar."
+  define t.nomencla.cpy_no_active    for "No hay # para copiar"
+  define t.nomencla.cpy_save_before  for "Grabar # antes de copiar"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ENGLISH
+  define t.nomencla.record           for "record"
+  define t.nomencla.save_changes     for "Save changes to this #?"
+  define t.nomencla.create_new       for "Create new #?"
+  define t.nomencla.delete_this      for "Delete this #?"
+  define t.nomencla.no_active_delete for "There is no active # to delete."
+  define t.nomencla.cpy_no_active    for "No # to copy"
+  define t.nomencla.cpy_save_before  for "Save # before copying"
+#ENDIF
+#IF LNG_DEFAULT=LNG_DANISH
+  define t.nomencla.record           for "post"
+  define t.nomencla.save_changes     for "Gem ‘ndringer p† denne #?"
+  define t.nomencla.create_new       for "Opret ny #?"
+  define t.nomencla.delete_this      for "Slet denne #?"
+  define t.nomencla.no_active_delete for "Der er ingen aktiv # at slette."
+  define t.nomencla.cpy_no_active    for "Ingen # at kopiere"
+  define t.nomencla.cpy_save_before  for "Gem # f›r kopiering"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SWEDISH
+  define t.nomencla.record           for "record"
+  define t.nomencla.save_changes     for "Save changes to this #?"
+  define t.nomencla.create_new       for "Create new #?"
+  define t.nomencla.delete_this      for "Delete this #?"
+  define t.nomencla.no_active_delete for "There is no active # to delete."
+  define t.nomencla.cpy_no_active    for "No # to copy"
+  define t.nomencla.cpy_save_before  for "Save # before copying"
+#ENDIF
+#IF LNG_DEFAULT=LNG_NORWEGIAN
+  define t.nomencla.record           for "record"
+  define t.nomencla.save_changes     for "Save changes to this #?"
+  define t.nomencla.create_new       for "Create new #?"
+  define t.nomencla.delete_this      for "Delete this #?"
+  define t.nomencla.no_active_delete for "There is no active # to delete."
+  define t.nomencla.cpy_no_active    for "No # to copy"
+  define t.nomencla.cpy_save_before  for "Save # before copying"
+#ENDIF
+#IF LNG_DEFAULT=LNG_GERMAN
+  define t.nomencla.record           for "record"
+  define t.nomencla.save_changes     for "Save changes to this #?"
+  define t.nomencla.create_new       for "Create new #?"
+  define t.nomencla.delete_this      for "Delete this #?"
+  define t.nomencla.no_active_delete for "There is no active # to delete."
+  define t.nomencla.cpy_no_active    for "No # to copy"
+  define t.nomencla.cpy_save_before  for "Save # before copying"
+#ENDIF
+#IF LNG_DEFAULT=LNG_PORTUGUESE
+  define t.nomencla.record           for "record"
+  define t.nomencla.save_changes     for "Save changes to this #?"
+  define t.nomencla.create_new       for "Create new #?"
+  define t.nomencla.delete_this      for "Delete this #?"
+  define t.nomencla.no_active_delete for "There is no active # to delete."
+  define t.nomencla.cpy_no_active    for "No # to copy"
+  define t.nomencla.cpy_save_before  for "Save # before copying"
+#ENDIF
+#IF LNG_DEFAULT=LNG_FRENCH
+  define t.nomencla.record           for "record"
+  define t.nomencla.save_changes     for "Save changes to this #?"
+  define t.nomencla.create_new       for "Create new #?"
+  define t.nomencla.delete_this      for "Delete this #?"
+  define t.nomencla.no_active_delete for "There is no active # to delete."
+  define t.nomencla.cpy_no_active    for "No # to copy"
+  define t.nomencla.cpy_save_before  for "Save # before copying"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ITALIAN
+  define t.nomencla.record           for "record"
+  define t.nomencla.save_changes     for "Save changes to this #?"
+  define t.nomencla.create_new       for "Create new #?"
+  define t.nomencla.delete_this      for "Delete this #?"
+  define t.nomencla.no_active_delete for "There is no active # to delete."
+  define t.nomencla.cpy_no_active    for "No # to copy"
+  define t.nomencla.cpy_save_before  for "Save # before copying"
+#ENDIF
+
+desktop_section
+  object oRecordNomenclature is a cArray
+    item_property_list
+      item_property string psRecordName_Singularis.i
+      item_property string psRecordName_Pluralis.i
+    end_item_property_list
+  end_object
+end_desktop_section
+
+procedure set record_name_singularis global integer liFile string lsValue
+  set psRecordName_Singularis.i of (oRecordNomenclature(self)) liFile to lsValue
+end_procedure
+procedure set record_name_pluralis global integer liFile string lsValue
+  set psRecordName_Pluralis.i of (oRecordNomenclature(self)) liFile to lsValue
+end_procedure
+function record_name_singularis global integer liFile returns string
+  function_return (psRecordName_Singularis.i(oRecordNomenclature(self),liFile))
+end_function
+function record_name_pluralis global integer liFile returns string
+  function_return (psRecordName_Pluralis.i(oRecordNomenclature(self),liFile))
+end_function

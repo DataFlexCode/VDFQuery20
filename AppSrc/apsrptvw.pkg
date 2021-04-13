@@ -1,0 +1,116 @@
+// Use ApsRptVw.pkg // aps.ReportView
+use APS.pkg
+use dfrptvw
+
+class aps.ReportView is a ReportView startmac APS.STARTMAC_LABEL
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_panel_mx
+    set p_right_margin to 8
+    send aps_init
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_panel_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_container_mx
+    send end_define_aps_panel_mx
+  end_procedure
+end_class
+
+class aps.ReportPanel is a ReportPanel startmac APS.STARTMAC_LABEL
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_panel_mx
+    set p_right_margin to 8
+    send aps_init
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_panel_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_container_mx
+    send end_define_aps_panel_mx
+  end_procedure
+end_class
+
+class Contraint_Value_ReportView_Mixin is a Mixin
+  procedure Define_Contraint_Value_ReportView_Mixin
+    object oConstraintValues is an array
+    end_object
+  end_procedure
+  procedure set constraint_object integer itm# integer obj#
+    set value of (oConstraintValues(self)) item itm# to obj#
+  end_procedure
+  function constraint_object integer itm# returns integer
+    function_return (value(oConstraintValues(self),itm#))
+  end_function
+  procedure set constraint_value integer itm# string val#
+    set value of (constraint_object(self,itm#)) item 0 to val#
+  end_procedure
+  function constraint_value integer itm# returns string
+    function_return (value(constraint_object(self,itm#),0))
+  end_function
+end_class
+
+class VpeReportView is a aps.ReportView
+  procedure construct_object
+    forward send construct_object
+    send Define_Contraint_Value_ReportView_Mixin
+  end_procedure
+  import_class_protocol Contraint_Value_ReportView_Mixin
+end_class
+
+class VpeReportPanel is a aps.ReportPanel
+  procedure construct_object
+    forward send construct_object
+    send Define_Contraint_Value_ReportView_Mixin
+    property integer pPreviewCheckBox_Object 0
+  end_procedure
+  import_class_protocol Contraint_Value_ReportView_Mixin
+  Procedure Run_Report
+    integer Obj# oPreviewCheckBox_Object#
+    Get Report_Object_Id to Obj#
+    If Obj# begin
+      get pPreviewCheckBox_Object to oPreviewCheckBox_Object#
+      if oPreviewCheckBox_Object# begin
+        set pPreview of obj# to (select_state(oPreviewCheckBox_Object#,0))
+      end
+    end
+    forward send run_report
+    If Obj# set pPreview of obj# to -1
+  End_procedure
+end_class
+
+register_procedure SetupPrinter
+register_procedure set pPreView string lsValue
+class VpePreviewCheckBox is a aps.CheckBox
+  procedure construct_object
+    integer self#
+    forward send construct_object
+    set label to "Vis udskrift"
+    move self to self#
+    set pPreviewCheckBox_Object to self#
+  end_procedure
+end_class
+class VpePrinterSetButton is a aps.Button
+  procedure construct_object
+    forward send construct_object
+    Set label to "V‘lg printer"
+    #IFDEF VPE_VERSION_3
+        On_Item "Printer setup" Send SetupPrinter to oVPE#
+    #ELSE
+        On_Item "Only VPE" send none
+    #ENDIF
+  end_procedure
+end_class
+
+procedure register_constrain_object for cObject integer itm#
+  integer self# tmp#
+  move self to self#
+  if num_arguments gt 0 move itm# to tmp#
+  else move (item_count(oConstraintValues(self))) to tmp#
+  set constraint_object tmp# to self#
+end_procedure

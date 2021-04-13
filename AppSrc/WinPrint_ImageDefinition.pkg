@@ -1,0 +1,511 @@
+// Use WinPrint_ImageDefinition.pkg
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+
+//Use DF_Print.pkg // Winprint system
+Use cWinReport2.pkg
+Use Vpe.pkg     // Virtual Print Engine
+
+object oVpeReportHelper is a cArray
+  property integer piCurrentY
+  property integer priv.vpe.max_bottom 0
+  property boolean priv.skip_page_top_area TRUE
+  property integer priv.PageCount
+
+  object oWrittenPagesArray is a cArray
+    item_property_list // OBS! This array is 1-based
+      item_property integer piPageNo.i
+      item_property integer piPageColumn.i
+    end_item_property_list
+
+    procedure fill_out_page_numberings
+      // This procedure fills out the array to reflect the current status of the docuemnt being written.
+      integer iSheet
+      integer iSheetOffset
+      integer iTotalSheets // Number of sheets of paper currently printed
+      integer iPageCount   // Pages currently printed (one page may be more than one sheet)
+      get row_count to iSheetOffset
+      if (iSheetOffset=0) move 1 to iSheetOffset
+      get vpe_GetPageCount of oVPE# to iTotalSheets
+      get priv.PageCount to iPageCount
+      for iSheet from iSheetOffset to iTotalSheets
+        set piPageNo.i iSheet to iPageCount
+        set piPageColumn.i iSheet to (iSheet-iSheetOffset)
+      loop
+    end_procedure
+  end_object // oWrittenPagesArray
+
+  procedure OnPageDone // oVpeReportHelper object
+    set priv.PageCount to (priv.PageCount(self)+1)
+    send fill_out_page_numberings of oWrittenPagesArray
+  end_procedure
+
+  procedure Callback_Sheets integer hMsg integer hObj
+    integer hArr iMax iSheet iMaxPage
+    move oWrittenPagesArray to hArr
+
+    get priv.PageCount to iMaxPage
+
+    get row_count of hArr to iMax
+    decrement iMax
+    for iSheet from 1 to iMax
+      //procedure HandleSheet integer iSheet integer iPage integer iPageColumn integer iMaxPage
+      send hMsg of hObj iSheet (piPageNo.i(hArr,iSheet)) (piPageColumn.i(hArr,iSheet)) iMaxPage
+    loop
+  end_procedure
+
+  procedure OnNewReport
+    set piCurrentY to 0
+    set priv.vpe.max_bottom to 0
+    set priv.PageCount to 0
+    send delete_data of oWrittenPagesArray
+  end_procedure
+
+  procedure GoToSheetCurrentPlus integer iExtra
+    integer iCurrentSheet iMaxSheet iSheet
+//  showln "GoToSheetCurrentPlus " iExtra
+    get row_count of oWrittenPagesArray to iCurrentSheet
+    if (iCurrentSheet=0) move 1 to iCurrentSheet
+    //increment iCurrentSheet // This is the number of the current root-page
+
+    get vpe_GetPageCount of oVPE# to iMaxSheet // 3
+    for iSheet from (iMaxSheet+1) to (iCurrentSheet+iExtra)
+      send vpe_PageBreak of oVPE#
+//    showln "Create an extra page!"
+    loop
+    send vpe_GotoPage to oVPE# (iCurrentSheet+iExtra)
+  end_procedure
+
+  function nLeftMargin returns number
+     function_return (Vpe_Get(oVPE#,VLEFTMARGIN)/100.0)
+  end_function
+  function nRightMargin returns number
+     function_return (Vpe_Get(oVPE#,VRIGHTMARGIN)/100.0)
+  end_function
+
+  procedure WriteLine
+    send vpe_Line of oVPE# (Vpe_Get(oVPE#,VLEFTMARGIN)) (piCurrentY(self)) (Vpe_Get(oVPE#,VRIGHTMARGIN)) (piCurrentY(self))
+    //set piCurrentY to (vpe_get(oVPE#,VBOTTOM))
+  end_procedure
+
+  Procedure WritePos String lsValue Number lnPos Integer liFontAttr Integer liDecs Number lnWidth
+    Integer liFontAttrTmp liDecsTmp liX1 liX2 liY1 liY2
+    Number lnWidthTmp
+    If (num_arguments<5) Move 0 to lnWidthTmp
+    Else Move (lnWidth*100) to lnWidthTmp
+
+    If (num_arguments<4) Move -1 to liDecsTmp
+    Else Move liDecs to liDecsTmp
+
+    If (liDecsTmp<>-1) Get NumToStr lsValue liDecsTmp to lsValue
+
+    If (num_arguments<3) Move 0 to liFontAttrTmp
+    Else Move liFontAttr to liFontAttrTmp
+
+    If (liFontAttrTmp iand FONT_BOLD) Move ("[B ]"+lsValue) to lsValue
+    If (liFontAttrTmp iand FONT_ITALIC) Move ("[I ]"+lsValue) to lsValue
+
+    If (lnWidthTmp=0) Begin
+      If (liFontAttrTmp iand FONT_RIGHT) Begin
+        //move (lnPos*100-vpe_get(oVPE#,VLEFTMARGIN)) to lnWidthTmp
+        Move (lnPos*100) to lnWidthTmp
+      End
+      Else If (liFontAttrTmp iand FONT_CENTER) Begin
+        //move (lnPos*100-vpe_get(oVPE#,VLEFTMARGIN)) to lnWidthTmp
+        Move (lnPos*100) to lnWidthTmp
+      End
+      Else Begin
+        Move (vpe_get(oVPE#,VRIGHTMARGIN)-(lnPos*100)) to lnWidthTmp
+      End
+    End
+
+    Move (lnPos*100+vpe_get(oVPE#,VLEFTMARGIN)) to liX1
+
+    // Figure out vertical position
+    Get piCurrentY to liY1
+
+  //// If we are "under" the Default Output Rectangle, we take a new page
+  //if ((liY1+100)>vpe_get(oVPE#,VBOTTOMMARGIN)) begin
+  //  send vpe_PageBreak of oVPE#                            //     <<--------- PAGE BREAK
+  //  get vpe_get of oVPE# VTOPMARGIN) to liY1
+  //  set piCurrentY to liY1
+  //end
+
+    If (priv.skip_page_top_area(Self)) Begin
+      // If we are "over" the Default Output Rectangle, we move down so we're in. If we are in XY-mode we do not make this adjustment (we could be writing the page top)
+      If (liY1<vpe_get(oVPE#,VTOPMARGIN)) Begin //
+        Get vpe_get of oVPE# VTOPMARGIN) to liY1
+        Set piCurrentY to liY1
+      End
+    End
+
+    Move VFREE to liY2
+
+    Move (trim(lsValue)) to lsValue))
+    If (liFontAttrTmp iand FONT_CENTER) Begin
+      Send vpe_SetAlign of oVPE# ALIGN_CENTER
+      Send vpe_Write of oVPE# (liX1-(lnWidthTmp/2.0)) liY1 (liX1+(lnWidthTmp/2.0)) liY2 lsValue
+      Send vpe_SetAlign of oVPE# ALIGN_LEFT
+    End
+    Else If (liFontAttrTmp iand FONT_RIGHT) Begin
+      Send vpe_SetAlign of oVPE# ALIGN_RIGHT
+      Send vpe_Write of oVPE# (liX1-lnWidthTmp) liY1 liX1 liY2 lsValue
+      Send vpe_SetAlign of oVPE# ALIGN_LEFT
+    End
+    Else Begin
+      Send vpe_Write of oVPE# liX1 liY1 (liX1+lnWidthTmp) liY2 lsValue
+    End
+
+    If (liFontAttrTmp iand FONT_BOLD) Begin
+      Send vpe_StorePos of oVPE#
+      Send vpe_Write of oVPE# VRIGHT liY1 VRIGHT liY2 "[BO ]"
+      Send vpe_RestorePos of oVPE#
+    End
+    If (liFontAttrTmp iand FONT_ITALIC) Begin
+      Send vpe_StorePos of oVPE#
+      Send vpe_Write of oVPE# VRIGHT liY1 VRIGHT liY2 "[IO ]"
+      Send vpe_RestorePos of oVPE#
+    End
+
+    // x1=lnPos x2=piVpe_Current
+    // y1
+    // y2=VFREE
+    If (vpe_get(oVPE#,VBOTTOM)>priv.vpe.max_bottom(Self)) Set priv.vpe.max_bottom to (vpe_get(oVPE#,VBOTTOM))
+  End_Procedure
+
+  procedure WriteLnPos string lsValue number lnPos integer liFontAttr integer liDecs number lnWidth
+    if (num_arguments=2) send WritePos lsValue lnPos
+    if (num_arguments=3) send WritePos lsValue lnPos liFontAttr
+    if (num_arguments=4) send WritePos lsValue lnPos liFontAttr liDecs
+    if (num_arguments=5) send WritePos lsValue lnPos liFontAttr liDecs lnWidth
+
+    if (priv.skip_page_top_area(self)) begin
+      if (priv.vpe.max_bottom(self)<piCurrentY(self)) set piCurrentY to 0
+      else set piCurrentY to (priv.vpe.max_bottom(self)) // Next available vertical position
+      set priv.vpe.max_bottom to 0 //(piCurrentY(oVpeReportHelper))
+    end
+    else begin
+      set piCurrentY to (priv.vpe.max_bottom(self))
+      set priv.vpe.max_bottom to 0 //(piCurrentY(oVpeReportHelper))
+    end
+  end_procedure
+end_object // oVpeReportHelper
+
+
+class cWinPrint_ImageDefinition is a cArray
+  procedure construct_object
+    forward send construct_object
+    property integer pbVpe_Mode    FALSE
+  end_procedure
+
+  item_property_list
+    item_property integer pbDeactivate.i
+    item_property string  psColumnHeader.i
+    item_property number  pnPosition.i
+    item_property integer piType.i
+    item_property integer piDecimals.i
+    item_property integer pbNewLine.i
+    item_property integer pbTotals.i
+    item_property string  psValue.i
+    item_property integer pbBold.i
+//    item_property integer pbZeroSuppress.i
+    item_property number  pnSumTotal.i
+    item_property number  pnSumTotal2.i
+    item_property number  pnSumTotal3.i
+    item_property number  pnSumTotal4.i
+    item_property number  pnSumTotal5.i
+    item_property Integer pbForceRight.i // 0:Left 1:Right 2:Center
+    item_property integer pbNewColumnPage.i
+  end_item_property_list cWinPrint_ImageDefinition
+
+  procedure WritePos string lsValue number lnPos integer liFontAttr integer liDecs number lnWidth
+    Integer liFontAttrTmp liDecsTmp liX1 liX2 liY1 liY2
+    number lnWidthTmp
+    if (pbVpe_Mode(self)) begin
+      if (num_arguments=2) send WritePos of oVpeReportHelper  lsValue lnPos
+      if (num_arguments=3) send WritePos of oVpeReportHelper  lsValue lnPos liFontAttr
+      if (num_arguments=4) send WritePos of oVpeReportHelper  lsValue lnPos liFontAttr liDecs
+      if (num_arguments=5) send WritePos of oVpeReportHelper  lsValue lnPos liFontAttr liDecs lnWidth
+    end
+    Else Begin
+      if (num_arguments=2) DFWritePos lsValue lnPos
+      if (num_arguments=3) DFWritePos lsValue lnPos liFontAttr
+      if (num_arguments=4) DFWritePos lsValue lnPos liFontAttr liDecs
+      if (num_arguments=5) DFWritePos lsValue lnPos liFontAttr liDecs lnWidth
+    end
+  end_procedure
+
+  procedure WriteLnPos string lsValue number lnPos integer liFontAttr integer liDecs number lnWidth
+    If (pbVpe_Mode(Self)) Begin
+      if (num_arguments=2) send WriteLnPos of oVpeReportHelper  lsValue lnPos
+      if (num_arguments=3) send WriteLnPos of oVpeReportHelper  lsValue lnPos liFontAttr
+      if (num_arguments=4) send WriteLnPos of oVpeReportHelper  lsValue lnPos liFontAttr liDecs
+      if (num_arguments=5) send WriteLnPos of oVpeReportHelper  lsValue lnPos liFontAttr liDecs lnWidth
+    end
+    else begin
+      if (num_arguments=2) DFWriteLnPos lsValue lnPos
+      if (num_arguments=3) DFWriteLnPos lsValue lnPos liFontAttr
+      if (num_arguments=4) DFWriteLnPos lsValue lnPos liFontAttr liDecs
+      if (num_arguments=5) DFWriteLnPos lsValue lnPos liFontAttr liDecs lnWidth
+    end
+//    showln ("efter: priv.vpe.max_bottom: "+string(priv.vpe.max_bottom(self))) " " ("piCurrentY: "+string(piCurrentY(oVpeReportHelper)))
+  end_procedure
+
+            procedure Reset_Totals integer liLevel
+              integer liRow liMax
+              get row_count to liMax
+              decrement liMax
+              for liRow from 0 to liMax
+                if NUM_ARGUMENTS eq 0 begin
+                  set pnSumTotal.i  liRow to 0
+                  set pnSumTotal2.i liRow to 0
+                  set pnSumTotal3.i liRow to 0
+                  set pnSumTotal4.i liRow to 0
+                  set pnSumTotal5.i liRow to 0
+                end
+                else begin
+                  if (liLevel=1) begin
+                    set pnSumTotal2.i liRow to (pnSumTotal2.i(self,liRow)+pnSumTotal.i(self,liRow))
+                    set pnSumTotal.i  liRow to 0
+                  end
+                  if (liLevel=2) begin
+                    set pnSumTotal3.i liRow to (pnSumTotal3.i(self,liRow)+pnSumTotal2.i(self,liRow))
+                    set pnSumTotal2.i liRow to 0
+                  end
+                  if (liLevel=3) begin
+                    set pnSumTotal4.i liRow to (pnSumTotal4.i(self,liRow)+pnSumTotal3.i(self,liRow))
+                    set pnSumTotal3.i liRow to 0
+                  end
+                  if (liLevel=4) begin
+                    set pnSumTotal5.i liRow to (pnSumTotal5.i(self,liRow)+pnSumTotal4.i(self,liRow))
+                    set pnSumTotal4.i liRow to 0
+                  end
+                  if (liLevel=5) begin
+                    set pnSumTotal5.i liRow to 0
+                  end
+                end
+              loop
+            end_procedure
+
+  Procedure Output_Total Integer liLevelTmp
+    Integer liRow liMax liType liDecimals lbNewLine lbTotals liLevel
+    Integer lbForceRight
+    Number lnPosition
+    String lsValue
+    If NUM_ARGUMENTS eq 0 Move 1 to liLevel
+    Else Move liLevelTmp to liLevel
+    Get row_count to liMax
+    Decrement liMax
+    For liRow from 0 to liMax
+      If (liLevel=1) Get pnSumTotal.i  liRow to lsValue
+      If (liLevel=2) Get pnSumTotal2.i liRow to lsValue
+      If (liLevel=3) Get pnSumTotal3.i liRow to lsValue
+      If (liLevel=4) Get pnSumTotal4.i liRow to lsValue
+      If (liLevel=5) Get pnSumTotal5.i liRow to lsValue
+      Get pnPosition.i   liRow to lnPosition
+      Get piType.i       liRow to liType
+      Get piDecimals.i   liRow to liDecimals
+      Get pbNewLine.i    liRow to lbNewLine
+      Get pbTotals.i     liRow to lbTotals
+      Get pbForceRight.i liRow to lbForceRight
+      Move (lbNewLine or liRow=liMax) to lbNewLine // Last column will have a new line anyway
+      If (pbDeactivate.i(Self,liRow)) Move "" to lsValue
+      If lbTotals Begin
+        If (lbForceRight<>2 and (liType=DF_BCD or lbForceRight=1)) Begin
+          If lbNewLine Send WriteLnPos lsValue lnPosition FONT_RIGHT liDecimals
+          Else         Send WritePos   lsValue lnPosition FONT_RIGHT liDecimals
+        End
+        Else If (lbForceRight=2) Begin // Center
+          If lbNewLine Send WriteLnPos lsValue lnPosition FONT_CENTER liDecimals
+          Else         Send WritePos   lsValue lnPosition FONT_CENTER liDecimals
+        End
+        Else Begin //Left
+          If lbNewLine Send WriteLnPos (psValue.i(Self,liRow)) lnPosition
+          Else         Send WritePos   (psValue.i(Self,liRow)) lnPosition
+        End
+      End
+    loop
+    Send Reset_Totals liLevel
+  End_Procedure
+
+            Procedure DoReset
+              Send Delete_Data
+            End_Procedure
+
+  Procedure Add_Column String lsHeader Number lnPos Integer liType Integer liDecs Integer lbNewLine Integer lbTotals Integer lbNewColumnPage //integer lbZeroSuppress
+    Integer liRow
+    Get row_count to liRow  
+    Set psColumnHeader.i liRow to lsHeader
+    Set pnPosition.i     liRow to lnPos
+    Set piType.i         liRow to liType
+    Set piDecimals.i     liRow to liDecs
+    Set pbNewLine.i      liRow to lbNewLine
+    Set pbTotals.i       liRow to lbTotals
+    If (NUM_ARGUMENTS>=7) Set pbNewColumnPage.i liRow to lbNewColumnPage
+    Else Set pbNewColumnPage.i liRow to False
+//    set pbZeroSuppress.i liRow to lbZeroSuppress
+  End_Procedure
+
+  Procedure Set Bold_State Integer lbValue
+    Set pbBold.i (row_count(Self)-1) to lbValue
+  End_Procedure
+
+  Procedure Set Force_RightAdjust Integer lbValue
+    Set pbForceRight.i (row_count(Self)-1) to lbValue
+  End_Procedure
+
+  Procedure Output_Header
+    Integer liRow liMax liType lbNewLine iCurSheet iColCount
+    Integer lbForceRight
+    Number lnPosition
+    String lsValue
+
+    If (pbVpe_Mode(Self)) Get vpe_GetCurrentPage of oVPE# to iCurSheet
+    Move 0 to iColCount
+
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      if (pbNewColumnPage.i(self,liRow)) begin
+        increment iColCount
+        If (pbVpe_Mode(Self)) Begin
+            Send GoToSheetCurrentPlus of oVpeReportHelper iColCount
+        End
+      end
+
+      get psColumnHeader.i liRow to lsValue
+      get pnPosition.i     liRow to lnPosition
+      get piType.i         liRow to liType
+      get pbNewLine.i      liRow to lbNewLine
+      get pbForceRight.i   liRow to lbForceRight
+      move (lbNewLine or liRow=liMax) to lbNewLine // Last column will have a new line anyway
+      if (pbDeactivate.i(self,liRow)) move "" to lsValue
+      If (lbForceRight<>2 and (liType=DF_BCD or lbForceRight=1)) Begin
+        If lbNewLine Send WriteLnPos lsValue lnPosition (FONT_RIGHT+FONT_BOLD) -1
+        Else         Send WritePos   lsValue lnPosition (FONT_RIGHT+FONT_BOLD) -1
+      End
+      Else If (lbForceRight=2) Begin // Center
+        If lbNewLine Send WriteLnPos lsValue lnPosition (FONT_CENTER+FONT_BOLD) -1
+        Else         Send WritePos   lsValue lnPosition (FONT_CENTER+FONT_BOLD) -1
+      End
+      Else Begin // Left
+        if lbNewLine send WriteLnPos lsValue lnPosition FONT_BOLD
+        else         send WritePos   lsValue lnPosition FONT_BOLD
+      end
+    Loop
+    If (pbVpe_Mode(Self)) Begin
+       If (vpe_GetCurrentPage(oVPE#)<>iCurSheet) Send vpe_GotoPage to oVPE# iCurSheet
+    End
+  end_procedure
+
+  procedure Update_Totals
+    integer liRow liMax liType lbTotals
+    string lsValue
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get piType.i      liRow to liType
+      get pbTotals.i    liRow to lbTotals
+
+      if (liType=DF_BCD and lbTotals<>0) begin
+        get psValue.i     liRow to lsValue
+
+        if (StringIsNumber(lsValue,ascii(CurrentDecimalSeparator()))) ;
+          set pnSumTotal.i liRow to (pnSumTotal.i(self,liRow)+number(lsValue))
+      end
+    loop
+  end_procedure
+
+  procedure Output_Image
+    Integer lbForceRight
+    integer liRow liMax liType liDecimals lbNewLine lbTotals lbBold liBold iCurSheet iColCount
+    number lnPosition lnMaxWidth
+    String lsValue
+    
+    If (pbVpe_Mode(Self)) Begin
+        Get vpe_GetCurrentPage of oVPE# to iCurSheet
+    End
+    move 0 to iColCount
+
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      if (pbNewColumnPage.i(self,liRow)) begin
+        increment iColCount
+        If (pbVpe_Mode(Self)) Begin
+            Send GoToSheetCurrentPlus of oVpeReportHelper iColCount
+        End
+      end
+
+      get psValue.i      liRow  to lsValue
+      get pnPosition.i   liRow  to lnPosition
+      get piType.i       liRow  to liType
+      get piDecimals.i   liRow  to liDecimals
+      get pbNewLine.i    liRow  to lbNewLine
+      get pbBold.i       liRow  to lbBold
+      get pbForceRight.i liRow  to lbForceRight
+
+      if lbBold move FONT_BOLD to liBold
+      else move 0 to liBold
+
+      if (liRow=liMax or lbNewLine<>0 or liType=DF_BCD or pbNewColumnPage.i(self,liRow+1)<>0) move 0 to lnMaxWidth //
+      else move (pnPosition.i(self,liRow+1)-lnPosition-0.1) to lnMaxWidth
+
+      move (lbNewLine or liRow=liMax) to lbNewLine // Last column will have a new line anyway
+      if (pbDeactivate.i(self,liRow)) begin
+        if lbNewLine send WriteLnPos "" lnPosition (FONT_RIGHT+liBold) -1 lnMaxWidth
+        else         send WritePos   "" lnPosition (FONT_RIGHT+liBold) -1 lnMaxWidth
+      end
+      else begin
+        If (lbForceRight<>2 and (liType=DF_BCD or lbForceRight=1)) Begin
+          If (not(lsValue<>"" and StringIsNumber(lsValue,ascii(CurrentDecimalSeparator()))) or (liType<>DF_BCD)) Begin
+            If lbNewLine Send WriteLnPos lsValue lnPosition (FONT_RIGHT+liBold) -1 lnMaxWidth
+            Else         Send WritePos   lsValue lnPosition (FONT_RIGHT+liBold) -1 lnMaxWidth
+          End
+          Else Begin
+            If lbNewLine Send WriteLnPos lsValue lnPosition (FONT_RIGHT+liBold) liDecimals lnMaxWidth
+            Else         Send WritePos   lsValue lnPosition (FONT_RIGHT+liBold) liDecimals lnMaxWidth
+          End
+        End
+        Else If (lbForceRight=2) Begin // Center
+          If (not(lsValue<>"" and StringIsNumber(lsValue,ascii(CurrentDecimalSeparator()))) or (liType<>DF_BCD)) Begin
+            If lbNewLine Send WriteLnPos lsValue lnPosition (FONT_CENTER+liBold) -1 lnMaxWidth
+            Else         Send WritePos   lsValue lnPosition (FONT_CENTER+liBold) -1 lnMaxWidth
+          End
+          Else Begin
+            If lbNewLine Send WriteLnPos lsValue lnPosition (FONT_CENTER+liBold) liDecimals lnMaxWidth
+            Else         Send WritePos   lsValue lnPosition (FONT_CENTER+liBold) liDecimals lnMaxWidth
+          End
+        End
+        Else Begin
+          if lbNewLine send WriteLnPos lsValue lnPosition liBold -1 lnMaxWidth
+          else         send WritePos   lsValue lnPosition liBold -1 lnMaxWidth
+        end
+      end
+    loop
+    send Update_Totals
+
+    If (pbVpe_Mode(Self)) Begin
+        If (vpe_GetCurrentPage(oVPE#)<>iCurSheet) Send vpe_GotoPage to oVPE# iCurSheet
+    End
+  end_procedure
+
+  procedure BlankForm_Image
+    integer liRow liMax
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      set psValue.i liRow to ""
+    loop
+  end_procedure
+
+  procedure Print_Value integer liRow string lsValue
+    set psValue.i liRow to lsValue
+  end_procedure
+
+  procedure Print_ColumnLabel integer liRow string lsValue
+    set psColumnHeader.i liRow to lsValue
+  end_procedure
+end_class // cWinPrint_ImageDefinition
+

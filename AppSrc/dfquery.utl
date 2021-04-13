@@ -1,0 +1,1023 @@
+// 23-10-2001 0815 - 1600
+// 24-10-2001 0915 - 1400
+// 25-10-2001 0915 - 1600
+//
+//
+// Logical modules for a query:
+//
+//           Definition module (DFQuery.utl)
+//           Edit definition module (DFQuery.vw)
+//           Search module (DataScan.utl)
+//           Presentation module (Output.utl)
+//
+
+Use ItemProp.nui // ITEM_PROPERTY command for use within arrays
+Use Files.utl    // Utilities for handling file related stuff
+Use Query.nui    // Basic things needed for a query tool
+Use Wait.utl     // Something to put on screen while batching.
+Use MsgBox.utl   // obs procedure
+Use QryExpr.utl  // Expression handling for queries
+Use QryOrder.utl
+Use Output.utl   // Sequential output to whatever
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+
+class cQueryDefColumnInfo is a cArray
+  item_property_list
+    item_property integer piFile.i
+    item_property integer piField.i
+    item_property integer piExprRow.i
+    item_property string  psHeader.i
+    item_property string  psUnit.i
+    item_property integer pbTotal.i
+    item_property integer pbNewLine.i
+    item_property integer piStart.i
+    item_property integer piWidth.i
+  end_item_property_list cQueryDefColumnInfo
+  procedure AddField integer liFile integer liField integer liExprRow string lsHeader string lsUnit integer lbTotal integer lbNewLine integer liStart integer liWidth
+    integer liRow
+    get row_count to liRow
+    set piFile.i    liRow to liFile
+    set piField.i   liRow to liField
+    set piExprRow.i liRow to liExprRow
+    set psHeader.i  liRow to lsHeader
+    set psUnit.i    liRow to lsUnit
+    set pbTotal.i   liRow to lbTotal
+    set pbNewLine.i liRow to lbNewLine
+    set piStart.i   liRow to liStart
+    set piWidth.i   liRow to liWidth
+  end_procedure
+  procedure SEQ_Write integer liChannel
+    send SEQ_WriteArrayItems liChannel self
+  end_procedure
+  procedure SEQ_Read integer liChannel
+    send SEQ_ReadArrayItems liChannel self
+  end_procedure
+end_class // cQueryDefColumnInfo
+
+class cQueryDefCriteria is a cArray
+  item_property_list
+    item_property integer piFile.i
+    item_property integer piField.i
+    item_property string  psName.i
+    item_property integer piExprRow.i
+    item_property integer piComperator.i
+    item_property string  psValue1.i
+    item_property string  psValue2.i
+  end_item_property_list cQueryDefCriteria
+  procedure DoReset
+    send delete_data
+  end_procedure
+  procedure AddCriteria integer liFile integer liField string lsName integer liComperator string lsValue1 string lsValue2
+    integer liRow
+    get row_count to liRow
+    set piFile.i       liRow to liFile
+    set piField.i      liRow to liField
+    set psName.i       liRow to lsName
+    set piComperator.i liRow to liComperator
+    set psValue1.i     liRow to lsValue1
+    set psValue2.i     liRow to lsValue2
+  end_procedure
+  procedure AddExpression string lsName integer liExprRow
+    integer liRow
+    get row_count to liRow
+    set psName.i       liRow to lsName
+    set piExprRow.i    liRow to liExprRow
+  end_procedure
+  function sCriteriaAsString integer liRow returns string
+    integer liType
+    string lsRval
+    // First we need to do this stupid type conversion:
+    get FieldInf_FieldType (piFile.i(self,liRow)) (piField.i(self,liRow)) to liType
+    if (liType=DF_DATE) move DATE_WINDOW to liType
+    else begin
+      if (liType=DF_BCD) move 0 to liType // Signals numeric
+      else move ASCII_WINDOW to liType
+    end
+    get DfQuery_CritText liType (piComperator.i(self,liRow)) (psValue1.i(self,liRow)) (psValue2.i(self,liRow)) to lsRval
+    move (psName.i(self,liRow)+" "+lowercase(DfQuery_CompModeTxt_Long(piComperator.i(self,liRow)))+": "+lsRval) to lsRval
+    function_return lsRval
+  end_function
+  procedure SEQ_Write integer liChannel
+    send SEQ_WriteArrayItems liChannel self
+  end_procedure
+  procedure SEQ_Read integer liChannel
+    send SEQ_ReadArrayItems liChannel self
+  end_procedure
+end_class // cQueryDefCriteria
+
+class cQueryBreakInfo is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer piMaxLogicalLevel 0
+    property integer phExprArr 0
+  end_procedure
+  item_property_list
+    item_property integer piFile.i
+    item_property integer piField.i
+    item_property integer piExprRow.i
+    item_property integer pbSelect.i
+    item_property string  psLabel.i
+    // If this break level is not selected this property will point to a
+    // level that is selected (in less significant direction):
+    item_property integer piTranslateLevel.i
+    // This property translates break level to a logical break level (since
+    // some physical levels may not be selected):
+    item_property integer piLogicalLevel.i
+  end_item_property_list cQueryBreakInfo
+  procedure DoReset
+    send delete_data
+    set piMaxLogicalLevel to 0
+  end_procedure
+  procedure DoInitializeBreaks
+    integer liCurrentLevel liLevel liMax
+    get row_count to liMax
+    move 0 to liCurrentLevel
+    decrement liMax
+    for_ex liLevel from liMax down_to 0
+      if (pbSelect.i(self,liLevel)) move liLevel to liCurrentLevel
+      set piTranslateLevel.i item liLevel to liCurrentLevel
+    loop
+    move 0 to liCurrentLevel
+    for liLevel from 0 to liMax
+      if (pbSelect.i(self,liLevel)) increment liCurrentLevel
+      set piLogicalLevel.i item liLevel to liCurrentLevel
+    loop
+    set piMaxLogicalLevel to liCurrentLevel
+  end_procedure
+  function sBreakField_Value.i integer liLevel returns string
+    integer liFile liField liExprRow lhExprArr
+    string lsRval lsLabel
+    get piFile.i liLevel to liFile
+    if liFile begin
+      get piField.i liLevel to liField
+      get FieldInf_FieldValue liFile liField to lsRval
+    end
+//  else begin
+//    get phExprArr to lhExprArr
+//    get piExprRow.i liLevel to liExprRow
+//    get sEvalExpression of (Query_ExprEvaluator(self)) (piExprId.i(lhExprArr,liExprRow)) to lsRval
+//  end
+    if lsRval eq "" move "    " to lsRval // Make evident that field is empty!
+    else move (trim(lsRval)) to lsRval
+    move (psLabel.i(self,liLevel)) to lsLabel
+    function_return (lsLabel+lsRval)
+  end_function
+
+  procedure add_break_info integer liSegment integer liFile integer liField integer liExprRow integer lbSelect string lsLabel
+    set piFile.i    liSegment to liFile
+    set piField.i   liSegment to liField
+    set piExprRow.i liSegment to liExprRow
+    set pbSelect.i  liSegment to lbSelect
+    set psLabel.i   liSegment to lsLabel
+  end_procedure
+  procedure SEQ_Write integer liChannel
+    send SEQ_WriteArrayItems liChannel self
+  end_procedure
+  procedure SEQ_Read integer liChannel
+    send SEQ_ReadArrayItems liChannel self
+  end_procedure
+end_class // cQueryBreakInfo
+
+enumeration_list
+  define DFQ_MAIN_FILE
+  define DFQ_ORDERING
+  define DFQ_ORDERING_SEARCH // Only used if DFQ_ORDERING gt 256
+  define DFQ_REPORT_TITLE
+  define DFQ_DESTINATION
+  define DFQ_PORT
+  define DFQ_FILE_NAME
+  define DFQ_FORMAT
+  define DFQ_UPDATE_FREQ
+  define DFQ_LINES_PER_PAGE
+  define DFQ_SAVED_AS_FILE_NAME
+  define DFQ_CRITERIA_EXPR_ROW
+  define DFQ_PRINT_TOTALS_ONLY
+  define DFQ_EMAIL_ADDRESS
+  define DFQ_USE_ANSI
+  define DFQ_SEMICOLON
+  define DFQ_INCL_COLUMN_NAMES
+end_enumeration_list
+
+class cQueryDefEMailRecipients is a cArray
+  item_property_list
+    item_property string psName.i
+    item_property string psAddress.i
+  end_item_property_list cQueryDefEMailRecipients
+  procedure add_recipient string lsName string lsAddress
+    integer liRow
+    get row_count to liRow
+    set psName.i    liRow to lsName
+    set psAddress.i liRow to lsAddress
+  end_procedure
+end_class // cQueryDefEMailRecipients
+
+class cQueryDefinition is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    object oQueryDefColumnInfo is a cQueryDefColumnInfo 
+    end_object
+    object oQueryDefCriteria is a cQueryDefCriteria 
+    end_object
+    object oQuery_ExprArray is a Query_cExprArray 
+    end_object
+    object oQueryOrderExpression is a cQueryOrderExpression 
+      set phExprArr to (oQuery_ExprArray(self))
+    end_object
+    object oBreakInfo is a cQueryBreakInfo 
+      set phExprArr to (oQuery_ExprArray(self))
+    end_object
+    object oEMailRecipients is a cQueryDefEMailRecipients
+    end_object
+    property integer phDDO 0
+  end_procedure
+  function piMainFile returns integer
+    function_return (value(self,DFQ_MAIN_FILE))
+  end_function
+  procedure set piMainFile integer liFile
+    set value item DFQ_MAIN_FILE to liFile
+  end_procedure
+
+  procedure add_recipient string lsName string lsAddress
+    send add_recipient to (oEmailRecipients(self)) lsName lsAddress
+  end_procedure
+
+  procedure reset_recipients
+    send delete_data to (oEmailRecipients(self))
+  end_procedure
+
+  procedure DoReset
+    send delete_data to (oQueryDefColumnInfo(self))
+    send DoReset to (oQueryDefCriteria(self))
+    send DoReset to (oBreakInfo(self))
+    send delete_data to (oQueryOrderExpression(self))
+    set value item DFQ_CRITERIA_EXPR_ROW to -1
+    send DoDefaults
+  end_procedure
+
+  procedure SEQ_Write integer liChannel
+    send SEQ_WriteArrayItems liChannel self
+    send SEQ_Write to (oQueryDefColumnInfo(self)) liChannel
+    send SEQ_Write to (oQueryDefCriteria(self)) liChannel
+    send SEQ_Write to (oQuery_ExprArray(self)) liChannel
+    send SEQ_Write to (oQueryOrderExpression(self)) liChannel
+    send SEQ_Write to (oBreakInfo(self)) liChannel
+  end_procedure
+  procedure SEQ_Read integer liChannel
+    send SEQ_ReadArrayItems liChannel self
+    send SEQ_Read to (oQueryDefColumnInfo(self)) liChannel
+    send SEQ_Read to (oQueryDefCriteria(self)) liChannel
+    send SEQ_Read to (oQuery_ExprArray(self)) liChannel
+    send SEQ_Read to (oQueryOrderExpression(self)) liChannel
+    send SEQ_Read to (oBreakInfo(self)) liChannel
+  end_procedure
+  procedure SEQ_WriteFileName string lsFileName
+    integer liChannel
+    get SEQ_DirectOutput lsFileName to liChannel
+    if (liChannel>=0) begin
+      send SEQ_Write liChannel
+      send SEQ_CloseOutput liChannel
+    end
+  end_procedure
+  procedure SEQ_ReadFileName string lsFileName
+    integer liChannel
+    get SEQ_DirectInput lsFileName to liChannel
+    if (liChannel>=0) begin
+      send SEQ_Read liChannel
+      send SEQ_CloseInput liChannel
+    end
+  end_procedure
+  procedure SEQ_ReadOldFileName string lsFileName
+    integer liChannel
+    get SEQ_DirectInput lsFileName to liChannel
+    if (liChannel>=0) begin
+      send SEQ_ReadOld liChannel
+      send SEQ_CloseInput liChannel
+    end
+  end_procedure
+
+  procedure DoDefaults
+    string lsValue
+    set value item DFQ_DESTINATION     to DFQ.DEST.SCREEN
+    get API_OtherAttr_Value OA_DFPRINTER to lsValue
+    if lsValue eq "" move "LST:" to lsValue
+    set value item DFQ_PORT            to lsValue
+    set value item DFQ_FILE_NAME       to "dataflex.out"
+    set value item DFQ_FORMAT          to DFQ.FORMAT.PRINT
+    set value item DFQ_UPDATE_FREQ     to 25
+    set value item DFQ_LINES_PER_PAGE  to 50
+    set value item DFQ_ORDERING        to 1
+    set value item DFQ_ORDERING_SEARCH to 1
+  end_procedure
+
+  procedure SEQ_ReadOld integer liChannel
+    integer liMainFile liOrdering lbFin liFile liField liComp
+    integer liStart liWidth lbCR lbTotal liFreq
+    string lsValue lsGarbage
+
+    send DoReset
+
+    // First line of such a baby looks like this: |X|, where X is the main file
+    get SEQ_ReadLn liChannel to lsValue
+    if (left(lsValue,1)="|") begin
+      get ExtractInteger lsValue 1 to liMainFile
+      if liMainFile begin
+        get SEQ_ReadLn liChannel to lsValue
+        get ExtractInteger lsValue 1 to liOrdering
+        set piMainFile to liMainFile
+        set value item DFQ_ORDERING to liOrdering
+
+        //send obs "Main file: " liMainFile "Ordering:" liOrdering
+
+        // Now we must read the selection criteria:
+        repeat
+          get SEQ_ReadLn liChannel to lsValue
+          move (lsValue="") to lbFin
+          if (seqeof) move 1 to lbFin // Emergency break
+          ifnot lbFin begin
+            // The line we're standing with here contains a file, a field and a comperator mode
+            get ExtractInteger lsValue 1 to liFile
+            get ExtractInteger lsValue 2 to liField
+            get ExtractInteger lsValue 3 to liComp
+            get SEQ_ReadLn liChannel to lsValue // And this is the value to compare against
+                 if liComp eq 1 move SC_COMP_EQ to liComp // EQ   The SC_COMP_XX are defined in DataScan.utl
+            else if liComp eq 2 move SC_COMP_GT to liComp // GT
+            else if liComp eq 3 move SC_COMP_LT to liComp // LT
+            else if liComp eq 4 move SC_COMP_NE to liComp // NE
+            else if liComp eq 5 move SC_COMP_GE to liComp // GE
+            else if liComp eq 6 move SC_COMP_LE to liComp // LE
+            else if liComp eq 7 move SC_COMP_IN to liComp // IN
+            open liFile
+            send AddCriteria to (oQueryDefCriteria(self)) liFile liField (FieldInf_FieldLabel_Short(liFile,liField)) liComp lsValue ""
+          end
+        until lbFin
+
+        // Now we must read the column definitions
+        move 1 to liStart
+        repeat
+          get SEQ_ReadLn liChannel to lsValue
+          move (lsValue="") to lbFin
+          if (seqeof) move 1 to lbFin // Emergency break
+          ifnot lbFin begin
+            // The line we're standing with here contains a file, a field, a width, an X, bool: CR, bool: Total
+            get ExtractInteger lsValue 1 to liFile
+            get ExtractInteger lsValue 2 to liField
+            get ExtractInteger lsValue 3 to liWidth
+            get ExtractInteger lsValue 4 to lsGarbage
+            get ExtractInteger lsValue 5 to lbCR
+            get ExtractInteger lsValue 6 to lbTotal
+
+            if lbCR move 1 to liStart
+
+            open liFile
+            send AddField to (oQueryDefColumnInfo(self)) liFile liField -1 (FieldInf_FieldLabel_Short(liFile,liField)) "" lbTotal lbCR liStart liWidth
+            move (liStart+liWidth) to liStart
+          end
+        until lbFin
+
+        // Here comes the query heading:
+        get SEQ_ReadLn liChannel to lsValue
+        set value item DFQ_REPORT_TITLE to lsValue
+
+        // And finally the page width (for which we have no use) and the screen update frequency:
+        get SEQ_ReadLn liChannel to lsValue
+        get ExtractInteger lsValue 2 to liFreq
+        set value item DFQ_UPDATE_FREQ to liFreq
+      end
+      else error 772 "Main file missing from query definition"
+    end
+    else error 771 "Incompatible 3.1 query definition"
+  end_procedure
+end_class // cQueryDefinition
+
+object oDFQ_Output is a cBasicSequentialOutput 
+end_object
+
+/DFQuery.Wait
+ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+³                                         ³
+³ _______________________________________ ³
+³                                         ³
+³ _______________________________________ ³
+³ _______________________________________ ³
+³                                         ³
+³ _______________________________________ ³
+³ _______________________________________ ³
+³                                         ³
+³ _______________________________________ ³
+ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+/*
+
+object oDFQueryWait is a Message DFQuery.Wait
+  set location to 7 18 ABSOLUTE
+  set center_state item 0 to DFTRUE
+  set center_state item 1 to DFTRUE
+  set center_state item 2 to DFTRUE
+//set center_state item 3 to DFTRUE
+  set center_state item 4 to DFTRUE
+  set center_state item 5 to DFTRUE
+  set window_color item 0 to 2
+  set window_color item 5 to 2
+  procedure StartPanel string lsCaption string lsTitle string lsDestination string lsPressAnyKey
+    set value item 0 to lsCaption
+    set value item 1 to lsTitle
+    set value item 2 to lsDestination
+    set value item 3 to ""
+    set value item 4 to ""
+    set value item 5 to lsPressAnyKey
+    send activate
+  end_procedure
+  procedure StopPanel
+    send deactivate
+  end_procedure
+  procedure DoUpdate string lsIndexValue string lsProgress
+    set value item 3 to lsIndexValue
+    set value item 4 to lsProgress
+  end_procedure
+end_object
+
+object oDFQ_DataScanner is a cReport_Info 
+
+  set pOnlyMostSignificantBreakLevel to DFTRUE
+
+  property integer phDef            0
+  property integer pTotalsOnly      DFFALSE
+  property integer pSemiColon       DFFALSE
+  property integer pRecordToUpdate  0
+
+  property integer pbHandleByOutputObject DFFALSE
+  property integer piChannel        0
+
+  property integer piRecInt         0
+  property integer piRecIntCount    0
+
+  property string  priv.psReportTitle ""
+
+  object oValues is a cArray
+  end_object
+  object oTotals is an cReportTotals
+  end_object
+
+  procedure run_querydefinition integer lhDef
+    integer lhAux liRow liMax liFile lhDDO liExprId lhExprArr
+    integer lbInterpretOK liIndex liNewMax liExprRow
+    integer lhBreakInfo lhOutput lbOemToAnsi
+    integer liField
+    string lsTitle lsExpression
+    set pbAllowAllState of (Query_ExprParser(self)) to DFTRUE
+
+    move (oQuery_ExprArray(lhDef)) to lhExprArr
+    move (oDFQ_Output(self)) to lhOutput
+    get iInterpretAll of lhExprArr to lbInterpretOK
+
+    get value item DFQ_USE_ANSI to lbOemToAnsi
+    set pbOemToAnsi of lhOutput to lbOemToAnsi
+
+    if lbInterpretOK begin
+      send reset to (oTotals(self))
+
+      get phDDO of lhDef to lhDDO
+      set phDataSetObject to lhDDO
+      send DoReset
+
+      get value of lhDef item DFQ_MAIN_FILE to liFile
+      set pMainFile    to liFile
+      get value of lhDef item DFQ_REPORT_TITLE to lsTitle
+      if (lsTitle="") get_attribute DF_FILE_DISPLAY_NAME of liFile to lsTitle
+      move (rtrim(lsTitle)) to lsTitle
+      set pReportTitle to lsTitle
+
+      // Ordering:
+      get value of lhDef item DFQ_ORDERING to liIndex
+
+      if (liIndex>=256) begin
+        set pCustom_Sort_State to DFTRUE
+        if (liIndex=1023) set pCustom_Sort_Object to (oQueryOrderExpression(lhDef))
+        else set pCustom_Sort_Object to (FieldInf_VirtualIndex_Object(liFile,liIndex-256))
+        set pOrdering to (value(lhDef,DFQ_ORDERING_SEARCH))
+      end
+      else begin
+        set pCustom_Sort_State to DFFALSE
+        set pCustom_Sort_Object to 0
+        set pOrdering to liIndex
+      end
+
+      // Break info:
+      move (oBreakInfo(lhDef)) to lhBreakInfo
+      get row_count of lhBreakInfo to liMax
+      move -1 to liNewMax
+      decrement liMax
+      for liRow from 0 to liMax
+        if (pbSelect.i(lhBreakInfo,liRow)) move liRow to liNewMax
+      loop
+
+      send DoInitializeBreaks to lhBreakInfo
+//      get row_count of lhBreakInfo to liNewMax
+      for liRow from 0 to liNewMax
+        send add_break_field (piFile.i(lhBreakInfo,liRow)) (piField.i(lhBreakInfo,liRow)) (piExprRow.i(lhBreakInfo,liRow)) lhExprArr
+      loop
+
+      // Fields:
+      move (oQueryDefColumnInfo(lhDef)) to lhAux
+      get row_count of lhAux to liMax
+
+      decrement liMax
+      for liRow from 0 to liMax
+        send add_field (piFile.i(lhAux,liRow)) (piField.i(lhAux,liRow)) (psHeader.i(lhAux,liRow)) (pbNewLine.i(lhAux,liRow)) (piStart.i(lhAux,liRow)) (piWidth.i(lhAux,liRow)) 0 0 (pbTotal.i(lhAux,liRow)) 0 lhExprArr (piExprRow.i(lhAux,liRow))
+//        send obs "add_field " (piFile.i(lhAux,liRow)) (piField.i(lhAux,liRow)) (psHeader.i(lhAux,liRow)) (pbNewLine.i(lhAux,liRow)) (piStart.i(lhAux,liRow)) (piWidth.i(lhAux,liRow)) 0 0 (pbTotal.i(lhAux,liRow)) 0 lhExprArr (piExprRow.i(lhAux,liRow))
+      loop
+
+      // Criteria:
+      move (oQueryDefCriteria(lhDef)) to lhAux
+      get row_count of lhAux to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        send add_criteria_simple (piFile.i(lhAux,liRow)) (piField.i(lhAux,liRow)) (piComperator.i(lhAux,liRow)) (psValue1.i(lhAux,liRow)) (psValue2.i(lhAux,liRow))
+      loop
+
+      get value of lhDef item DFQ_CRITERIA_EXPR_ROW to liExprRow
+      if (liExprRow<>-1) send add_criteria_boolean_expr (piExprId.i(lhExprArr,liExprRow))
+
+      set phDef to lhDef
+
+      set piNumberOfColumns of (oTotals(self)) to (rpt_field_count(self))
+
+
+      // E-mail recipients:
+      send reset_recipients to lhOutput
+
+      move (oEMailRecipients(lhDef)) to lhAux
+      get row_count of lhAux to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        send add_recipient to lhOutput (psName.i(lhAux,liRow)) (psAddress.i(lhAux,liRow))
+      loop
+
+//    send Array_DoWriteToFile lhExprArr "test1.txt"
+//    send Array_DoWriteToFile lhBreakInfo "test2.txt"
+
+      send run
+    end
+    else send DisplayErrors to lhExprArr
+  end_procedure
+
+  register_procedure PrintPageTop
+
+  procedure run
+    integer liDestination lhDef lhOutput liFormat liChannel liFileExists
+    integer liAction
+    string  lsFileName
+    move (oDFQ_Output(self)) to lhOutput
+    get phDef to lhDef
+    get value of lhDef item DFQ_DESTINATION       to liDestination
+    get value of lhDef item DFQ_FORMAT            to liFormat
+
+    // The line below means: If we're printing to screen or printer we don't want anything but a formatted report:
+    if (liDestination<>DFQ.DEST.FILE and liDestination<>DFQ.DEST.EMAIL and liFormat<>DFQ.FORMAT.PRINT) send obs "Invalid destination on selected format." "Please select 'file' as destination"
+    else begin
+      set pbHandleByOutputObject to (liFormat=DFQ.FORMAT.PRINT)
+      if (pbHandleByOutputObject(self)) begin
+        if liDestination eq DFQ.DEST.PRINTER set pDestination of lhOutput to DEST_PRINTER
+        if liDestination eq DFQ.DEST.SCREEN  set pDestination of lhOutput to DEST_SCREEN
+        if liDestination eq DFQ.DEST.FILE    set pDestination of lhOutput to DEST_FILE
+        if liDestination eq DFQ.DEST.EMAIL   set pDestination of lhOutput to DEST_EMAIL
+        set pPageLength  of lhOutput to (value(lhDef,DFQ_LINES_PER_PAGE))
+        set pOutFileName of lhOutput to (value(lhDef,DFQ_FILE_NAME))
+        set pPrinterPort of lhOutput to (value(lhDef,DFQ_PORT))
+        if (iDirect_Output_Title(lhOutput,value(lhDef,DFQ_REPORT_TITLE))) begin
+          set phMsg_Object   of lhOutput to self
+          set pHeader_msg    of lhOutput to msg_PrintPageTop
+          set pHeader_height of lhOutput to 4
+          set priv.psReportTitle to ("<BLD>"+pReportTitle(self)+" ("+string(dSysDate())+", "+sSysTime()+")<bld>")
+          forward send run
+          send Close_Output to lhOutput
+        end
+      end
+      else begin
+        move -1 to liChannel
+        move (value(lhDef,DFQ_FILE_NAME)) to lsFileName
+        if (lsFileName="") send obs "File name must be specified"
+        else begin
+          get SEQ_FileExists lsFileName to liFileExists
+          if (liFileExists=SEQIT_DIRECTORY) send obs "Illegal file name"
+          else begin
+            if (liFileExists=SEQIT_FILE) begin
+              get SEQ_Filename_Exists_Action lsFileName DFTRUE to liAction
+              if liAction eq 1 get SEQ_AppendOutput lsFileName to liChannel
+              if liAction eq 2 get SEQ_DirectOutput lsFileName to liChannel
+            end
+            else get SEQ_DirectOutput lsFileName to liChannel
+            if (liChannel>=0) begin
+              set piChannel to liChannel
+              forward send run
+              send SEQ_CloseOutput liChannel
+              if (liDestination=DFQ.DEST.EMAIL) begin
+                get SEQ_ConvertToAbsoluteFileName lsFileName to lsFileName
+                send DoSendEmails to lhOutput lsFileName
+                send obs ("File "+lsFileName) "has been sent to recipient(s)."
+              end
+              else send obs ("File "+lsFileName) "has been generated."
+            end
+          end
+        end
+      end
+    end
+  end_procedure
+
+  procedure PrintPageTop
+    integer lhOutput liFile liField lbNewLine liStart
+    integer liWidth lhValues liItem liMax liType
+    string lsName lsLine
+    if (pbHandleByOutputObject(self)) begin
+      move "" to lsLine
+      move (oDFQ_Output(self)) to lhOutput
+      move (oValues(self)) to lhValues
+      send delete_data to lhValues
+      send writeln_no_headers to lhOutput (priv.psReportTitle(self))
+      send writeln_no_headers to lhOutput ""
+      get row_count to liMax
+      decrement liMax
+      for liItem from 0 to liMax
+        get rpt_field_file  item liItem to liFile
+        get rpt_field_field item liItem to liField
+        get rpt_field_name  item liItem to lsName
+        get rpt_field_cr    item liItem to lbNewLine
+        get rpt_field_start item liItem to liStart
+        get rpt_field_width item liItem to liWidth
+        get rpt_field_type  item liItem to liType
+        if lbNewLine begin
+          send writeln_no_headers to lhOutput lsLine
+          move "" to lsLine
+        end
+        if (liType<>DF_TEXT and liType<>DF_BINARY) begin
+          move (left(lsName,liWidth)) to lsName
+          if (liType=DF_BCD) move (RightShift(lsName,liWidth)) to lsName
+          else move (pad(lsName,liWidth)) to lsName
+          move (overstrike(lsName,lsLine,liStart)) to lsLine
+        end
+        else set value of lhValues item (item_count(lhValues)) to lsName
+      loop
+      if lsLine ne "" begin
+        send writeln_no_headers to lhOutput lsLine
+        move "" to lsLine
+      end
+
+      for liItem from 0 to (item_count(lhValues)-1)
+        get value of lhValues item liItem to lsName
+        if lsName ne "" send writeln_no_headers to lhOutput lsName
+      loop
+      send delete_data to lhValues
+      send writeln_no_headers to lhOutput "--------------------------------------------------------------------------"
+    end
+  end_procedure
+
+  procedure PrintTotals integer lbSubTotal
+    integer lhOutput lbNewLine liStart lbYes lbSum
+    integer liWidth liItem liMax liType liDec
+    number  lnValue
+    string lsLine lsValue
+    if (pbHandleByOutputObject(self)) begin
+      move "" to lsLine
+      move (oDFQ_Output(self)) to lhOutput
+      get row_count to liMax
+      decrement liMax
+
+      // Are there any totals at all?
+      move DFFALSE to lbYes
+      for liItem from 0 to liMax
+        get rpt_field_sum item liItem to lbSum
+        if lbSum move DFTRUE to lbYes
+      loop
+      if lbYes begin // Yes, there are totals
+        if lbSubTotal send writeln to lhOutput "  ------------------------------------------------------------------------"
+        else          send writeln to lhOutput "  ========================================================================"
+        for liItem from 0 to liMax
+          get rpt_field_cr        item liItem to lbNewLine
+          get rpt_field_start     item liItem to liStart
+          get rpt_field_width     item liItem to liWidth
+          get rpt_field_type      item liItem to liType
+          get rpt_field_decpoints item liItem to liDec
+          get rpt_field_sum item liItem to lbSum
+          if lbNewLine begin
+            send writeln to lhOutput lsLine
+            move "" to lsLine
+          end
+          if lbSum begin
+            get nRcl_Data.i of (oTotals(self)) item liItem to lnValue
+            get sFormatValue.siii lnValue DF_BCD liWidth liDec to lsValue
+            move (overstrike(lsValue,lsLine,liStart)) to lsLine
+          end
+        loop
+      end
+      if lsLine ne "" begin
+        send writeln to lhOutput lsLine
+        move "" to lsLine
+      end
+    end
+  end_procedure
+
+  procedure print_text string lsValue
+    integer liLines liLine liFormat lhDef
+    get phDef to lhDef
+    get value of lhDef item DFQ_FORMAT to liFormat
+    if (liFormat=DFQ.FORMAT.PRINT) begin // If file
+      move (Text_Format.sii(lsValue,74,1)) to liLines
+      for liLine from 0 to (liLines-1)
+        send writeln to (oDFQ_Output(self)) (Text_FormattedLine.i(liLine))
+      loop
+    end
+  end_procedure
+
+            // Only call this when format is DFQ.FORMAT.CD
+            procedure write_column_names_cd
+              integer liMax liItem liChannel
+              string lsSeparator lsValue
+              get piChannel to liChannel
+              if (pSemiColon(self)) move ";" to lsSeparator
+              else move "," to lsSeparator
+              get row_count to liMax
+              decrement liMax
+              for liItem from 0 to liMax
+                get rpt_field_name liItem to lsValue
+                if liItem ne liMax write channel liChannel (lsValue+lsSeparator)
+                else writeln channel liChannel lsValue
+              loop
+            end_procedure
+
+  procedure scan_starts // Sent unconditionally at the beginning of a scan
+    integer liFormat liDestination lhDef
+    string lsDestination lsFileName
+    get phDef to lhDef
+    get value of lhDef item DFQ_DESTINATION to liDestination
+    get value of lhDef item DFQ_FORMAT to liFormat
+    move "to #" to lsDestination
+    if liDestination eq DFQ.DEST.PRINTER move (replace("#",lsDestination,"printer")) to lsDestination
+    if liDestination eq DFQ.DEST.SCREEN  move (replace("#",lsDestination,"screen")) to lsDestination
+    if liDestination eq DFQ.DEST.FILE begin
+      move (replace("#",lsDestination,"file")) to lsDestination
+      get value of lhDef item DFQ_FILE_NAME to lsFileName
+      move (lsDestination+" ("+lsFileName+")") to lsDestination
+    end
+    if liDestination eq DFQ.DEST.EMAIL  move (replace("#",lsDestination,"e-mail")) to lsDestination
+    send StartPanel to (oDFQueryWait(self)) "Generating report" (pReportTitle(self)) lsDestination "Press any key to interrupt..."
+    set piRecIntCount to 0
+    set piRecInt to (value(lhDef,DFQ_UPDATE_FREQ))
+    set pTotalsOnly to (value(lhDef,DFQ_PRINT_TOTALS_ONLY))
+    set pSemiColon to (value(lhDef,DFQ_SEMICOLON))
+
+    if (integer(value(lhDef,DFQ_INCL_COLUMN_NAMES))) begin // If "Include column names" as been cheked
+      if (liFormat=DFQ.FORMAT.CD) begin // Only if comma delimited, else no sense
+        send write_column_names_cd
+      end
+    end
+
+    if (piRecInt(self)=0) set piRecInt to 1
+  end_procedure
+
+  procedure scan_ended // Sent unconditionally at the end of a scan
+    integer lhOutput lhDef liMax liRow liExprRow
+    string lsExpression
+    forward send scan_ended
+    if (pbHandleByOutputObject(self)) begin
+      move (oDFQ_Output(self)) to lhOutput
+      // print totals
+      send PrintTotals DFFALSE
+      // print no records
+      send writeln to lhOutput ""
+      send writeln to lhOutput ("Records printed: "+string(pRecordCount(self))+" (out of "+string(pScanCount(self))+" scanned)" )
+      // selection criteria
+
+      get phDef to lhDef
+      get value of lhDef item DFQ_CRITERIA_EXPR_ROW to liExprRow
+      if (liExprRow<>-1) get psExpression.i of (oQuery_ExprArray(lhDef)) liExprRow to lsExpression
+
+      move (oQueryDefCriteria(lhDef)) to lhDef
+      if (row_count(lhDef) or (liExprRow<>-1)) begin
+        send writeln to lhOutput ""
+        send writeln to lhOutput t.DfQuery.SelectionCrit
+        get row_count of lhDef to liMax
+        decrement liMax
+        for liRow from 0 to liMax
+          send writeln to lhOutput (sCriteriaAsString(lhDef,liRow))
+        loop
+        if (liExprRow<>-1) begin
+          get Text_Format.sii lsExpression 50 DFTRUE to liMax
+          decrement liMax
+          for liRow from 0 to liMax
+            if (liRow=0) send writeln to lhOutput ("Expression: "+Text_FormattedLine.i(liRow))
+            else         send writeln to lhOutput ("            "+Text_FormattedLine.i(liRow))
+          loop
+        end
+      end
+      else send writeln to lhOutput t.DfQuery.NoSelectionCrit
+    end
+    send StopPanel to (oDFQueryWait(self))
+  end_procedure
+
+  procedure scan_complete  // Sent at the end of a scan if scan was complete
+  end_procedure
+
+  procedure scan_pInterrupted  // Sent at the end of a scan if scan was
+  end_procedure                // pInterrupted
+
+  function sFormatValue.siii string lsValue integer liType integer liWidth integer liDec returns string
+    if liType eq DF_BCD begin
+      move (NumToStr(lsValue,liDec)) to lsValue
+      if (length(lsValue)>liWidth) move (repeat("#",liWidth)) to lsValue // Column not wide enough
+      else move (RightShift(lsValue,liWidth)) to lsValue
+    end
+    else move (left(pad(lsValue,liWidth),liWidth)) to lsValue
+    function_return lsValue
+  end_function
+
+  procedure record_selected // Sent when a record is selected
+    integer liItem liMax liFile liField liChannel lhValues
+    integer lbSum liLen lhDef lhOutput
+    integer lbNewLine liType liRow liDec
+    integer lbRelated liMainFile lbTotalsOnly liDestination liFormat
+    integer lhExprArr liExprRow
+    number liStart liWidth
+    string lsValue lsSeparator lsLine
+    forward send Record_Selected
+
+    get phDef to lhDef
+    get value of lhDef item DFQ_DESTINATION to liDestination
+    get value of lhDef item DFQ_FORMAT to liFormat
+    get pTotalsOnly to lbTotalsOnly
+    get piChannel to liChannel
+
+    move "" to lsLine
+    if (pSemiColon(self)) move ";" to lsSeparator
+    else move "," to lsSeparator
+
+    send delete_data to (oValues(self))
+    get pMainFile to liMainFile
+    move 0 to lbRelated
+    move (oDFQ_Output(self)) to lhOutput
+    move (oValues(self)) to lhValues
+    get row_count to liMax
+    decrement liMax
+    for liItem from 0 to liMax // Go through the selected columns
+      if (liFile<>liMainFile and not(lbRelated)) begin
+        relate liMainFile
+        move 1 to lbRelated
+      end
+      get rpt_field_file       item liItem to liFile
+      get rpt_field_field      item liItem to liField
+      get rpt_field_start      item liItem to liStart
+      get rpt_field_width      item liItem to liWidth
+      get rpt_field_cr         item liItem to lbNewLine
+      get rpt_field_sum        item liItem to lbSum
+      get rpt_field_type       item liItem to liType
+      get rpt_field_decpoints  item liItem to liDec
+      get rpt_field_expr_array item liItem to lhExprArr
+      get rpt_field_expr_row   item liItem to liExprRow
+
+      if liFile move (FieldInf_FieldValue(liFile,liField)) to lsValue
+      else get sEvalExpression of (Query_ExprEvaluator(self)) (piExprId.i(lhExprArr,liExprRow)) to lsValue
+
+      if lbSum send Sum_Data.in to (oTotals(self)) liItem lsValue
+      if (not(lbTotalsOnly) or (liFormat<>DFQ.FORMAT.PRINT)) begin
+        if (liFormat=DFQ.FORMAT.PRINT) begin
+          if lbNewLine begin
+            send writeln to lhOutput lsLine
+            move "" to lsLine
+          end
+          if (liType<>DF_TEXT and liType<>DF_BINARY) begin
+            get sFormatValue.siii lsValue liType liWidth liDec to lsValue
+            move (overstrike(lsValue,lsLine,liStart)) to lsLine
+          end
+          else set value of lhValues item (item_count(lhValues)) to lsValue
+        end
+        else begin // DFQ.FORMAT.CD or DFQ.FORMAT.LD
+          if (liType=DF_TEXT or liType=DF_BINARY) begin // Text or binary
+            move (length(lsValue)) to liLen
+            if liFormat eq DFQ.FORMAT.CD begin // Comma delimited
+              move (replaces('"',lsValue,"'")) to lsValue
+              move ('"'+Text_CompressSubstCr(lsValue," ")+'"') to lsValue
+              if liItem ne liMax write channel liChannel (lsValue+lsSeparator)
+              else writeln channel liChannel lsValue
+            end
+            else begin // Line delimited
+              writeln channel liChannel liLen
+              write channel liChannel lsValue
+            end
+          end
+          else begin // Everything but text or binary
+            move (rtrim(lsValue)) to lsValue
+            if liFormat eq DFQ.FORMAT.CD begin
+              if liType eq DF_ASCII move (replaces('"',lsValue,"'")) to lsValue
+              if liType ne DF_DATE move ('"'+lsValue+'"') to lsValue
+              if liItem ne liMax write channel liChannel (lsValue+lsSeparator)
+              else writeln channel liChannel lsValue
+            end
+            else begin // DFQ.FORMAT.LD
+              writeln channel liChannel lsValue
+            end
+          end
+        end
+      end // IfNot lbTotalsOnly
+    loop
+    if (liFormat=DFQ.FORMAT.PRINT) begin
+      if lsLine ne "" begin
+        send writeln to lhOutput lsLine
+        move "" to lsLine
+      end
+      ifnot lbTotalsOnly begin
+        for liItem from 0 to (item_count(lhValues)-1)
+          get value of (oValues(self)) item liItem to lsValue
+          move (Text_RemoveTrailingCr(lsValue)) to lsValue
+          if lsValue ne "" begin
+            send print_text lsValue
+          end
+        loop
+        send delete_data to lhValues
+      end
+    end
+  end_procedure
+
+  procedure record_not_selected // Sent if record_selected is not sent
+  end_procedure
+
+  procedure record_found // Sent for each record found. This message is sent before
+                         // it is determined if the record is selected or not.
+    integer liRecIntCount liSelected liNotSelected lbInterrupt
+    get piRecIntCount to liRecIntCount
+    increment liRecIntCount
+    if (liRecIntCount=piRecInt(self)) begin
+      move 0 to liRecIntCount
+      send DoUpdate to (oDFQueryWait(self)) (idx_field_value(oIndexAnalyzer#,pOrdering(self),1,1)) ("("+string(pRecordCount(self))+"/"+string(pScanCount(self)-1)+")")
+      get MB_CancelOnKeypress t.Wait.Cancel to lbInterrupt
+      if lbInterrupt begin
+        if (integer(value(phDef(self),DFQ_FORMAT))=DFQ.FORMAT.PRINT) ;
+            send writeln to (oDFQ_Output(self)) t.DfQuery.ReportCancelled
+        set pInterrupted to DFTRUE
+      end
+    end
+    set piRecIntCount to liRecIntCount
+  end_procedure
+
+  procedure print_subheader string lsValue integer liLogicalLevel
+    if (liLogicalLevel<=1) send writeln to (oDFQ_Output(self)) ""
+    send writeln to (oDFQ_Output(self)) ""
+    send writeln to (oDFQ_Output(self)) (repeat("   ",liLogicalLevel)+lsValue)
+    send writeln to (oDFQ_Output(self)) ""
+  end_procedure
+  procedure print_subtotal string lsValue integer liLogicalLevel
+    send PrintTotals DFTRUE
+//    send writeln to (oDFQ_Output(self)) (repeat("   ",liLogicalLevel)+lsValue)
+  end_procedure
+
+  procedure Handle_SubHeader integer liLevel
+    integer lhBreakInfo lbFin liLogicalLevel lhDef
+    string lsValue
+    get phDef to lhDef
+    move (oBreakInfo(lhDef)) to lhBreakInfo
+    move (piLogicalLevel.i(lhBreakInfo,liLevel)) to liLogicalLevel
+    move 0 to lbFin
+    move (sBreakField_Value.i(lhBreakInfo,liLevel)) to lsValue
+    repeat
+      decrement liLevel
+      move (liLevel<0 or pbSelect.i(lhBreakInfo,liLevel)) to lbFin
+      ifnot lbFin ;
+        move (sBreakField_Value.i(lhBreakInfo,liLevel)+", "+lsValue) to lsValue
+    until lbFin
+    send print_subheader lsValue liLogicalLevel
+  end_procedure
+
+  procedure Handle_SubTotal integer liLevel
+    integer lhBreakInfo liLogicalLevel lhDef
+    get phDef to lhDef
+    move (oBreakInfo(lhDef)) to lhBreakInfo
+    move (piLogicalLevel.i(lhBreakInfo,liLevel)) to liLogicalLevel
+    send print_subtotal "Test" liLogicalLevel
+  end_procedure
+
+  procedure SubHeader integer liBreakLevel
+    integer lhBreakInfo liLevel liMax lhDef
+    get phDef to lhDef
+    move (oBreakInfo(lhDef)) to lhBreakInfo
+    get piTranslateLevel.i of lhBreakInfo item (liBreakLevel-1) to liBreakLevel
+    get row_count of lhBreakInfo to liMax
+    decrement liMax
+    for liLevel from liBreakLevel to liMax
+      if (pbSelect.i(lhBreakInfo,liLevel)) begin
+        send handle_subheader liLevel
+        send New_Level to (oTotals(self))
+      end
+    loop
+  end_procedure
+  procedure SubTotal integer liLevel
+    integer lhBreakInfo liBreakLevel liMax lhDef
+    get phDef to lhDef
+    move (oBreakInfo(lhDef)) to lhBreakInfo
+    get piTranslateLevel.i of lhBreakInfo item (liLevel-1) to liBreakLevel
+    get row_count of lhBreakInfo to liMax
+    decrement liMax
+    for_ex liLevel from liMax down_to liBreakLevel
+      if (pbSelect.i(lhBreakInfo,liLevel)) begin
+        send handle_subtotal liLevel
+        send Drop_Level to (oTotals(self))
+      end
+    loop
+  end_procedure
+end_object // oDFQ_DataScanner

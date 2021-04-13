@@ -1,0 +1,222 @@
+// Use StrucTrc.utl // Object for tracing a restructure operation
+
+// 2013/10/27 Updated according til WvA's message: http://support.dataaccess.com/Forums/showthread.php?54843-DFMatrix-save-rst-trace-file-as-text&p=285202#post285202
+
+Use Structur.utl // Object for restructuring table definitions
+Use FDX.nui      // cFDX class
+Use Macros.utl   // Various macros (FOR_EX...)
+Use Strings.nui  // String manipulation for VDF
+Use Files.utl    // Utilities for handling file related stuff
+
+function sRSOP_Text.i global integer op# returns string
+  if op# eq RSOP_BEGIN           function_return "Initial definiton"
+  if op# eq RSOP_CREATEFIELD     function_return "Create field"
+  if op# eq RSOP_DELETEFIELD     function_return "Delete field"
+  if op# eq RSOP_DELETEINDEX     function_return "Delete index"
+  if op# eq RSOP_SETFILEATTR     function_return "Set "
+  if op# eq RSOP_SETFIELDATTR    function_return "Set "
+  if op# eq RSOP_SETINDEXATTR    function_return "Set "
+  if op# eq RSOP_SETINDEXSEGATTR function_return "Set "
+  if op# eq RSOP_TRUNCATED       function_return "Restructure truncated!"
+  if op# eq RSOP_ERROR_OCCURRED  function_return "Error: "
+end_function
+
+desktop_section
+  object oFdxTraceArray is a cArray
+    Property String psCurrentFileName ""
+    item_property_list
+      item_property integer piFdx.i
+      item_property integer piFile.i
+      item_property integer piOperation.i
+      item_property integer piAttribute.i
+      item_property integer piField.i
+      item_property integer piIndex.i
+      item_property integer piSegment.i
+      item_property string  psValue.i
+    end_item_property_list
+    function sDescription.i integer row# returns string
+      integer op# attr# field# index# seg#
+      string value# rval#
+      get piOperation.i row# to op#
+      get piAttribute.i row# to attr#
+      get piField.i     row# to field#
+      get piIndex.i     row# to index#
+      get piSegment.i   row# to seg#
+      get psValue.i     row# to value#
+      move (string(IntToStrRzf(row#+1,length(string(row_count(self)+1))))) to rval#
+      move (rval#*sRSOP_Text.i(op#)) to rval#
+      if op# eq RSOP_BEGIN        move (rval#*value#) to rval#
+      if op# eq RSOP_CREATEFIELD  move (rval#*value#*"at"*string(field#)*"type: "*API_Attr_DisplayValueName(DF_FIELD_TYPE,index#)) to rval#
+      if op# eq RSOP_DELETEFIELD  move (rval#*string(field#)) to rval#
+      if op# eq RSOP_DELETEINDEX  move (rval#*string(index#)) to rval#
+      if op# eq RSOP_SETFILEATTR  move (rval#*API_Attr_Name(attr#)*"to"*API_Attr_ValueName(attr#,value#)) to rval#
+      if op# eq RSOP_SETFIELDATTR move (rval#*API_Attr_Name(attr#)*"field"*string(field#)*"to"*API_Attr_ValueName(attr#,value#)) to rval#
+      if op# eq RSOP_SETINDEXATTR move (rval#*API_Attr_Name(attr#)*"index"*string(index#)*"to"*API_Attr_ValueName(attr#,value#)) to rval#
+      if op# eq RSOP_SETINDEXSEGATTR move (rval#*API_Attr_Name(attr#)*"index"*string(index#)*"segment"*string(seg#)*"to"*API_Attr_ValueName(attr#,value#)) to rval#
+      if op# eq RSOP_ERROR_OCCURRED move (rval#*value#) to rval#
+      function_return rval#
+    end_function
+    procedure reset
+      integer row# max#
+      get row_count to max#
+      for row# from 0 to (max#-1)
+        send request_destroy_object to (piFdx.i(self,row#))
+      loop
+      send delete_data
+    end_procedure
+    procedure add_row.iiiiiiis integer obj# integer file# integer op# integer attr# integer field# integer index# integer seg# string value#
+      integer row#
+      get row_count to row#
+      set piFdx.i       row# to obj#
+      set piFile.i      row# to file#
+      set piOperation.i row# to op#
+      set piAttribute.i row# to attr#
+      set piField.i     row# to field#
+      set piIndex.i     row# to index#
+      set piSegment.i   row# to seg#
+      set psValue.i     row# to value#
+    end_procedure
+    procedure RegisterUpdate integer file# integer op# integer attr# integer field# integer index# integer seg# string value#
+      integer row# obj# ch#
+      string fn#
+      if op# eq RSOP_BEGIN send reset
+      if op# eq RSOP_END begin
+        get sRootInclPath of oRestructurer# to fn#
+        move (fn#+".rst") to fn#
+        move (SEQ_DirectOutput(fn#)) to ch#
+        send seq_write ch#
+        send SEQ_CloseOutput ch#
+        send reset
+      end
+      else begin
+        get row_count to row#
+        object oFdxTrace is a cFdxFileDef
+          move self to obj#
+          set piReadDuringRestruct to DFTRUE
+          send Read_File_Definition.i file#
+          set piReadDuringRestruct to DFFALSE
+        end_object
+        send add_row.iiiiiiis obj# file# op# attr# field# index# seg# value#
+      end
+    end_procedure
+    procedure seq_read integer ch#
+      integer row# max# oFDX#
+      send SEQ_ReadArrayItems ch# self
+      get row_count to max#
+      for row# from 0 to (max#-1)
+        object oFdxTrace is a cFdxFileDef
+          move self to oFDX#
+        end_object
+        set piFdx.i row# to oFDX#
+        send Seq_Read to oFDX# ch#
+      loop
+    end_procedure
+    procedure seq_write integer ch#
+      integer row# max# oFDX#
+      send SEQ_WriteArrayItems ch# self
+      get row_count to max#
+      for row# from 0 to (max#-1)
+        get piFdx.i row# to oFDX#
+        send Seq_Write to oFDX# ch#
+      loop
+    end_procedure
+    procedure save_trace
+      integer ch#
+      string fn#
+      move (SEQ_SelectOutFile("Save restructure trace","Restructure trace (*.rst)|*.RST")) to fn#
+      if fn# ne "" begin
+        move (SEQ_DirectOutput(fn#)) to ch#
+        send seq_write ch#
+        send SEQ_CloseOutput ch#
+      end
+    end_procedure
+    procedure save_txt_trace
+      String  sFileName
+      integer max# row# ch#
+
+      Get psCurrentFileName To sFileName
+      //Move (replace(".rst",lowercase(sFileName),".log")) To sFileName
+      Move (sFilename+".log") To sFileName // file will end as .rst.log
+
+      Move (SEQ_DirectOutput(sFileName)) To ch#
+      get row_count to max#
+      for row# from 0 to (max#-1)
+        Writeln channel ch# (sDescription.i(self,row#))
+      loop
+      send SEQ_CloseOutput ch#
+      send info_box ("file saved as"*sFileName) // does that help?
+    End_Procedure    
+    Procedure load_trace_file String fn#
+      integer ch#
+      if fn# ne "" begin
+        move (SEQ_DirectInput(fn#)) to ch#
+        send reset
+        send seq_read ch#
+        send SEQ_CloseInput ch#
+      end
+    end_procedure
+    procedure load_trace
+      string fn#
+      move (SEQ_SelectInFile("Load restructure trace","Restructure trace (*.rst)|*.RST")) to fn#
+      send load_trace_file fn#
+      set psCurrentFileName To fn#  // <-- added
+    end_procedure
+  end_object // oFdxTraceArray
+end_desktop_section
+
+procedure RS_TraceOn global
+  integer oFdxTraceArray#
+  move (oFdxTraceArray(self)) to oFdxTraceArray#
+  send reset to oFdxTraceArray#
+  set piTraceState  of oRestructurer# to dfTrue
+  set piTraceObject of oRestructurer# to oFdxTraceArray#
+end_procedure
+procedure RS_TraceOff global
+  set piTraceState  of oRestructurer# to dfFalse
+  set piTraceObject of oRestructurer# to 0
+end_procedure
+procedure RS_TraceReset global
+  send reset to (oFdxTraceArray(self))
+end_procedure
+
+Use APS.pkg
+class cRSTraceList is a aps.List
+  procedure fill_list
+    integer obj# max# row#
+    send delete_data
+    move (oFdxTraceArray(self)) to obj#
+    get row_count of obj# to max#
+    for row# from 0 to (max#-1)
+      send add_item msg_none (sDescription.i(obj#,row#))
+      set aux_value item row# to row#
+    loop
+    if (active_state(self)) set dynamic_update_state to true
+  end_procedure
+  procedure display_definition
+    integer row# oFDX# file#
+    if (item_count(self)) begin
+      get aux_value item (current_item(self)) to row#
+      get piFdx.i of (oFdxTraceArray(self)) item row# to oFDX#
+      get piFile.i of (oFdxTraceArray(self)) item row# to file#
+      send FDX_ModalDisplayFileAttributes oFDX# file#
+    end
+  end_procedure
+  procedure save_trace
+    integer obj#
+    move (oFdxTraceArray(self)) to obj#
+    if (row_count(obj#)) send save_trace to obj#
+  end_procedure
+  procedure load_trace
+    send load_trace to (oFdxTraceArray(self))
+    send fill_list to (oLst(self))
+  end_procedure
+  procedure save_txt_trace
+    integer obj# 
+    move (oFdxTraceArray(self)) to obj#
+    
+    send load_trace to obj#
+    Send save_txt_trace of obj#
+    send fill_list // visual clue something happened
+  end_procedure
+end_class // cRSTraceList
+

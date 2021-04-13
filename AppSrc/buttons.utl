@@ -1,0 +1,373 @@
+// Use Buttons.utl  // Button texts
+Use Language.pkg
+
+#IF LNG_DEFAULT=LNG_ENGLISH
+ define t.btn.apply      for "Apply"                       // LNG_ENGLISH
+ define t.btn.help       for "Help"                        // LNG_ENGLISH
+ define t.btn.ok         for "OK"                          // LNG_ENGLISH
+ define t.btn.continue   for "Continue"                    // LNG_ENGLISH
+ define t.btn.cancel     for "Cancel"                      // LNG_ENGLISH
+ define t.btn.prompt     for "Prompt"                      // LNG_ENGLISH
+ define t.btn.create     for "Create"                      // LNG_ENGLISH
+ define t.btn.save       for "Save"                        // LNG_ENGLISH
+ define t.btn.delete     for "Delete"                      // LNG_ENGLISH
+ define t.btn.clear      for "Clear"                       // LNG_ENGLISH
+ define t.btn.exit       for "Exit"                        // LNG_ENGLISH
+ define t.btn.zoom       for "Zoom"                        // LNG_ENGLISH
+ define t.btn.close      for "Close"                       // LNG_ENGLISH
+ define t.btn.print      for "Print"                       // LNG_ENGLISH
+ define t.btn.reset      for "Reset"                       // LNG_ENGLISH
+ define t.btn.reset_all  for "Reset all"                   // LNG_ENGLISH
+ define t.btn.redraw     for "Redraw"                      // LNG_ENGLISH
+ define t.btn.remove     for "Remove"                      // LNG_ENGLISH
+ define t.btn.change     for "Change"                      // LNG_ENGLISH
+ define t.btn.insert     for "Insert"                      // LNG_ENGLISH
+ define t.btn.append     for "Append"                      // LNG_ENGLISH
+ define t.btn.restart    for "Re-start"                    // LNG_ENGLISH
+ define t.btn.display    for "Display"                     // LNG_ENGLISH
+ define t.btn.add        for "Add"                         // LNG_ENGLISH
+ define t.btn.edit       for "Edit"                        // LNG_ENGLISH
+ define t.btn.open       for "Open"                        // LNG_ENGLISH
+ define t.btn.properties for "Properties"                  // LNG_ENGLISH
+ define t.btn.refresh    for "Refresh"                     // LNG_ENGLISH
+ define t.btn.select     for "Select"                      // LNG_ENGLISH
+ define t.btn.yes        for "Yes"                         // LNG_ENGLISH
+ define t.btn.no         for "No"                          // LNG_ENGLISH
+ define t.btn.move_up    for "Move up"                     // LNG_ENGLISH
+ define t.btn.move_down  for "Move down"                   // LNG_ENGLISH
+ define t.key.return     for "Return"                      // LNG_ENGLISH
+ define t.key.esc        for "Esc"                         // LNG_ENGLISH
+#ENDIF
+#IF LNG_DEFAULT=LNG_ITALIAN
+ define t.btn.apply      for "Applica"                     // LNG_ITALIAN
+ define t.btn.help       for "Aiuto"                       // LNG_ITALIAN
+ define t.btn.ok         for "OK"                          // LNG_ITALIAN
+ define t.btn.continue   for "Continua"                    // LNG_ITALIAN
+ define t.btn.cancel     for "Annulla"                     // LNG_ITALIAN
+ define t.btn.prompt     for "Suggerisce"                  // LNG_ITALIAN
+ define t.btn.create     for "Crea"                        // LNG_ITALIAN
+ define t.btn.save       for "Salva"                       // LNG_ITALIAN
+ define t.btn.delete     for "Cancella"                    // LNG_ITALIAN
+ define t.btn.clear      for "Pulisce"                     // LNG_ITALIAN
+ define t.btn.exit       for "Esce"                        // LNG_ITALIAN
+ define t.btn.zoom       for "Zoom"                        // LNG_ITALIAN
+ define t.btn.close      for "Chiude"                      // LNG_ITALIAN
+ define t.btn.print      for "Stampa"                      // LNG_ITALIAN
+ define t.btn.reset      for "Resetta"                     // LNG_ITALIAN
+ define t.btn.reset_all  for "Resetta tutto"               // LNG_ITALIAN
+ define t.btn.redraw     for "RiDisegna"                   // LNG_ITALIAN
+ define t.btn.remove     for "Rimuove"                     // LNG_ITALIAN
+ define t.btn.change     for "Cambia"                      // LNG_ITALIAN
+ define t.btn.insert     for "Inserisce"                   // LNG_ITALIAN
+ define t.btn.append     for "Appende"                     // LNG_ITALIAN
+ define t.btn.restart    for "Riparte"                     // LNG_ITALIAN
+ define t.btn.display    for "Visualizza"                  // LNG_ITALIAN
+ define t.btn.add        for "Aggiunge"                    // LNG_ITALIAN
+ define t.btn.edit       for "Edita"                       // LNG_ITALIAN
+ define t.btn.open       for "Apre"                        // LNG_ITALIAN
+ define t.btn.properties for "Proprieta'"                  // LNG_ITALIAN
+ define t.btn.refresh    for "Refresh"                     // LNG_ITALIAN
+ define t.btn.select     for "Seleziona"                   // LNG_ITALIAN
+ define t.btn.yes        for "Si"                          // LNG_ITALIAN
+ define t.btn.no         for "No"                          // LNG_ITALIAN
+ define t.btn.move_up    for "Muove su"                    // LNG_ITALIAN
+ define t.btn.move_down  for "Muove giu'"                  // LNG_ITALIAN
+ define t.key.return     for "Return"                      // LNG_ITALIAN
+ define t.key.esc        for "Esc"                         // LNG_ITALIAN
+#ENDIF
+#IF LNG_DEFAULT=LNG_DANISH
+ define t.btn.apply      for "Anvend"                      // LNG_DANISH
+ define t.btn.help       for "Hjëlp"                       // LNG_DANISH
+ define t.btn.ok         for "OK"                          // LNG_DANISH
+ define t.btn.continue   for "Fortsët"                     // LNG_DANISH
+ define t.btn.cancel     for "Annuller"                    // LNG_DANISH
+ define t.btn.prompt     for "Liste"                       // LNG_DANISH
+ define t.btn.create     for "Opret"                       // LNG_DANISH
+ define t.btn.save       for "Gem"                         // LNG_DANISH
+ define t.btn.delete     for "Slet"                        // LNG_DANISH
+ define t.btn.clear      for "Blank"                       // LNG_DANISH
+ define t.btn.exit       for "Afslut"                      // LNG_DANISH
+ define t.btn.zoom       for "Zoom"                        // LNG_DANISH
+ define t.btn.close      for "Luk"                         // LNG_DANISH
+ define t.btn.print      for "Udskriv"                     // LNG_DANISH
+ define t.btn.reset      for "Nulstil"                     // LNG_DANISH
+ define t.btn.reset_all  for "Nulstil alt"                 // LNG_DANISH
+ define t.btn.redraw     for "Gentegn"                     // LNG_DANISH
+ define t.btn.remove     for "Fjern"                       // LNG_DANISH
+ define t.btn.change     for "Modificer"                   // LNG_DANISH
+ define t.btn.insert     for "Indsët"                      // LNG_DANISH
+ define t.btn.append     for "Tilfõj"                      // LNG_DANISH
+ define t.btn.restart    for "Genstart"                    // LNG_DANISH
+ define t.btn.display    for "Vis"                         // LNG_DANISH
+ define t.btn.add        for "Tilfõj"                      // LNG_DANISH
+ define t.btn.edit       for "Ret"                         // LNG_DANISH
+ define t.btn.open       for "èbn"                         // LNG_DANISH
+ define t.btn.properties for "Egenskaber"                  // LNG_DANISH
+ define t.btn.refresh    for "Opdater"                     // LNG_DANISH
+ define t.btn.select     for "Vëlg"                        // LNG_DANISH
+ define t.btn.yes        for "Ja"                          // LNG_DANISH
+ define t.btn.no         for "Nej"                         // LNG_DANISH
+ define t.btn.move_up    for "Flyt op"                     // LNG_DANISH
+ define t.btn.move_down  for "Flyt ned"                    // LNG_DANISH
+ define t.key.return     for "Retur"                       // LNG_DANISH
+ define t.key.esc        for "Esc"                         // LNG_DANISH
+#ENDIF
+#IF LNG_DEFAULT=LNG_SWEDISH
+ define t.btn.apply      for "Apply"                       // LNG_SWEDISH
+ define t.btn.help       for "HjÑlp"                       // LNG_SWEDISH
+ define t.btn.ok         for "OK"                          // LNG_SWEDISH
+ define t.btn.continue   for "FortsÑtt"                    // LNG_SWEDISH
+ define t.btn.cancel     for "Avbryt"                      // LNG_SWEDISH
+ define t.btn.prompt     for "Lista"                       // LNG_SWEDISH
+ define t.btn.create     for "Skapa"                       // LNG_SWEDISH
+ define t.btn.save       for "Spara"                       // LNG_SWEDISH
+ define t.btn.delete     for "Ta bort"                     // LNG_SWEDISH
+ define t.btn.clear      for "Rensa"                       // LNG_SWEDISH
+ define t.btn.exit       for "Avsluta"                     // LNG_SWEDISH
+ define t.btn.zoom       for "Zoom"                        // LNG_SWEDISH
+ define t.btn.close      for "Avsluta"                     // LNG_SWEDISH
+ define t.btn.print      for "Skriv"                       // LNG_SWEDISH
+ define t.btn.reset      for "NollstÑll"                   // LNG_SWEDISH
+ define t.btn.reset_all  for "NollstÑll allt"              // LNG_SWEDISH
+ define t.btn.redraw     for "èngra"                       // LNG_SWEDISH
+ define t.btn.remove     for "Ta bort"                     // LNG_SWEDISH
+ define t.btn.change     for "éndra"                       // LNG_SWEDISH
+ define t.btn.insert     for "SÑtt in"                     // LNG_SWEDISH
+ define t.btn.append     for "LÑgg till"                   // LNG_SWEDISH
+ define t.btn.restart    for "Bîrja om"                    // LNG_SWEDISH
+ define t.btn.display    for "Visa"                        // LNG_SWEDISH
+ define t.btn.add        for "LÑgg till"                   // LNG_SWEDISH
+ define t.btn.edit       for "éndra"                       // LNG_SWEDISH
+ define t.btn.open       for "ôppna"                       // LNG_SWEDISH
+ define t.btn.properties for "Egenskaper"                  // LNG_SWEDISH
+ define t.btn.refresh    for "Refresh"                     // LNG_SWEDISH
+ define t.btn.select     for "VÑlg"                        // LNG_SWEDISH
+ define t.btn.yes        for "Ja"                          // LNG_SWEDISH
+ define t.btn.no         for "Nej"                         // LNG_SWEDISH
+ define t.btn.move_up    for "Move up"                     // LNG_SWEDISH
+ define t.btn.move_down  for "Move down"                   // LNG_SWEDISH
+ define t.key.return     for "Retur"                       // LNG_SWEDISH
+ define t.key.esc        for "Esc"                         // LNG_SWEDISH
+#ENDIF
+#IF LNG_DEFAULT=LNG_NORWEGIAN
+ define t.btn.apply      for "Apply"                       // LNG_NORWEGIAN
+ define t.btn.help       for "Hjelp"                       // LNG_NORWEGIAN
+ define t.btn.ok         for "OK"                          // LNG_NORWEGIAN
+ define t.btn.continue   for "Fortsett"                    // LNG_NORWEGIAN
+ define t.btn.cancel     for "Annuller"                    // LNG_NORWEGIAN
+ define t.btn.prompt     for "Liste"                       // LNG_NORWEGIAN
+ define t.btn.create     for "Opprett"                     // LNG_NORWEGIAN
+ define t.btn.save       for "Lagre"                       // LNG_NORWEGIAN
+ define t.btn.delete     for "Slett"                       // LNG_NORWEGIAN
+ define t.btn.clear      for "Blank"                       // LNG_NORWEGIAN
+ define t.btn.exit       for "Avslutt"                     // LNG_NORWEGIAN
+ define t.btn.zoom       for "Zoom"                        // LNG_NORWEGIAN
+ define t.btn.close      for "Lukk"                        // LNG_NORWEGIAN
+ define t.btn.print      for "Skriv ut"                    // LNG_NORWEGIAN
+ define t.btn.reset      for "Nullstill"                   // LNG_NORWEGIAN
+ define t.btn.reset_all  for "Nullstill alt"               // LNG_NORWEGIAN
+ define t.btn.redraw     for "Gentegn"                     // LNG_NORWEGIAN
+ define t.btn.remove     for "Fjern"                       // LNG_NORWEGIAN
+ define t.btn.change     for "Modifiser"                   // LNG_NORWEGIAN
+ define t.btn.insert     for "Innsett"                     // LNG_NORWEGIAN
+ define t.btn.append     for "Tilfõy"                      // LNG_NORWEGIAN
+ define t.btn.restart    for "Genstart"                    // LNG_NORWEGIAN
+ define t.btn.display    for "Vis"                         // LNG_NORWEGIAN
+ define t.btn.add        for "Tilfõy"                      // LNG_NORWEGIAN
+ define t.btn.edit       for "Rett"                        // LNG_NORWEGIAN
+ define t.btn.open       for "èpne"                        // LNG_NORWEGIAN
+ define t.btn.properties for "Egenskaper"                  // LNG_NORWEGIAN
+ define t.btn.refresh    for "Oppdater"                    // LNG_NORWEGIAN
+ define t.btn.select     for "Select"                      // LNG_NORWEGIAN
+ define t.btn.yes        for "Ja"                          // LNG_NORWEGIAN
+ define t.btn.no         for "Nei"                         // LNG_NORWEGIAN
+ define t.btn.move_up    for "Move up"                     // LNG_NORWEGIAN
+ define t.btn.move_down  for "Move down"                   // LNG_NORWEGIAN
+ define t.key.return     for "Retur"                       // LNG_NORWEGIAN
+ define t.key.esc        for "Esc"                         // LNG_NORWEGIAN
+#ENDIF
+#IF LNG_DEFAULT=LNG_DUTCH
+ define t.btn.apply      for "Toepassen"                   // LNG_DUTCH         // PvM
+ define t.btn.help       for "Help"                        // LNG_DUTCH
+ define t.btn.ok         for "OK"                          // LNG_DUTCH
+ define t.btn.continue   for "Doorgaan"                    // LNG_DUTCH
+ define t.btn.cancel     for "Annuleren"                   // LNG_DUTCH
+ define t.btn.prompt     for "Prompt"                      // LNG_DUTCH
+ define t.btn.create     for "Maken"                       // LNG_DUTCH
+ define t.btn.save       for "Opslaan"                     // LNG_DUTCH
+ define t.btn.delete     for "Verwijderen"                 // LNG_DUTCH         // PvM
+ define t.btn.clear      for "Wissen"                      // LNG_DUTCH
+ define t.btn.exit       for "Afsluiten"                   // LNG_DUTCH
+ define t.btn.zoom       for "Zoom"                        // LNG_DUTCH
+ define t.btn.close      for "Sluiten"                     // LNG_DUTCH
+ define t.btn.print      for "Afdrukken"                   // LNG_DUTCH
+ define t.btn.reset      for "Nulstellen"                  // LNG_DUTCH
+ define t.btn.reset_all  for "Alles nulstellen"            // LNG_DUTCH
+ define t.btn.redraw     for "Opnieuw weergeven"           // LNG_DUTCH
+ define t.btn.remove     for "Verwijderen"                 // LNG_DUTCH
+ define t.btn.change     for "Wijzigen"                    // LNG_DUTCH
+ define t.btn.insert     for "Invoegen"                    // LNG_DUTCH
+ define t.btn.append     for "Toevoegen"                   // LNG_DUTCH
+ define t.btn.restart    for "Herstarten"                  // LNG_DUTCH
+ define t.btn.display    for "Weergeven"                   // LNG_DUTCH
+ define t.btn.add        for "Toevoegen"                   // LNG_DUTCH
+ define t.btn.edit       for "Bewerken"                    // LNG_DUTCH
+ define t.btn.open       for "Openen"                      // LNG_DUTCH
+ define t.btn.properties for "Eigenschappen"               // LNG_DUTCH
+ define t.btn.refresh    for "Vernieuwen"                  // LNG_DUTCH         // PvM
+ define t.btn.select     for "Selecteren"                  // LNG_DUTCH         // PvM
+ define t.btn.yes        for "Ja"                          // LNG_DUTCH         // PvM
+ define t.btn.no         for "Nee"                         // LNG_DUTCH         // PvM
+ define t.btn.move_up    for "Omhoog"                      // LNG_DUTCH         // PvM
+ define t.btn.move_down  for "Omlaag"                      // LNG_DUTCH         // PvM
+ define t.key.return     for "Return"                      // LNG_DUTCH
+ define t.key.esc        for "Esc"                         // LNG_DUTCH
+#ENDIF
+#IF LNG_DEFAULT=LNG_GERMAN
+ define t.btn.help       for "Hilfe"                       // LNG_GERMAN
+ define t.btn.ok         for "OK"                          // LNG_GERMAN
+ define t.btn.continue   for "Fortsetzen"                  // LNG_GERMAN
+ define t.btn.cancel     for "Abbrechen"                   // LNG_GERMAN
+ define t.btn.prompt     for "Prompt"                      // LNG_GERMAN
+ define t.btn.create     for "Erzeugen"                    // LNG_GERMAN
+ define t.btn.save       for "Speichern"                   // LNG_GERMAN
+ define t.btn.delete     for "Lîschen"                     // LNG_GERMAN
+ define t.btn.clear      for "Leeren"                      // LNG_GERMAN
+ define t.btn.exit       for "Halt"                        // LNG_GERMAN
+ define t.btn.zoom       for "Zoom"                        // LNG_GERMAN
+ define t.btn.close      for "Schlie·en"                   // LNG_GERMAN
+ define t.btn.print      for "Drucken"                     // LNG_GERMAN
+ define t.btn.reset      for "ZurÅcksetzen"                // LNG_GERMAN
+ define t.btn.reset_all  for "Alles zurÅcksetzen"          // LNG_GERMAN
+ define t.btn.redraw     for "Aktualisieren"               // LNG_GERMAN
+ define t.btn.remove     for "Entfernen"                   // LNG_GERMAN
+ define t.btn.change     for "éndern"                      // LNG_GERMAN
+ define t.btn.insert     for "EinfÅgen"                    // LNG_GERMAN
+ define t.btn.append     for "HinzufÅgen"                  // LNG_GERMAN
+ define t.btn.restart    for "Wiederholen"                 // LNG_GERMAN
+ define t.btn.display    for "Anzeigen"                    // LNG_GERMAN
+ define t.btn.add        for "Neu"                         // LNG_GERMAN
+ define t.btn.edit       for "Bearbeiten"                  // LNG_GERMAN
+ define t.btn.open       for "ôffnen"                      // LNG_GERMAN
+ define t.btn.properties for "Eigenschaften"               // LNG_GERMAN
+ define t.btn.refresh    for "Refresh"                     // LNG_GERMAN
+ define t.btn.select     for "Select"                      // LNG_GERMAN
+ define t.btn.yes        for "Yes"                         // LNG_GERMAN
+ define t.btn.no         for "No"                          // LNG_GERMAN
+ define t.btn.move_up    for "Move up"                     // LNG_GERMAN
+ define t.btn.move_down  for "Move down"                   // LNG_GERMAN
+ define t.key.return     for "Return"                      // LNG_GERMAN
+ define t.key.esc        for "Esc"                         // LNG_GERMAN
+#ENDIF
+#IF LNG_DEFAULT=LNG_SPANISH
+ define t.btn.apply      for "Aplicar"                     // LNG_SPANISH
+ define t.btn.help       for "Ayuda"                       // LNG_SPANISH
+ define t.btn.ok         for "Aceptar"                     // LNG_SPANISH
+ define t.btn.continue   for "Continuar"                   // LNG_SPANISH
+ define t.btn.cancel     for "Cancelar"                    // LNG_SPANISH
+ define t.btn.prompt     for "Lista"                       // LNG_SPANISH
+ define t.btn.create     for "Crear"                       // LNG_SPANISH
+ define t.btn.save       for "Guardar"                     // LNG_SPANISH
+ define t.btn.delete     for "Borrar"                      // LNG_SPANISH
+ define t.btn.clear      for "Limpiar"                     // LNG_SPANISH
+ define t.btn.exit       for "Salir"                       // LNG_SPANISH
+ define t.btn.zoom       for "Zoom"                        // LNG_SPANISH
+ define t.btn.close      for "Cerrar"                      // LNG_SPANISH
+ define t.btn.print      for "Imprimir"                    // LNG_SPANISH
+ define t.btn.reset      for "Anular"                      // LNG_SPANISH
+ define t.btn.reset_all  for "Anular Todo"                 // LNG_SPANISH
+ define t.btn.redraw     for "Redibujar"                   // LNG_SPANISH
+ define t.btn.remove     for "Retirar"                     // LNG_SPANISH
+ define t.btn.change     for "Cambiar"                     // LNG_SPANISH
+ define t.btn.insert     for "Insertar"                    // LNG_SPANISH
+ define t.btn.append     for "A§adir"                      // LNG_SPANISH
+ define t.btn.restart    for "Re-Iniciar"                  // LNG_SPANISH
+ define t.btn.display    for "Mostrar"                     // LNG_SPANISH
+ define t.btn.add        for "Agregar"                     // LNG_SPANISH
+ define t.btn.edit       for "Editar"                      // LNG_SPANISH
+ define t.btn.open       for "Abrir"                       // LNG_SPANISH
+ define t.btn.properties for "Propiedades"                 // LNG_SPANISH
+ define t.btn.refresh    for "Refrescar"                   // LNG_SPANISH
+ define t.btn.select     for "Seleccionar"                 // LNG_SPANISH
+ define t.btn.yes        for "Si"                          // LNG_SPANISH
+ define t.btn.no         for "No"                          // LNG_SPANISH
+ define t.btn.move_up    for "Subir"                       // LNG_SPANISH
+ define t.btn.move_down  for "Bajar"                       // LNG_SPANISH
+ define t.key.return     for "Volver"                      // LNG_SPANISH
+ define t.key.esc        for "Esc"                         // LNG_SPANISH
+#ENDIF
+#IF LNG_DEFAULT=LNG_PORTUGUESE
+ define t.btn.apply      for "Apply"                       // LNG_PORTUGUESE
+ define t.btn.help       for "Ajuda"                       // LNG_PORTUGUESE
+ define t.btn.ok         for "OK"                          // LNG_PORTUGUESE
+ define t.btn.continue   for "Continuar"                   // LNG_PORTUGUESE
+ define t.btn.cancel     for "Cancelar"                    // LNG_PORTUGUESE
+ define t.btn.prompt     for "Lista"                       // LNG_PORTUGUESE
+ define t.btn.create     for "Criar"                       // LNG_PORTUGUESE
+ define t.btn.save       for "Gravar"                      // LNG_PORTUGUESE
+ define t.btn.delete     for "Excluir"                     // LNG_PORTUGUESE
+ define t.btn.clear      for "Limpar"                      // LNG_PORTUGUESE
+ define t.btn.exit       for "Sair"                        // LNG_PORTUGUESE
+ define t.btn.zoom       for "Zoom"                        // LNG_PORTUGUESE
+ define t.btn.close      for "Fechar"                      // LNG_PORTUGUESE
+ define t.btn.print      for "Imprimir"                    // LNG_PORTUGUESE
+ define t.btn.reset      for "Anular"                      // LNG_PORTUGUESE
+ define t.btn.reset_all  for "Anular tudo"                 // LNG_PORTUGUESE
+ define t.btn.redraw     for "Redraw"                      // LNG_PORTUGUESE
+ define t.btn.remove     for "Remover"                     // LNG_PORTUGUESE
+ define t.btn.change     for "Trocar"                      // LNG_PORTUGUESE
+ define t.btn.insert     for "Inserir"                     // LNG_PORTUGUESE
+ define t.btn.append     for "Anexar"                      // LNG_PORTUGUESE
+ define t.btn.restart    for "Re-iniciar"                  // LNG_PORTUGUESE
+ define t.btn.display    for "Mostrar"                     // LNG_PORTUGUESE
+ define t.btn.add        for "Acrescentar"                 // LNG_PORTUGUESE
+ define t.btn.edit       for "Editar"                      // LNG_PORTUGUESE
+ define t.btn.open       for "Abrir"                       // LNG_PORTUGUESE
+ define t.btn.properties for "Propriedades"                // LNG_PORTUGUESE
+ define t.btn.refresh    for "Refresh"                     // LNG_PORTUGUESE
+ define t.btn.select     for "Select"                      // LNG_PORTUGUESE
+ define t.btn.yes        for "Yes"                         // LNG_PORTUGUESE
+ define t.btn.no         for "No"                          // LNG_PORTUGUESE
+ define t.btn.move_up    for "Move up"                     // LNG_PORTUGUESE
+ define t.btn.move_down  for "Move down"                   // LNG_PORTUGUESE
+ define t.key.return     for "Return"                      // LNG_PORTUGUESE
+ define t.key.esc        for "Esc"                         // LNG_PORTUGUESE
+#ENDIF
+#If LNG_DEFAULT=LNG_FRENCH
+ define t.btn.apply      for "Apply"                       // LNG_FRENCH
+ Define t.btn.help       For "Aide"                        // LNG_FRENCH
+ Define t.btn.ok         For "OK"                          // LNG_FRENCH
+ Define t.btn.continue   For "Continue"                    // LNG_FRENCH
+ Define t.btn.cancel     For "Annule"                      // LNG_FRENCH
+ Define t.btn.prompt     For "Liste"                       // LNG_FRENCH
+ Define t.btn.create     For "CrÇer"                       // LNG_FRENCH
+ Define t.btn.Save       For "Enregistre"                  // LNG_FRENCH
+ Define t.btn.Delete     For "Supprime"                    // LNG_FRENCH
+ Define t.btn.Clear      For "Efface"                      // LNG_FRENCH
+ Define t.btn.exit       For "Quitte"                      // LNG_FRENCH
+ Define t.btn.zoom       For "Zoom"                        // LNG_FRENCH
+ Define t.btn.Close      For "Ferme"                       // LNG_FRENCH
+ Define t.btn.print      For "Imprime"                     // LNG_FRENCH
+ Define t.btn.reset      For "RÇinitialisation"            // LNG_FRENCH
+ Define t.btn.reset_all  For "RÇinitialisation compläte"   // LNG_FRENCH
+ Define t.btn.redraw     For "Redessine"                   // LNG_FRENCH
+ Define t.btn.Remove     For "Enläve"                      // LNG_FRENCH
+ Define t.btn.change     For "Change"                      // LNG_FRENCH
+ Define t.btn.insert     For "Insere"                      // LNG_FRENCH
+ Define t.btn.Append     For "Ajoute"                      // LNG_FRENCH
+ Define t.btn.restart    For "Re-dÇmare"                   // LNG_FRENCH
+ Define t.btn.display    For "Affiche"                     // LNG_FRENCH
+ Define t.btn.add        For "Ajoute"                      // LNG_FRENCH
+ Define t.btn.edit       For "Edite"                       // LNG_FRENCH
+ Define t.btn.Open       For "Ouvre"                       // LNG_FRENCH
+ Define t.btn.properties For "PropriÇtÇs"                  // LNG_FRENCH
+ Define t.btn.refresh    For "Recharge"                    // LNG_FRENCH
+ define t.btn.select     for "Select"                      // LNG_FRENCH
+ define t.btn.yes        for "Oui"                         // LNG_FRENCH
+ define t.btn.no         for "Non"                         // LNG_FRENCH
+ define t.btn.move_up    for "Move up"                     // LNG_FRENCH
+ define t.btn.move_down  for "Move down"                   // LNG_FRENCH
+ define t.key.return     for "Return"                      // LNG_FRENCH
+ define t.key.esc        for "Esc"                         // LNG_FRENCH
+#ENDIF
+

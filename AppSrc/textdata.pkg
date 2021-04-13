@@ -1,0 +1,695 @@
+// Use TextData.pkg // Properties for text data file (Popup_TextDataProperties)
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+Use TextData.nui // cTextDataReader class
+Use GridUtil.utl // Grid and List utilities (not for dbGrid's or Table's)
+Use MsgBox.utl   // obs procedure
+Use Files.utl    // Utilities for handling file related stuff (No User Interface)
+
+object oTextDataDecisionLogPanel is a aps.ModalPanel label "Decision log"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key kcancel send close_panel
+  object oLst is a aps.Grid
+    send GridPrepare_AddColumn "Line"      AFT_NUMERIC6.0
+    send GridPrepare_AddColumn "Column"    AFT_NUMERIC4.0
+    send GridPrepare_AddColumn "Value"     AFT_ASCII30
+    send GridPrepare_AddColumn "Deduction" AFT_ASCII40
+    send GridPrepare_Apply self
+    on_key KEY_CTRL+KEY_R send sort_data
+    on_key KEY_CTRL+KEY_W send DoWriteToFile
+    set size to 200 0
+    procedure DoWriteToFile
+      send Grid_DoWriteToFile self
+    end_procedure
+    procedure sort_data.i integer column#
+      send Grid_SortByColumn self column#
+    end_procedure
+    function iSpecialSortValueOnColumn.i integer column# returns integer
+      if column# le 1 function_return 1
+    end_function
+    function sSortValue.ii integer column# integer itm# returns string
+      if column# le 1 function_return (IntToStrR(value(self,itm#),6))
+    end_function
+    procedure sort_data
+      integer cc#
+      get Grid_CurrentColumn self to cc#
+      send sort_data.i cc#
+    end_procedure
+    procedure header_mouse_click integer itm#
+      send sort_data.i itm#
+      forward send header_mouse_click itm#
+    end_procedure
+    procedure fill_list.i integer lhArray
+      integer liMax liRow
+      send delete_data
+      get row_count of lhArray to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        send add_item MSG_NONE (piLine.i(lhArray,liRow))
+        send add_item MSG_NONE (piColumn.i(lhArray,liRow))
+        send add_item MSG_NONE (psValue.i(lhArray,liRow))
+        send add_item MSG_NONE (psComment.i(lhArray,liRow))
+      loop
+      send Grid_SetEntryState self DFFALSE
+    end_procedure
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.close send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure popup.i integer lhParams
+    send fill_list.i to (oLst(self)) lhParams
+    send popup
+  end_procedure
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oLst(self)) delta_rw# delta_cl#
+    send aps_register_multi_button (oBtn1(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+end_object // oTextDataDecisionLogPanel
+
+procedure Popup_TextDataDecisionLogPanel global integer lhArray
+  send popup.i to (oTextDataDecisionLogPanel(self)) lhArray
+end_procedure
+
+object oTextDataParamListPanel is a aps.ModalPanel label "Text data parameters"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key kcancel send close_panel
+  object oLst is a aps.Grid
+    send GridPrepare_AddColumn "Parameter" AFT_ASCII30
+    send GridPrepare_AddColumn "Value"     AFT_ASCII30
+    send GridPrepare_Apply self
+    procedure fill_list.i integer lhParams
+      integer lhTextDataParameterList liMax liRow
+      move (oTextDataParameterList(self)) to lhTextDataParameterList
+      send delete_data
+      get row_count of lhTextDataParameterList to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        send add_item MSG_NONE (psText.i(lhTextDataParameterList,liRow))
+        send add_item MSG_NONE (value(lhParams,liRow))
+      loop
+      send Grid_SetEntryState self DFFALSE
+    end_procedure
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.close send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure popup.i integer lhParams
+    send fill_list.i to (oLst(self)) lhParams
+    send popup
+  end_procedure
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oLst(self)) delta_rw# delta_cl#
+    send aps_register_multi_button (oBtn1(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+end_object // oTextDataParamListPanel
+
+procedure Popup_TextDataParameterList global integer lhParams
+  send popup.i to (oTextDataParamListPanel(self)) lhParams
+end_procedure
+
+enumeration_list
+  define TDPG_READ_REFRESH
+  define TDPG_READ_FIRST
+  define TDPG_READ_NEXT
+  define TDPG_READ_PREVIOUS
+end_enumeration_list
+
+class cTextDataReaderSentinel is a cTextDataReader
+  procedure construct_object
+    forward send construct_object
+    object oSentinel is a cProcessStatusPanel
+      set allow_cancel_state to DFFALSE
+      set Message_Text to ""
+      set Action_Text  to ""
+      set Title_Text   to ""
+    end_object
+  end_procedure
+  procedure SentinelOn string lsCaption
+    set Caption_Text of (oSentinel(self)) to lsCaption
+    send Start_StatusPanel to (oSentinel(self))
+  end_procedure
+  procedure SentinelUpdate1 string lsValue
+    set Message_Text of (oSentinel(self)) to lsValue
+  end_procedure
+  procedure SentinelUpdate2 string lsValue
+  end_procedure
+  procedure SentinelOff
+    send Stop_StatusPanel to (oSentinel(self))
+  end_procedure
+end_class
+
+class cTextDataProbeGrid is a aps.Grid
+  procedure construct_object
+    forward send construct_object
+    send GridPrepare_AddColumn "#"           AFT_ASCII4
+    send GridPrepare_AddColumn "Column Name" AFT_ASCII20
+    send GridPrepare_AddColumn "Data type"   AFT_ASCII20
+    send GridPrepare_AddColumn "Value"       AFT_ASCII30
+    send GridPrepare_Apply self
+    Property Integer piCurrentRow 0
+    set select_mode to NO_SELECT
+    object oTextDataReader is a cTextDataReaderSentinel
+    end_object
+  end_procedure
+
+  procedure fill_list.iis integer liAction integer lhParamList string lsFileName
+    integer lhTextDataReader liResult liColumnCount liColumn liCurrentRow liRow
+    move (oTextDataReader(self)) to lhTextDataReader
+    set phTextDataParameters of lhTextDataReader to lhParamList
+    set dynamic_update_state to DFFALSE
+    send delete_data
+    get iFileOpen.s of lhTextDataReader lsFileName to liResult
+    if (liResult=TDATFO_OK) begin
+
+      get piCurrentRow to liCurrentRow
+      if (liAction=TDPG_READ_FIRST)    move 1 to liCurrentRow
+      if (liAction=TDPG_READ_NEXT)     increment liCurrentRow
+      if (liAction=TDPG_READ_PREVIOUS) decrement liCurrentRow
+      if (liCurrentRow<1) move 1 to liCurrentRow
+      set piCurrentRow to liCurrentRow
+
+      move 0 to liRow
+      repeat
+        get iReadNext of lhTextDataReader to liResult
+        increment liRow
+      until (liRow=liCurrentRow or liResult<>TDATRN_OK)
+
+      if (liResult=TDATRN_EOF) begin
+        send obs "End of file reached"
+        set piCurrentRow to (liRow-1)
+      end
+      else if (liResult=TDATRN_ERROR) begin
+        send obs ("Error reading file on line "+string(piErrorLine(lhTextDataReader)))
+      end
+
+      get piColumnCount of lhTextDataReader to liColumnCount
+      decrement liColumnCount
+      for liColumn from 0 to liColumnCount
+        send add_item MSG_NONE (string(liColumn+1))
+        send add_item MSG_NONE (sColumnName.i(lhTextDataReader,liColumn))
+        send add_item MSG_NONE (sTypeText.i(lhTextDataReader,liColumn))
+        send add_item MSG_NONE (value(lhTextDataReader,liColumn))
+      loop
+      send FileClose to lhTextDataReader
+    end
+    else begin
+      if (liResult=TDATFO_FILE_NOT_FOUND) send obs "File not found" ("("+lsFileName+")")
+      if (liResult=TDATFO_FILE_EMPTY) send obs "The file contains no data."
+      if (liResult=TDATFO_NO_ITEMS_ON_FIRST_LINE) send obs "No items on first line in file."
+      if (liResult=TDATFO_ILLEGAL_NUMBER_OF_COLUMN_NAMES) send obs "Illegal number of column names"
+    end
+    send Grid_SetEntryState self DFFALSE
+    set dynamic_update_state to DFTRUE
+  end_procedure
+  procedure DoAnalyseFile string lsFileName integer lhParamList
+    integer lhTextDataReader
+    move (oTextDataReader(self)) to lhTextDataReader
+    send DoAnalyseFile to lhTextDataReader lsFileName
+    send fill_list.iis TDPG_READ_FIRST lhParamList lsFileName
+    send Popup_TextDataDecisionLogPanel (oAnalyseLog(lhTextDataReader))
+  end_procedure
+end_class // cTextDataProbeGrid
+
+class cViewLargeTextFile is a aps.Edit
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    Property String  prv.psFileName  ""
+    Property Integer piCurrentPos 0
+  end_procedure
+  procedure DoUpdate
+    integer liChannel liStartPos liCurPos
+    string lsLine
+    get SEQ_DirectInput (prv.psFileName(self)) to liChannel
+    if (liChannel>=0) begin
+      get piCurrentPos to liStartPos
+      set_channel_position liChannel to liStartPos
+     // repeat
+
+      send SEQ_CloseInput liChannel
+    end
+  end_procedure
+  procedure set psFileName string lsFileName
+    set prv.psFileName to lsFileName
+    set piCurrentPos to 0
+    send DoUpdate
+  end_procedure
+  function psFileName returns string
+    function_return (prv.psFileName(self))
+  end_function
+end_class // cViewLargeTextFile
+
+object oTextDataDisplay1st10Lines is a aps.ModalPanel label "First 32K"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel
+  on_key kcancel send close_panel
+  property string psFileName ""
+  object oLst is a cViewLargeTextFile
+    set size to 200 500
+    set Typeface to "Courier New"
+    //set FontSize to 18 0
+    procedure fill_list.si string lsFileName integer lbOEM
+      integer liChannel liItm liPosition lbSeqEof lhParent
+      string lsLine
+      send delete_data
+      get SEQ_DirectInput lsFileName to liChannel
+      move (parent(self)) to lhParent
+      set label of lhParent to lsFileName
+      set psFileName of lhParent to lsFileName
+      if (liChannel>=0) begin
+        move 0 to liPosition
+        move 0 to liItm
+        repeat
+          get SEQ_ReadLn liChannel to lsLine
+          move (seqeof) to lbSeqEof
+          get_channel_position liChannel to liPosition
+          if (liPosition>32000) begin
+            move DFTRUE to lbSeqEof
+            set label of lhParent to (lsFileName+" (First 32K)")
+          end
+          ifnot lbSeqEof begin
+            ifnot lbOEM get ToOEM lsLine to lsLine
+            set value item liItm to lsLine
+            increment liItm
+          end
+        until lbSeqEof
+        send SEQ_CloseInput liChannel
+      end
+    end_procedure
+    set wrap_state to DFFALSE
+    set read_only_state to DFTRUE
+  end_object
+  procedure DoEditFile
+    runprogram BACKGROUND ("notepad "+psFileName(self))
+  end_procedure
+  on_key KEY_ALT+KEY_E send DoEditFile
+  object oBtn1 is a aps.Multi_Button
+    on_item "Notepad" send DoEditFile
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.close send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oLst(self)) delta_rw# delta_cl#
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+  procedure popup.si string lsFileName integer lbOEM
+    send fill_list.si to (oLst(self)) lsFileName lbOEM
+    send popup
+  end_procedure
+end_object // oTextDataDisplay1st10Lines
+
+object oTextDataProperties is a aps.ModalPanel label "Import file properties"
+  set locate_mode to CENTER_ON_SCREEN
+  Property Integer phTextDataParameters 0
+  on_key KCANCEL      send close_panel
+  on_key KSAVE_RECORD send close_panel_ok
+  Property Integer piResult 0
+  set pMinimumSize to 200 0
+
+  object oTextDataParameters is a cTextDataParameters
+  end_object
+  Property Integer phTextDataReader 0
+
+  object oGroup is a aps.Group
+    send tab_column_define 1 95 70 jmode_left // Default column setting
+
+    register_object oFieldDelimiterExplicit
+    register_object oQuoteCharExplicit
+
+    object oFieldDelimiter is a aps.ComboFormAux abstract AFT_ASCII15 label "Field delimiter:"
+      set entry_state item 0 to DFFALSE
+      send combo_add_item "; (Semicolon)"     1
+      send combo_add_item ", (Comma)"         2
+      send combo_add_item "Tabulator"         3
+      send combo_add_item "Special character" 4
+      procedure OnChange
+        send DoFindFirst
+        set enabled_state of (oFieldDelimiterExplicit(self)) to (Combo_Current_Aux_Value(self)=4)
+      end_procedure
+      procedure set TheValue string lsValue
+        set value of (oFieldDelimiterExplicit(self)) item 0 to ""
+        if lsValue eq ";" set Combo_Current_Aux_Value to 1
+        else if lsValue eq "," set Combo_Current_Aux_Value to 2
+        else if lsValue eq (character(8)) set Combo_Current_Aux_Value to 3
+        else begin
+          set value of (oFieldDelimiterExplicit(self)) item 0 to lsValue
+          if lsValue eq ";" set Combo_Current_Aux_Value to 4
+        end
+      end_procedure
+      function TheValue returns string
+        integer liAux
+        get Combo_Current_Aux_Value to liAux
+        if liAux eq 1 function_return ";"
+        if liAux eq 2 function_return ","
+        if liAux eq 3 function_return (character(8))
+        if liAux eq 4 function_return (value(oFieldDelimiterExplicit(self),0))
+      end_function
+    end_object
+    object oFieldDelimiterExplicit is a aps.Form abstract AFT_ASCII1 snap SL_RIGHT
+      set enabled_state to DFFALSE
+      procedure OnChange
+        send DoFindFirst
+      end_procedure
+    end_object
+    object oQuoteChar is a aps.ComboFormAux abstract AFT_ASCII15 label "Quotation character:"
+      set entry_state item 0 to DFFALSE
+      send combo_add_item '" (double qoute)'  1
+      send combo_add_item "' (single quote)"  2
+      send combo_add_item "Special character" 3
+      procedure OnChange
+        set enabled_state of (oQuoteCharExplicit(self)) to (Combo_Current_Aux_Value(self)=3)
+        send DoFindFirst
+      end_procedure
+      procedure set TheValue string lsValue
+        set value of (oQuoteCharExplicit(self)) item 0 to ""
+        if lsValue eq '"' set Combo_Current_Aux_Value to 1
+        else if lsValue eq "'" set Combo_Current_Aux_Value to 2
+        else begin
+          set value of (oQuoteCharExplicit(self)) item 0 to lsValue
+          if lsValue eq ";" set Combo_Current_Aux_Value to 3
+        end
+      end_procedure
+      function TheValue returns string
+        integer liAux
+        get Combo_Current_Aux_Value to liAux
+        if liAux eq 1 function_return '"'
+        if liAux eq 2 function_return "'"
+        if liAux eq 3 function_return (value(oQuoteCharExplicit(self),0))
+      end_function
+    end_object
+    object oQuoteCharExplicit is a aps.Form abstract AFT_ASCII1 snap SL_RIGHT
+      set enabled_state to DFFALSE
+      procedure OnChange
+        send DoFindFirst
+      end_procedure
+    end_object
+    object oDecimalSeparatorChar is a aps.ComboFormAux abstract AFT_ASCII15 label "Decimal separator:"
+      set entry_state item 0 to DFFALSE
+      send combo_add_item ". (period)" 1
+      send combo_add_item ", (comma)"  2
+      procedure set TheValue string lsValue
+        if lsValue eq "." set Combo_Current_Aux_Value to 1
+        if lsValue eq "," set Combo_Current_Aux_Value to 2
+      end_procedure
+      function TheValue returns string
+        integer liAux
+        get Combo_Current_Aux_Value to liAux
+        if liAux eq 1 function_return "."
+        if liAux eq 2 function_return ","
+      end_function
+    end_object
+    object oDateSeparatorChar is a aps.ComboFormAux abstract AFT_ASCII15 label "Date separator:"
+      set entry_state item 0 to DFFALSE
+      send combo_add_item "/ (slash)"   1
+      send combo_add_item "- (hyphen)"  2
+      send combo_add_item ". (period)"  3
+      procedure set TheValue string lsValue
+        if lsValue eq "/" set Combo_Current_Aux_Value to 1
+        if lsValue eq "-" set Combo_Current_Aux_Value to 2
+        if lsValue eq "." set Combo_Current_Aux_Value to 3
+      end_procedure
+      function TheValue returns string
+        integer liAux
+        get Combo_Current_Aux_Value to liAux
+        if liAux eq 1 function_return "/"
+        if liAux eq 2 function_return "-"
+        if liAux eq 3 function_return "."
+      end_function
+    end_object
+    object oDateFormat is a aps.ComboFormAux abstract AFT_ASCII15 label "Date format:"
+      set entry_state item 0 to DFFALSE
+      send combo_add_item "dd mm yyyy"  DF_DATE_EUROPEAN
+      send combo_add_item "mm dd yyyy"  DF_DATE_USA
+      send combo_add_item "yyyy mm dd"  DF_DATE_MILITARY
+      procedure set TheValue string lsValue
+        if lsValue eq DF_DATE_EUROPEAN set Combo_Current_Aux_Value to DF_DATE_EUROPEAN
+        if lsValue eq DF_DATE_USA      set Combo_Current_Aux_Value to DF_DATE_USA
+        if lsValue eq DF_DATE_MILITARY set Combo_Current_Aux_Value to DF_DATE_MILITARY
+      end_procedure
+      function TheValue returns string
+        integer liAux
+        get Combo_Current_Aux_Value to liAux
+        if liAux eq DF_DATE_EUROPEAN function_return DF_DATE_EUROPEAN
+        if liAux eq DF_DATE_USA      function_return DF_DATE_USA
+        if liAux eq DF_DATE_MILITARY function_return DF_DATE_MILITARY
+      end_function
+    end_object
+
+    send tab_column_define 1 250 65 jmode_left // Default column setting
+    set p_cur_row to (p_top_margin(self))
+    set aps_container_mx.p_auto_column_just_set to 1
+    object oColumnNamesInFirstLine is a aps.CheckBox label "Column names in first record"
+      procedure OnChange
+        send DoFindFirst
+      end_procedure
+    end_object
+    object oCharacterSet is a aps.CheckBox label "File contains OEM characters"
+      procedure OnChange
+        send DoFindFirst
+      end_procedure
+    end_object
+    object oNumberOfColumns is a aps.RadioGroup Label "Number of columns" snap SL_DOWN
+      object oRad1 is a aps.Radio label "Determined by first record"
+      end_object
+      object oRad2 is a aps.Radio label "Fixed:"
+      end_object
+      object oFrm is a aps.Form abstract AFT_NUMERIC4.0 snap SL_RIGHT relative_to (oRad2(self))
+        set enabled_state to DFFALSE
+      end_object
+      procedure notify_select_state integer liTo integer liFrom
+        set enabled_state of (oFrm(self)) to (liTo=1)
+      end_procedure
+      procedure set TheValue string lsValue
+        if (integer(lsValue)) begin
+          set current_radio to 1
+          set value of (oFrm(self)) item 0 to lsValue
+        end
+        else begin
+          set current_radio to 0
+          set value of (oFrm(self)) item 0 to ""
+        end
+      end_procedure
+      function TheValue returns string
+        if (current_radio(self)=0) function_return 0
+        function_return (value(oFrm(self),0))
+      end_function
+    end_object
+  end_object
+
+  send aps_goto_max_row
+  send aps_make_row_space 5
+  object oTestFile is a aps.Form abstract AFT_ASCII80 label "Test settings with this file:"
+    set p_extra_internal_width to -220
+    procedure prompt
+      string lsFileName
+      get SEQ_SelectInFile "Select text data file" "Text files|*.txt|All files|*.*" to lsFileName
+      if lsFileName ne "" begin
+        set value item 0 to lsFileName
+        send DoFindFirst
+      end
+    end_procedure
+    on_key kprompt send prompt
+  end_object
+
+  object oBrowse is a aps.Button snap SL_RIGHT
+    on_item "Browse" send prompt to (oTestFile(self))
+  end_object
+  object oView is a aps.Button snap SL_RIGHT
+    on_item "View (NotePad)" send ViewFile
+    procedure ViewFile
+      integer lbOEM
+      string lsFileName
+      get value of (oTestFile(self)) item 0 to lsFileName
+      get select_state of (oCharacterSet(oGroup(self))) to lbOEM
+      send popup.si to (oTextDataDisplay1st10Lines(self)) lsFileName lbOEM
+    end_procedure
+  end_object
+
+  on_key KFIND           send DoReFind
+  on_key KFIND_PREVIOUS  send DoFindPrevious
+  on_key KFIND_NEXT      send DoFindNext
+  on_key KBEGIN_OF_DATA  send DoFindFirst
+  on_key KEY_CTRL+KEY_A  send DoAnalyseFile
+
+  send aps_goto_max_row
+  send aps_make_row_space 5
+
+  object oGridLabel is a aps.TextBox
+    set fixed_size to 12 200
+    procedure DoUpdateLabel integer liLine
+      set value to ("Current records started in line "+string(liLine))
+    end_procedure
+
+  end_object
+
+  send aps_goto_max_row
+
+  object oProbeGrid is a cTextDataProbeGrid
+    procedure fill_list.iis integer liAction integer lhParamList string lsFileName
+      forward send fill_list.iis liAction lhParamList lsFileName
+      send DoUpdateLabel to oGridLabel (piCurrentRowStartedInLine(oTextDataReader(self)))
+    end_procedure
+  end_object
+
+  procedure DoRefreshGrid integer liAction
+    integer lhObj
+    string lsFileName
+    send cursor_wait to (cursor_control(self))
+    get value of (oTestFile(self)) item 0 to lsFileName
+    move (oTextDataParameters(self)) to lhObj
+    send TransferValuesToParamList lhObj
+    send fill_list.iis to (oProbeGrid(self)) liAction lhObj lsFileName
+    send cursor_ready to (cursor_control(self))
+  end_procedure
+
+  procedure DoAnalyseFile
+    integer lhObj
+    string lsFileName
+    send DoFindFirst
+    get value of (oTestFile(self)) item 0 to lsFileName
+    move (oTextDataParameters(self)) to lhObj
+    send TransferValuesToParamList lhObj
+    send DoAnalyseFile to (oProbeGrid(self)) lsFileName lhObj
+  end_procedure
+  procedure DoReFind
+    send DoRefreshGrid TDPG_READ_REFRESH
+  end_procedure
+  procedure DoFindFirst
+    send DoRefreshGrid TDPG_READ_FIRST
+  end_procedure
+  procedure DoFindNext
+    send DoRefreshGrid TDPG_READ_NEXT
+  end_procedure
+  procedure DoFindPrevious
+    send DoRefreshGrid TDPG_READ_PREVIOUS
+  end_procedure
+
+  object oProbeBtn1 is a aps.Multi_Button
+    on_item "First record" send DoFindFirst
+    set psExtraLabel to "Ctrl+Home"
+  end_object
+  object oProbeBtn2 is a aps.Multi_Button
+    on_item "Previous record" send DoFindPrevious
+    set psExtraLabel to "F7"
+  end_object
+  object oProbeBtn3 is a aps.Multi_Button
+    on_item "Next record" send DoFindNext
+    set psExtraLabel to "F8"
+  end_object
+  object oProbeBtn4 is a aps.Multi_Button
+    on_item "Refresh" send DoReFind
+    set psExtraLabel to "F9"
+  end_object
+  object oProbeBtn5 is a aps.Multi_Button
+    on_item "Analyse file" send DoAnalyseFile
+    set psExtraLabel to "Ctrl+A"
+  end_object
+  send aps_locate_multi_buttons
+  send aps_goto_max_row
+  send aps_make_row_space 3
+
+  object oLine is a aps.LineControl
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item "OK" send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item "Cancel" send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oProbeGrid(self)) delta_rw# 0 // delta_cl#
+    send aps_register_multi_button (oProbeBtn1(self))
+    send aps_register_multi_button (oProbeBtn2(self))
+    send aps_register_multi_button (oProbeBtn3(self))
+    send aps_register_multi_button (oProbeBtn4(self))
+    send aps_register_multi_button (oProbeBtn5(self))
+    send aps_locate_multi_buttons
+    send aps_relocate (oLine(self)) delta_rw# 0
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+  procedure aps_beautify
+    send APS_ALIGN_INSIDE_CONTAINER_BY_SIZING (oLine(self)) SL_ALIGN_RIGHT
+    send APS_ALIGN_INSIDE_CONTAINER_BY_SIZING (oGroup(self)) SL_ALIGN_RIGHT
+  end_procedure
+  procedure close_panel_ok
+    set piResult to 1
+    send close_panel
+  end_procedure
+  procedure TransferValuesToParamList integer lhTextDataParameters
+    integer liGrp
+    move (oGroup(self)) to liGrp
+    set value of lhTextDataParameters item TDAT_FIELD_SEP      to (TheValue(oFieldDelimiter(liGrp)))
+    set value of lhTextDataParameters item TDAT_QUOTATION_CHAR to (TheValue(oQuoteChar(liGrp)))
+    set value of lhTextDataParameters item TDAT_DECIMAL_SEP    to (TheValue(oDecimalSeparatorChar(liGrp)))
+    set value of lhTextDataParameters item TDAT_DATE_SEP       to (TheValue(oDateSeparatorChar(liGrp)))
+    set value of lhTextDataParameters item TDAT_DATE_FORMAT    to (TheValue(oDateFormat(liGrp)))
+    set value of lhTextDataParameters item TDAT_COLUMN_NAMES   to (select_state(oColumnNamesInFirstLine(liGrp),0))
+    set value of lhTextDataParameters item TDAT_OEM_CHARSET    to (select_state(oCharacterSet(liGrp),0))
+    set value of lhTextDataParameters item TDAT_COLUMN_COUNT   to (TheValue(oNumberOfColumns(liGrp)))
+  end_procedure
+  procedure popup.si string lsFileName integer lhTextDataReader
+//  integer liGrp lhTextDataParametersPush lhTextDataParameters
+//  move (oGroup(self)) to liGrp
+//  set phTextDataReader to lhTextDataReader
+//  get phTextDataParameters of lhTextDataReader to lhTextDataParametersPush
+//  set piResult to 0
+//  set value of (oTestFile(self)) item 0 to lsFileName
+//  set phTextDataParameters of lhTextDataReader  to (oTextDataParameters(self))
+//
+//  set TheValue of (oFieldDelimiter(liGrp))       to (value(lhTextDataParametersPush,TDAT_FIELD_SEP))
+//  set TheValue of (oQuoteChar(liGrp))            to (value(lhTextDataParametersPush,TDAT_QUOTATION_CHAR))
+//  set TheValue of (oDecimalSeparatorChar(liGrp)) to (value(lhTextDataParametersPush,TDAT_DECIMAL_SEP))
+//  set TheValue of (oDateSeparatorChar(liGrp))    to (value(lhTextDataParametersPush,TDAT_DATE_SEP))
+//  set TheValue of (oDateFormat(liGrp))           to (value(lhTextDataParametersPush,TDAT_DATE_FORMAT))
+//  set select_state of (oColumnNamesInFirstLine(liGrp)) to (integer(value(lhTextDataParametersPush,TDAT_COLUMN_NAMES)))
+//  set select_state of (oCharacterSet(liGrp))     to (integer(value(lhTextDataParametersPush,TDAT_OEM_CHARSET)))
+//  set TheValue of (oNumberOfColumns(liGrp))      to (value(lhTextDataParametersPush,TDAT_COLUMN_COUNT))
+//  send popup
+//  if (piResult(self)) send TransferValuesToParamList lhTextDataParametersPush
+//  set phTextDataParameters of lhTextDataReader to lhTextDataParametersPush
+    integer liGrp lhTextDataParameters lhArrSource lhArrTarget
+    move (oGroup(self)) to liGrp
+    get phTextDataParameters of lhTextDataReader to lhTextDataParameters
+    set piResult to 0
+    set value of (oTestFile(self)) item 0 to lsFileName
+
+    set TheValue of (oFieldDelimiter(liGrp))       to (value(lhTextDataParameters,TDAT_FIELD_SEP))
+    set TheValue of (oQuoteChar(liGrp))            to (value(lhTextDataParameters,TDAT_QUOTATION_CHAR))
+    set TheValue of (oDecimalSeparatorChar(liGrp)) to (value(lhTextDataParameters,TDAT_DECIMAL_SEP))
+    set TheValue of (oDateSeparatorChar(liGrp))    to (value(lhTextDataParameters,TDAT_DATE_SEP))
+    set TheValue of (oDateFormat(liGrp))           to (value(lhTextDataParameters,TDAT_DATE_FORMAT))
+    set select_state of (oColumnNamesInFirstLine(liGrp)) to (integer(value(lhTextDataParameters,TDAT_COLUMN_NAMES)))
+    set select_state of (oCharacterSet(liGrp))     to (integer(value(lhTextDataParameters,TDAT_OEM_CHARSET)))
+    set TheValue of (oNumberOfColumns(liGrp))      to (value(lhTextDataParameters,TDAT_COLUMN_COUNT))
+    send popup
+    if (piResult(self)) begin
+      send TransferValuesToParamList lhTextDataParameters
+      move (oTextDataColumnAnalyser(oTextDataReader(oProbeGrid(self)))) to lhArrSource
+      move (oTextDataColumnAnalyser(lhTextDataReader)) to lhArrTarget
+      send Clone_Array lhArrSource lhArrTarget
+    end
+  end_procedure
+end_object
+
+procedure Popup_TextDataProperties global string lsFileName integer lhTextDataReader
+  send popup.si to (oTextDataProperties(self)) lsFileName lhTextDataReader
+end_procedure
+

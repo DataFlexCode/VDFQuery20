@@ -1,0 +1,131 @@
+// use objtree.nui // DoGenerateObjectTree procedure
+use treenode.nui // Defines the cTreeNode class.
+use Strings.nui  // String manipulation for VDF (No User Interface)
+Use ErrorHnd.nui // cErrorHandlerRedirector class and oErrorHandlerQuiet object (No User Interface)
+
+procedure report_to_object_tree for cObject integer lhNode
+  integer lhSelf
+  move self to lhSelf
+  send DoHandleObjectNode to lhNode lhSelf
+end_procedure
+
+
+enumeration_list
+  define OBJT_OBJECT_ID
+  define OBJT_NAME
+  define OBJT_NAME_NO_PATH
+  define OBJT_BASE_CLASS
+  define OBJT_CLASS
+end_enumeration_list
+
+class cObjectData is a cTreeNodeDataObject
+  function sObjectNameNoPath returns string
+    integer lhObject lhParent
+    string lsObjectName lsParentName
+    get value item OBJT_OBJECT_ID to lhObject
+    if (lhObject=DESKTOP) function_return "DESKTOP"
+    get value item OBJT_NAME      to lsObjectName
+    if (lhObject>DESKTOP) begin
+      get parent of lhObject to lhParent
+      if (lhParent<>DESKTOP) begin
+        send ErrorHnd_Quiet_Activate
+        move (name(lhParent)) to lsParentName
+        send ErrorHnd_Quiet_Deactivate
+        move (replace(lsParentName+".",lsObjectName,"")) to lsObjectName
+      end
+    end
+    function_return lsObjectName
+  end_function
+  procedure ReadDataFromObject integer lhObject
+    integer liValue
+    set value item OBJT_OBJECT_ID    to lhObject
+
+    send ErrorHnd_Quiet_Activate
+    set value item OBJT_NAME         to (name(lhObject))
+    send ErrorHnd_Quiet_Deactivate
+
+    set value item OBJT_NAME_NO_PATH to (sObjectNameNoPath(self))
+    get base_class of lhObject to liValue
+    set value item OBJT_BASE_CLASS to liValue
+    get class of lhObject to liValue
+    set value item OBJT_CLASS      to liValue
+  end_procedure
+  function TreeViewLabel returns string
+    integer lhObject liValue
+    string lsName
+    get value OBJT_NAME_NO_PATH item to lsName
+    get StringUppercaseFirstLetters lsName to lsName
+    get value item OBJT_OBJECT_ID    to lhObject
+    move (lsName+" ("+string(lhObject)+")") to lsName
+
+    get value item OBJT_BASE_CLASS to liValue
+    move (lsName+", "+string(liValue)) to lsName
+    get value item OBJT_CLASS      to liValue
+    move (lsName+", "+string(liValue)) to lsName
+
+    function_return lsName
+  end_function
+end_class
+
+class cObjectTree is a cTreeNode
+  procedure construct_object
+    forward send construct_object
+    set phNodeClass to U_cObjectTree
+    set phDataClass to U_cObjectData
+  end_procedure
+
+  procedure DoHandleObjectNode integer lhObject
+    integer lhChildNode lhChildDate
+    get hAddChildNode to lhChildNode
+//  get hCreateDataObject of lhChildNode to lhChildDate
+//  send ReadDataFromObject to lhChildDate lhObject
+    send build_object_tree to lhChildNode lhObject
+  end_procedure
+
+  procedure build_object_tree integer lhRootObject
+    integer lhSelf lhData
+    get hCreateDataObject to lhData
+    send ReadDataFromObject to lhData lhRootObject
+    move self to lhSelf
+    broadcast send report_to_object_tree to lhRootObject lhSelf
+  end_procedure
+
+  // We need to keep the object tree itself from reporting back. Otherwise we
+  // will create a potential infinate loop.
+  procedure report_to_object_tree integer lhNode
+    integer lhSelf
+    if (phParentNode(self)=0) begin
+      move self to lhSelf
+      send DoHandleObjectNode to lhNode lhSelf
+    end
+  end_procedure
+end_class // cObjectTree
+
+
+//object oItllPass1 is a cArray
+//  object oItllPass2 is a cArray
+//    object oItllPass3 is a cArray
+//    end_object
+//  end_object
+//  object oItllPass4 is a cArray
+//  end_object
+//  object oItllPass5 is a cArray
+//  end_object
+//end_object
+//
+object oObjectTree is a cObjectTree
+// procedure ShowlnYourself integer liLevel integer lhNode
+//   string lsName lhObj
+//   get DataObject_Array_Value of lhNode OBJT_OBJECT_ID to lhObj
+//   get DataObject_Array_Value of lhNode OBJT_NAME      to lsName
+//   showln (repeat("  ",liLevel)+lsName+" "+string(lhObj))
+// end_procedure
+end_object
+
+procedure DoGenerateObjectTree global integer lhObject
+  send build_object_tree to (oObjectTree(self)) lhObject
+//  send BroadcastNodeMessage to (oObjectTree(self)) TTO_PARENT_FIRST MSG_ShowlnYourself 0
+end_procedure
+//
+//send DoGenerateObjectTree 2 //(oItllPass1(self))
+//inkey windowindex

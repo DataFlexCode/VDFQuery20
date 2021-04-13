@@ -1,0 +1,887 @@
+// Use QryExpr.utl  // Expression handling for queries
+Use DFScript.utl // DF-Script interpreter
+Use vMachine.utl // Virtual machine class (heart of DFScript)
+Use Strings.utl  // String manipulation for VDF
+Use FDX_Attr.nui // FDX compatible attribute functions
+Use FdxField.utl // FDX Field things
+
+#IF LNG_DEFAULT=LNG_DUTCH
+ define t.QryExpr.Expression    for "Expressie"
+ define t.QryExpr.Tables        for "Bestanden"
+ define t.QryExpr.Fields        for "Velden"
+ define t.QryExpr.Functions     for "Functies"
+ define t.QryExpr.LongLabel     for "Lang label"
+ define t.QryExpr.ShortLabel    for "Kort label"
+ define t.QryExpr.Width         for "Breedte"
+ define t.QryExpr._Characters   for " tekens"
+ define t.QryExpr.ReturnType    for "Return type"
+ define t.QryExpr.EditNumExpr   for "Wijzig numerieke expressie"
+ define t.QryExpr.EditStrExpr   for "Wijzig string expressie"
+ define t.QryExpr.EditDatExpr   for "Wijzig datum expressie"
+ define t.QryExpr.CreateCC_1    for "Cre‰er berekende kolom"
+ define t.QryExpr.CreateCC_2    for "Wijzig berekende kolom (#"
+ define t.QryExpr.Type_Numeric  for "Numeriek"
+ define t.QryExpr.Type_String   for "String"
+ define t.QryExpr.Type_Text     for "Tekst"
+ define t.QryExpr.Type_Date     for "Datum"
+ define t.QryExpr.DecimalPlaces for "Decimale waarden"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SPANISH  // 03/10/2002 to 31/01/2005 for 2.3 Pepe GuimarÆes Moose Software  pg@moose-software.com
+ define t.QryExpr.Expression    for "Expresi¢n"
+ define t.QryExpr.Tables        for "Tablas"
+ define t.QryExpr.Fields        for "Columnas"
+ define t.QryExpr.Functions     for "Funciones"
+ define t.QryExpr.LongLabel     for "Etiq.larga"
+ define t.QryExpr.ShortLabel    for "Etiq.corta"
+ define t.QryExpr.Width         for "Ancho"
+ define t.QryExpr._Characters   for " caracteres"
+ define t.QryExpr.ReturnType    for "Devolver tipo"
+ define t.QryExpr.EditNumExpr   for "Editar expresi¢n num‚rica"
+ define t.QryExpr.EditStrExpr   for "Editar expresi¢n alfanum‚rica"
+ define t.QryExpr.EditDatExpr   for "Editar expresi¢n tipo fecha"
+ define t.QryExpr.CreateCC_1    for "Crear columna calculada"
+ define t.QryExpr.CreateCC_2    for "Editar columna calculada (#"
+ define t.QryExpr.Type_Numeric  for "Num‚rico"
+ define t.QryExpr.Type_String   for "Cadena"
+ define t.QryExpr.Type_Text     for "Texto"
+ define t.QryExpr.Type_Date     for "Fecha"
+ define t.QryExpr.DecimalPlaces for "N£mero decimales"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ENGLISH
+ define t.QryExpr.Expression    for "Expression"
+ define t.QryExpr.Tables        for "Tables"
+ define t.QryExpr.Fields        for "Fields"
+ define t.QryExpr.Functions     for "Functions"
+ define t.QryExpr.LongLabel     for "Long label"
+ define t.QryExpr.ShortLabel    for "Short label"
+ define t.QryExpr.Width         for "Width"
+ define t.QryExpr._Characters   for " characters"
+ define t.QryExpr.ReturnType    for "Return type"
+ define t.QryExpr.EditNumExpr   for "Edit numeric expression"
+ define t.QryExpr.EditStrExpr   for "Edit string expression"
+ define t.QryExpr.EditDatExpr   for "Edit date expression"
+ define t.QryExpr.CreateCC_1    for "Create calculated column"
+ define t.QryExpr.CreateCC_2    for "Edit calculated column (#"
+ define t.QryExpr.Type_Numeric  for "Numeric"
+ define t.QryExpr.Type_String   for "String"
+ define t.QryExpr.Type_Text     for "Text"
+ define t.QryExpr.Type_Date     for "Date"
+ define t.QryExpr.DecimalPlaces for "Decimal places"
+#ENDIF
+#IF LNG_DEFAULT=LNG_DANISH
+ define t.QryExpr.Expression    for "Udtryk"
+ define t.QryExpr.Tables        for "Tabeller"
+ define t.QryExpr.Fields        for "Felter"
+ define t.QryExpr.Functions     for "Funktioner"
+ define t.QryExpr.LongLabel     for "Langt navn"
+ define t.QryExpr.ShortLabel    for "Kort navn"
+ define t.QryExpr.Width         for "Bredde"
+ define t.QryExpr._Characters   for " karakterer"
+ define t.QryExpr.ReturnType    for "Returtype"
+ define t.QryExpr.EditNumExpr   for "Ret numerisk udtryk"
+ define t.QryExpr.EditStrExpr   for "Ret streng udtryk"
+ define t.QryExpr.EditDatExpr   for "Ret dato udtryk"
+ define t.QryExpr.CreateCC_1    for "Opret beregnet kolonne"
+ define t.QryExpr.CreateCC_2    for "Opret beregnet kolonne (#"
+ define t.QryExpr.Type_Numeric  for "Numerisk"
+ define t.QryExpr.Type_String   for "Ascii"
+ define t.QryExpr.Type_Text     for "Tekst"
+ define t.QryExpr.Type_Date     for "Dato"
+ define t.QryExpr.DecimalPlaces for "Decimaler"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SWEDISH
+ define t.QryExpr.Expression    for "Expression"
+ define t.QryExpr.Tables        for "Tables"
+ define t.QryExpr.Fields        for "Fields"
+ define t.QryExpr.Functions     for "Functions"
+ define t.QryExpr.LongLabel     for "Long label"
+ define t.QryExpr.ShortLabel    for "Short label"
+ define t.QryExpr.Width         for "Width"
+ define t.QryExpr._Characters   for " characters"
+ define t.QryExpr.ReturnType    for "Return type"
+ define t.QryExpr.EditNumExpr   for "Edit numeric expression"
+ define t.QryExpr.EditStrExpr   for "Edit string expression"
+ define t.QryExpr.EditDatExpr   for "Edit date expression"
+ define t.QryExpr.CreateCC_1    for "Create calculated column"
+ define t.QryExpr.CreateCC_2    for "Edit calculated column (#"
+ define t.QryExpr.Type_Numeric  for "Numeric"
+ define t.QryExpr.Type_String   for "String"
+ define t.QryExpr.Type_Text     for "Text"
+ define t.QryExpr.Type_Date     for "Date"
+ define t.QryExpr.DecimalPlaces for "Decimal places"
+#ENDIF
+#IF LNG_DEFAULT=LNG_NORWEGIAN
+ define t.QryExpr.Expression    for "Expression"
+ define t.QryExpr.Tables        for "Tables"
+ define t.QryExpr.Fields        for "Fields"
+ define t.QryExpr.Functions     for "Functions"
+ define t.QryExpr.LongLabel     for "Long label"
+ define t.QryExpr.ShortLabel    for "Short label"
+ define t.QryExpr.Width         for "Width"
+ define t.QryExpr._Characters   for " characters"
+ define t.QryExpr.ReturnType    for "Return type"
+ define t.QryExpr.EditNumExpr   for "Edit numeric expression"
+ define t.QryExpr.EditStrExpr   for "Edit string expression"
+ define t.QryExpr.EditDatExpr   for "Edit date expression"
+ define t.QryExpr.CreateCC_1    for "Create calculated column"
+ define t.QryExpr.CreateCC_2    for "Edit calculated column (#"
+ define t.QryExpr.Type_Numeric  for "Numeric"
+ define t.QryExpr.Type_String   for "String"
+ define t.QryExpr.Type_Text     for "Text"
+ define t.QryExpr.Type_Date     for "Date"
+ define t.QryExpr.DecimalPlaces for "Decimal places"
+#ENDIF
+#IF LNG_DEFAULT=LNG_GERMAN
+ define t.QryExpr.Expression    for "Expression"
+ define t.QryExpr.Tables        for "Tables"
+ define t.QryExpr.Fields        for "Fields"
+ define t.QryExpr.Functions     for "Functions"
+ define t.QryExpr.LongLabel     for "Long label"
+ define t.QryExpr.ShortLabel    for "Short label"
+ define t.QryExpr.Width         for "Width"
+ define t.QryExpr._Characters   for " characters"
+ define t.QryExpr.ReturnType    for "Return type"
+ define t.QryExpr.EditNumExpr   for "Edit numeric expression"
+ define t.QryExpr.EditStrExpr   for "Edit string expression"
+ define t.QryExpr.EditDatExpr   for "Edit date expression"
+ define t.QryExpr.CreateCC_1    for "Create calculated column"
+ define t.QryExpr.CreateCC_2    for "Edit calculated column (#"
+ define t.QryExpr.Type_Numeric  for "Numeric"
+ define t.QryExpr.Type_String   for "String"
+ define t.QryExpr.Type_Text     for "Text"
+ define t.QryExpr.Type_Date     for "Date"
+ define t.QryExpr.DecimalPlaces for "Decimal places"
+#ENDIF
+#IF LNG_DEFAULT=LNG_PORTUGUESE
+ define t.QryExpr.Expression    for "Expression"
+ define t.QryExpr.Tables        for "Tables"
+ define t.QryExpr.Fields        for "Fields"
+ define t.QryExpr.Functions     for "Functions"
+ define t.QryExpr.LongLabel     for "Long label"
+ define t.QryExpr.ShortLabel    for "Short label"
+ define t.QryExpr.Width         for "Width"
+ define t.QryExpr._Characters   for " characters"
+ define t.QryExpr.ReturnType    for "Return type"
+ define t.QryExpr.EditNumExpr   for "Edit numeric expression"
+ define t.QryExpr.EditStrExpr   for "Edit string expression"
+ define t.QryExpr.EditDatExpr   for "Edit date expression"
+ define t.QryExpr.CreateCC_1    for "Create calculated column"
+ define t.QryExpr.CreateCC_2    for "Edit calculated column (#"
+ define t.QryExpr.Type_Numeric  for "Numeric"
+ define t.QryExpr.Type_String   for "String"
+ define t.QryExpr.Type_Text     for "Text"
+ define t.QryExpr.Type_Date     for "Date"
+ define t.QryExpr.DecimalPlaces for "Decimal places"
+#ENDIF
+#IF LNG_DEFAULT=LNG_FRENCH
+ define t.QryExpr.Expression    for "Expression"
+ define t.QryExpr.Tables        for "Tables"
+ define t.QryExpr.Fields        for "Fields"
+ define t.QryExpr.Functions     for "Functions"
+ define t.QryExpr.LongLabel     for "Long label"
+ define t.QryExpr.ShortLabel    for "Short label"
+ define t.QryExpr.Width         for "Width"
+ define t.QryExpr._Characters   for " characters"
+ define t.QryExpr.ReturnType    for "Return type"
+ define t.QryExpr.EditNumExpr   for "Edit numeric expression"
+ define t.QryExpr.EditStrExpr   for "Edit string expression"
+ define t.QryExpr.EditDatExpr   for "Edit date expression"
+ define t.QryExpr.CreateCC_1    for "Create calculated column"
+ define t.QryExpr.CreateCC_2    for "Edit calculated column (#"
+ define t.QryExpr.Type_Numeric  for "Numeric"
+ define t.QryExpr.Type_String   for "String"
+ define t.QryExpr.Type_Text     for "Text"
+ define t.QryExpr.Type_Date     for "Date"
+ define t.QryExpr.DecimalPlaces for "Decimal places"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ITALIAN
+ define t.QryExpr.Expression    for "Campo calcolato"
+ define t.QryExpr.Tables        for "Tabelle"
+ define t.QryExpr.Fields        for "Campi"
+ define t.QryExpr.Functions     for "Funzioni"
+ define t.QryExpr.LongLabel     for "Desc. Lunga"
+ define t.QryExpr.ShortLabel    for "Desc. Corta"
+ define t.QryExpr.Width         for "Larghezza"
+ define t.QryExpr._Characters   for " caratteri"
+ define t.QryExpr.ReturnType    for "Campo di tipo"
+ define t.QryExpr.EditNumExpr   for "Edita espressione numerica"
+ define t.QryExpr.EditStrExpr   for "Edita espressione stringa"
+ define t.QryExpr.EditDatExpr   for "Edita espressione data"
+ define t.QryExpr.CreateCC_1    for "Crea colonna calcolata"
+ define t.QryExpr.CreateCC_2    for "Edita colonna calcolata (#"
+ define t.QryExpr.Type_Numeric  for "Numerico"
+ define t.QryExpr.Type_String   for "Stringa"
+ define t.QryExpr.Type_Text     for "Testo"
+ define t.QryExpr.Type_Date     for "Data"
+ define t.QryExpr.DecimalPlaces for "Numero Decimali"
+#ENDIF
+
+// The cVirtualMachine is subclassed in order to
+class cQueryExpressionVirtualMachine is a cVirtualMachine
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer pbAllowAllState DFFALSE
+    object oAllowedTables is a cSet 
+    end_object
+  end_procedure
+
+  procedure AllowedTables_Reset
+    send delete_data to (oAllowedTables(self))
+  end_procedure
+  procedure AllowedTables_Add integer liFile
+    send element_add to (oAllowedTables(self)) liFile
+  end_procedure
+
+  function iFileField.s string lsSymbol returns integer
+    string lsFile lsField
+    integer liFile liField lhFdx liRval
+    move (uppercase(ExtractWord(lsSymbol,".",1))) to lsFile
+    move (uppercase(ExtractWord(lsSymbol,".",2))) to lsField
+    get phFDX_Server to lhFdx
+    if (lsFile<>"" and lsField<>"") begin
+      get FDX_FindLogicalName lhFdx lsFile 0 to liFile
+      if (liFile>-1 and (pbAllowAllState(self) or element_find(oAllowedTables(self),liFile)<>-1)) begin
+        forward get iFileField.s lsSymbol to liRval
+        function_return liRval
+      end
+    end
+    function_return 0
+  end_function
+end_class // cQueryExpressionVirtualMachine
+
+class cQueryExpression is a cScriptInterpreter
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    set piListingFileState to DFFALSE
+    object oArray is a cArray
+    end_object
+  end_procedure
+  function sPrepareExpression.s string lsExpression returns string
+    integer lhArr liPos
+    string lsChar10
+    move (oArray(self)) to lhArr
+    move (character(10)) to lsChar10
+    send delete_data to lhArr
+    repeat
+      move (pos(lsChar10,lsExpression)) to liPos
+      if liPos begin
+        set value of lhArr item (item_count(lhArr)) to liPos
+        move (replace(lsChar10,lsExpression,"")) to lsExpression
+      end
+    until (liPos=0)
+    function_return lsExpression
+  end_function
+  function iTheRealErrorPosition integer liErrorPos returns integer
+    integer lhArr liItem liMax liLen liLine
+    move (oArray(self)) to lhArr
+    get item_count of lhArr to liMax
+    move 0 to liItem
+    move 1 to liLine
+    repeat
+      if (liItem<liMax) begin
+        get value of lhArr item liItem to liLen
+        if (liErrorPos>liLen) begin
+          move (liErrorPos-liLen+1) to liErrorPos
+          increment liLine
+        end
+        else function_return (liLine*65536+liErrorPos)
+        increment liItem
+      end
+    until (liItem>=liMax)
+    function_return (liLine*65536+liErrorPos)
+  end_function
+end_class // cQueryExpression
+
+desktop_section
+  object Query_ExprEvaluator is a cQueryExpressionVirtualMachine 
+  end_object
+
+  object Query_ExprParser is a cQueryExpression 
+    set pVM_Object to (Query_ExprEvaluator(self))
+    procedure AllowedTables_Reset
+      send AllowedTables_Reset to (pVM_Object(self))
+    end_procedure
+    procedure AllowedTables_Add integer liFile
+      send AllowedTables_Add to (pVM_Object(self)) liFile
+    end_procedure
+    procedure set pbAllowAllState integer lbValue
+      set pbAllowAllState of (pVM_Object(self)) to lbValue
+    end_procedure
+  end_object
+end_desktop_section
+
+class Query_cExprArrayErrors is a cArray
+  item_property_list
+    item_property integer piExprRow.i
+    item_property string  psError.i
+    item_property integer piErrorPos.i
+  end_item_property_list Query_cExprArrayErrors
+  procedure Show_Errors
+    integer liRow liMax
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      show (piExprRow.i (self,liRow)) " "
+      show (psError.i   (self,liRow)) " "
+      showln (piErrorPos.i(self,liRow))
+    loop
+  end_procedure
+  procedure AddError integer liExprRow string lsError integer liErrorPos
+    integer liRow
+    get row_count to liRow
+    set piExprRow.i  liRow to liExprRow
+    set psError.i    liRow to lsError
+    set piErrorPos.i liRow to liErrorPos
+  end_procedure
+end_class // Query_cExprArrayErrors
+
+class Query_cExprArray is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    object oInterpreterErrors is a Query_cExprArrayErrors
+    end_object
+  end_procedure
+  item_property_list
+    item_property string  psLongLabel.i
+    item_property string  psLabel.i
+    item_property integer piType.i
+    item_property integer piWidth.i
+    item_property integer piDecimals.i
+
+    item_property string  psExpression.i
+    item_property integer piExprId.i       // Temporarily used when compiled
+    item_property integer pbCleanupInUse.i        // Temporarily used when cleaning up
+    item_property integer pbCleanupNewRow.i
+  end_item_property_list Query_cExprArray
+
+  function iInterpretAll returns integer // DFTRUE means OK
+    integer liRow liMax liErrorPos liExprId lbRval liError
+    string lsExpression lsError lsMessage
+    move DFTRUE to lbRval
+    send delete_data to (oInterpreterErrors(self))
+    get row_count to liMax
+    send script_begin to (Query_ExprParser(self))
+    decrement liMax
+    for liRow from 0 to liMax
+      set piExprId.i liRow to -1
+      get psExpression.i liRow to lsExpression
+      // This puts the expression in one line:
+      get sPrepareExpression.s of (Query_ExprParser(self)) lsExpression to lsExpression
+      if (trim(lsExpression)<>"") begin
+        send delete_data to (oScriptErrors(Query_ExprParser(self)))
+        get iParse_Expr.s of (Query_ExprParser(self)) lsExpression to liErrorPos
+        if (liErrorPos=0) begin
+          get piExprID of (Query_ExprParser(self)) to liExprId
+          set piExprId.i liRow to liExprId
+        end
+        else begin
+          get iTheRealErrorPosition of (Query_ExprParser(self)) liErrorPos to liErrorPos
+          get piError.i   of (oScriptErrors(Query_ExprParser(self))) 0 to liError
+          get psMessage.i of (oScriptErrors(Query_ExprParser(self))) 0 to lsMessage
+          move (ScriptError_Text(liError)) to lsError
+          move (lsError+", "+lsMessage) to lsError
+          send AddError to (oInterpreterErrors(self)) liRow lsError liErrorPos
+          move DFFALSE to lbRval
+        end
+      end
+      else begin
+        send AddError to (oInterpreterErrors(self)) liRow "Empty expression" 0
+        move DFFALSE to lbRval
+      end
+    loop
+    send script_end to (Query_ExprParser(self))
+    function_return lbRval
+  end_function
+
+  procedure DisplayErrors
+    send Show_Errors to (oInterpreterErrors(self))
+    send obs "Errors were found"
+  end_procedure
+
+  procedure SEQ_Write integer liChannel
+    integer liRow liMax
+    string lsExpression
+    get row_count to liMax
+    decrement liMax
+    writeln channel liChannel (row_count(self)-1)
+    for liRow from 0 to liMax
+      writeln (psLongLabel.i(self,liRow))
+      writeln (psLabel.i(self,liRow))
+      writeln (piType.i(self,liRow))
+      writeln (piWidth.i(self,liRow))
+      writeln (piDecimals.i(self,liRow))
+      get psExpression.i liRow to lsExpression
+      writeln (length(lsExpression))
+      write lsExpression
+    loop
+  end_procedure
+  procedure SEQ_Read integer liChannel
+    integer liRow liMax liLen
+    string lsExpression
+    send delete_data
+    readln channel liChannel liMax
+    for liRow from 0 to liMax
+      set psLongLabel.i liRow to (SEQ_ReadLn(liChannel))
+      set psLabel.i     liRow to (SEQ_ReadLn(liChannel))
+      set piType.i      liRow to (SEQ_ReadLn(liChannel))
+      set piWidth.i     liRow to (SEQ_ReadLn(liChannel))
+      set piDecimals.i  liRow to (SEQ_ReadLn(liChannel))
+      readln liLen
+      read_block lsExpression liLen
+      set psExpression.i liRow to lsExpression
+    loop
+  end_procedure
+
+  procedure CleanUp_Prepare
+    integer liRow liMax
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      set pbCleanupInUse.i  liRow to DFFALSE
+      set pbCleanupNewRow.i liRow to -1
+    loop
+  end_procedure
+  procedure CleanUp_MarkAsUsed integer liRow
+    set pbCleanupInUse.i liRow to DFTRUE
+  end_procedure
+  procedure CleanUp_CalcNewRow
+    integer liRow liMax liNewRow
+    move 0 to liNewRow
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      if (pbCleanupInUse.i(self,liRow)) begin
+        set pbCleanupNewRow.i liRow to liNewRow
+        increment liNewRow
+      end
+    loop
+  end_procedure
+  procedure CleanUp_Purge
+    integer liRow liMax
+    get row_count to liMax
+    decrement liMax
+    for_ex liRow from liMax down_to 0
+      ifnot (pbCleanupInUse.i(self,liRow)) send delete_row liRow
+    loop
+  end_procedure
+end_class // Query_cExprArray
+
+
+// UI Part
+
+Use Edit.utl     // cEditor class
+
+class cQuery_ExpressionEditorUndoer is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer piCurrentUndoPos 0
+  end_procedure
+  item_property_list
+    item_property integer piCursor.i
+    item_property integer piSelectRange.i
+    item_property string  psValue.i
+    item_property string  psOperation.i
+  end_item_property_list cQuery_ExpressionEditorUndoer
+  procedure ReadCurrentState string lsOperation
+    integer liRow lhParent liPosition
+    string lsValue
+    move (parent(self)) to lhParent
+    get piCurrentUndoPos to liRow
+    get position of lhParent to liPosition
+    get Text_EditObjectValue lhParent to lsValue
+    set piCursor.i      liRow to liPosition
+//    showln "Snup " liPosition
+    set piSelectRange.i liRow to 0
+    set psValue.i       liRow to lsValue
+    set psOperation.i   liRow to lsOperation
+    increment liRow
+    set piCurrentUndoPos to liRow
+  end_procedure
+  procedure DoReset
+    send delete_data
+    set piCurrentUndoPos to 0
+  end_procedure
+  procedure SetCurrentState integer liRow
+    integer liPosition lhParent
+    string lsValue
+    move (parent(self)) to lhParent
+    get piCursor.i liRow to liPosition
+    get psValue.i  liRow to lsValue
+    send Text_SetEditObjectValue lhParent lsValue
+//    showln "Oooog V‘rsgo " liPosition
+    send move_absolute to lhParent (hi(liPosition)) (low(liPosition))
+  end_procedure
+  function iIncrementCurrentUndoPos integer liBy returns integer
+    integer liCurrentUndoPos
+    get piCurrentUndoPos to liCurrentUndoPos
+    move (liCurrentUndoPos+liBy) to liCurrentUndoPos
+    if (liCurrentUndoPos>0 and liCurrentUndoPos<row_count(self)) begin
+      set piCurrentUndoPos to liCurrentUndoPos
+      function_return DFTRUE
+    end
+    function_return DFFALSE
+  end_function
+  procedure ReDo
+    if (iIncrementCurrentUndoPos(self,1)) send SetCurrentState (piCurrentUndoPos(self))
+    else send bell to desktop
+  end_procedure
+  procedure UnDo
+    if (iIncrementCurrentUndoPos(self,-1)) send SetCurrentState (piCurrentUndoPos(self))
+    else send bell to desktop
+  end_procedure
+end_class // cQuery_ExpressionEditorUndoer
+
+
+class cQuery_ExpressionEditor is a cEditor
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer piRequiredType 0
+    set typeface to "Courier New"
+    object oUnDo is a cQuery_ExpressionEditorUndoer
+    end_object
+    on_key KEY_CTRL+KEY_U send undo
+    on_key KEY_CTRL+KEY_Z send redo
+
+    property integer piExpressionType // TYPE.UNKNOWN TYPE.UNTYPED TYPE.INTEGER TYPE.DATE TYPE.NUMBER TYPE.STRING
+  end_procedure
+
+  procedure DoClear
+    send delete_data
+  end_procedure
+
+  function bContentsNotOK returns integer
+    integer lbError
+    string lsExpression
+
+    get Text_EditObjectValue self to lsExpression
+    get sPrepareExpression.s of (Query_ExprParser(self)) lsExpression to lsExpression
+
+    send script_begin to (Query_ExprParser(self))
+    get iParse_Expr.s of (Query_ExprParser(self)) lsExpression to lbError
+    set piExpressionType to (piExprType(Query_ExprParser(self)))
+    send script_end to (Query_ExprParser(self))
+    function_return lbError
+  end_function
+
+  procedure GotoErrorPos integer liErrorPos
+    if liErrorPos begin
+      get iTheRealErrorPosition of (Query_ExprParser(self)) liErrorPos to liErrorPos
+      send activate
+      send move_absolute (hi(liErrorPos)-1) (low(liErrorPos)-1)
+    end
+  end_procedure
+  procedure UnDo
+    send UnDo to (oUndo(self))
+  end_procedure
+  procedure Redo
+    send ReDo to (oUndo(self))
+  end_procedure
+  procedure Insert string lsValue
+    send ReadCurrentState to (oUndo(self)) "Inds‘t"
+    forward send Insert lsValue
+  end_procedure
+end_class // cQuery_ExpressionEditor
+
+class QryExprTableList is a aps.List
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+  end_procedure
+  procedure fill_list
+    integer lhSet liItem liMax liFile
+    set dynamic_update_state to DFFALSE
+    send delete_data
+    move (oAllowedTables(Query_ExprEvaluator(self))) to lhSet
+    get item_count of lhSet to liMax
+    decrement liMax
+    for liItem from 0 to liMax
+      get value of lhSet item liItem to liFile
+      send add_item MSG_NONE (FDX_AttrValue_FILELIST(0,DF_FILE_LOGICAL_NAME,liFile))
+      set aux_value item (item_count(self)-1) to liFile
+    loop
+    set dynamic_update_state to DFTRUE
+    set current_item to 0
+    send OnChange
+  end_procedure
+  procedure OnChange
+    integer liFile
+    get aux_value item (current_item(self)) to liFile
+    send DoFillFields liFile
+  end_procedure
+  procedure item_change integer liItem1 integer liItem2 returns integer
+    integer liRval liFile
+    forward get msg_item_change liItem1 liItem2 to liRval
+    procedure_return liRval
+  end_procedure
+end_class // QryExprTableList
+
+class QryExprFieldList is a aps.List
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer piFile 0
+  end_procedure
+  procedure OnFieldSelect string lsName
+  end_procedure
+  procedure InsertField
+    integer liFile liField liItem
+    string lsName
+    get current_item to liItem
+    get piFile to liFile
+    get aux_value item liItem to liField
+    get FDX_FieldName 0 liFile liField DFTRUE to lsName
+    send OnFieldSelect lsName
+  end_procedure
+  procedure HandleField integer liFile integer liField string lsName integer liType integer liLen integer liPrec integer liRelFile integer liRelField integer liIndex integer liOffSet
+    if (liType<>DF_OVERLAP and liType<>DF_BINARY) begin
+      send add_item MSG_InsertField lsName
+      set aux_value item (item_count(self)-1) to liField
+    end
+  end_procedure
+  procedure fill_list.i integer liFile
+    integer lhSet liItem liMax
+    if liFile begin
+      set piFile to liFile
+      set dynamic_update_state to DFFALSE
+      send delete_data
+      send FDX_FieldCallBack 0 liFile MSG_HandleField self // Protected against relating file not present
+      set dynamic_update_state to DFTRUE
+      set current_item to 0
+    end
+  end_procedure
+//procedure mouse_click integer liItem integer liGrb
+//  if ((liItem-1)<item_count(self)) send InsertField
+//end_procedure
+  procedure mouse_up integer liItem integer liGrb
+    if ((liItem-1)<item_count(self)) send InsertField
+  end_procedure
+end_class // QryExprFieldList
+
+class QryExprFunctions is a aps.List
+  procedure InsertFunction
+  end_procedure
+  procedure Handle_Function string lsName integer liReturnType string lsParamList string lsLongParamList
+    integer liLen liPos
+    string lsValue liChar
+    move (lsName+"(") to lsValue
+    move (length(lsParamList)) to liLen
+    for liPos from 1 to liLen
+      move (mid(lsParamList,1,liPos)) to liChar
+      if (liChar="S") move (lsValue+"s") to lsValue
+      if (liChar="I") move (lsValue+"i") to lsValue
+      if (liChar="N") move (lsValue+"n") to lsValue
+      if (liChar="D") move (lsValue+"d") to lsValue
+      if (liPos<>liLen) move (lsValue+",") to lsValue
+    loop
+    move (lsValue+")") to lsValue
+    send add_item MSG_InsertFunction lsValue
+  end_procedure
+  procedure fill_list
+    integer lhObj lhSelf
+    set dynamic_update_state to DFFALSE
+    send delete_data
+    move self to lhSelf
+    move (oDeclaredFunctions(Query_ExprEvaluator(self))) to lhObj
+    send reset to lhObj
+    send CallBack_AllFunctions to lhObj MSG_Handle_Function lhSelf
+    set dynamic_update_state to DFTRUE
+  end_procedure
+end_class //
+
+object Query_EditCriteriaExpression is a aps.ModalPanel label t.QryExpr.Expression // "Expression"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult DFFALSE
+  property string  psExpression ""
+  property integer piExprType   0
+  object oEdit is a cQuery_ExpressionEditor
+    set size to 100 450
+  end_object
+  send aps_goto_max_row
+  object oLbl1 is a aps.TextBox label t.QryExpr.Tables    //"Tabels"
+  end_object
+  object oLbl2 is a aps.TextBox label t.QryExpr.Fields    //"Fields"
+  end_object
+  object oLbl3 is a aps.TextBox label t.QryExpr.Functions //"Functions"
+  end_object
+  send aps_goto_max_row
+  object oTables is a QryExprTableList
+    set size to 114 80
+  end_object
+  object oFields is a QryExprFieldList
+    set size to 114 120
+    procedure OnFieldSelect string lsName
+      send Insert to (oEdit(self)) lsName
+      send activate to (oEdit(self))
+    end_procedure
+  end_object
+  procedure DoFillFields integer liFile
+    send fill_list.i to (oFields(self)) liFile
+  end_procedure
+
+  object oFunctions is a QryExprFunctions
+    set size to 114 245
+    procedure InsertFunction
+      string lsValue
+      get value item (current_item(self)) to lsValue
+      send Insert to (oEdit(self)) lsValue
+      send Activate to (oEdit(self))
+    end_procedure
+    procedure mouse_up integer liItem integer liGrb
+      if ((liItem-1)<item_count(self)) send InsertFunction
+    end_procedure
+  end_object
+
+  send aps_align_by_moving (oLbl1(self)) (oTables(self)) SL_ALIGN_LEFT
+  send aps_align_by_moving (oLbl2(self)) (oFields(self)) SL_ALIGN_LEFT
+  send aps_align_by_moving (oLbl3(self)) (oFunctions(self)) SL_ALIGN_LEFT
+
+  object oBtn_Ok is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn_Clear is a aps.Multi_Button
+    on_item t.btn.clear  send DoClear to (oEdit(self))
+  end_object
+  object oBtn_Cancel is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    integer lbError
+    get bContentsNotOK of (oEdit(self)) to lbError
+    ifnot lbError begin
+      set piResult to DFTRUE
+      send close_panel
+    end
+    else send GotoErrorPos to (oEdit(self)) lbError
+  end_procedure
+
+  function iPopup.sis string lsExpression integer liRequiredType string lsCaption returns integer
+    integer liType
+    set piResult to DFFALSE
+    send Text_SetEditObjectValue (oEdit(self)) lsExpression
+    set piRequiredType of (oEdit(self)) to liRequiredType
+    set label to lsCaption
+    send fill_list to (oTables(self))
+    send fill_list to (oFunctions(self))
+    send popup
+    if (piResult(self)) begin
+      set psExpression to (Text_EditObjectValue(oEdit(self)))
+//      set piExprType
+
+      function_return 1
+    end
+    function_return -1
+  end_function
+end_object // Query_EditCriteriaExpression
+
+object Query_ColumnExpression is a aps.ModalPanel
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  on_key kuser send testus
+  property integer piResult DFFALSE
+  property string psExpression ""
+
+  object oGrp is a aps.Group
+    object oLongLabel is a aps.Form label  (t.QryExpr.LongLabel+":") abstract AFT_ASCII30   //"Long label:"
+    end_object
+    object oShortLabel is a aps.Form label (t.QryExpr.ShortLabel+":") abstract AFT_ASCII15  // "Short label:"
+      procedure OnSetFocus
+        if (value(self,0)="") set value to (value(oLongLabel(self),0))
+      end_procedure
+    end_object
+    object oWidth is a aps.form label (t.QryExpr.Width+":") abstract AFT_NUMERIC2.0
+    end_object
+    object oLabel is a aps.TextBox label t.QryExpr._Characters snap SL_RIGHT
+    end_object
+    object oExprType is a aps.ComboFormAux label (t.QryExpr.ReturnType+":") abstract AFT_ASCII10
+      set entry_state item 0 to DFFALSE
+      send combo_add_item t.QryExpr.Type_Numeric DF_BCD
+      send combo_add_item t.QryExpr.Type_String  DF_ASCII
+      send combo_add_item t.QryExpr.Type_Text    DF_TEXT
+      send combo_add_item t.QryExpr.Type_Date    DF_DATE
+      register_object oDecimals
+      procedure OnChange
+        set enabled_state of (oDecimals(self)) to (Combo_Current_Aux_Value(self)=DF_BCD)
+      end_procedure
+    end_object
+    object oDecimals is a aps.Form label (t.QryExpr.DecimalPlaces+":") abstract AFT_NUMERIC1.0 snap SL_RIGHT_SPACE
+    end_object
+    procedure DoExpression
+      integer liType liTranslatedType liRval
+      string lsExpression lsCaption
+      get Combo_Current_Aux_Value of (oExprType(self)) to liType
+      if (liType=DF_BCD  ) move TYPE.NUMBER to liTranslatedType
+      if (liType=DF_ASCII) move TYPE.STRING to liTranslatedType
+      if (liType=DF_TEXT ) move TYPE.STRING to liTranslatedType
+      if (liType=DF_DATE ) move TYPE.DATE   to liTranslatedType
+      if (liType=DF_BCD  ) move t.QryExpr.EditNumExpr to lsCaption
+      if (liType=DF_ASCII) move t.QryExpr.EditStrExpr to lsCaption
+      if (liType=DF_TEXT ) move t.QryExpr.EditStrExpr to lsCaption
+      if (liType=DF_DATE ) move t.QryExpr.EditDatExpr to lsCaption
+      get psExpression to lsExpression
+      get iPopup.sis of (Query_EditCriteriaExpression(self)) lsExpression liTranslatedType lsCaption to liRval
+      if (liRval<>-1) set psExpression to (psExpression(Query_EditCriteriaExpression(self)))
+    end_procedure
+    send aps_make_row_space 5
+    object oBtn is a aps.Button
+      on_item t.btn.Edit send DoExpression
+    end_object
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure aps_beautify
+    send aps_align_inside_container_by_moving (oBtn(oGrp(self))) SL_ALIGN_CENTER
+  end_procedure
+  procedure close_panel_ok
+    set piResult to DFTRUE
+    send close_panel
+  end_procedure
+
+  procedure testus
+    integer liTest
+    get Combo_Current_Aux_Value of (oExprType(oGrp(self))) item 0 to liTest
+    send obs liTest
+  end_procedure
+
+  function iPopup.ii integer lhObj integer liRow returns integer
+    integer liType
+    if (liRow=-1) begin
+      set label to t.QryExpr.CreateCC_1 // "Create calculated column"
+      set value of (oLongLabel(oGrp(self))) item 0 to ""
+      set value of (oShortLabel(oGrp(self))) item 0 to ""
+      set value of (oWidth(oGrp(self))) item 0 to 10
+      set value of (oExprType(oGrp(self))) item 0 to t.QryExpr.Type_Numeric
+      set value of (oDecimals(oGrp(self))) item 0 to 0
+      set psExpression to ""
+    end
+    else begin
+      move (piType.i(lhObj,liRow)) to liType
+      set label to (t.QryExpr.CreateCC_2+string(liRow)+")")
+      set value of (oLongLabel (oGrp(self))) item 0 to (psLongLabel.i(lhObj,liRow))
+      set value of (oShortLabel(oGrp(self))) item 0 to (psLabel.i(lhObj,liRow))
+      set value of (oWidth(oGrp(self)))      item 0 to (piWidth.i(lhObj,liRow))
+      set Combo_Current_Aux_Value of (oExprType(oGrp(self))) to liType
+      set value of (oDecimals(oGrp(self)))   item 0 to (piDecimals.i(lhObj,liRow))
+      set psExpression to (psExpression.i(lhObj,liRow))
+    end
+    set piResult to DFFALSE
+    send popup
+    if (piResult(self)) begin
+      if (liRow=-1) get row_count of lhObj to liRow
+      set psLongLabel.i  of lhObj liRow to (value(oLongLabel(oGrp(self)),0))
+      set psLabel.i      of lhObj liRow to (value(oShortLabel(oGrp(self)),0))
+      set piType.i       of lhObj liRow to (Combo_Current_Aux_Value(oExprType(oGrp(self))))
+      set piWidth.i      of lhObj liRow to (value(oWidth(oGrp(self)),0))
+      set piDecimals.i   of lhObj liRow to (value(oDecimals(oGrp(self)),0))
+      set psExpression.i of lhObj liRow to (psExpression(self))
+      function_return liRow
+    end
+    function_return -1
+  end_function
+end_object // Query_ColumnExpression

@@ -1,0 +1,364 @@
+//**********************************************************************
+// Use Fdx2.utl     // FDX aware object for displaying a table definition
+//
+// By Sture Andersen
+//
+// Create: Tue  09-02-2000
+// Update:
+//
+//**********************************************************************
+Use Fdx_Attr.nui // FDX compatible attribute functions
+Use DBMS.utl     // Basic DBMS functions
+Use GridUtil.utl // Grid and List utilities
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+class cFDX.Display.FieldList is a aps.Grid
+  register_function piFDX_Server returns integer
+  register_function piMain_File  returns integer
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piDisplayOldNumbers 0
+    on_key kuser send ToggleDisplayOldNumbers
+    send GridPrepare_AddColumn "#"        AFT_ASCII2
+    send GridPrepare_AddColumn "Name"     AFT_ASCII15
+    send GridPrepare_AddColumn "Type"     AFT_ASCII4
+    send GridPrepare_AddColumn "Len"      AFT_ASCII5
+    send GridPrepare_AddColumn "Offset"   AFT_ASCII5
+    send GridPrepare_AddColumn "Idx"      AFT_ASCII3
+    send GridPrepare_AddColumn "Relation" AFT_ASCII30
+    send GridPrepare_Apply self
+    set select_mode to no_select
+    on_key key_ctrl+key_w send DoWriteToFile
+  end_procedure
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+  procedure add_item integer msg# string value#
+    forward send add_item msg# value#
+    set entry_state item (item_count(self)-1) to false
+  end_procedure
+  function sRelFieldName.ii integer file# integer field# returns string
+    integer fdx#
+    string file_name# field_name#
+    ifnot file# function_return ""
+    get piFDX_Server to fdx#
+    if fdx# begin
+      get FDX_AttrValue_FILELIST fdx# DF_FILE_LOGICAL_NAME file# to file_name#
+      get FDX_AttrValue_FIELD fdx# DF_FIELD_NAME file# field# to field_name#
+    end
+    else begin
+      get API_AttrValue_FILELIST DF_FILE_LOGICAL_NAME file# to file_name#
+      if file_name# eq "" move ("FILE"+string(file#)) to file_name#
+      if (DBMS_IsOpenFile(file#)) get API_AttrValue_FIELD DF_FIELD_NAME file# field# to field_name#
+      else move ("FIELD"+string(field#)) to field_name#
+    end
+    function_return (file_name#+"."+field_name#)
+  end_function
+  procedure fill_list
+    integer file# fdx# max# field# st# type# len# dec# idx# iDisplayOldNumbers#
+    string str#
+    get piMain_File to file#
+    get piFDX_Server to fdx#
+    get dynamic_update_state to st#
+    set dynamic_update_state to false
+    get FDX_AttrValue_FILE fdx# DF_FILE_NUMBER_FIELDS file# to max#
+    get piDisplayOldNumbers to iDisplayOldNumbers#
+    send delete_data
+    for field# from 1 to max#
+      send add_item msg_none (string(field#))
+      send add_item msg_none (FDX_AttrValue_FIELD(fdx#,DF_FIELD_NAME,file#,field#))
+      move (FDX_AttrValue_FIELD(fdx#,DF_FIELD_TYPE,file#,field#)) to type#
+      send add_item msg_none (API_ShortFieldTypeName(type#))
+      move (FDX_AttrValue_FIELD(fdx#,DF_FIELD_LENGTH,file#,field#)) to len#
+      if type# eq DF_BCD begin
+        move (FDX_AttrValue_FIELD(fdx#,DF_FIELD_PRECISION,file#,field#)) to dec#
+        send add_item msg_none (string(len#-dec#)+"."+string(dec#))
+      end
+      else send add_item msg_none (string(len#))
+      send add_item msg_none (FDX_AttrValue_FIELD(fdx#,DF_FIELD_OFFSET,file#,field#))
+      move (FDX_AttrValue_FIELD(fdx#,DF_FIELD_INDEX,file#,field#)) to idx#
+      if idx# send add_item msg_none (string(idx#))
+      else    send add_item msg_none ""
+
+      if iDisplayOldNumbers# begin
+        move "(Old #) PhysLen: #" to str#
+        replace "#" in str# with (FDX_AttrValue_FIELD(fdx#,DF_FIELD_OLD_NUMBER,file#,field#))
+        replace "#" in str# with (FDX_AttrValue_FIELD(fdx#,DF_FIELD_NATIVE_LENGTH,file#,field#))
+        send add_item msg_none str#
+      end
+      else send add_item msg_none (sRelFieldName.ii(self,FDX_AttrValue_FIELD(fdx#,DF_FIELD_RELATED_FILE,file#,field#),FDX_AttrValue_FIELD(fdx#,DF_FIELD_RELATED_FIELD,file#,field#)))
+    loop
+    set dynamic_update_state to st#
+  end_procedure
+
+  procedure ToggleDisplayOldNumbers
+    set piDisplayOldNumbers to (not(piDisplayOldNumbers(self)))
+    send fill_list
+  end_procedure
+end_class // cFDX.Display.FieldList
+
+class cFDX.Display.IndexList is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    set select_mode to auto_select
+    set Line_Width to 1 0
+    set header_label item 0 to "#"
+    set form_margin  item 0 to  8
+    set highlight_row_state to true
+//   set highlight_row_color to (rgb(0,255,255))
+//   set current_item_color to (rgb(0,255,255))
+    set CurrentCellColor     to clHighlight
+    set CurrentCellTextColor to clHighlightText
+    set CurrentRowColor      to clHighlight
+    set CurrentRowTextColor  to clHighlightText
+    set select_mode to no_select
+    on_key knext_item send switch
+    on_key kprevious_item send switch_back
+    on_key key_ctrl+key_w send DoWriteToFile
+  end_procedure
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+  procedure add_item integer msg# string value#
+    forward send add_item msg# value#
+    set entry_state item (item_count(self)-1) to false
+  end_procedure
+  procedure fill_list
+    integer idx# file# fdx#
+    send delete_data
+    get piMain_File to file#
+    get piFDX_Server to fdx#
+    for idx# from 1 to 15
+      send add_item msg_none ("Index "+string(idx#))
+      ifnot (integer(FDX_AttrValue_INDEX(fdx#,DF_INDEX_NUMBER_SEGMENTS,file#,idx#))) set shadow_state item (item_count(self)-1) to true
+    loop
+    set dynamic_update_state to true
+  end_procedure
+end_class // cFDX.Display.IndexList
+
+class cFDX.Display.IndexSegmentList is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    set Line_Width to 3 0
+    set header_label item 0 to "Field"
+    set header_label item 1 to "U/C"
+    set header_label item 2 to "Dsc"
+    set form_margin  item 0 to 15
+    set form_margin  item 1 to 3
+    set form_margin  item 2 to 3
+    set highlight_row_state to true
+    set CurrentCellColor     to clHighlight
+    set CurrentCellTextColor to clHighlightText
+    set CurrentRowColor      to clHighlight
+    set CurrentRowTextColor  to clHighlightText
+//   set highlight_row_color to (rgb(0,255,255))
+//   set current_item_color to (rgb(0,255,255))
+    set select_mode to no_select
+    on_key knext_item send switch
+    on_key kprevious_item send switch_back
+    on_key key_ctrl+key_w send DoWriteToFile
+  end_procedure
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+  procedure add_item integer msg# string value#
+    forward send add_item msg# value#
+    set entry_state item (item_count(self)-1) to false
+  end_procedure
+  procedure fill_list
+    integer max# seg# file# field# attr# fdx# value# idx#
+    string fname#
+    send delete_data
+    get piMain_File to file#
+    get piFDX_Server to fdx#
+    get piIndex to idx#
+    move (FDX_AttrValue_INDEX(fdx#,DF_INDEX_NUMBER_SEGMENTS,file#,idx#)) to max#
+    for seg# from 1 to max#
+      move (FDX_AttrValue_IDXSEG(fdx#,DF_INDEX_SEGMENT_FIELD,file#,idx#,seg#)) to field#
+      if field# move (FDX_AttrValue_FIELD(fdx#,DF_FIELD_NAME,file#,field#)) to fname#
+      else move "RECNUM" to fname#
+      send add_item msg_none fname#
+      move (FDX_AttrValue_IDXSEG(fdx#,DF_INDEX_SEGMENT_CASE,file#,idx#,seg#)) to value#
+      send add_item msg_none (if(value#=DF_CASE_IGNORED,"Yes","No"))
+      move (FDX_AttrValue_IDXSEG(fdx#,DF_INDEX_SEGMENT_DIRECTION,file#,idx#,seg#)) to value#
+      send add_item msg_none (if(value#=DF_DESCENDING,"Yes","No"))
+    loop
+    set dynamic_update_state to true
+  end_procedure
+end_class // cFDX.Display.IndexSegmentList
+class cFDX.Display.FileOtherList is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    set Line_Width to 2 0
+    set header_label item 0 to "Parameter"
+    set header_label item 1 to "Value"
+    set form_margin  item 0 to  30
+    set form_margin  item 1 to  30
+    set highlight_row_state to true
+    set CurrentCellColor     to clHighlight
+    set CurrentCellTextColor to clHighlightText
+    set CurrentRowColor      to clHighlight
+    set CurrentRowTextColor  to clHighlightText
+//   set highlight_row_color to (rgb(0,255,255))
+//   set current_item_color to (rgb(0,255,255))
+    set select_mode to no_select
+    property integer piDisplayRuntimeOnlies 0
+    on_key key_ctrl+key_w send DoWriteToFile
+  end_procedure
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+  procedure add_item integer msg# string value#
+    forward send add_item msg# value#
+    set entry_state item (item_count(self)-1) to false
+  end_procedure
+  procedure add_entry string param# string value#
+    send add_item msg_none param#
+    send add_item msg_none value#
+  end_procedure
+  procedure fill_list_help integer attr#
+    integer file# fdx#
+    string str#
+    if (piDisplayRuntimeOnlies(self) or not(API_AttrRuntimeOnly(attr#))) begin
+      get piMain_File to file#
+      get piFDX_Server to fdx#
+      move (FDX_AttrValue_FILE(fdx#,attr#,file#)) to str#
+      send add_entry (API_Attr_DisplayName(attr#)) (API_Attr_DisplayValueName(attr#,str#))
+    end
+  end_procedure
+  procedure fill_list
+    send delete_data
+    send API_AttrType_Callback ATTRTYPE_FILE msg_fill_list_help self
+    set dynamic_update_state to true
+  end_procedure
+end_class // cFDX.Display.FileOtherList
+
+object oFdxModalDisplayFileAttributes is a aps.ModalPanel label "Display table definition"
+  property integer piFDX_Server 0
+  property integer piMain_File  0
+  property integer piIndex      1
+  on_key kcancel send close_panel
+  set Locate_Mode to CENTER_ON_SCREEN
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  object oTabs is a aps.TabDialog
+    set peAnchors to (anTop+anLeft+anBottom+anRight)
+    object oTab1 is a aps.TabPage label "Fields"
+      set p_Auto_Column to false
+      object oFields is a cFDX.Display.FieldList
+        set size to 160 0
+        set peAnchors to (anTop+anLeft+anBottom+anRight)
+        set peResizeColumn to rcAll
+      end_object
+    end_object
+    register_object oIndexFields
+    object oTab2 is a aps.TabPage label "Indices"
+      object oIndexNo is a cFDX.Display.IndexList
+        set size to 160 0
+        set peAnchors to (anTop+anBottom)
+        set peResizeColumn to rcAll
+        procedure item_change integer from# integer to# returns integer
+          integer rval#
+          forward get msg_item_change from# to# to rval#
+          set piIndex to (rval#+1)
+          send fill_list to (oIndexFields(self))
+          send display_info
+          procedure_return rval#
+        end_procedure
+      end_object
+      set p_auto_column to false
+      object oIndexFields is a cFDX.Display.IndexSegmentList
+        set peAnchors to (anTop+anLeft+anBottom+anRight)
+        set peResizeColumn to rcAll
+        set size to 160 0
+      end_object
+      object oFrm1 is a aps.Form label "Key length:" abstract aft_numeric4.0 snap sl_right_space
+        set peAnchors to (anTop+anRight)
+        set object_shadow_state to true
+      end_object
+      object oFrm2 is a aps.Form label "Levels:" abstract aft_numeric4.0 snap sl_down
+        set peAnchors to (anTop+anRight)
+        set object_shadow_state to true
+        set label_offset to 0 0
+        set label_justification_mode to jmode_right
+      end_object
+      object oFrm3 is a aps.Form label "Batch:" abstract aft_ascii4 snap sl_down
+        set peAnchors to (anTop+anRight)
+        set object_shadow_state to true
+        set label_offset to 0 0
+        set label_justification_mode to jmode_right
+      end_object
+      procedure display_info
+        integer idx# attr#
+        integer file# fdx#
+        get piMain_File to file#
+        get piFDX_Server to fdx#
+        get piIndex to idx#
+        move (FDX_AttrValue_INDEX(fdx#,DF_INDEX_KEY_LENGTH,file#,idx#)) to attr#
+        set value of (oFrm1(self)) item 0 to attr#
+        move (FDX_AttrValue_INDEX(fdx#,DF_INDEX_LEVELS,file#,idx#)) to attr#
+        set value of (oFrm2(self)) item 0 to attr#
+        move (FDX_AttrValue_INDEX(fdx#,DF_INDEX_TYPE,file#,idx#)) to attr#
+        if attr# eq DF_INDEX_TYPE_ONLINE set value of (oFrm3(self)) item 0 to "No"
+        else                             set value of (oFrm3(self)) item 0 to "Yes"
+      end_procedure
+    end_object
+    object oTab3 is a aps.TabPage label "Attributes"
+      object oOther is a cFDX.Display.FileOtherList
+        set size to 160 0
+        set peAnchors to (anTop+anLeft+anBottom+anRight)
+        set peResizeColumn to rcAll
+      end_object
+    end_object
+  end_object
+  object oBtn is a aps.Multi_Button
+    on_item t.btn.close send close_panel
+    set peAnchors to (anBottom+anRight)
+  end_object
+  send aps_locate_multi_buttons
+  procedure run.ii integer obj# integer file#
+    set piFDX_Server to obj#
+    set piMain_File  to file#
+    send fill_list to (oFields(oTab1(oTabs(self))))
+    set piIndex to 1
+    send fill_list to (oIndexNo(oTab2(oTabs(self))))
+    send fill_list to (oIndexFields(oTab2(oTabs(self))))
+    send display_info to (oTab2(oTabs(self)))
+    send fill_list to (oOther(oTab3(oTabs(self)))) obj#
+    send popup
+  end_procedure
+end_object
+send aps_SetMinimumDialogSize (oFdxModalDisplayFileAttributes(self))
+
+object oABCDEFG is a cArray
+  register_function iFdxIsEncapsulated returns integer
+end_object
+
+register_function piMainFile returns integer
+procedure FDX_ModalDisplayFileAttributes global integer oFDX# integer file#
+  integer open# was_open# lbIsEncapsulated
+  ifnot oFDX# begin
+    move (DBMS_IsOpenFile(file#)) to was_open#
+    if was_open# move 1 to open#
+    else move (DBMS_OpenFile(file#,DF_SHARE,0)) to open#
+  end
+  else begin
+    move 1 to open#
+    if file# eq 0 begin
+      // File not specified means the oFDX# holds only one file
+      get iFdxIsEncapsulated of oFDX# to lbIsEncapsulated
+      if lbIsEncapsulated begin
+        send obs "Missing file number argument"
+        move 0 to open#
+      end
+      else get piMainFile of oFDX# to file#
+    end
+  end
+  if open# send run.ii to (oFdxModalDisplayFileAttributes(self)) oFDX# file#
+  else send obs "Table is not available"
+  ifnot oFDX# if (open# and not(was_open#)) close file#
+end_procedure
+
+// Test code
+//
+// open prtcomm
+// send FDX_DisplayFileAttributes 0 PrtComm.File_Number

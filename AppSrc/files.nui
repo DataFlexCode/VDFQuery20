@@ -1,0 +1,1152 @@
+// Use Files.nui    // Utilities for handling file related stuff (No User Interface)
+
+//         Sat  06-09-2003 - From 9.1 direct_input/direct_output and
+//                           append_output performs OEM to versions.
+//                           This is now reflected in the code (search _91_)
+//         Wed  10-09-2003 - Added procedure SEQ_ReadRecordBufferToArray_LD
+//                         - Added function SEQ_InputChannelLineCount (and taken out again)
+//         Mon  12-01-2004 - Function SEQ_CurrentFolder added
+//         Thu  15-01-2004 - Procedure SEQ_CallBack_ItemsInDir no longer loads [.] and [..] items
+//                         - Function SEQ_NumberFiles now takes a parameter.
+//         Sat  15-02-2004 - A long time Oem/ANSI issue with respect to filenames in DIRECT_INPUT/
+//                           DIRECT_OUTPUT commands, that was apparently fixed in 9.1 beta, was
+//                           un-fixed in the final 9.1 release. Therefore the original fix to the
+//                           problem has been re-introduced (look for _91_)
+//         Mon  01-03-2004 - Function SEQ_FindFileAlongPath has been fixed to let it handle
+//                           UNC pathing.
+//         Tue  06-05-2008
+
+// More exotic file functions may be found in the following packages:
+//
+//   Use files01.nui // SEQ_DoChannelPositionsToLineCount - stuff
+//
+
+Use VdfBase.pkg // Define FMAC_VERSION and FMAC_REVISION
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+Use seq_chnl.pkg // Defines global sequential device management operations (DAW)
+Use Strings.nui  // String manipulation for VDF
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Dates.nui    // Date routines
+Use ErrorHnd.nui // cErrorHandlerRedirector class and oErrorHandlerQuiet object
+Use Version.nui
+
+use WinFolder.nui // WinFolder_ReadFolder message
+
+string giSeq$Temp 250
+
+function SEQ_UniqueFileName global string lsPreFix returns string
+  integer count# unique# loop# ch#
+  move (left(trim(lsPreFix),4)) to lsPreFix
+  move 12 to count# // max number of retries
+  move 1 to loop#
+  get Seq_New_Channel to ch#      // This method and Seq_Release_Channel are
+  if ch# lt 0 function_return ""  // located in seq_chnl.pkg
+  send Seq_Release_Channel ch#    // We only need it for a second
+  repeat
+    move (random(9999)) to unique#
+    direct_input channel ch# (lsPreFix+string(unique#)+".tmp")
+    move (count#-1) to count#
+    [seqeof] move 0 to loop#
+    if loop# if count# le 0 move 0 to loop#
+    close_input channel ch#
+  until (not(loop#))
+  if count# le 0 function_return "" // failure
+  function_return (lsPreFix+string(unique#)+".tmp")
+end_function
+
+string SEQ_UniqueFileNamePath$ext 5
+move "tmp" to SEQ_UniqueFileNamePath$ext
+
+function SEQ_UniqueFileNamePath global string lsPath string lsPreFix returns string
+  integer count# unique# loop# ch#
+  string lsFileName
+  if (lsPath="." or lsPath="") get SEQ_CurrentFolder to lsPath
+  move (left(trim(lsPreFix),4)) to lsPreFix
+  move 12 to count# // max number of retries
+  move 1 to loop#
+  get Seq_New_Channel to ch#      // This method and Seq_Release_Channel are
+  if ch# lt 0 function_return ""  // located in seq_chnl.pkg
+  send Seq_Release_Channel ch#    // We only need it for a second
+  repeat
+    move (random(9999)) to unique#
+    get SEQ_ComposeAbsoluteFileName lsPath (lsPreFix+string(unique#)+"."+SEQ_UniqueFileNamePath$ext) to lsFileName
+    direct_input channel ch# lsFileName
+    move (count#-1) to count#
+    [seqeof] move 0 to loop#
+    if loop# if count# le 0 move 0 to loop#
+    close_input channel ch#
+  until (not(loop#))
+  if count# le 0 function_return "" // failure
+  function_return lsFileName
+end_function
+
+function SEQ_UniqueFileNamePathAndExt global string lsPath string lsPreFix string lsExt returns string
+  string lsRval
+  move lsExt to SEQ_UniqueFileNamePath$ext
+  get SEQ_UniqueFileNamePath lsPath lsPreFix to lsRval
+  move "tmp" to SEQ_UniqueFileNamePath$ext
+  function_return lsRval
+end_function
+
+define FS_KILOBYTE for 1024
+define FS_MEGABYTE for 1048576
+define FS_GIGABYTE for 1073741824
+
+define SEQ_FileExists$Test for 0
+
+#COMMAND SEQ_FileExists$Test$ShowLn
+  #IF SEQ_FileExists$Test
+   send obs !1 !2 !3 !4 !5 !6 !7 !8 !9
+  #ENDIF
+#ENDCOMMAND
+
+define SEQIT_NONE      for 0
+define SEQIT_FILE      for 1
+define SEQIT_DIRECTORY for 2
+
+     function SEQ_FileExists global string lsFile returns integer
+       integer liRval liChannel
+       string lsStr
+       if lsFile eq "" function_return SEQIT_NONE
+       get Seq_New_Channel to liChannel      // This method and Seq_Release_Channel are
+       if liChannel lt 0 function_return 1   // located in seq_chnl.pkg
+
+       SEQ_FileExists$Test$ShowLn "1 SEQ_FileExists:" (">"+lsFile+"<") "on channel " liChannel
+
+       direct_input channel liChannel ("DIR:"+StringOemToAnsi(lsFile))
+       move (not(seqeof)) to liRval
+
+       SEQ_FileExists$Test$ShowLn "2 (liRval): " liRval
+
+       ifnot liRval begin
+         get SEQ_ExtractPathFromFileName lsFile to lsStr
+         SEQ_FileExists$Test$ShowLn "3 (lsStr): " lsStr
+         if lsStr eq "" begin // There's no path in the file name
+           get SEQ_FindFileAlongDFPath lsFile to lsStr
+           SEQ_FileExists$Test$ShowLn "4 (lsStr): " lsStr
+           if lsStr ne "" begin
+             get SEQ_ComposeAbsoluteFileName lsStr lsFile to lsFile
+             SEQ_FileExists$Test$ShowLn "5 (lsFile): " lsFile
+             close_input channel liChannel
+             send Seq_Release_Channel liChannel    // We only need it for a second
+             function_return (SEQ_FileExists(lsFile))
+           end
+         end
+       end
+       SEQ_FileExists$Test$ShowLn "7 (liRval): " liRval
+       if liRval begin // Item exists! Is it a directory?
+         move SEQIT_FILE to liRval
+         readln channel liChannel lsStr
+         if (left(lsStr,1)="[") move SEQIT_DIRECTORY to liRval
+         SEQ_FileExists$Test$ShowLn "8 (liRval): " liRval
+         SEQ_FileExists$Test$ShowLn "9 (lsStr): " lsStr
+       end
+       close_input channel liChannel
+       send Seq_Release_Channel liChannel    // We only need it for a second
+       function_return liRval
+     end_function
+
+function SEQ_FileSize global string fn# returns number
+  // This function returns the size of file <fn#> in bytes.
+  integer ch#
+  number rval#
+  ifnot (SEQ_FileExists(fn#)=SEQIT_FILE) function_return 0
+  get Seq_New_Channel to ch#
+  send Seq_Release_Channel ch#
+  move (StringOemToAnsi(fn#)) to fn#
+  append_output channel ch# fn#
+  get_channel_position ch# to rval#
+  close_output channel ch#
+  function_return rval#
+end_function
+
+function SEQ_SizeToStringHelp global number XB# returns string
+  if XB# ge 1000 function_return (NumToStr(XB#,0))
+  if XB# ge 100 function_return (NumToStr(XB#,1))
+  if XB# ge 10 function_return (NumToStr(XB#,2))
+  function_return (NumToStr(XB#,3))
+end_function
+
+function SEQ_FileSizeToString global number bytes# returns string
+  if bytes# ge FS_GIGABYTE function_return (SEQ_SizeToStringHelp(bytes#/FS_GIGABYTE)+" GB")
+  else if bytes# ge FS_MEGABYTE function_return (SEQ_SizeToStringHelp(bytes#/FS_MEGABYTE)+" MB")
+  else if bytes# ge FS_KILOBYTE function_return (SEQ_SizeToStringHelp(bytes#/FS_KILOBYTE)+" KB")
+  function_return bytes#
+end_function
+
+function SEQ_FileLineCount global string fn# returns integer
+  //> This function returns the number of lines in (ascii-) file <fn#>.
+  //> Note that this function will read through the entire file (use with
+  //> caution!).
+  integer rval# ch#
+  string str#
+  get Seq_New_Channel to ch#
+  send Seq_Release_Channel ch#
+  move (StringOemToAnsi(fn#)) to fn#
+  direct_input channel ch# fn#
+  move 0 to rval#
+  ifnot [seqeof] begin
+    repeat
+      readln str#
+      [~seqeof] increment rval#
+    [~seqeof] loop
+  end
+  close_input channel ch#
+  function_return rval#
+end_function
+
+function SEQ_DirectInput global string fn# returns integer
+  //> The function attempts to open the file fn# for sequential reading.
+  //> If it succeeds a channel number will be returned, if it fails -1
+  //> will be returned. If the function succseeds it is the responsability
+  //> of the caller to release the channel (Seq_Release_Channel) when
+  //> done.
+  integer ch#
+  get Seq_New_Channel to ch#
+  move (StringOemToAnsi(fn#)) to fn#
+  direct_input channel ch# fn#
+  if (seqeof) begin
+    send Seq_Release_Channel ch#
+    move -1 to ch#
+  end
+  function_return ch#
+end_function
+
+procedure SEQ_CloseInput global integer ch#
+  close_input channel ch#
+  send Seq_Release_Channel ch#
+end_procedure
+
+function SEQ_DirectOutput global string fn# returns integer
+  integer ch#
+  get Seq_New_Channel to ch#
+  send ErrorHnd_Quiet_Activate
+  move (StringOemToAnsi(fn#)) to fn#
+  direct_output channel ch# fn#
+  send ErrorHnd_Quiet_Deactivate
+  if (ErrorHnd_Quiet_ErrorCount()) begin
+    send SEQ_CloseOutput ch#
+    move -1 to ch#
+  end
+  function_return ch#
+end_function
+
+function SEQ_AppendOutput global string fn# returns integer
+  integer ch#
+  get Seq_New_Channel to ch#
+  move (StringOemToAnsi(fn#)) to fn#
+  append_output channel ch# fn#
+  function_return ch#
+end_function
+
+function SEQ_DirectInputDBMS global integer liFile integer liField returns integer
+  function_return (SEQ_DirectInput("DBMS:"+string(liFile)+","+string(liField)))
+end_function
+function SEQ_DirectOutputDBMS global integer liFile integer liField returns integer
+  function_return (SEQ_DirectOutput("DBMS:"+string(liFile)+","+string(liField)))
+end_function
+
+procedure SEQ_CloseOutput global integer ch#
+  close_output channel ch#
+  send Seq_Release_Channel ch#
+end_procedure
+
+//> Just a small function for convenience. Sometimes it's nice not to have
+//> to declare a variable just to read a line in a file. Global indicator
+//> SeqEof will be false after calling this function if an EOF has been
+//> reached.
+function SEQ_ReadLn global integer ch# returns string
+  string rval#
+  readln channel ch# rval#
+  function_return rval#
+end_function
+
+//> Reads sequential channel liChannel until the value lsValue is found.
+//> Return value 1: OK,  0: Value not found
+function SEQ_ReadLnUntilValue global integer liChannel string lsValue returns integer
+  string lsLine
+  repeat
+    readln channel liChannel lsLine
+    if (SeqEof) function_return 0
+    if (lsLine=lsValue) function_return 1
+  loop
+end_function
+
+//> Function SEQ_ReadLnProbe reads a line from input channel ch# without
+//> affecting the current channel position of that channel. The return
+//> value is of type string and will be the line read. The function sets
+//> indicator [seqeof] as a sideeffect
+function SEQ_ReadLnProbe global integer liChannel returns string
+  integer liPos lbSeqEof lbSneakMode
+  string lsRval lsValue
+  get_channel_position liChannel to liPos
+  readln channel liChannel lsRval
+  move (seqeof) to lbSeqEof
+  move (liPos>0) to lbSneakMode
+  if lbSneakMode decrement liPos
+  set_channel_position liChannel to liPos
+  if lbSneakMode read_block channel liChannel lsValue 1
+  indicate seqeof as lbSeqEof ne 0
+  function_return lsRval
+end_function
+
+//> Read entire file into one string and return it.
+function SEQ_ReadFileAsOneString global string lsFileName returns string
+  integer liChannel liArgSz
+  number lnSize
+  string lsValue
+  get SEQ_FileSize lsFileName to lnSize
+  if (lnSize>0) begin
+    get_argument_size To liArgSz
+    if (liArgSz<lnSize) error 421 "File too big. Adjust arg size."
+
+    get SEQ_DirectInput lsFileName to liChannel
+    if (liChannel>=0) begin
+      read_block channel liChannel lsValue lnSize
+      send SEQ_CloseInput liChannel
+    end
+  end
+  else move "" to lsValue
+  function_return lsValue
+end_function
+
+procedure SEQ_AppendLineClose global string lsFileName string lsLine
+  integer liChannel
+  get SEQ_AppendOutput lsFileName to liChannel
+  writeln channel liChannel lsLine
+  send SEQ_CloseOutput liChannel
+end_procedure
+
+procedure SEQ_AppendOutputImageClose global string lsFileName integer liImg
+  integer liChannel liAuxChannel liSeqEof
+  string lsLine
+  get SEQ_DirectInput ("image: "+string(liImg)) to liAuxChannel
+  if liAuxChannel ge 0 begin
+    get SEQ_AppendOutput lsFileName to liChannel
+
+    repeat
+      readln channel liAuxChannel lsLine
+      move (SeqEof) to liSeqEof
+      ifnot liSeqEof writeln channel liChannel (rtrim(lsLine))
+    until liSeqEof
+
+    send SEQ_CloseInput liAuxChannel
+    send SEQ_CloseOutput liChannel
+  end
+end_procedure
+
+procedure SEQ_WriteImage global integer liChannel integer liImage
+  integer liAuxChannel liSeqEof
+  string lsLine
+  get SEQ_DirectInput ("image: "+string(liImage)) to liAuxChannel
+  if liAuxChannel ge 0 begin
+    repeat
+      readln channel liAuxChannel lsLine
+      move (trim(lsLine)) to lsLine
+      move (SeqEof) to liSeqEof
+      ifnot liSeqEof writeln channel liChannel lsLine
+    until liSeqEof
+    send SEQ_CloseInput liAuxChannel
+  end
+end_procedure
+
+procedure SEQ_WriteFile global integer liChannel string lsFile
+  integer liChannelIn liSize liIterations liRest liCount
+  get SEQ_FileSize lsFile to liSize
+  if liSize begin
+    get SEQ_DirectInput ("binary:"+lsFile) to liChannelIn
+    if liChannelIn ge 0 begin
+      move (liSize/250) to liIterations
+      move (liSize-(liIterations*250)) to liRest
+      for liCount from 1 to liIterations
+        read_block channel liChannelIn giSeq$Temp 250
+        write channel liChannel giSeq$Temp
+      loop
+      read_block channel liChannelIn giSeq$Temp liRest
+      write channel liChannel giSeq$Temp
+      send SEQ_CloseInput liChannelIn
+    end
+  end
+end_procedure
+
+function SEQ_FindFileAlongPath global string path# string fn# returns string
+  //> Returns the directory along path# in which the file fn# is found.
+  integer ch# eof#
+  string str# tmp# dir_sep# path_sep# cur_dir#
+
+  get Seq_New_Channel to ch#
+  send Seq_Release_Channel ch#
+  move (sysconf(SYSCONF_DIR_SEPARATOR)) to dir_sep#   // \
+  move (sysconf(SYSCONF_PATH_SEPARATOR)) to path_sep# // ;
+  move (replaces(dir_sep#,fn#,"")) to fn#
+  while path# ne ""
+    if path_sep# in path# begin
+      move (left(path#,pos(path_sep#,path#)-1)) to str#
+      replace (str#+path_sep#) in path# with ""
+    end
+    else begin
+      move path# to str#
+      move "" to path#
+    end
+
+    get Files_AppendPath str# fn# to tmp#
+//  move (str#+dir_sep#+fn#) to tmp#
+//  move (replaces(dir_sep#+dir_sep#,tmp#,dir_sep#)) to tmp#
+
+    direct_input channel ch# ("DIR:"+StringOemToAnsi(tmp#))
+    move (seqeof) to eof#
+    close_input channel ch#
+    ifnot eof# begin
+      if (StringBeginsWith(str#,"."+dir_sep#)) begin
+        get_current_directory to cur_dir#
+        replace "." in str# with cur_dir#
+      end
+      function_return str#
+    end
+  end
+  function_return "" // file not found!
+end_function
+
+function SEQ_DfPath global returns string
+  string path#
+  get_attribute DF_OPEN_PATH to path# // Oem fixed!
+  move (ToOem(path#)) to path#
+  function_return path#
+end_function
+
+function SEQ_FirstDirInDfPath global returns string
+  string lsDir lsPathSep
+  get SEQ_DfPath to lsDir
+  move (SysConf(SYSCONF_PATH_SEPARATOR)) to lsPathSep
+  get ExtractItem lsDir lsPathSep 1 to lsDir
+  function_return (ToOem(lsDir))
+end_function
+
+function SEQ_FindFileAlongDFPath global string fn# returns string
+  function_return (SEQ_FindFileAlongPath(SEQ_DfPath(),fn#))
+end_function
+
+//> Function SEQ_ExtractPathFromFileName expects a file name or a file
+//> mask as an argument. Only then will it return the path of that file.
+//> Otherwise it will simply strip the last directory from the path.
+function SEQ_ExtractPathFromFileName global string lsFile returns string
+  string lsDirSep
+  move (sysconf(SYSCONF_DIR_SEPARATOR)) to lsDirSep
+  if (right(lsFile,1)=lsDirSep) move (StringLeftBut(lsFile,1)) to lsFile
+  if lsDirSep in lsFile function_return (StripFromLastOccurance(lsFile,lsDirSep))
+  if ":" in lsFile function_return (StripFromLastOccurance(lsFile,":"))
+  function_return ""
+end_function
+
+//> Function SEQ_ExtractExtensionFromFileName expects a file name or a file
+//> mask as an argument. Only then will it return the type of that file.
+function SEQ_ExtractExtensionFromFileName global string fn# returns string
+  string dir_sep#
+  move (sysconf(SYSCONF_DIR_SEPARATOR)) to dir_sep#
+  if dir_sep# in fn# move (GetFromLastOccurance(fn#,dir_sep#)) to fn#
+  if "." in fn# function_return (replace(".",GetFromLastOccurance(fn#,"."),""))
+  function_return ""
+end_function
+
+// Changed feb 2007
+//> Function SEQ_ExtractRootNameFromFileName expects a file name or a file !!!!
+//> mask as an argument. Only then will it return the rootname of that file.
+function SEQ_ExtractRootNameFromFileName global string fn# returns string
+  local string dir_sep#
+  move (sysconf(SYSCONF_DIR_SEPARATOR)) to dir_sep#
+  if dir_sep# in fn# begin
+    move (GetFromLastOccurance(fn#,dir_sep#)) to fn#
+    move (replace(dir_sep#,fn#,"")) to fn#
+  end
+  if ":"      in fn# move (GetFromLastOccurance(fn#,":"))      to fn#
+  if "." in fn# function_return (replace(".",StripFromLastOccurance(fn#,"."),""))
+  function_return fn#
+end_function
+
+
+function SEQ_RemovePathFromFileName global string fn# returns string
+  string dir_sep#
+  move (sysconf(SYSCONF_DIR_SEPARATOR)) to dir_sep#
+  if dir_sep# in fn# begin
+    move (GetFromLastOccurance(fn#,dir_sep#)) to fn#
+    function_return (StringRightBut(fn#,1))
+  end
+  if ":" in fn# begin
+    move (GetFromLastOccurance(fn#,dir_sep#)) to fn#
+    move (GetFromLastOccurance(fn#,":")) to fn#
+  end
+  function_return fn#
+end_function
+
+function SEQ_TranslatePathToAbsolute global string lsPath returns string
+  string lsRval lsDirSep lsCurDir
+  if lsPath eq "" move "." to lsPath
+  move (sysconf(SYSCONF_DIR_SEPARATOR)) to lsDirSep // "/" or "\"
+  get_current_directory to lsCurDir
+  if (StringBeginsWith(lsPath,"."+lsDirSep)) replace "." in lsPath with lsCurDir
+  if lsPath eq "." move lsCurDir to lsPath
+  if (right(lsPath,1)=lsDirSep and right(lsPath,2)<>(":"+lsDirSep)) move (StringLeftBut(lsPath,1)) to lsPath
+  function_return lsPath
+end_function
+
+// The SEQ_ComposeAbsoluteFileName function takes a path (without filename)
+// and a file name (without a path) and returns a file name including path.
+// It's purpose is to insert a path delimiter if necessary.
+function SEQ_ComposeAbsoluteFileName global string sDir string fn# returns string
+  string dir_sep#
+  move (replace(SEQ_ExtractPathFromFileName(fn#),fn#,"")) to fn# // Remove path if present anyway!
+  //move (SEQ_ExtractPathFromFileName(sDir)) to sDir
+  move (sysconf(SYSCONF_DIR_SEPARATOR)) to dir_sep#
+  if sDir eq "" get_current_directory to sDir
+  if (right(sDir,1)<>dir_sep#) move (sDir+dir_sep#) to sDir
+  function_return (sDir+fn#)
+end_function
+
+//> This function pretty much does the same as SEQ_ComposeAbsoluteFileName. Only
+//> the code is less tricky and it's got a nicer name.
+function Files_AppendPath global string lsPath1 string lsPath2 returns string
+  string lsSep
+  move (trim(lsPath1)) to lsPath1
+  move (trim(lsPath2)) to lsPath2
+  move (sysconf(SYSCONF_DIR_SEPARATOR)) to lsSep
+  if (right(lsPath1,1)=lsSep and left(lsPath2,1)=lsSep) move (replace(lsSep,lsPath2,"")) to lsPath2
+  if (lsPath1<>"" and lsPath2<>"" and right(lsPath1,1)<>lsSep and left(lsPath2,1)<>lsSep) move (lsSep+lsPath2) to lsPath2
+  function_return (append(lsPath1,lsPath2))
+end_function
+
+// This function does the same as Files_AppendPath except here you also
+// pass the dir separator to the function.
+function Files_AppendPath_Sep global string lsPath1 string lsSep string lsPath2 returns string
+  move (trim(lsPath1)) to lsPath1
+  move (trim(lsPath2)) to lsPath2
+  if (right(lsPath1,1)=lsSep and left(lsPath2,1)=lsSep) move (replace(lsSep,lsPath2,"")) to lsPath2
+  if (lsPath1<>"" and lsPath2<>"" and right(lsPath1,1)<>lsSep and left(lsPath2,1)<>lsSep) move (lsSep+lsPath2) to lsPath2
+  function_return (append(lsPath1,lsPath2))
+end_function
+
+function SEQ_ConvertToAbsoluteFileName global string sFileName returns string
+  string sDir
+//  showln "SEQ_ConvertToAbsoluteFileName " sFileName
+  if (SEQ_FileExists(sFileName)) ne SEQIT_NONE begin
+//    showln "Does exists"
+    get SEQ_ExtractPathFromFileName sFileName to sDir
+    if sDir eq "" begin
+      get SEQ_FindFileAlongDFPath sFileName to sDir
+      get SEQ_ComposeAbsoluteFileName sDir sFileName to sFileName
+    end
+    get SEQ_TranslatePathToAbsolute sFileName to sFileName
+  end
+  else move "" to sFileName
+  function_return sFileName
+end_function
+
+//> This function really makes an effert to return the full path
+//> if the data file. If it cannot be determined, the empty string
+//> is returned.
+function SEQ_FindDataFileFromRootName global string lsRoot returns string
+  string lsExt lsPath
+  // This procedure
+  move (lowercase(right(lsRoot,4))) to lsExt
+  ifnot (lsExt=".dat" or lsExt=".int") move (lsRoot+".DAT") to lsRoot
+
+  if (SEQ_ExtractPathFromFileName(lsRoot)) eq "" begin
+    move (SEQ_FindFileAlongDFPath(lsRoot)) to lsPath
+    move (SEQ_ComposeAbsoluteFileName(lsPath,lsRoot)) to lsRoot
+  end
+
+  get SEQ_ConvertToAbsoluteFileName lsRoot to lsRoot
+  function_return lsRoot
+end_function
+
+[found ~found] begin // Sneaky way of skipping code
+  files.no$err: // This serves as an empty low-level error handler routine
+  return
+end
+
+//> Function SEQ_FileModTime returns the last modified stamp of a file
+//> in TS format (see DATES.NUI). NOTE! File specification MUST include
+//> full path.
+function SEQ_FileModTime global string fn# returns number
+  integer h# m# s# err_label#
+  date date#
+  number rval#
+  move (StringOemToAnsi(fn#)) to fn#
+  ifnot (SEQ_FileExists(fn#)) function_return 0
+  move |VI31 to err_label# //copy ON ERROR label
+  on error gosub files.no$err // If file is open get_file_mod_time
+  indicate err false          // command will fail.
+  get_file_mod_time fn# to date# h# m# s# // VDF6: 4358 DFRUNCON(31e): 4630
+//  showln "get_file_mod_time " date# " " h# " " m# " " s#
+  indicate err false
+  move err_label# to |VI31 //restore original ON ERROR label
+  indicate err false
+  move (Date2to4(date#)) to date#
+  move (TS_Compose2(date#,h#,m#,s#)) to rval#
+  function_return rval#
+end_function // SEQ_FileModTime
+
+procedure set SEQ_FileModTime global string lsFile number lnTime
+  integer h# m# s# err_label# liDateFormat
+  date date#
+  number rval#
+  string lsTime
+  ifnot (SEQ_FileExists(lsFile)) procedure_return
+  move |VI31 to err_label# //copy ON ERROR label
+  on error gosub files.no$err
+  indicate err false
+  get TS_ExtractDate lnTime to date#
+  get TS_ExtractTime lnTime to lsTime
+  move (mid(lsTime,2,1)) to h#
+  move (mid(lsTime,2,4)) to m#
+  move (mid(lsTime,2,7)) to s#
+//  showln "set_file_mod_time " date# " " h# " " m# " " s#
+  get_attribute DF_DATE_FORMAT to liDateFormat // set_file_mod_time only works when dateformat is DF_DATE_USA
+  set_attribute DF_DATE_FORMAT to DF_DATE_USA
+  move (StringOemToAnsi(lsFile)) to lsFile
+  set_file_mod_time lsFile to date# h# m# s# // Faulty Faulty Faulty
+  set_attribute DF_DATE_FORMAT to liDateFormat
+  indicate err false
+  move err_label# to |VI31 //restore original ON ERROR label
+  indicate err false
+end_procedure // set SEQ_FileModTime
+
+procedure SEQ_CallBack_DirsInPath global string path# integer msg# integer obj#
+  integer pos# len#
+  string sep# dir# char#
+  move (sysconf(SYSCONF_PATH_SEPARATOR)) to sep#
+  move (length(path#)) to len#
+  move "" to dir#
+  for pos# from 1 to len#
+    move (mid(path#,1,pos#)) to char#
+    if char# eq sep# begin
+      if dir# ne "" send msg# to obj# dir#
+      move "" to dir#
+    end
+    else move (dir#+char#) to dir#
+  loop
+  if dir# ne "" send msg# to obj# dir#
+end_procedure
+
+function SEQ_RemoveRedundantDirs global string path# returns string
+  integer pos# len#
+  string sep# dir# char# rval#
+  move (sysconf(SYSCONF_PATH_SEPARATOR)) to sep#
+  move (length(path#)) to len#
+  move "" to dir#
+  move "|" to rval#
+  for pos# from 1 to len#
+    move (mid(path#,1,pos#)) to char#
+    if char# eq sep# begin
+      if dir# ne "" begin
+        move (SEQ_TranslatePathToAbsolute(dir#)) to dir#
+        ifnot ("|"+lowercase(dir#)+"|") in (lowercase(rval#)) move (rval#+dir#+"|") to rval#
+        move "" to dir#
+      end
+    end
+    else move (dir#+char#) to dir#
+  loop
+  if dir# ne "" begin
+    move (SEQ_TranslatePathToAbsolute(dir#)) to dir#
+    ifnot ("|"+lowercase(dir#)+"|") in (lowercase(rval#)) move (rval#+dir#+"|") to rval#
+  end
+  replace "|" in rval# with ""
+  move (replaces("|",rval#,sep#)) to rval#
+  function_return rval#
+end_function
+
+enumeration_list
+  define SEQCB_FILES_ONLY
+  define SEQCB_DIRS_ONLY
+  define SEQCB_FILESANDDIRS
+end_enumeration_list
+
+desktop_section
+  object oSEQ_CallBack_ItemsInDir is an cArray 
+    property string psPath ""
+    procedure add_item string str#
+      set value item (item_count(self)) to str#
+    end_procedure
+    function iNumberOfItems integer lhMode returns integer
+      integer liMax liItm liCount
+      get item_count to liMax
+      decrement liMax
+      move 0 to liCount
+      if (lhMode=SEQCB_FILES_ONLY) begin
+        for liItm from 0 to liMax
+          ifnot (left(value(self,liItm),1)="[") increment liCount
+        loop
+        function_return liCount
+      end
+      if (lhMode=SEQCB_DIRS_ONLY) begin
+        for liItm from 0 to liMax
+          if (left(value(self,liItm),1)="[") increment liCount
+        loop
+        function_return liCount
+      end
+      if (lhMode=SEQCB_FILESANDDIRS) function_return (item_count(self))
+    end_function
+  end_object
+end_desktop_section
+
+procedure SEQ_Load_ItemsInDir global string path#
+  send WinFolder_ReadFolder path#
+end_procedure
+function SEQ_NumberFiles global integer liMode returns integer
+  integer lhObj
+  move (oWinFolderEntries(self)) to lhObj
+  if (liMode=SEQCB_FILES_ONLY  ) function_return (piFileCount(lhObj))
+  if (liMode=SEQCB_DIRS_ONLY   ) function_return (piFolderCount(lhObj))
+  if (liMode=SEQCB_FILESANDDIRS) function_return (piFileCount(lhObj)+piFolderCount(lhObj))
+end_function
+procedure SEQ_CallBack_ItemsInDir global integer liMode integer lhMsg integer lhObj
+  integer lhFolder liMax liRow lbFolder
+  string lsName lsPath
+  move (oWinFolderEntries(self)) to lhFolder
+  get psFolder of lhFolder to lsPath
+  get row_count of lhFolder to liMax
+  decrement liMax
+  for liRow from 0 to liMax
+    get pbFolder.i of lhFolder liRow to lbFolder
+    get psFileName.i of lhFolder liRow to lsName
+
+    if lbFolder begin
+      if (liMode<>SEQCB_FILES_ONLY) send lhMsg to lhObj ("["+lsName+"]") lsPath (pnFileSz.i(lhFolder,liRow)) (pnLastWrite.i(lhFolder,liRow))
+    end
+    else begin
+      if (liMode<>SEQCB_DIRS_ONLY) send lhMsg to lhObj lsName lsPath (pnFileSz.i(lhFolder,liRow)) (pnLastWrite.i(lhFolder,liRow))
+    end
+  loop
+end_procedure
+
+desktop_section
+  object oFileInPath is an cArray
+    property string  psFileToCheck ""
+    property integer piMessage     0
+    property integer piObject      0
+    procedure CallBack_FileInPath_Help string dir#
+      integer msg# obj#
+      string fn#
+      get piMessage to msg#
+      get piObject  to obj#
+      move (SEQ_ComposeAbsoluteFileName(dir#,psFileToCheck(self))) to fn#
+      if (SEQ_FileExists(fn#)) send msg# to obj# fn#
+    end_procedure
+    procedure CallBack_FileInPath string file# string path# integer msg# integer obj#
+      send delete_data
+      set psFileToCheck to file#
+      set piMessage to msg#
+      set piObject  to obj#
+      send SEQ_CallBack_DirsInPath path# msg_CallBack_FileInPath_help self
+      send delete_data
+    end_procedure
+  end_object
+end_desktop_section
+
+procedure SEQ_CallBack_FileInPath global string file# string path# integer msg# integer obj#
+  send CallBack_FileInPath to (oFileInPath(self)) file# path# msg# obj#
+end_procedure
+
+// Procedure SEQ_WriteArrayItems writes the contents of an array (obj#) to
+// sequential channel ch#. The procedure will only produce a meaningful
+// result if the items of the array does not contain strings with binary data
+// or CR/FL characters.
+procedure SEQ_WriteArrayItems global integer ch# integer obj#
+  integer itm# max#
+  get item_count of obj# to max#
+  writeln channel ch# max#
+  for itm# from 0 to (max#-1)
+    writeln (value(obj#,itm#))
+  loop
+end_procedure
+
+// Procedure SEQ_ReadArrayItems will fill the array (obj#) with data
+// read from sequential channel ch#. These data must have been written
+// using the SEQ_WriteArrayItems procedure.
+procedure SEQ_ReadArrayItems global integer ch# integer obj#
+  integer itm# max#
+  string str#
+  send delete_data to obj#
+  get item_count of obj# to max#
+  readln channel ch# max#
+  for itm# from 0 to (max#-1)
+    readln str#
+    set value of obj# item itm# to str#
+  loop
+end_procedure
+
+Global_Variable Boolean _gbProtectAscii$files
+
+// Calling procedure SEQ_WriteRecordBuffer_LD will write the current
+// contents of the record buffer of file file# through channel ch#.
+// The post-fix "LD" means line delimited.
+procedure SEQ_WriteRecordBuffer_LD global integer ch# integer file#
+  integer max# field# fieldindex# filenumber# len# type#
+  move fieldindex to fieldindex#
+  move filenumber to filenumber#
+  get_attribute DF_FILE_NUMBER_FIELDS of file# to max#
+  move file# to filenumber
+  write channel ch# // Set channel
+  for fieldindex from 1 to max#
+    get_attribute DF_FIELD_TYPE of file# fieldindex to type#
+    if type# ne DF_OVERLAP begin // Do not write overlap fields
+      if (type#=DF_ASCII and _gbProtectAscii$files ) move DF_TEXT to type# // Dirty, I know
+      if (type#=DF_BINARY or type#=DF_TEXT) begin   // If TEXT or BINARY we
+        move (length(indirect_file.recnum)) to len# // write(ln) the length
+        writeln len#                                // of the field before
+        write indirect_file.recnum                  // its contents.
+      end
+      else writeln indirect_file.recnum
+    end
+  loop
+  move fieldindex# to fieldindex
+  move filenumber# to filenumber
+end_procedure
+
+// Read a record from channel ch# as written by the SEQ_WriteRecordBuffer_LD
+// procedure.
+procedure SEQ_ReadRecordBuffer_LD global integer ch# integer file#
+  integer max# fieldindex# filenumber# len# type#
+  move fieldindex to fieldindex#
+  move filenumber to filenumber#
+  get_attribute DF_FILE_NUMBER_FIELDS of file# to max#
+  move file# to filenumber
+  read channel ch# // Set channel
+  for fieldindex from 1 to max#
+    get_attribute DF_FIELD_TYPE of file# fieldindex to type#
+    if type# ne DF_OVERLAP begin
+      if (type#=DF_ASCII and _gbProtectAscii$files ) move DF_TEXT to type# // Dirty, I know
+      if (type#=DF_BINARY or type#=DF_TEXT) begin
+        readln len#
+        read_block indirect_file.recnum len#
+      end
+      else readln indirect_file.recnum
+    end
+  loop
+  move fieldindex# to fieldindex
+  move filenumber# to filenumber
+end_procedure
+
+// Reads a record like the SEQ_ReadRecordBuffer_LD procedure but places the
+// result in the array passed in the lhArray instead of directly in the
+// record buffer.
+procedure SEQ_ReadRecordBufferToArray_LD global integer liChannel integer liFile integer lhArray
+  integer liMax liField liLen liType
+  string lsValue
+  send delete_data to lhArray
+  get_attribute DF_FILE_NUMBER_FIELDS of liFile to liMax
+  read channel liChannel // Set channel
+  for liField from 1 to liMax
+    get_attribute DF_FIELD_TYPE of liFile liField to liType
+    if liType ne DF_OVERLAP begin
+      if (liType=DF_ASCII and _gbProtectAscii$files ) move DF_TEXT to liType // Dirty, I know
+      if (liType=DF_BINARY or liType=DF_TEXT) begin
+        readln liLen
+        read_block lsValue liLen
+      end
+      else readln lsValue
+    end
+    set value of lhArray item liField to lsValue
+  loop
+end_procedure
+
+procedure SEQ_WriteRecordBuffer_LD_PA global integer ch# integer file# // _PA suffix means "protect ascii"
+  move True to _gbProtectAscii$files
+  send SEQ_WriteRecordBuffer_LD ch# file#
+  move False to _gbProtectAscii$files
+end_procedure
+procedure SEQ_ReadRecordBuffer_LD_PA global integer ch# integer file# // _PA suffix means "protect ascii"
+  move True to _gbProtectAscii$files
+  send SEQ_ReadRecordBuffer_LD ch# file#
+  move False to _gbProtectAscii$files
+end_procedure
+procedure SEQ_ReadRecordBufferToArray_LD_PA global integer liChannel integer liFile integer lhArray // _PA suffix means "protect ascii"
+  move True to _gbProtectAscii$files
+  move False to _gbProtectAscii$files
+end_procedure
+
+
+// Returns true if delete was successful
+function SEQ_EraseFile global string lsFile returns integer
+  if (SEQ_FileExists(lsFile)) eq SEQIT_DIRECTORY function_return 0
+  erasefile (StringOemToAnsi(lsFile))
+  if (SEQ_FileExists(lsFile)) eq SEQIT_NONE function_return 1
+  // function_return 0
+end_function
+
+Use wvaW32fh.pkg // Package by Wil van Antwerpen from www.vdf-guidance.com
+function SEQ_CopyFile global string lsSourceFile string lsTargetFile returns integer
+  integer liRval
+  //move (StringOemToAnsi(lsSourceFile)) to lsSourceFile
+  //move (StringOemToAnsi(lsTargetFile)) to lsTargetFile
+  get wvaWin32_ShCopyFile lsSourceFile lsTargetFile to liRval
+  move (not(liRval)) to liRval
+  function_return liRval
+end_function
+// Returns true if delete was successful
+function SEQ_MoveFile global string lsSourceFile string lsTargetFile returns integer
+  integer liRval
+  get SEQ_CopyFile lsSourceFile lsTargetFile to liRval
+  if liRval get SEQ_EraseFile lsSourceFile to liRval
+  function_return liRval
+end_function
+
+function SEQ_ValidDrives global returns string
+  integer liLen liPos lbError
+  string lsDrives lsDrive lsRval
+  send delete_data
+  move "ABCDEFGHIJKLMNOPQRSTUVWXYZ" to lsDrives
+  move (length(lsDrives)) to liLen
+  move "" to lsRval
+  for liPos from 1 to liLen
+    move (mid(lsDrives,1,liPos)) to lsDrive
+    valid_drive lsDrive lbError
+    ifnot lbError move (lsRval+lsDrive) to lsRval
+  loop
+  function_return lsRval
+end_function
+
+function SEQ_AppendFiles global string lsFile1 string lsFile2 returns integer
+  integer liRval liChannelOut liChannelIn liSize liIterations liRest liCount
+  move (lowercase(lsFile1)) to lsFile1
+  move (lowercase(lsFile2)) to lsFile2
+  move 0 to liRval // Failure
+  if lsFile1 ne lsFile2 begin
+    // Both files exists?
+    get SEQ_AppendOutput lsFile1 to liChannelOut
+    if liChannelOut ge 0 begin
+      send SEQ_WriteFile liChannelOut lsFile2
+      move 1 to liRval // Let's just hope it's ok
+    //get SEQ_FileSize lsFile2 to liSize
+    //if liSize begin
+    //  get SEQ_DirectInput ("binary:"+lsFile2) to liChannelIn
+    //  if liChannelIn ge 0 begin
+    //    move (liSize/250) to liIterations
+    //    move (liSize-(liIterations*250)) to liRest
+    //    for liCount from 1 to liIterations
+    //      read_block channel liChannelIn giSeq$Temp 250
+    //      write channel liChannelOut giSeq$Temp
+    //    loop
+    //    read_block channel liChannelIn giSeq$Temp liRest
+    //    write channel liChannelOut giSeq$Temp
+    //    move 1 to liRval
+    //    send SEQ_CloseInput liChannelIn
+    //  end
+    //end
+      send SEQ_CloseOutput liChannelOut
+    end
+  end
+  function_return liRval
+end_function
+
+// procedure SEQ_WriteHexByteStream global integer liChannel string lsHexBytes
+//   integer liBytes liPos liByte liByteValue
+//   string lsHexByte
+//   move (length(lsHexBytes)/2) to liBytes
+//   showln "Start SEQ_WriteHexByteStream"
+//   decrement liBytes
+//   for liByte from 0 to liBytes
+//     move (liByte*2+1) to liPos
+//     move (mid(lsHexBytes,2,liPos)) to lsHexByte
+//     move (pos(left(lsHexByte,1),"0123456789ABCDEF")-1*16+pos(right(lsHexByte,1),"0123456789ABCDEF")-1) to liByteValue
+//     character liByteValue to giSeq$Temp
+//     write channel liChannel giSeq$Temp
+//   loop
+//   showln "End SEQ_WriteHexByteStream"
+// end_procedure
+
+procedure SEQ_WriteHexByteStream global integer liChannel string lsHexBytes
+  integer liBytes liPos liByte liByteValue liByteCount
+  string lsHexByte
+  move (length(lsHexBytes)/2) to liBytes
+  decrement liBytes
+  move 0 to liByteCount
+  move "" to giSeq$Temp
+  for liByte from 0 to liBytes
+    move (liByte*2+1) to liPos
+    move (mid(lsHexBytes,2,liPos)) to lsHexByte
+    move (pos(left(lsHexByte,1),"0123456789ABCDEF")-1*16+pos(right(lsHexByte,1),"0123456789ABCDEF")-1) to liByteValue
+    append giSeq$Temp (character(liByteValue))
+    increment liByteCount
+    if liByteCount eq 250 begin
+      write channel liChannel giSeq$Temp
+      move 0 to liByteCount
+      move "" to giSeq$Temp
+    end
+  loop
+  if liByteCount write channel liChannel giSeq$Temp
+end_procedure
+
+function SEQ_FileListDirectory global returns string
+
+end_function
+
+//> The cChannelAdmin class was deviced to help administrate one sequential
+//> channel when it is used for more than one task at the same time.
+//> It may be used to temporarily suspend its current connection, do
+//> something else and then resume where it left off.
+class cChannelAdmin is an cArray // in/out device ch_pos
+  procedure construct_object integer liImg
+    forward send construct_object liImg
+    property integer pChannel 0 // channel number to administrate
+    property integer pPointer 0 // stack pointer
+  end_procedure
+
+  procedure reset
+    send delete_data
+    set pPointer to 0
+  end_procedure
+
+  procedure close_help
+    integer liPointer liCh liPosition lbInput
+    string lsDev
+    get pPointer to liPointer
+    decrement liPointer
+    get pChannel to liCh
+    get_channel_position liCh to liPosition
+    get integer_value item (liPointer*3) to lbInput
+    if lbInput close_input channel liCh
+    else close_output channel liCh
+    set value item (liPointer*3+2) to liPosition
+    get value item (liPointer*3+1) to lsDev
+    //send obs ("closing current activity ("+if(lbInput,"input","output")+") "+lsDev+" at position "+string(liPosition))
+  end_procedure
+
+  procedure close_current_activity
+    send close_help
+  end_procedure
+
+  procedure restore_activity
+    integer liPointer lbInput liPosition liCh
+    string  lsDev lsValue
+    get pPointer to liPointer
+    decrement liPointer
+    get pChannel to liCh
+    get value item (liPointer*3) to lbInput
+    get value item (liPointer*3+1) to lsDev
+    get value item (liPointer*3+2) to liPosition
+    if lbInput begin
+      direct_input channel liCh lsDev
+      if liPosition gt 0 decrement liPosition
+      set_channel_position liCh to liPosition
+      if liPosition gt 0 read_block channel liCh lsValue 1
+    end
+    else append_output channel liCh (StringOemToAnsi(lsDev))
+    //send obs ("restoring current activity ("+if(lbInput,"input","output")+") "+lsDev+" at position "+string(liPosition))
+  end_procedure
+
+  function sReadln returns string
+    string lsRval
+    readln channel (pChannel(self)) lsRval
+    function_return lsRval
+  end_function
+
+  //> Use this procedure to initiate a new sequential file operation.
+  procedure direct_xput integer lbInput string lsDev
+    integer liPointer liChannel
+    //send obs ("direct_xput ("+if(lbInput,"input","output")+") "+lsDev)
+    get pPointer to liPointer
+    get pChannel to liChannel
+    if liPointer send close_current_activity
+
+    if lbInput direct_input channel liChannel (StringOemToAnsi(lsDev))
+    else direct_output channel liChannel (StringOemToAnsi(lsDev))
+    set array_value item (liPointer*3)   to lbInput
+    set array_value item (liPointer*3+1) to lsDev
+    set pPointer to (liPointer+1)
+  end_procedure
+
+  //> Use procedure Close_Xput to terminate the current sequential file
+  //> operation and restore the previous, if any.
+  procedure close_xput
+    integer liPointer
+    get pPointer to liPointer
+    send close_help
+    decrement liPointer
+    set pPointer to liPointer
+    if liPointer send restore_activity
+  end_procedure
+end_class // cChannelAdmin
+
+// Returns something like <pre>2003-08-23_175515.<ext>
+function SEQ_SysTimeFileName global string lsPre string lsExt returns string
+  string lsRval
+  move (lsPre+DateToStr(dSysDate(),DF_DATE_MILITARY,1,"-")+"_"+replaces(":",sSysTime(),"")) to lsRval
+  if (lsExt<>"") move (lsRval+"."+lsExt) to lsRval
+  function_return lsRval
+end_function
+
+#COMMAND SET_CURRENT_OUTPUT_CHANNEL R .
+ !A [] $10A |CI1 !1
+#ENDCOMMAND
+#COMMAND SET_CURRENT_INPUT_CHANNEL R .
+ !A [] $10A |CI0 !1
+#ENDCOMMAND
+
+function SEQ_InputChannelLineCount global integer liChannel returns integer
+  string lsThrowAway
+  get SEQ_ReadLnProbe liChannel to lsThrowAway
+  function_return LineCount
+end_function
+
+function SEQ_ChannelPosToLineCount global integer liChannel integer liPos returns integer
+  integer liPushPos lbSeqEof lbSneakMode liTestPos liCount
+  string lsRval lsValue liLineCount
+  get_channel_position liChannel to liPushPos
+
+  move 0 to liCount
+  set_channel_position liChannel to 0
+  repeat
+    readln channel liChannel lsValue
+    increment liCount
+    move (seqeof) to lbSeqEof
+    get_channel_position liChannel to liTestPos
+  until (liTestPos>=liPos or lbSeqEof<>0)
+  if (liPos>liTestPos) move -1 to liCount // Signal that the position doesn't exist at all
+
+  // Restore the state of the channel:
+  move (liPushPos>0) to lbSneakMode
+  if lbSneakMode decrement liPushPos
+  set_channel_position liChannel to liPushPos
+  if lbSneakMode read_block channel liChannel lsValue 1
+  indicate seqeof as lbSeqEof ne 0
+  function_return liCount
+end_function
+
+function SEQ_CurrentFolder global returns string
+  string lsValue
+  GET_CURRENT_DIRECTORY to lsValue
+  function_return lsValue
+end_function
+
+function SEQ_TextFromSeqInput global string sDevice returns string
+  integer liChannel lbSeqEof
+  string sRval sLine sChar10
+  move "" to sRval
+  move (character(10)) to sChar10
+  get SEQ_DirectInput sDevice to liChannel
+  if liChannel ge 0 begin
+    repeat
+      readln sLine
+      move (seqeof) to lbSeqEof
+      ifnot lbSeqEof move (sRval+sLine+sChar10) to sRval
+    until lbSeqEof
+  end
+  send SEQ_CloseInput liChannel
+  function_return sRval
+end_function
+
+function SEQ_TextFromDfImage global integer iImg returns string
+  function_return (SEQ_TextFromSeqInput("image:"+string(iImg)))
+end_function
+function SEQ_TextFromFile global string sFile returns string
+  function_return (SEQ_TextFromSeqInput(sFile))
+end_function
+function SEQ_TextFromDfField global integer iFile integer iField returns string
+  // I have no idea whether this will work
+  function_return (SEQ_TextFromSeqInput("dbms:"+string(iFile)+" "+string(iField)))
+end_function
+

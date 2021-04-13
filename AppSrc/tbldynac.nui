@@ -1,0 +1,454 @@
+// Use TblDynAc.nui // Table, dynamic access (cDynamicTableAccess class)
+
+// The cDynamicTableAccess enables you to define set
+
+
+//  Use like this:
+//
+//
+//    enumeration_list
+//      define DBDTABLE_SYSTEM
+//      define DBDTABLE_TABLE
+//      define DBDTABLE_FIELD
+//      define DBDTABLE_INDEX
+//    end_enumeration_list
+//
+//    object oDynamicTableAccess is a cDynamicTableAccess
+//      set psRootNamePrefix to "db"
+//
+//      set TableBaseData DBDTABLE_SYSTEM to "system" "DBD - System" 0
+//      set TableBaseData DBDTABLE_TABLE  to "table"  "DBD - Tables" 0
+//      set TableBaseData DBDTABLE_FIELD  to "field"  "DBD - Fields" 0
+//      set TableBaseData DBDTABLE_INDEX  to "index"  "DBD - Indices" 0
+//    end_object // oDynamicTableAccess
+//
+//
+//
+
+// Create: Mon  28-04-2003 -
+// Update: Tue  18-06-2003 -
+// Update: Sun  21-12-2003 -
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use FList.nui    // A lot of FLIST- procedures and functions
+Use FDX_Attr.nui // FDX compatible attribute functions
+Use DBMS.nui     // Basic DBMS functions (No User Interface)
+Use WildCard.nui // vdfq_WildCardMatch function
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+Use ItemProp.nui // ITEM_PROPERTY command for use within arrays
+
+      class cDynamicTableAccess_Help is a cArray // Private class
+        item_property_list
+          item_property integer piFile.i
+          item_property string  psPrefix.i
+          item_property string  psOpenDescription.i
+        end_item_property_list cDynamicTableAccess_Help
+        procedure add_prefix integer liFile string lsPrefix string lsOpenDescription
+          integer liRow
+          get row_count to liRow
+          set piFile.i   liRow to liFile
+          set psPrefix.i liRow to lsPrefix
+          set psOpenDescription.i liRow to lsOpenDescription
+        end_procedure
+      end_class // cDynamicTableAccess_Help
+
+class cDynamicTableAccess is a cArray
+            procedure construct_object // Private
+              forward send construct_object
+
+              property string  psRootNamePrefix                ""
+              property string  psPurpose                       ""
+
+              //> This boolean property determines if the object attempt to open the tables
+              //> on 'end_construct_object'.
+              property integer pbOpenTablesOnDefine            TRUE
+              //> Allow the object to open the tables even if they are not listed in filelist.cfg?
+              property integer pbAllowTemporaryFilelistEntries TRUE
+
+              property integer pbAllTablesAreOpen private FALSE
+              property integer piOpenMode         private DF_SHARE
+
+/////              object oTempArray is a cArray
+/////              end_object
+
+              object oListOfSets is a cDynamicTableAccess_Help
+              end_object
+            end_procedure
+
+            procedure DeclareOpenError string lsError
+              move (replace("#",lsError,psRootNamePrefix(self))) to lsError
+              error 208 lsError
+            end_procedure
+
+            function pbAllTablesAreOpen returns integer
+              function_return (!$.pbAllTablesAreOpen(self))
+            end_function
+
+  item_property_list
+    item_property integer piFile.i
+    item_property string  psRootname.i
+    item_property string  psLogicalName.i
+    item_property string  psUserName.i
+
+    item_property string  psRootOfRootName.i
+    item_property string  psRootOfUserName.i
+    item_property integer piOpenByIndex.i
+
+    item_property integer piOpenState.i       // -1:Open by foreign table  0:Not opened  1:Open
+  end_item_property_list cDynamicTableAccess
+
+  procedure set TableBaseData integer liRow string lsRootOfRoot string lsRootOfUser integer liOpenByIndex
+    set psRootOfRootName.i liRow to lsRootOfRoot
+    set psRootOfUserName.i liRow to lsRootOfUser
+    set piOpenByIndex.i    liRow to liOpenByIndex
+  end_procedure
+
+            procedure set TableAccess integer liRow integer liFile string lsRootname string lsLogicalName string lsUserName // Private
+              set piFile.i        liRow to liFile
+              set psRootname.i    liRow to lsRootname
+              set psLogicalName.i liRow to lsLogicalName
+              set psUserName.i    liRow to lsUserName
+            end_procedure
+
+            procedure DoCalcFilelistValues // Private
+              integer liMax liRow
+              string lsPrefix lsPurpose
+              get psPurpose to lsPurpose
+              if (lsPurpose<>"") move (" ("+lsPurpose+")") to lsPurpose
+
+              get psRootNamePrefix to lsPrefix
+              move (lowercase(trim(lsPrefix))) to lsPrefix
+              get row_count to liMax
+              decrement liMax
+              for liRow from 0 to liMax
+                set TableAccess liRow to 0 (lsPrefix+psRootOfRootName.i(self,liRow)) (lsPrefix+psRootOfRootName.i(self,liRow)) (psRootOfUserName.i(self,liRow)+lsPurpose)
+              loop
+            end_procedure
+
+            function iFind_FL_Entry_By_LogName string lsLogName returns integer // Private
+              integer liFile
+              string lsFilelistValue
+              move (lowercase(lsLogName)) to lsLogName
+              move 0 to liFile
+              repeat
+                get_attribute DF_FILE_NEXT_USED of liFile to liFile
+                if liFile begin
+                  get_attribute DF_FILE_LOGICAL_NAME of liFile to lsFilelistValue
+                  if (lowercase(lsFilelistValue)=lsLogName) function_return liFile
+                end
+              until liFile eq 0
+              function_return -1
+            end_function
+
+            procedure FindExistingFileListEntries // Private
+              integer liMax liRow liFile
+              string lsLogical
+              get row_count to liMax
+              decrement liMax
+              for liRow from 0 to liMax
+                if (piFile.i(self,liRow)=0) begin
+                  get psLogicalName.i liRow to lsLogical
+                  get iFind_FL_Entry_By_LogName lsLogical to liFile
+                  if (liFile>0) set piFile.i liRow to liFile
+                end
+              loop
+            end_procedure
+
+            // Find an empty entry in filelist cfg, that is not temporarily used
+            // by an "open as" statement. Start the search at entry liFile.
+            function iFind_FL_Entry_Unused integer liFile returns integer // Private
+              integer lbOpened
+              repeat
+                get_attribute DF_FILE_NEXT_EMPTY of liFile to liFile
+                if liFile begin
+                  //get_attribute DF_FILE_NEXT_OPENED of liFile to lbOpened
+                  get_attribute DF_FILE_OPENED of liFile to lbOpened
+                  ifnot lbOpened function_return liFile
+                end
+              until liFile eq 0
+              function_return -1
+            end_function
+
+//////      // Find liHowMany empty entries in filelist cfg, that are not temporarily used
+//////      // by an "open as" statement. Start the search at entry liFile. The function
+//////      // returns the number of the first such entry or 0 if none is found.
+//////      function iFind_FL_Entries_Unused integer liFile integer liHowMany returns integer // Private
+//////        integer lhTempArray
+//////        move oTempArray to lhTempArray
+//////        repeat
+//////          get iFind_FL_Entry_Unused liFile to liFile
+//////
+//////        until liFile eq 0
+//////        function_return 0
+//////      end_function
+
+            function bConvertFilelistTo4095 returns integer
+              function_return 0
+//              function_return (MB_Verify4("Your filelist.cfg is an old one","with less than 256 entries.","","Should it be converted to a 4095 entry filelist?",1))
+            end_function
+
+            procedure AutoAssignFileListEntries // Private
+            end_procedure
+
+            procedure AutoAssignTemporaryFileListEntries // Private
+              integer liMax liRow liFile
+              string lsLogical
+
+              if (FLIST_Information(FLINFO_LT_256)) begin
+                if (bConvertFilelistTo4095(self)) send FLIST_Make4095
+              end
+              send FindExistingFileListEntries
+
+              if (pbAllowTemporaryFilelistEntries(self)) begin
+                get row_count to liMax
+                decrement liMax
+                move 400 to liFile // We start at 400
+                for liRow from 0 to liMax
+                  if (piFile.i(self,liRow)=0) begin
+                    get iFind_FL_Entry_Unused liFile to liFile
+                    if (liFile>0) set piFile.i liRow to liFile
+                    else procedure_return
+                  end
+                loop
+              end
+            end_procedure
+
+  procedure DoCloseTables
+    integer liMax liRow liFile
+    string lsRoot
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get piFile.i liRow to liFile
+      if (liFile<>0 and piOpenState.i(self,liRow)=1) begin
+        close liFile
+        set piOpenState.i liRow to 0
+      end
+    loop
+    set !$.pbAllTablesAreOpen to false
+  end_procedure
+
+  procedure OnAllTablesOpened
+    // Augment to set relationships
+  end_procedure
+
+  function DoOpenTables returns integer
+    integer liMax liRow liFile liOpened liOpenMode
+    string lsRoot
+    get !$.piOpenMode to liOpenMode // DF_SHARE or DF_EXCLUSIVE
+    send DoCalcFilelistValues
+    send AutoAssignTemporaryFileListEntries
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get piFile.i liRow to liFile
+      if (liFile<>0) begin
+        // At this point it would be fair to check that the entry is not
+        // already open with an irrelevant file. If this is found to be
+        // the case piOpenState.i should be set to -1.
+        get psRootname.i liRow to lsRoot
+        get DBMS_OpenFileAs lsRoot liFile liOpenMode (piOpenByIndex.i(self,liRow)) to liOpened
+        ifnot liOpened get DBMS_OpenFileAs (lsRoot+".int") liFile liOpenMode (piOpenByIndex.i(self,liRow)) to liOpened
+
+        set piOpenState.i liRow to (if(liOpened,1,0))
+      end
+      else move 0 to liOpened
+      ifnot liOpened begin
+        send DoCloseTables
+        function_return 0 // error
+      end
+    loop
+    set !$.pbAllTablesAreOpen to true
+    send OnAllTablesOpened
+    function_return 1 // ok
+  end_function
+  function DoOpenTablesExclusive returns integer
+    integer liRval
+    set !$.piOpenMode to DF_EXCLUSIVE
+    get DoOpenTables to liRval
+    set !$.piOpenMode to DF_SHARE
+    function_return liRval
+  end_function
+
+            // The Precond_TableInFilelist and Precond_TableOnDisk functions are
+            // only here so that a package that wants to create a set of tables
+            // can ask these sensible cousins if *they* think that's alright.
+            function Precond_TableInFilelist string lsRootname integer lbQuiet returns integer
+              integer liFile
+              string lsError
+              get FDX_FindRootName 0 lsRootname 0 to liFile
+              if (liFile and not(lbQuiet)) begin
+                move "A table with root-name '#' is already listed in filelist.cfg at entry #" to lsError
+                move (replace("#",lsError,lsRootname)) to lsError
+                move (replace("#",lsError,string(liFile))) to lsError
+                error 201 lsError
+                function_return 1
+              end
+              get FDX_FindLogicalName 0 lsRootname 0 to liFile
+              if (liFile and not(lbQuiet)) begin
+                move "A table with logical name '#' is already listed in filelist.cfg at entry #" to lsError
+                move (replace("#",lsError,lsRootname)) to lsError
+                move (replace("#",lsError,string(liFile))) to lsError
+                error 201 lsError
+                function_return 1
+              end
+              function_return 0
+            end_function
+
+            function Precond_TableOnDisk string lsRootname integer lbQuiet returns integer
+              string lsError lsPath
+              get SEQ_FindFileAlongDFPath (lsRootName+".dat") to lsPath
+              if (lsPath<>"" and not(lbQuiet)) begin
+                move "A file named '#' is found in this folder: #" to lsError
+                move (replace("#",lsError,lsRootname+".dat")) to lsError
+                move (replace("#",lsError,lsPath)) to lsError
+                error 204 lsError
+                function_return 1
+              end
+              get SEQ_FindFileAlongDFPath (lsRootName+".int") to lsPath
+              if (lsPath<>"" and not(lbQuiet)) begin
+                move "A file named '#' is found in this folder: #" to lsError
+                move (replace("#",lsError,lsRootname+".int")) to lsError
+                move (replace("#",lsError,lsPath)) to lsError
+                error 204 lsError
+                function_return 1
+              end
+              function_return 0
+            end_function
+
+            function Precond_CreateTables integer lbQuiet returns integer
+              integer liMax liRow lbOK liFile
+              string lsRoot
+              get row_count to liMax
+              decrement liMax
+              move 1 to lbOK
+              for liRow from 0 to liMax
+                get psRootname.i liRow to lsRoot
+                get Precond_TableInFilelist lsRoot lbQuiet to liFile
+                if liFile move 0 to lbOK
+              loop
+              if (not(lbOK) and not(lbQuiet)) begin
+                error 203 "This function cannot create tables that are already listed in filelist.cfg"
+                function_return 0
+              end
+              for liRow from 0 to liMax
+                get psRootname.i liRow to lsRoot
+                get Precond_TableOnDisk lsRoot lbQuiet to liFile
+                if liFile move 0 to lbOK
+              loop
+              if (not(lbOK) and not(lbQuiet)) begin
+                error 205 "This function cannot create tables that are already found on disk"
+                function_return 0
+              end
+              function_return 1
+            end_function
+
+  function iMainFileRecords returns integer
+    integer liFile liRecords
+    move -1 to liRecords
+    if (pbAllTablesAreOpen(self)) begin
+      get piFile.i 0 to liFile
+      if liFile get_attribute DF_FILE_RECORDS_USED of liFile to liRecords
+    end
+    function_return liRecords
+  end_function
+
+  function OpenDescription returns string
+    integer liMainFileRecords
+    if (pbAllTablesAreOpen(self)) begin
+      get iMainFileRecords to liMainFileRecords
+      function_return (string(liMainFileRecords)+" records in main file")
+    end
+    else function_return ""
+  end_function
+
+  // Only meant for applications that wants to create and
+  // (in this case) drop databases automatically:
+  function DoEraseAllTables returns integer
+    integer liMax liRow liFile lbDrop lbExclusive
+    string lsRootName1 lsRootName2
+    send DoCloseTables
+    send DoCalcFilelistValues
+    send FindExistingFileListEntries
+    get DoOpenTablesExclusive to lbExclusive
+    send DoCloseTables
+    if lbExclusive begin
+      get row_count to liMax
+      decrement liMax
+      move 1 to lbDrop
+      for liRow from 0 to liMax
+        get piFile.i liRow to liFile
+        if liFile begin
+          get_attribute DF_FILE_ROOT_NAME of liFile to lsRootName1
+          get psRootname.i liRow to lsRootName2
+          ifnot (lowercase(DBMS_StripPathAndDriver(lsRootName1))=lowercase(lsRootName2)) move 0 to lbDrop
+        end
+      loop
+      if lbDrop begin
+        for liRow from 0 to liMax
+          get piFile.i liRow to liFile
+          if liFile begin
+            get DBMS_EraseDfFile liFile "" to lbDrop
+            set_attribute DF_FILE_LOGICAL_NAME of liFile to ""
+            set_attribute DF_FILE_ROOT_NAME    of liFile to ""
+            set_attribute DF_FILE_DISPLAY_NAME of liFile to ""
+          end
+          else begin
+            get psRootname.i liRow to lsRootName2
+            get DBMS_EraseDfFile 0 lsRootName2 to lbDrop
+          end
+        loop
+      end
+    end
+    else begin
+      //error 206 "Table(s) could not be dropped"
+      move 0 to lbDrop
+    end
+    function_return lbDrop
+  end_function
+
+  // Call this to search the filelist.cfg for existing sets of tables that matches the
+  // psRootOfRootName.i (i.e. matches except for the prefix). Makes a list of complete
+  // FTS databases that are available in the current filelist.
+  // NOTE that calling this procedure will close the set of tables that the object currently
+  // has opened, if any (this is also for "God" applications only).
+  procedure DoBuildSetsOfTables
+    integer lhSetOfSets liFile
+    string lsPush lsRootOfRoot lsRoot lsPrefix lsOpenDescription
+    move (oListOfSets(self)) to lhSetOfSets
+    send delete_data to lhSetOfSets
+    send DoCloseTables
+    get psRootNamePrefix to lsPush
+    if (row_count(self)) begin
+      get psRootOfRootName.i 0 to lsRootOfRoot
+      send WildCardMatchPrepare ("*"+lowercase(lsRootOfRoot))
+      move 0 to liFile
+      repeat
+        get FDX_AttrValue_FLSTNAV 0 DF_FILE_NEXT_USED liFile to liFile
+        if liFile begin // If any more files
+          get FDX_AttrValue_FILELIST 0 DF_FILE_ROOT_NAME liFile to lsRoot
+          get DBMS_StripPathAndDriver lsRoot to lsRoot
+          if (vdfq_WildCardMatch(lowercase(lsRoot))) begin // If the root name matches our own first root name
+            get StringLeftBut lsRoot (length(lsRootOfRoot)) to lsPreFix
+            set psRootNamePrefix to lsPrefix
+            if (DoOpenTables(self)) begin
+              get OpenDescription to lsOpenDescription
+              send add_prefix to lhSetOfSets liFile lsPrefix lsOpenDescription
+              send DoCloseTables
+            end
+          end
+        end
+      until (not(liFile))
+      send sort_rows to lhSetOfSets 1
+    end
+    set psRootNamePrefix to lsPush
+  end_procedure
+
+            procedure end_construct_object
+              forward send end_construct_object
+              if (pbOpenTablesOnDefine(self)) begin
+                ifnot (DoOpenTables(self)) send DeclareOpenError "Tables could not be opened (#)" // Open the tables
+              end
+            end_procedure
+
+end_class // cDynamicTableAccess

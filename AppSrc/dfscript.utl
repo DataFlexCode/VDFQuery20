@@ -1,0 +1,2370 @@
+//**********************************************************************
+// Use DFScript.utl // DF-Script interpreter
+//
+// by Sture Andersen
+//
+// Create: Fri  15-10-1999
+// Update:
+//
+//
+//
+//  ========================= SCRIPT SYNTAX: ===========================
+//
+//
+// INTEGER {symbol}+                      Global variable declaration(s)
+// STRING {symbol}+                       Global variable declaration(s)
+// NUMBER {symbol}+                       Global variable declaration(s)
+// DATE {symbol}+                         Global variable declaration(s)
+// MOVE {value} to {varname}              Assign value to variable
+// #REPLACE {symbol} {value}              Create compiler symbol
+// #NOISY {0|1}                           Toggles interpreter debug state
+// PAUSE                                  Pause program execution
+// GOTO {label}                           Jump to specified label
+// GOSUB {label}                          Execute subrutine
+// RETURN                                 Return from subroutine
+// ABORT                                  Halts program execution
+// INPUT {prompt} {varname}               Lets the operator enter a value
+// DEBUG {ON|OFF|SINGLE_STEP|DISPLAY_VAR} Control debug status
+// GOTOXY {line} {column}                 Positions the cursor (character mode)
+// CLEARSCREEN                            Blanks the screen
+//
+// DELETE_FIELD {field}
+// CREATE_FIELD {field} {name} {type}
+// SET_ATTRIBUTE {}
+// DELETE_INDEX {index}
+//
+//**********************************************************************
+
+
+Use aps.pkg        // Auto Positioning and Sizing classes for VDF
+Use vMachine.utl // Virtual machine class
+Use Set.utl      // cArray, cSet and cStack classes
+Use Array.nui    // Item_Property command
+Use Strings.nui  // String manipulation for VDF
+Use Files.utl    // Utilities for handling file related stuff
+Use API_Attr.utl // Database API attributes characteristics
+
+//  /DFScript.RS_Program.hdr
+//  __ Program generated on __/__/____ ________ by ___________________
+//
+//  integer iFile     __
+//  integer iField    __
+//  integer iError    __
+//  integer iPrecond  __
+//  integer iWarning  __
+//  string  sFileName __
+//
+//  log_open "dfscript.log" 0
+//
+//  /DFScript.RS_Program.ftr
+//  log_close
+//  log_display
+//  system
+//  /*
+//
+//  object oScriptSource is an cArray
+//    property integer piRS_Header_Inserted 0
+//    procedure reset
+//      send delete_data
+//      set piRS_Header_Inserted to false
+//    end_procedure
+//    procedure append_line string str#
+//      set value item (item_count(self)) to str#
+//    end_procedure
+//    procedure Insert_Image integer img#
+//      integer ch# seqeof#
+//      string str#
+//      move (SEQ_DirectInput("image:"+string(img#))) to ch#
+//      if (ch#>=0) begin
+//        repeat
+//          readln channel ch# str#
+//          move (seqeof) to seqeof#
+//          ifnot seqeof# send append_line str#
+//        until seqeof#
+//        send SEQ_CloseInput ch#
+//      end
+//    end_procedure
+//    procedure Insert_RS_Header string author#
+//      ifnot (piRS_Header_Inserted(self)) begin
+//        autopage DFScript.RS_Program.hdr
+//        print ("/"+"/")
+//        print (dSysDate())
+//        print (sSysTime())
+//        print author#
+//        print ("/"+"/")
+//        print ("/"+"/")
+//        print ("/"+"/")
+//        print ("/"+"/")
+//        print ("/"+"/")
+//        send Insert_Image DFScript.RS_Program.hdr.N
+//        set piRS_Header_Inserted to true
+//      end
+//    end_procedure
+//  end_object
+
+#COMMAND define_script_error
+  define !1
+  if error# eq !1 function_return !2
+#ENDCOMMAND
+
+function ScriptError_Text global integer error# returns string
+  enumeration_list
+    define_script_error ERR.SCRIPT.NO_ERROR           "No error"
+    define_script_error ERR.SCRIPT.ERROR_ILLEGAL_CHAR "Illegal character"
+    define_script_error ERR.SCRIPT.COMMAND_NOT_FOUND  "Command not found"
+    define_script_error ERR.SCRIPT.ILLEGAL_VARNAME    "Illegal variable name"
+    define_script_error ERR.SCRIPT.SYMBOL_ALREADY_DEF "Symbol already defined"
+    define_script_error ERR.SCRIPT.TOO_MANY_ARGUMENTS "Too many arguments for command"
+    define_script_error ERR.SCRIPT.MISSING_ARGUMENT   "Missing argument(s)"
+    define_script_error ERR.SCRIPT.UNDEFINED_SYMBOL   "Undefined symbol"
+    define_script_error ERR.SCRIPT.CIRCULAR_REFERENCE "Circular reference in symbol replace"
+    define_script_error ERR.SCRIPT.ARGUMENT_TYPED     "Argument may not be typed"
+    define_script_error ERR.SCRIPT.CLASS_CHECK_ERROR  "Unknown symbol" //"Class check error"
+    define_script_error ERR.SCRIPT.TYPE_CHECK_ERROR   "Type check error"
+    define_script_error ERR.SCRIPT.KEYWORD_EXPECTED   "Keyword expected"
+    define_script_error ERR.SCRIPT.KEYWORD_DEBUG      "Keyword must be ON, OFF, SINGLE_STEP or DISPLAY_VAR"
+    define_script_error ERR.SCRIPT.SHOULD_BE_END      "END command expected"
+    define_script_error ERR.SCRIPT.SHOULD_BE_ENDIF    "ENDIF command expected"
+    define_script_error ERR.SCRIPT.SHOULD_BE_LOOP     "LOOP command expected"
+    define_script_error ERR.SCRIPT.SHOULD_BE_UNTIL    "UNTIL command expected"
+    define_script_error ERR.SCRIPT.UNINITIATED_END    "Un-initiated END command"
+    define_script_error ERR.SCRIPT.UNINITIATED_ELSE   "Un-initiated ELSE command"
+    define_script_error ERR.SCRIPT.UNINITIATED_ENDIF  "Un-initiated ENDIF command"
+    define_script_error ERR.SCRIPT.UNINITIATED_LOOP   "Un-initiated LOOP command"
+    define_script_error ERR.SCRIPT.UNINITIATED_UNTIL  "Un-initiated UNTIL command"
+    define_script_error ERR.SCRIPT.UNFINISHED_STRUCT  "Missing END/UNTIL or LOOP"
+    define_script_error ERR.SCRIPT.ILLEGAL_SYMBNAME   "Illegal symbol name"
+    define_script_error ERR.SCRIPT.MISSING_END_QUOTE  "Missing end quote"
+    define_script_error ERR.SCRIPT.BAD_PARAM_COUNT    "Wrong number of parameters for function"
+    define_script_error ERR.SCRIPT.FUNC_MISSING_PAR   "Function name must be followed by left parenthesis"
+    define_script_error ERR.SCRIPT.UNMOTIVATED_PARAM  "Unmotivated parameter"
+    define_script_error ERR.SCRIPT.MISSING_CONTENTS   "No contents in ()"
+    define_script_error ERR.SCRIPT.UNMOTIVATED_SYMBOL "Unmotivated symbol"
+    define_script_error ERR.SCRIPT.MISSING_OPERATOR   "Missing operator or comma"
+    define_script_error ERR.SCRIPT.ONE_OPERATOR_TO_M  "One operator too many"
+    define_script_error ERR.SCRIPT.OPERATOR_NEEDS_OPE "Operator must be followed by operand"
+    define_script_error ERR.SCRIPT.ATTR_NO_CHANGING   "Changing of API attribute not supported"
+    define_script_error ERR.SCRIPT.ATTR_IMPLICIT      "Setting of implicit API attributes not supported yet"
+    define_script_error ERR.SCRIPT.ATTR_NO_SET        "This attribute can only be read, not set"
+  end_enumeration_list
+end_function
+
+#COMMAND define_expr_item_type
+  define !1
+  if liType eq !1 function_return !2
+#ENDCOMMAND
+
+function ExprItemType_Text global integer liType returns string
+  enumeration_list
+    define_expr_item_type EIT.ERROR    "Error"
+    define_expr_item_type EIT.LEFT     "LftP"
+    define_expr_item_type EIT.RIGHT    "RgtP"
+    define_expr_item_type EIT.OPERATOR "Oper"
+    define_expr_item_type EIT.SYMBOL   "Symbol"
+    define_expr_item_type EIT.COMMA    "Comma"
+  end_enumeration_list
+end_function
+
+#REPLACE CHARLIST.ILLEGAL_ITEM_START "]})"
+#REPLACE CHARLIST.SYMBOL.START "ABCDEFGHIJKLMNOPQRSTUVWXYZ_$#%"
+#REPLACE CHARLIST.SYMBOL.CHAR "0123456789"
+
+define TYPE.UNKNOWN for  0   // Argument types (UNKNOWN *must* be 0)
+define TYPE.UNTYPED for  1
+define TYPE.INTEGER for  2
+define TYPE.DATE    for  4
+define TYPE.NUMBER  for  8
+define TYPE.STRING  for 16
+
+function iTypeToVT.i global integer liType returns integer
+  if liType eq TYPE.INTEGER function_return VARTYP_INTEGER
+  if liType eq TYPE.DATE    function_return VARTYP_DATE
+  if liType eq TYPE.NUMBER  function_return VARTYP_NUMBER
+  if liType eq TYPE.STRING  function_return VARTYP_STRING
+  function_return VARTYP_VOID
+end_function
+
+define CLASS.UNKNOWN        for   0   // Argument classes (UNKNOWN *must* be 0)
+define CLASS.LABEL          for   1
+define CLASS.VAR            for   2
+define CLASS.CONST          for   4
+define CLASS.EXPR           for   8
+define CLASS.KEYWORD        for  16
+define CLASS.COMMAND        for  32
+define CLASS.REPLACE_SYMBOL for  64
+define CLASS.FIELD          for 128
+define CLASS.FUNCTION       for 256
+
+string charlist.all.legal 100
+move ('!"#$%&'+"'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~") to charlist.all.legal
+
+#COMMAND define_operator
+  define !1
+  if lsName eq !2 function_return !1
+#ENDCOMMAND
+
+function iOperatorNameToID.s global string lsName returns integer
+  enumeration_list
+    define_operator OPERATOR.NONE     ""
+    define_operator OPERATOR.PLUS     "+"
+    define_operator OPERATOR.MINUS    "-"
+    define_operator OPERATOR.MULTIPLY "*"
+    define_operator OPERATOR.DIVIDE   "/"
+    define_operator OPERATOR.LT       "<"
+    define_operator OPERATOR.LE       "<="
+    define_operator OPERATOR.EQ       "="
+    define_operator OPERATOR.NE       "<>"
+    define_operator OPERATOR.GE       ">="
+    define_operator OPERATOR.GT       ">"
+    define_operator OPERATOR.MIN      "MIN"
+    define_operator OPERATOR.MAX      "MAX"
+    define_operator OPERATOR.AND      "AND"
+    define_operator OPERATOR.OR       "OR"
+  end_enumeration_list
+end_function
+function sOperatorSymbol.i global integer op# returns string
+  if op# eq OPERATOR.NONE     function_return ""
+  if op# eq OPERATOR.PLUS     function_return "+"
+  if op# eq OPERATOR.MINUS    function_return "-"
+  if op# eq OPERATOR.MULTIPLY function_return "*"
+  if op# eq OPERATOR.DIVIDE   function_return "/"
+  if op# eq OPERATOR.LT       function_return "<"
+  if op# eq OPERATOR.LE       function_return "<="
+  if op# eq OPERATOR.EQ       function_return "="
+  if op# eq OPERATOR.NE       function_return "<>"
+  if op# eq OPERATOR.GE       function_return ">="
+  if op# eq OPERATOR.GT       function_return ">"
+  if op# eq OPERATOR.MIN      function_return "MIN"
+  if op# eq OPERATOR.MAX      function_return "MAX"
+  if op# eq OPERATOR.AND      function_return "AND"
+  if op# eq OPERATOR.OR       function_return "OR"
+end_function
+
+register_function pVM_Object returns integer
+class cExpressionParser_vdfq is an cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piExprType TYPE.UNKNOWN
+    object oParamCountStack is a cStack
+    end_object
+    object oImpliedTypesStack is a cStack
+    end_object
+    object oEvalSequence is a cEvalSequence
+    end_object
+  end_procedure
+  item_property_list
+    item_property string  psItem.i       // The item in clear text
+    item_property integer piStructType.i // What part of the expression is this?
+    item_property integer piPos.i        // What is the starting position?
+    item_property integer piClass.i      // If item, what is item class?
+    item_property integer piType.i       // If item, what is item type?
+    item_property integer piEvalLevel.i  // When evaluating
+    item_property integer piFuncParams.i // Number of parameters
+    item_property integer piOperator.i   // Type of operator
+    item_property integer piAux.i        //
+    item_property integer piEvalOrder.i  //
+  end_item_property_list cExpressionParser_vdfq
+  procedure add_item integer liType string item# integer pos#
+    integer liRow
+    get row_count to liRow
+    set psItem.i       liRow to item#
+    set piStructType.i liRow to liType
+    set piPos.i        liRow to pos#
+    set piClass.i      liRow to 0
+    set piType.i       liRow to 0
+    set piEvalLevel.i  liRow to 0
+    set piFuncParams.i liRow to 0
+    set piOperator.i   liRow to 0
+    set piAux.i        liRow to 0
+  end_procedure
+  procedure reset
+    send delete_data
+    send delete_data to (oParamCountStack(self))
+    send delete_data to (oImpliedTypesStack(self))
+    set piExprType to TYPE.UNKNOWN
+  end_procedure
+  procedure split_expression_in_items string str# integer pos_offset#
+    integer pos# len# in_item# in_string# oper_type# start_pos#
+    string char# char2# item# quote# quotes#
+    send reset
+    move (length(str#)) to len#
+    move 0 to in_string#
+    move "" to item#
+    move 0 to in_item#
+    move ("'"+'"') to quotes#
+    for pos# from 1 to len#
+      move (mid(str#,1,pos#)) to char#
+      if in_item# begin
+        if in_string# begin
+          move (item#+char#) to item#
+          if char# eq quote# begin
+            send add_item EIT.SYMBOL item# (start_pos#+pos_offset#)
+            move 0 to in_string#
+            move 0 to in_item#
+            move "" to item#
+          end
+        end
+        else begin // We're not in a string
+          if char# eq "(" begin
+            send add_item EIT.SYMBOL item# (start_pos#+pos_offset#)
+            send add_item EIT.LEFT char# (pos#+pos_offset#)
+            move 0 to in_item#
+            move "" to item#
+          end
+          else if char# eq ")" begin
+            send add_item EIT.SYMBOL item# (start_pos#+pos_offset#)
+            send add_item EIT.RIGHT char# (pos#+pos_offset#)
+            move 0 to in_item#
+            move "" to item#
+          end
+          else if char# eq " " begin
+            send add_item EIT.SYMBOL item# (start_pos#+pos_offset#)
+            move 0 to in_item#
+            move "" to item#
+          end
+          else if char# eq "," begin
+            send add_item EIT.SYMBOL item# (start_pos#+pos_offset#)
+            send add_item EIT.COMMA char# (pos#+pos_offset#)
+            move 0 to in_item#
+            move "" to item#
+          end
+          else if char# in "=+-*/<>" begin
+            send add_item EIT.SYMBOL item# (start_pos#+pos_offset#)
+            move 0 to in_item#
+            move "" to item#
+            move (mid(str#,1,pos#+1)) to char2#
+            get iOperatorNameToID.s (char#+char2#) to oper_type#
+            if oper_type# ne OPERATOR.NONE begin
+              increment pos# // Dirty trick to handle two-character operators
+              send add_item EIT.OPERATOR (char#+char2#) (pos#+pos_offset#)
+            end
+            else begin
+              get iOperatorNameToID.s char# to oper_type#
+              send add_item EIT.OPERATOR char# (pos#+pos_offset#)
+            end
+            set piOperator.i (row_count(self)-1) to oper_type#
+          end
+          else move (item#+char#) to item#
+        end
+      end
+      else begin // We're not in an item
+        if char# ne " " begin // Ignore blanks
+          if char# in quotes# begin // Now we're in a string
+            move 1 to in_string#
+            move 1 to in_item#
+            move pos# to start_pos#
+            move char# to item#
+            move char# to quote#
+          end
+          else if char# in "=<>+-*/" begin
+            move (mid(str#,1,pos#+1)) to char2#
+            get iOperatorNameToID.s (char#+char2#) to oper_type#
+            if oper_type# ne OPERATOR.NONE begin
+              increment pos# // Dirty trick to handle two-character operators
+              send add_item EIT.OPERATOR (char#+char2#) (pos#+pos_offset#)
+            end
+            else begin
+              get iOperatorNameToID.s char# to oper_type#
+              send add_item EIT.OPERATOR char# (pos#+pos_offset#)
+            end
+            set piOperator.i (row_count(self)-1) to oper_type#
+          end
+          else if char# eq "(" send add_item EIT.LEFT "(" (pos#+pos_offset#)
+          else if char# eq ")" send add_item EIT.RIGHT ")" (pos#+pos_offset#)
+          else if char# eq "," send add_item EIT.COMMA "," pos#
+          else begin
+            move 1 to in_item#
+            move pos# to start_pos#
+            move char# to item#
+          end
+        end
+      end
+    loop
+    if in_string# send ScriptError ERR.SCRIPT.MISSING_END_QUOTE (start_pos#+pos_offset#)
+    if in_item# send add_item EIT.SYMBOL item# (start_pos#+pos_offset#)
+  end_procedure
+  function iErrorOccured returns integer
+    integer error#
+    get piErrorCode to error#
+    function_return (error#<>ERR.SCRIPT.NO_ERROR)
+  end_function
+  procedure DoReplaces // Perform symbol replaces
+    integer liRow max#
+    string name#
+    get row_count to max#
+    for liRow from 0 to (max#-1)
+      move (psItem.i(self,liRow)) to name#
+      get sReplaceNameToNo.s name# to name#
+      set psItem.i liRow to name#
+    loop
+  end_procedure
+  procedure DoClassColumn // Identify the classes
+    integer liRow max# class# stype#
+    string item#
+    get row_count to max#
+    for liRow from 0 to (max#-1)
+      move (piStructType.i(self,liRow)) to stype#
+      if (stype#=EIT.SYMBOL) begin
+        move (psItem.i(self,liRow)) to item#
+        if ("|"+uppercase(item#)+"|") in "|AND|OR|MIN|MAX|" begin
+          set piStructType.i liRow to EIT.OPERATOR
+          set piOperator.i liRow to (iOperatorNameToID.s(uppercase(item#)))
+        end
+        else begin
+          get iSymbolClass.s item# to class#
+          set piClass.i liRow to class#
+        end
+      end
+    loop
+  end_procedure
+  procedure DoTypeColumn // Identify the types
+    integer liRow liMax liClass liType liStructType
+    string lsItem
+    get row_count to liMax
+    for liRow from 0 to (liMax-1)
+      move (piStructType.i(self,liRow)) to liStructType
+      if (liStructType=EIT.SYMBOL) begin
+        move (psItem.i(self,liRow)) to lsItem
+        get piClass.i liRow to liClass
+        get iSymbolType.si lsItem liClass to liType
+        set piType.i liRow to liType
+        if liClass eq CLASS.UNKNOWN    send ScriptError ERR.SCRIPT.CLASS_CHECK_ERROR (piPos.i(self,liRow)) ("Symbol: "+lsItem)
+        else if liType eq TYPE.UNKNOWN send ScriptError ERR.SCRIPT.TYPE_CHECK_ERROR (piPos.i(self,liRow)) ("Symbol: "+lsItem)
+      end
+    loop
+  end_procedure
+  procedure DoFuncParams
+    integer liRow max# func_row# level# stack# stype# id#
+    integer current_left_pos# param_count# gets# expects#
+    string params#
+    get row_count to max#
+    move 0 to level#
+    move 0 to func_row#
+    move -1 to current_left_pos#
+    move 0 to param_count#
+    move (oParamCountStack(self)) to stack#
+    send delete_data to stack#
+    for liRow from 0 to (max#-1)
+      move (piStructType.i(self,liRow)) to stype#
+      if (piClass.i(self,liRow)=CLASS.FUNCTION) begin
+        get iFuncNameToFuncNo.s of (pVM_Object(self)) (psItem.i(self,liRow)) to id#
+        get sFuncParams.i of (pVM_Object(self)) id# to params#
+        set piAux.i liRow to id#
+        set piFuncParams.i liRow to (length(params#))
+      end
+      if (stype#=EIT.LEFT) begin
+        send push.i to stack# param_count#
+        send push.i to stack# current_left_pos#
+        move liRow to current_left_pos#
+        move 0 to param_count#
+        increment level#
+      end
+      if (stype#=EIT.RIGHT) begin
+        set piFuncParams.i current_left_pos# to param_count#
+        decrement level#
+        move (iPop(stack#)) to current_left_pos#
+        move (iPop(stack#)) to param_count#
+        if param_count# eq 0 increment param_count#
+      end
+      if (stype#=EIT.SYMBOL) if param_count# eq 0 increment param_count#
+      if (stype#=EIT.COMMA) increment param_count#
+      set piEvalLevel.i liRow to level#
+    loop
+    // Now check that all function gets the expected number of parameters
+    for liRow from 0 to (max#-1)
+      ifnot (iErrorOccured(self)) begin
+        if (piClass.i(self,liRow)=CLASS.FUNCTION) begin
+          move (piStructType.i(self,liRow+1)) to stype#
+          if stype# eq EIT.LEFT begin
+            move (piFuncParams.i(self,liRow)) to expects#
+            move (piFuncParams.i(self,liRow+1)) to gets#
+            if expects# ne gets# send ScriptError ERR.SCRIPT.BAD_PARAM_COUNT (piPos.i(self,liRow)) ("Function "+uppercase(psItem.i(self,liRow))+" expects "+string(expects#)+" parameters, "+string(gets#)+" is being passed")
+          end
+          else begin
+            if (liRow+1) ge max# send ScriptError ERR.SCRIPT.FUNC_MISSING_PAR (piPos.i(self,liRow))
+            else send ScriptError ERR.SCRIPT.FUNC_MISSING_PAR (piPos.i(self,liRow+1))
+          end
+        end
+      end
+    loop
+  end_procedure
+  procedure DoFinalChecks
+    integer liRow max# stype# next_stype# params#
+    get row_count to max#
+    for liRow from 0 to (max#-1)
+      ifnot (iErrorOccured(self)) begin
+        move (piStructType.i(self,liRow)) to stype#
+        move (piStructType.i(self,liRow+1)) to next_stype#
+
+        // If left parenthesis and the previous row is not a function
+        // then there must be exactly 1 parameter in the p-pair:
+        if stype# eq EIT.LEFT begin
+          if (piClass.i(self,liRow-1)<>CLASS.FUNCTION) begin
+            get piFuncParams.i liRow to params#
+            if params# gt 1 send ScriptError ERR.SCRIPT.UNMOTIVATED_PARAM (piPos.i(self,liRow+1))
+            if params# lt 1 send ScriptError ERR.SCRIPT.MISSING_CONTENTS (piPos.i(self,liRow))
+          end
+        end
+
+        // If SYMBOL there can not be a symbols next to it:
+        ifnot (iErrorOccured(self)) if (stype#=EIT.SYMBOL and next_stype#=EIT.SYMBOL) send ScriptError ERR.SCRIPT.UNMOTIVATED_SYMBOL (piPos.i(self,liRow+1))
+
+        // If right paranthesis it cannot be followed by a left paranthesis:
+        ifnot (iErrorOccured(self)) if (stype#=EIT.RIGHT and next_stype#=EIT.LEFT) send ScriptError ERR.SCRIPT.MISSING_OPERATOR (piPos.i(self,liRow+1))
+
+        // If OPERATOR there can not be an operator next to it (unless it's monadic minus)
+        ifnot (iErrorOccured(self)) if (stype#=EIT.OPERATOR and next_stype#=EIT.OPERATOR and piOperator.i(self,liRow+1) <> OPERATOR.MINUS) send ScriptError ERR.SCRIPT.ONE_OPERATOR_TO_M (piPos.i(self,liRow+1))
+
+        // In fact, if operator it MUST be followed by a symbol (operand)
+        ifnot (iErrorOccured(self)) begin
+          if (stype#=EIT.OPERATOR and (next_stype#<>EIT.SYMBOL and next_stype#<>EIT.LEFT) and piOperator.i(self,liRow+1) <> OPERATOR.MINUS) send ScriptError ERR.SCRIPT.OPERATOR_NEEDS_OPE (piPos.i(self,liRow+1))
+        end
+      end
+    loop
+  end_procedure
+
+  function iNewType.iii integer t1# integer op# integer t2# returns integer
+    if op# eq OPERATOR.NONE     function_return t2#
+    if op# eq OPERATOR.PLUS     function_return (t1# max t2#)
+    if op# eq OPERATOR.MINUS    function_return (t1# max t2#)
+    if op# eq OPERATOR.MULTIPLY function_return (t1# max t2#)
+    if op# eq OPERATOR.DIVIDE   function_return (t1# max t2#)
+    if op# eq OPERATOR.LT       function_return TYPE.INTEGER
+    if op# eq OPERATOR.LE       function_return TYPE.INTEGER
+    if op# eq OPERATOR.EQ       function_return TYPE.INTEGER
+    if op# eq OPERATOR.NE       function_return TYPE.INTEGER
+    if op# eq OPERATOR.GE       function_return TYPE.INTEGER
+    if op# eq OPERATOR.GT       function_return TYPE.INTEGER
+    if op# eq OPERATOR.MIN      function_return (t1# max t2#)
+    if op# eq OPERATOR.MAX      function_return (t1# max t2#)
+    if op# eq OPERATOR.AND      function_return TYPE.INTEGER
+    if op# eq OPERATOR.OR       function_return TYPE.INTEGER
+    function_return t2#
+  end_function
+
+  function PreceededByFunction integer liRow returns integer
+    integer class#
+    get piClass.i (liRow-1) to class#
+    function_return (class#=CLASS.FUNCTION)
+  end_function
+  procedure DoImpliedTypes
+    integer stack# liRow max# current_type# stype# class# liType
+    integer current_operator# otype#
+    integer current_left_pos#
+    string item#
+    move (oImpliedTypesStack(self)) to stack#
+    send delete_data to stack#
+    get row_count to max#
+    move -1 to current_left_pos#
+    move OPERATOR.NONE to current_operator#
+    move TYPE.UNKNOWN to current_type#
+    for liRow from 0 to (max#-1)
+      get psItem.i       liRow to item#
+      get piStructType.i liRow to stype#
+      get piClass.i      liRow to class#
+      get piType.i       liRow to liType
+      get piOperator.i   liRow to otype#
+      if stype# eq EIT.LEFT begin
+        send push.i to stack# current_left_pos#
+        send push.i to stack# current_operator#
+        send push.i to stack# current_type#
+        move liRow to current_left_pos#
+        move OPERATOR.NONE to current_operator#
+        move TYPE.UNKNOWN to current_type#
+      end
+      if stype# eq EIT.RIGHT begin
+        if (PreceededByFunction(self,current_left_pos#)) move (ipop(stack#)) to current_type#
+        else move (ipop(stack#)) to current_operator# // Through away liType // current_type#
+        set piType.i current_left_pos# to current_type#
+        move (ipop(stack#)) to current_operator#
+        move (ipop(stack#)) to current_left_pos#
+      end
+      if stype# eq EIT.COMMA begin
+        set piType.i current_left_pos# to current_type#
+        move OPERATOR.NONE to current_operator#
+        move TYPE.UNKNOWN to current_type#
+        //move liRow to current_left_pos#
+      end
+      if stype# eq EIT.OPERATOR move otype# to current_operator#
+      if stype# eq EIT.SYMBOL move (iNewType.iii(self,current_type#,current_operator#,liType)) to current_type#
+    loop
+    set piExprType to (piType.i(self,0))
+  end_procedure
+
+  procedure add_expr_op integer op# string var#
+    send add_expr_instruction to (oEvalSequence(self)) op# var#
+  end_procedure
+
+  function iFuncEvalSeparately.i integer liRow returns integer
+    integer rval# funcclass#
+    if (piClass.i(self,liRow)=CLASS.FUNCTION) get sFuncClass.i of (pVM_Object(self)) (piAux.i(self,liRow)) to funcclass#
+    else move FTYPE.BUILTIN to funcclass#
+    function_return (funcclass#<>FTYPE.BUILTIN)
+  end_function
+
+  function iCreateExprEvaluator.ii integer liRow integer level# returns integer
+    integer emergency_stop# balance# funcclass# sType# class# id# prev_stype#
+    integer oType# max# vType# funcid# oVar# fType# liType liFileField
+    get row_count to max#
+    move -1 to prev_stype#
+    move (oVariables(pVM_Object(self))) to oVar#
+    if level# begin // then we are sure to be evaluating parameters for a function
+      move EIT.LEFT to prev_stype#
+      increment liRow // Skip parenthesis
+      move 1 to balance# // Because we just skipped a (
+    end
+    repeat
+      if (iFuncEvalSeparately.i(self,liRow)) begin
+        send add_expr_op EXPROP.PUSH_EXPRESSION ""
+        get piAux.i liRow to funcid#
+        get iFuncType.i of (pVM_Object(self)) funcid# to fType#
+        get iCreateExprEvaluator.ii (liRow+1) (level#+1) to liRow
+        if fType# eq VARTYP_STRING send add_expr_op EXPROP.EXEC_SFUNCTION funcid#
+        else send add_expr_op EXPROP.EXEC_FUNCTION funcid#
+      end
+      else begin
+        get piStructType.i liRow to sType#
+        if sType# eq EIT.LEFT begin
+          increment balance#
+          send add_expr_op EXPROP.APPEND "("
+        end
+        if sType# eq EIT.RIGHT begin
+          decrement balance#
+          if balance# eq 0 begin
+            if level# begin
+              if prev_stype# ne EIT.LEFT send add_expr_op EXPROP.PUSH_PARAM ""
+            end
+            else send add_expr_op EXPROP.APPEND ")"
+            function_return liRow // Skip right parenthesis
+          end
+          send add_expr_op EXPROP.APPEND ")"
+        end
+        if sType# eq EIT.OPERATOR begin
+          // Operators may just be added except that AND OR MIN and MAX
+          // must have blanks around them:
+          get piOperator.i liRow to oType#
+          if (oType#=OPERATOR.MIN or oType#=OPERATOR.MAX or oType#=OPERATOR.AND or oType#=OPERATOR.OR) send add_expr_op EXPROP.APPEND (" "+psItem.i(self,liRow)+" ")
+          else send add_expr_op EXPROP.APPEND (psItem.i(self,liRow))
+        end
+        if sType# eq EIT.SYMBOL begin
+          get piClass.i liRow to class#
+          // Constants may just be added:
+          if class# eq CLASS.CONST send add_expr_op EXPROP.APPEND (psItem.i(self,liRow))
+          // If it's a function we can safely just add it. Would it have been
+          // a function that we were supposed to handle manually it would
+          // have been filtered out by the iFuncEvalSeparately test in the
+          // beginning of this function:
+          if class# eq CLASS.FUNCTION send add_expr_op EXPROP.APPEND (psItem.i(self,liRow))
+          // For variables we dare inserting a (local) function call and let
+          // the EVAL function retrieve the value:
+          if class# eq CLASS.VAR begin
+            get iVarNameToVarNo of (pVM_Object(self)) (psItem.i(self,liRow)) to id#
+            get iVarType.i of (pVM_Object(self)) id# to vType#
+            if vType# eq VARTYP_INTEGER send add_expr_op EXPROP.GET_IVAR id#
+            if vType# eq VARTYP_DATE    send add_expr_op EXPROP.GET_DVAR id#
+            if vType# eq VARTYP_NUMBER  send add_expr_op EXPROP.GET_NVAR id#
+            if vType# eq VARTYP_STRING  send add_expr_op EXPROP.GET_SVAR id#
+          end
+          if class# eq CLASS.FIELD begin
+            get piType.i liRow to liType
+            get iFileField.s of (pVM_Object(self)) (psItem.i(self,liRow)) to liFileField
+            if liType eq TYPE.STRING send add_expr_op EXPROP.GET_SFIELD liFileField
+            if liType eq TYPE.NUMBER send add_expr_op EXPROP.GET_NFIELD liFileField
+            if liType eq TYPE.DATE   send add_expr_op EXPROP.GET_DFIELD liFileField
+          end
+        end
+        if sType# eq EIT.COMMA begin
+          // Level>0 means: We are in a "manual" function
+          // Under that assumption balance=1 MUST mean that we are dealing
+          // with a parameter to that function.
+          if (level#>0 and balance#=1) send add_expr_op EXPROP.PUSH_PARAM ""
+          else send add_expr_op EXPROP.APPEND ","
+        end
+        move stype# to prev_stype#
+      end
+      increment liRow
+    until (balance#=0 or liRow>=max#)
+    send add_expr_op EXPROP.ERROR ""
+    function_return 1000
+  end_function
+
+  procedure DoCreateEvaluator
+    integer grb#
+    send delete_data to (oEvalSequence(self))
+    send add_expr_op EXPROP.TYPE (iTypeToVT.i(piExprType(self)))
+    get iCreateExprEvaluator.ii 0 0 to grb#
+    send add_expr_op EXPROP.END ""
+  end_procedure
+
+  function iParse_expression.si string lsExpression integer liPosOffset returns integer
+    integer lhObj liExprId
+    if liPosOffset decrement liPosOffset
+    send split_expression_in_items lsExpression liPosOffset
+    ifnot (iErrorOccured(self)) send DoReplaces
+    ifnot (iErrorOccured(self)) send DoClassColumn
+    ifnot (iErrorOccured(self)) send DoTypeColumn
+    ifnot (iErrorOccured(self)) send DoFuncParams
+    ifnot (iErrorOccured(self)) send DoFinalChecks
+    ifnot (iErrorOccured(self)) send DoImpliedTypes
+    ifnot (iErrorOccured(self)) send DoCreateEvaluator
+    if (piDebugState(self)) send DisplayExpressionDebugInfo self
+    if (piDebugState(self)) send DisplayEvalSequence (oEvalSequence(self))
+    send Optimize to (oEvalSequence(self))
+    if (piDebugState(self)) send DisplayEvalSequence (oEvalSequence(self))
+    // Add to VM's expression array:
+    move (oExprEvalSequences(pVM_Object(self))) to lhObj
+    get iAppendToOtherSequence of (oEvalSequence(self)) lhObj to liExprId
+//    send obs "Kopierer program"   (oEvalSequence(self)) lhObj (name(lhObj))
+    function_return (liExprId+1) // Skip typedef
+  end_function
+end_class // cExpressionParser_vdfq
+
+class cScriptErrors is a cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property string  piListingFN   "dfscript.err"
+    property integer piListingFile 0
+    property integer piOnScreen    1
+  end_procedure
+  item_property_list
+    item_property integer piError.i
+    item_property integer piLine.i
+    item_property integer piPosition.i
+    item_property string  psFileName.i
+    item_property string  psMessage.i
+  end_item_property_list cScriptErrors
+  procedure display_error.i integer liRow
+    integer pos#
+    string msg#
+    get piPosition.i liRow to pos#
+    get psMessage.i liRow to msg#
+    move (trim(msg#)) to msg#
+    send obs ("Error in "+psFileName.i(self,liRow)+" on line "+string(piLine.i(self,liRow))) (ScriptError_Text(piError.i(self,liRow))+if(pos#," in position "+string(pos#),"")) msg#
+  end_procedure
+  procedure add_error integer Error# integer Line# integer Position# string FileName# string Message#
+    integer liRow
+    get row_count to liRow
+    set piError.i    liRow to Error#
+    set piLine.i     liRow to Line#
+    set piPosition.i liRow to Position#
+    set psFileName.i liRow to FileName#
+    set psMessage.i  liRow to Message#
+    if (piOnScreen(self)) send display_error.i liRow
+  end_procedure
+end_class
+class cStructuralStack is a cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+  end_procedure
+  item_property_list
+    item_property integer piStackingCmd.i // WHILE, BEGIN, REPEAT etc.
+    item_property integer piPendingCmd.i  // END, LOOP, UNTIL
+    item_property string  psFileName.i    // Name of source file
+    item_property integer piLine.i        // In which line was the structure initiated?
+  end_item_property_list cStructuralStack
+  function iTopStackingCmd returns integer
+    function_return (piStackingCmd.i(self,row_count(self)-1))
+  end_function
+  function iTopPendingCmd returns integer
+    function_return (piPendingCmd.i(self,row_count(self)-1))
+  end_function
+  procedure push_struct integer cmd1# integer cmd2# string fn# integer line#
+    integer liRow
+    get row_count to liRow
+    set piStackingCmd.i liRow to cmd1#
+    set piPendingCmd.i  liRow to cmd2#
+    set psFileName.i    liRow to fn#
+    set piLine.i        liRow to line#
+  end_procedure
+  procedure pop_struct
+    send delete_row (row_count(self)-1)
+  end_procedure
+end_class // cStructuralStack
+
+register_procedure Interpret_Date
+register_procedure Interpret_Else
+register_procedure Interpret_End
+register_procedure Interpret_EndIf
+register_procedure Interpret_For
+register_procedure Interpret_Gosub
+register_procedure Interpret_Goto
+register_procedure Interpret_If
+register_procedure Interpret_Pause
+register_procedure Interpret_GotoXY
+register_procedure Interpret_Input
+register_procedure Interpret_Integer
+register_procedure Interpret_Loop
+register_procedure Interpret_Move
+register_procedure Interpret_Number
+register_procedure Interpret_Return
+register_procedure Interpret_Showln
+register_procedure Interpret_Show
+register_procedure Interpret_String
+register_procedure Interpret_Abort
+register_procedure Interpret_ClearScreen
+register_procedure Interpret_While
+register_procedure Interpret_#use
+register_procedure Interpret_#include
+register_procedure Interpret_#replace
+register_procedure Interpret_#noisy
+register_procedure Interpret_Increment
+register_procedure Interpret_Decrement
+register_procedure Interpret_Debug
+register_procedure Interpret_Repeat
+register_procedure Interpret_Until
+register_procedure Interpret_Log_Open
+register_procedure Interpret_Log_Close
+register_procedure Interpret_Log_Display
+register_procedure Interpret_Log_Flush
+register_procedure Interpret_Log_Write
+register_procedure Interpret_Log_Writeln
+register_procedure Interpret_Set_Attribute
+register_procedure Interpret_Create_Field
+register_procedure Interpret_Append_Field
+register_procedure Interpret_Delete_Field
+register_procedure Interpret_Delete_Index
+register_procedure Interpret_Structure_Abort
+register_procedure Interpret_Structure_End
+register_procedure Interpret_Probe_End
+register_procedure Interpret_Set_Field
+register_procedure Interpret_InfoBox
+
+// Support commands:
+
+#COMMAND define_cmd
+  define !1
+  send add_command !1 !2 !3
+#ENDCOMMAND
+
+class cCommandList is a cArray
+  item_property_list
+    item_property string  psName.i
+    item_property integer piCompileMsg.i
+  end_item_property_list cCommandList
+  procedure add_command integer cmd# string name# integer msg#
+    set psName.i       cmd# to (uppercase(name#))
+    set piCompileMsg.i cmd# to msg#
+  end_procedure
+  procedure construct_object integer img#
+    forward send construct_object img#
+    enumeration_list
+      define_cmd CMD_DATE        "DATE"        msg_Interpret_Date
+      define_cmd CMD_ELSE        "ELSE"        msg_Interpret_Else
+      define_cmd CMD_END         "END"         msg_Interpret_End
+      define_cmd CMD_ENDIF       "ENDIF"       msg_Interpret_EndIf
+      define_cmd CMD_FOR         "FOR"         msg_Interpret_For
+      define_cmd CMD_GOSUB       "GOSUB"       msg_Interpret_Gosub
+      define_cmd CMD_GOTO        "GOTO"        msg_Interpret_Goto
+      define_cmd CMD_IF          "IF"          msg_Interpret_If
+      define_cmd CMD_PAUSE       "PAUSE"       msg_Interpret_Pause
+      define_cmd CMD_INPUT       "INPUT"       msg_Interpret_Input
+      define_cmd CMD_GOTOXY      "GOTOXY"      msg_Interpret_GotoXY
+      define_cmd CMD_INTEGER     "INTEGER"     msg_Interpret_Integer
+      define_cmd CMD_LOOP        "LOOP"        msg_Interpret_Loop
+      define_cmd CMD_MOVE        "MOVE"        msg_Interpret_Move
+      define_cmd CMD_NUMBER      "NUMBER"      msg_Interpret_Number
+      define_cmd CMD_RETURN      "RETURN"      msg_Interpret_Return
+      define_cmd CMD_SHOWLN      "SHOWLN"      msg_Interpret_Showln
+      define_cmd CMD_SHOW        "SHOW"        msg_Interpret_Show
+      define_cmd CMD_STRING      "STRING"      msg_Interpret_String
+      define_cmd CMD_ABORT       "ABORT"       msg_Interpret_Abort
+      define_cmd CMD_CLEARSCREEN "CLEARSCREEN" msg_Interpret_ClearScreen
+      define_cmd CMD_WHILE       "WHILE"       msg_Interpret_While
+      define_cmd CMD_#USE        "#USE"        msg_Interpret_#use     // Not implemented
+      define_cmd CMD_#INCLUDE    "#INCLUDE"    msg_Interpret_#include // Not implemented
+      define_cmd CMD_#REPLACE    "#REPLACE"    msg_Interpret_#replace
+      define_cmd CMD_#NOISY      "#NOISY"      msg_Interpret_#noisy
+      define_cmd CMD_INCREMENT   "INCREMENT"   msg_Interpret_Increment
+      define_cmd CMD_DECREMENT   "DECREMENT"   msg_Interpret_DeCrement
+      define_cmd CMD_DEBUG       "DEBUG"       msg_Interpret_Debug
+      define_cmd CMD_REPEAT      "REPEAT"      msg_Interpret_Repeat
+      define_cmd CMD_UNTIL       "UNTIL"       msg_Interpret_Until
+      define_cmd CMD_LOG_OPEN    "LOG_OPEN"    msg_Interpret_Log_Open
+      define_cmd CMD_LOG_CLOSE   "LOG_CLOSE"   msg_Interpret_Log_Close
+      define_cmd CMD_LOG_DISPLAY "LOG_DISPLAY" msg_Interpret_Log_Display
+      define_cmd CMD_LOG_FLUSH   "LOG_FLUSH"   msg_Interpret_Log_Flush
+      define_cmd CMD_LOG_WRITE   "LOG_WRITE"   msg_Interpret_Log_Write
+      define_cmd CMD_LOG_WRITELN "LOG_WRITELN" msg_Interpret_Log_Writeln
+      define_cmd CMD_SET_ATTRIBUTE   "SET_ATTRIBUTE"   msg_Interpret_Set_Attribute
+      define_cmd CMD_CREATE_FIELD    "CREATE_FIELD"    msg_Interpret_Create_Field
+      define_cmd CMD_APPEND_FIELD    "APPEND_FIELD"    msg_Interpret_Append_Field
+      define_cmd CMD_DELETE_FIELD    "DELETE_FIELD"    msg_Interpret_Delete_Field
+      define_cmd CMD_DELETE_INDEX    "DELETE_INDEX"    msg_Interpret_Delete_Index
+      define_cmd CMD_STRUCTURE_ABORT "STRUCTURE_ABORT" msg_Interpret_Structure_Abort
+      define_cmd CMD_STRUCTURE_END   "STRUCTURE_END"   msg_Interpret_Structure_End
+      define_cmd CMD_PROBE_END       "PROBE_END"       msg_Interpret_Probe_End
+      define_cmd CMD_SET_FIELD       "SET_FIELD"       msg_Interpret_Set_Field
+      define_cmd CMD_INFOBOX         "INFOBOX"         msg_Interpret_InfoBox
+    end_enumeration_list
+  end_procedure
+  function iCommand.s string command# returns integer
+    integer liRow max#
+    move (uppercase(command#)) to command#
+    get row_count to max#
+    for liRow from 0 to (max#-1)
+      if command# eq (psName.i(self,liRow)) function_return liRow
+    loop
+    function_return -1 // Not found
+  end_function
+end_class // cCommandList
+
+class cReplaces is a cArray
+  item_property_list
+    item_property string psName.i
+    item_property string psValue.i
+  end_item_property_list cReplaces
+
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piFlexInit_Count 0
+    send initial_replaces
+  end_procedure
+
+  procedure reset
+    integer max# liRow max_flexinit#
+    get piFlexInit_Count to max_flexinit#
+    get row_count to max#
+    for_ex liRow from (max#-1) down_to max_flexinit#
+      send delete_row liRow
+    loop
+  end_procedure
+
+  function iNameToNo.s string name# returns integer
+    integer liRow max# rval#
+    move (uppercase(name#)) to name#
+    get row_count to max#
+    move -1 to rval#
+    move 0 to liRow
+    while (liRow<max# and rval#=-1)
+      if name# eq (psName.i(self,liRow)) move liRow to rval#
+      increment liRow
+    end
+    function_return rval#
+  end_function
+
+  function sNameToValue.s string name# returns string
+    integer liRow
+    get iNameToNo.s name# to liRow
+    if liRow eq -1 function_return name#
+    function_return (sNameToValue.s(self,psValue.i(self,liRow)))
+  end_function
+
+  function iCircular.ss string name# string symbol_list# returns integer
+    integer liRow rval#
+    move 0 to rval#
+    if symbol_list# eq "" move "�" to symbol_list#
+    if ("�"+name#+"�") in symbol_list# function_return 1 // Circular ref!
+    get iNameToNo.s name# to liRow
+    if liRow ne -1 get iCircular.ss (psValue.i(self,liRow)) (symbol_list#+name#+"�") to rval#
+    function_return rval#
+  end_function
+
+  function iNameDeclare.ss string name# string value# returns integer
+    integer liRow rval#
+    move ERR.SCRIPT.NO_ERROR to rval#
+    move (uppercase(name#)) to name#
+    get iNameToNo.s name# to liRow
+    if liRow eq -1 begin
+      get row_count to liRow
+      set psName.i  liRow to name#
+      set psValue.i liRow to value#
+    end
+    else move ERR.SCRIPT.SYMBOL_ALREADY_DEF to rval#
+    ifnot rval# if (iCircular.ss(self,name#,value#)) begin
+      move ERR.SCRIPT.CIRCULAR_REFERENCE to rval#
+      send delete_row liRow
+    end
+    function_return rval#
+  end_function
+  procedure add_initial_replace string name# string value#
+    integer liRow
+    get row_count to liRow
+    set psName.i  liRow to name#
+    set psValue.i liRow to value#
+  end_procedure
+  procedure initial_replaces
+    send add_initial_replace "FALSE"                               0
+    send add_initial_replace "TRUE"                                1
+    send add_initial_replace "DFTRUE"                              DFTRUE
+    send add_initial_replace "DFFALSE"                             DFFALSE
+    if DFTRUE begin // DATE STUFF
+      send add_initial_replace "DS_DAY"                 DS_DAY
+      send add_initial_replace "DS_WEEK"                DS_WEEK
+      send add_initial_replace "DS_MONTH"               DS_MONTH
+      send add_initial_replace "DS_YEAR"                DS_YEAR
+      send add_initial_replace "LargestPossibleDate"    LargestPossibleDate
+      send add_initial_replace "Jan1st1900"             Jan1st1900
+      send add_initial_replace "Jan1st2000"             Jan1st2000
+      send add_initial_replace "Jan1st1930"             Jan1st1930
+      send add_initial_replace "Jan1st1000"             Jan1st1000
+      send add_initial_replace "Jan1st105"              Jan1st105
+      send add_initial_replace "Jan1st100"              Jan1st100
+    end
+    if DFFALSE begin
+      send add_initial_replace "IMPLICIT_FIELD"                      -1
+      send add_initial_replace "DF_LOCK_DELAY"                       DF_LOCK_DELAY
+      send add_initial_replace "DF_LOCK_TIMEOUT"                     DF_LOCK_TIMEOUT
+      send add_initial_replace "DF_OPEN_PATH"                        DF_OPEN_PATH
+      send add_initial_replace "DF_DATE_FORMAT"                      DF_DATE_FORMAT
+      send add_initial_replace "DF_DATE_SEPARATOR"                   DF_DATE_SEPARATOR
+      send add_initial_replace "DF_DECIMAL_SEPARATOR"                DF_DECIMAL_SEPARATOR
+      send add_initial_replace "DF_THOUSANDS_SEPARATOR"              DF_THOUSANDS_SEPARATOR
+      send add_initial_replace "DF_ALL_FILES_TOUCHED"                DF_ALL_FILES_TOUCHED
+      send add_initial_replace "DF_HIGH_DATA_INTEGRITY"              DF_HIGH_DATA_INTEGRITY
+      send add_initial_replace "DF_TRAN_COUNT"                       DF_TRAN_COUNT
+      send add_initial_replace "DF_TRANSACTION_ABORT"                DF_TRANSACTION_ABORT
+      send add_initial_replace "DF_REREAD_REQUIRED"                  DF_REREAD_REQUIRED
+      send add_initial_replace "DF_FILELIST_NAME"                    DF_FILELIST_NAME
+      send add_initial_replace "DF_REPORT_UNSUPPORTED_ATTRIBUTES"    DF_REPORT_UNSUPPORTED_ATTRIBUTES
+      send add_initial_replace "DF_STRICT_ATTRIBUTES"                DF_STRICT_ATTRIBUTES
+      send add_initial_replace "DF_NUMBER_DRIVERS"                   DF_NUMBER_DRIVERS
+      send add_initial_replace "DF_DRIVER_NAME"                      DF_DRIVER_NAME
+      send add_initial_replace "DF_DRIVER_NUMBER_SERVERS"            DF_DRIVER_NUMBER_SERVERS
+      send add_initial_replace "DF_DRIVER_SERVER_NAME"               DF_DRIVER_SERVER_NAME
+      send add_initial_replace "DF_API_DISABLED"                     DF_API_DISABLED
+      send add_initial_replace "DF_API_DISABLED_ERROR"               DF_API_DISABLED_ERROR
+      send add_initial_replace "DF_FILE_STATUS"                      DF_FILE_STATUS
+      send add_initial_replace "DF_FILE_MODE"                        DF_FILE_MODE
+      send add_initial_replace "DF_FILE_MAX_RECORDS"                 DF_FILE_MAX_RECORDS
+      send add_initial_replace "DF_FILE_RECORDS_USED"                DF_FILE_RECORDS_USED
+      send add_initial_replace "DF_FILE_TYPE"                        DF_FILE_TYPE
+      send add_initial_replace "DF_FILE_MULTIUSER"                   DF_FILE_MULTIUSER
+      send add_initial_replace "DF_FILE_REUSE_DELETED"               DF_FILE_REUSE_DELETED
+      send add_initial_replace "DF_FILE_NUMBER"                      DF_FILE_NUMBER
+      send add_initial_replace "DF_FILE_COMPRESSION"                 DF_FILE_COMPRESSION
+      send add_initial_replace "DF_FILE_LAST_INDEX_NUMBER"           DF_FILE_LAST_INDEX_NUMBER
+      send add_initial_replace "DF_FILE_NUMBER_FIELDS"               DF_FILE_NUMBER_FIELDS
+      send add_initial_replace "DF_FILE_LOGICAL_NAME"                DF_FILE_LOGICAL_NAME
+      send add_initial_replace "DF_FILE_ROOT_NAME"                   DF_FILE_ROOT_NAME
+      send add_initial_replace "DF_FILE_CHANGED"                     DF_FILE_CHANGED
+      send add_initial_replace "DF_FILE_ALIAS"                       DF_FILE_ALIAS
+      send add_initial_replace "DF_FILE_TOUCHED"                     DF_FILE_TOUCHED
+      send add_initial_replace "DF_FILE_TRANSACTION"                 DF_FILE_TRANSACTION
+      send add_initial_replace "DF_FILE_OPENED"                      DF_FILE_OPENED
+      send add_initial_replace "DF_FILE_DISPLAY_NAME"                DF_FILE_DISPLAY_NAME
+      send add_initial_replace "DF_FILE_PHYSICAL_NAME"               DF_FILE_PHYSICAL_NAME
+      send add_initial_replace "DF_FILE_NEXT_OPENED"                 DF_FILE_NEXT_OPENED
+      send add_initial_replace "DF_FILE_NEXT_USED"                   DF_FILE_NEXT_USED
+      send add_initial_replace "DF_FILE_NEXT_EMPTY"                  DF_FILE_NEXT_EMPTY
+      send add_initial_replace "DF_FILE_RECORD_LENGTH"               DF_FILE_RECORD_LENGTH
+      send add_initial_replace "DF_FILE_RESTRUCTURE"                 DF_FILE_RESTRUCTURE
+      send add_initial_replace "DF_FILE_OPEN_MODE"                   DF_FILE_OPEN_MODE
+      send add_initial_replace "DF_FILE_INTEGRITY_CHECK"             DF_FILE_INTEGRITY_CHECK
+      send add_initial_replace "DF_FILE_OWNER"                       DF_FILE_OWNER
+      send add_initial_replace "DF_FILE_IS_SYSTEM_FILE"              DF_FILE_IS_SYSTEM_FILE
+      send add_initial_replace "DF_FILE_LOCK_TYPE"                   DF_FILE_LOCK_TYPE
+      send add_initial_replace "DF_FILE_COMMITTED"                   DF_FILE_COMMITTED
+      send add_initial_replace "DF_FILE_DRIVER"                      DF_FILE_DRIVER
+      send add_initial_replace "DF_FILE_RECORD_LENGTH_USED"          DF_FILE_RECORD_LENGTH_USED
+      send add_initial_replace "DF_FILE_HANDLE_TYPE"                 DF_FILE_HANDLE_TYPE
+      send add_initial_replace "DF_FILE_RECORD_IDENTITY"             DF_FILE_RECORD_IDENTITY
+      send add_initial_replace "DF_FILE_LOGIN"                       DF_FILE_LOGIN
+      send add_initial_replace "DF_FILE_RECORD_PRIVILEGE"            DF_FILE_RECORD_PRIVILEGE
+      send add_initial_replace "DF_FILE_PRIVILEGE"                   DF_FILE_PRIVILEGE
+      send add_initial_replace "DF_FILE_CREATION_SERIAL"             DF_FILE_CREATION_SERIAL
+      send add_initial_replace "DF_FILE_REVISION"                    DF_FILE_REVISION
+      send add_initial_replace "DF_FILE_RELATED_COUNT"               DF_FILE_RELATED_COUNT
+      send add_initial_replace "DF_FILE_RELATED_FIELDS"              DF_FILE_RELATED_FIELDS
+      send add_initial_replace "DF_FILE_SYSTEM_FILE"                 DF_FILE_SYSTEM_FILE
+      send add_initial_replace "DF_FILE_SYSTEM_FIELD"                DF_FILE_SYSTEM_FIELD
+      send add_initial_replace "DF_FILE_RECORD_REREAD"               DF_FILE_RECORD_REREAD
+      send add_initial_replace "DF_FIELD_NUMBER"                     DF_FIELD_NUMBER
+      send add_initial_replace "DF_FIELD_TYPE"                       DF_FIELD_TYPE
+      send add_initial_replace "DF_FIELD_LENGTH"                     DF_FIELD_LENGTH
+      send add_initial_replace "DF_FIELD_PRECISION"                  DF_FIELD_PRECISION
+      send add_initial_replace "DF_FIELD_RELATED_FILE"               DF_FIELD_RELATED_FILE
+      send add_initial_replace "DF_FIELD_RELATED_FIELD"              DF_FIELD_RELATED_FIELD
+      send add_initial_replace "DF_FIELD_NAME"                       DF_FIELD_NAME
+      send add_initial_replace "DF_FIELD_INDEX"                      DF_FIELD_INDEX
+      send add_initial_replace "DF_FIELD_OFFSET"                     DF_FIELD_OFFSET
+      send add_initial_replace "DF_FIELD_OLD_NUMBER"                 DF_FIELD_OLD_NUMBER
+      send add_initial_replace "DF_FIELD_OVERLAP"                    DF_FIELD_OVERLAP
+      send add_initial_replace "DF_FIELD_NATIVE_LENGTH"              DF_FIELD_NATIVE_LENGTH
+      send add_initial_replace "DF_INDEX_NUMBER_SEGMENTS"            DF_INDEX_NUMBER_SEGMENTS
+      send add_initial_replace "DF_INDEX_NUMBER_BUFFERS"             DF_INDEX_NUMBER_BUFFERS
+      send add_initial_replace "DF_INDEX_TYPE"                       DF_INDEX_TYPE
+      send add_initial_replace "DF_INDEX_LEVELS"                     DF_INDEX_LEVELS
+      send add_initial_replace "DF_INDEX_KEY_LENGTH"                 DF_INDEX_KEY_LENGTH
+      send add_initial_replace "DF_INDEX_SEGMENT_DIRECTION"          DF_INDEX_SEGMENT_DIRECTION
+      send add_initial_replace "DF_INDEX_SEGMENT_CASE"               DF_INDEX_SEGMENT_CASE
+      send add_initial_replace "DF_INDEX_SEGMENT_FIELD"              DF_INDEX_SEGMENT_FIELD
+      send add_initial_replace "DF_DATE_USA"                         DF_DATE_USA
+      send add_initial_replace "DF_DATE_EUROPEAN"                    DF_DATE_EUROPEAN
+      send add_initial_replace "DF_DATE_MILITARY"                    DF_DATE_MILITARY
+      send add_initial_replace "DF_MESSAGE_TEXT"                     DF_MESSAGE_TEXT
+      send add_initial_replace "DF_MESSAGE_HEADING_1"                DF_MESSAGE_HEADING_1
+      send add_initial_replace "DF_MESSAGE_HEADING_2"                DF_MESSAGE_HEADING_2
+      send add_initial_replace "DF_MESSAGE_HEADING_3"                DF_MESSAGE_HEADING_3
+      send add_initial_replace "DF_MESSAGE_HEADING_4"                DF_MESSAGE_HEADING_4
+      send add_initial_replace "DF_MESSAGE_HEADING_5"                DF_MESSAGE_HEADING_5
+      send add_initial_replace "DF_MESSAGE_WARNING"                  DF_MESSAGE_WARNING
+      send add_initial_replace "DF_MESSAGE_PROGRESS_TITLE"           DF_MESSAGE_PROGRESS_TITLE
+      send add_initial_replace "DF_MESSAGE_PROGRESS_VALUE"           DF_MESSAGE_PROGRESS_VALUE
+      send add_initial_replace "DF_AUX_FILE_FD"                      DF_AUX_FILE_FD
+      send add_initial_replace "DF_AUX_FILE_DEF"                     DF_AUX_FILE_DEF
+      send add_initial_replace "DF_FILE_INACTIVE"                    DF_FILE_INACTIVE
+      send add_initial_replace "DF_FILE_ACTIVE"                      DF_FILE_ACTIVE
+      send add_initial_replace "DF_FILE_ACTIVE_CHANGED"              DF_FILE_ACTIVE_CHANGED
+      send add_initial_replace "DF_FILE_USER_SINGLE"                 DF_FILE_USER_SINGLE
+      send add_initial_replace "DF_FILE_USER_MULTI"                  DF_FILE_USER_MULTI
+      send add_initial_replace "DF_FILE_DELETED_NOREUSE"             DF_FILE_DELETED_NOREUSE
+      send add_initial_replace "DF_FILE_DELETED_REUSE"               DF_FILE_DELETED_REUSE
+      send add_initial_replace "DF_FILE_COMPRESS_NONE"               DF_FILE_COMPRESS_NONE
+      send add_initial_replace "DF_FILE_COMPRESS_FAST"               DF_FILE_COMPRESS_FAST
+      send add_initial_replace "DF_FILE_COMPRESS_STANDARD"           DF_FILE_COMPRESS_STANDARD
+      send add_initial_replace "DF_FILE_COMPRESS_CUSTOM"             DF_FILE_COMPRESS_CUSTOM
+      send add_initial_replace "DF_FILE_ALIAS_DEFAULT"               DF_FILE_ALIAS_DEFAULT
+      send add_initial_replace "DF_FILE_IS_MASTER"                   DF_FILE_IS_MASTER
+      send add_initial_replace "DF_FILE_IS_ALIAS"                    DF_FILE_IS_ALIAS
+      send add_initial_replace "DF_FILE_HANDLE_BAD"                  DF_FILE_HANDLE_BAD
+      send add_initial_replace "DF_FILE_HANDLE_CLOSED"               DF_FILE_HANDLE_CLOSED
+      send add_initial_replace "DF_FILE_HANDLE_OPENED"               DF_FILE_HANDLE_OPENED
+      send add_initial_replace "DF_FILE_HANDLE_EXISTING_RESTRUCTURE" DF_FILE_HANDLE_EXISTING_RESTRUCTURE
+      send add_initial_replace "DF_FILE_HANDLE_NEW_RESTRUCTURE"      DF_FILE_HANDLE_NEW_RESTRUCTURE
+      send add_initial_replace "DF_FILE_TRANSACTION_NONE"            DF_FILE_TRANSACTION_NONE
+      send add_initial_replace "DF_FILE_TRANSACTION_CLIENT_ATOMIC"   DF_FILE_TRANSACTION_CLIENT_ATOMIC
+      send add_initial_replace "DF_FILE_TRANSACTION_SERVER_ATOMIC"   DF_FILE_TRANSACTION_SERVER_ATOMIC
+      send add_initial_replace "DF_FILE_TRANSACTION_SERVER_LOGGED"   DF_FILE_TRANSACTION_SERVER_LOGGED
+      send add_initial_replace "DF_NO_RESTRUCTURE"                   DF_NO_RESTRUCTURE
+      send add_initial_replace "DF_RESTRUCTURE_FILE"                 DF_RESTRUCTURE_FILE
+      send add_initial_replace "DF_RESTRUCTURE_INDEX"                DF_RESTRUCTURE_INDEX
+      send add_initial_replace "DF_RESTRUCTURE_BOTH"                 DF_RESTRUCTURE_BOTH
+      send add_initial_replace "DF_FILE_NOT_TOUCHED"                 DF_FILE_NOT_TOUCHED
+      send add_initial_replace "DF_FILE_TOUCHED_INACTIVE"            DF_FILE_TOUCHED_INACTIVE
+      send add_initial_replace "DF_FILE_TOUCHED_ACTIVE"              DF_FILE_TOUCHED_ACTIVE
+      send add_initial_replace "DF_FILEMODE_ORIGINAL"                DF_FILEMODE_ORIGINAL
+      send add_initial_replace "DF_FILEMODE_DEFAULT"                 DF_FILEMODE_DEFAULT
+      send add_initial_replace "DF_FILEMODE_NO_REREAD"               DF_FILEMODE_NO_REREAD
+      send add_initial_replace "DF_FILEMODE_NO_LOCKS"                DF_FILEMODE_NO_LOCKS
+      send add_initial_replace "DF_FILEMODE_NO_EDITS"                DF_FILEMODE_NO_EDITS
+      send add_initial_replace "DF_FILEMODE_NO_DELETES"              DF_FILEMODE_NO_DELETES
+      send add_initial_replace "DF_FILEMODE_NO_FINDS"                DF_FILEMODE_NO_FINDS
+      send add_initial_replace "DF_FILEMODE_NO_CREATES"              DF_FILEMODE_NO_CREATES
+      send add_initial_replace "DF_FILEMODE_READONLY"                DF_FILEMODE_READONLY
+      send add_initial_replace "DF_FILEMODE_SINGLE_USER"             DF_FILEMODE_SINGLE_USER
+      send add_initial_replace "DF_PERMANENT"                        DF_PERMANENT
+      send add_initial_replace "DF_TEMPORARY"                        DF_TEMPORARY
+      send add_initial_replace "DF_LOCK_TYPE_NONE"                   DF_LOCK_TYPE_NONE
+      send add_initial_replace "DF_LOCK_TYPE_FILE"                   DF_LOCK_TYPE_FILE
+      send add_initial_replace "DF_LOCK_TYPE_RECORD"                 DF_LOCK_TYPE_RECORD
+      send add_initial_replace "DF_SHARE"                            DF_SHARE
+      send add_initial_replace "DF_EXCLUSIVE"                        DF_EXCLUSIVE
+      send add_initial_replace "DF_INDEX_TYPE_ONLINE"                DF_INDEX_TYPE_ONLINE
+      send add_initial_replace "DF_INDEX_TYPE_BATCH"                 DF_INDEX_TYPE_BATCH
+      send add_initial_replace "DF_CASE_USED"                        DF_CASE_USED
+      send add_initial_replace "DF_CASE_IGNORED"                     DF_CASE_IGNORED
+      send add_initial_replace "DF_ASCENDING"                        DF_ASCENDING
+      send add_initial_replace "DF_DESCENDING"                       DF_DESCENDING
+      send add_initial_replace "DF_ASCII"                            DF_ASCII
+      send add_initial_replace "DF_BCD"                              DF_BCD
+      send add_initial_replace "DF_DATE"                             DF_DATE
+      send add_initial_replace "DF_OVERLAP"                          DF_OVERLAP
+      send add_initial_replace "DF_TEXT"                             DF_TEXT
+      send add_initial_replace "DF_BINARY"                           DF_BINARY
+      send add_initial_replace "DF_STRUCTEND_OPT_NONE"               DF_STRUCTEND_OPT_NONE
+      send add_initial_replace "DF_STRUCTEND_OPT_FORCE"              DF_STRUCTEND_OPT_FORCE
+      send add_initial_replace "DF_STRUCTEND_OPT_RECOMPRESS"         DF_STRUCTEND_OPT_RECOMPRESS
+      send add_initial_replace "DF_STRUCTEND_OPT_IN_PLACE"           DF_STRUCTEND_OPT_IN_PLACE
+      send add_initial_replace "DF_SORT_OPTION_NONE"                 DF_SORT_OPTION_NONE
+      send add_initial_replace "DF_SORT_OPTION_NO_DATA_CHECK"        DF_SORT_OPTION_NO_DATA_CHECK
+      send add_initial_replace "DF_SORT_OPTION_BAD_DATA_FIXUP"       DF_SORT_OPTION_BAD_DATA_FIXUP
+      send add_initial_replace "DF_SORT_OPTION_BAD_DATA_FILE"        DF_SORT_OPTION_BAD_DATA_FILE
+      send add_initial_replace "DF_SORT_OPTION_BAD_DATA_ABORT"       DF_SORT_OPTION_BAD_DATA_ABORT
+      send add_initial_replace "DF_SORT_OPTION_DUP_DATA_FILE"        DF_SORT_OPTION_DUP_DATA_FILE
+      send add_initial_replace "DF_SORT_OPTION_DUP_DATA_ABORT"       DF_SORT_OPTION_DUP_DATA_ABORT
+      send add_initial_replace "DF_HIGH"                             DF_HIGH
+      send add_initial_replace "DF_LOW"                              DF_LOW
+    end
+    set piFlexInit_Count to (row_count(self))
+  end_procedure
+end_class // cReplaces
+
+function dfscript_item_type global integer liType returns string
+  ifnot liType function_return "unknown"
+  if liType eq TYPE.UNKNOWN function_return "unknown"
+  if liType eq TYPE.UNTYPED function_return "un-typed"
+  if liType eq TYPE.DATE    function_return "date"
+  if liType eq TYPE.INTEGER function_return "integer"
+  if liType eq TYPE.NUMBER  function_return "number"
+  if liType eq TYPE.STRING  function_return "string"
+  function_return "ERROR"
+end_function
+function dfscript_item_class global integer class# returns string
+  ifnot class# function_return "unknown"
+  if class# eq CLASS.UNKNOWN  function_return "unknown"
+  if class# eq CLASS.LABEL    function_return "label"
+  if class# eq CLASS.VAR      function_return "var"
+  if class# eq CLASS.CONST    function_return "const"
+  if class# eq CLASS.EXPR     function_return "expr"
+  if class# eq CLASS.KEYWORD  function_return "keyword"
+  if class# eq CLASS.COMMAND  function_return "command"
+  if class# eq CLASS.REPLACE_SYMBOL function_return "replacable"
+  if class# eq CLASS.FIELD    function_return "field"
+  if class# eq CLASS.FUNCTION function_return "function"
+  function_return "ERROR"
+end_function
+
+class cScriptInterpreter is a cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property string  psLineBeingParsed  ""
+    property string  psExprBeingParsed  ""
+    property integer piErrorCode        0
+    property integer piErrorPos         0
+    property integer piLine             0
+    property integer pVM_Object         0 // Virtual Machine object
+    property string  psFileName         "dfs.src"
+    property integer piDebugState       0
+    property string  psListingFile      "dfscript.prn"
+    property integer piListingFileState 1
+    property integer piListingFileCh    0
+    object oCommandList is a cCommandList
+    end_object
+    object oKeyWords is a cSet
+      send element_add "FROM"
+      send element_add "TO"
+      send element_add "LT"
+      send element_add "LE"
+      send element_add "EQ"
+      send element_add "NE"
+      send element_add "GE"
+      send element_add "GT"
+      send element_add "IN"
+      send element_add "AND"
+      send element_add "OR"
+      send element_add "MIN"
+      send element_add "MAX"
+    end_object
+    object oReplaces is a cReplaces
+    end_object
+    object oScriptErrors is a cScriptErrors
+    end_object
+    object oStructuralStack is a cStructuralStack
+    end_object
+    object oExpressionParser is a cExpressionParser_vdfq
+    end_object
+    property integer piExprType 0
+    property integer piExprID   0
+  end_procedure
+
+  procedure reset
+    send delete_data to (oScriptErrors(self))
+    send delete_data to (oStructuralStack(self))
+    send reset to (oReplaces(self))
+    send reset to (oExpressionParser(self))
+    set piErrorCode to 0
+    set piErrorPos  to 0
+    set piLine      to 0
+  end_procedure
+
+  function iCommand.s string command# returns integer
+    function_return (iCommand.s(oCommandList(self),command#))
+  end_function
+
+  procedure ScriptError integer error# integer pos# string tmp_str#
+    string str#
+    if num_arguments gt 2 move tmp_str# to str#
+    else move "" to str#
+    send add_error to (oScriptErrors(self)) error# (piLine(self)) pos# (psFileName(self)) str#
+    set piErrorCode to error#
+    set piErrorPos  to pos#
+  end_procedure
+
+  item_property_list
+    item_property string  psItem.i   // The item itself
+    item_property integer piPos.i    // Original starting position in original line
+    item_property integer piClass.i  // Item class
+    item_property integer piType.i   // Item type
+    item_property integer piAuxVal.i // Means different stuff
+  end_item_property_list cScriptInterpreter
+
+  function iIsLabelDeclaration.s string str# returns integer
+    if (right(str#,1)) eq ":" function_return 1
+  end_function
+
+  function iSymbolClass.s string name# returns integer
+    integer rval#
+    move (uppercase(name#)) to name#
+    // Is symbol defined in variable list of VM object?
+    get iVarNameToVarNo of (pVM_Object(self)) name# to rval#
+    if rval# ne -1 function_return CLASS.VAR
+    get iIsLabelNameUsed.s of (pVM_Object(self)) name# to rval#
+    if rval# function_return CLASS.LABEL
+ // get iCommand.s name# to rval#
+ // if rval# ne -1 function_return CLASS.COMMAND
+    get iNameToNo.s of (oReplaces(self)) name# to rval#
+    if rval# ne -1 function_return CLASS.REPLACE_SYMBOL
+    get iConstType.s name# to rval#
+    if rval# ne TYPE.UNKNOWN function_return CLASS.CONST
+    get element_find of (oKeyWords(self)) name# to rval#
+    if rval# ne -1 function_return CLASS.KEYWORD
+    if (left(name#,1)) eq "(" function_return CLASS.EXPR
+    get iFuncNameToFuncNo.s of (pVM_Object(self)) name# to rval#
+    if rval# ne -1 function_return CLASS.FUNCTION
+    get iFileField.s of (pVM_Object(self)) name# to rval#
+    if rval# function_return CLASS.FIELD
+    function_return CLASS.UNKNOWN // Which is 0
+  end_function // iSymbolClass.s
+
+  function iIsIntegerConstant.s string value# returns integer
+    integer pos# len#
+    if (left(value#,1)="-") move (replace("-",value#,"")) to value# // monadic minus
+    move (length(value#)) to len#
+    if len# eq 0 function_return 1
+    for pos# from 1 to len#
+      ifnot (mid(value#,1,pos#)) in "0123456789" function_return 0
+    loop
+    function_return 1
+  end_function
+  function iIsNumberConstant.s string value# returns integer
+    if "." in value# function_return (iIsIntegerConstant.s(self,replace(".",value#,"")))
+    // function_return 0
+  end_function
+  function iIsStringConstant.s string value# returns integer
+    string quote#
+    move (left(value#,1)) to quote#
+    if quote# in ("'"+'"') if (right(value#,1)) eq quote# if (length(value#)) ge 2 begin
+      move (replace(quote#,value#,"")) to value#
+      move (replace(quote#,value#,"")) to value#
+      ifnot quote# in value# function_return 1
+    end
+    // function_return 0
+  end_function
+  function iIsDateConstant.s string value# returns integer
+    string m# d# y#
+    ifnot " " in value# begin
+      if (HowManyWords(value#,"/")=3) begin
+        move (ExtractWord(value#,"/",1)) to m#
+        move (ExtractWord(value#,"/",2)) to d#
+        move (ExtractWord(value#,"/",3)) to y#
+        if (iIsIntegerConstant.s(self,m#) and iIsIntegerConstant.s(self,d#) and iIsIntegerConstant.s(self,y#)) begin
+          if (integer(m#)>0 and integer(m#)<13 and integer(d#)>0 and integer(d#)<32 and integer(y#)>0 and integer(y#)<2500) function_return 1
+        end
+      end
+    end
+    // function_return 0
+  end_function
+
+  function iConstType.s string value# returns integer
+    // The function returns TRUE if name is a constant. In fact, it returns
+    // the type of the constant IF indeed it is a constant
+    if (iIsIntegerConstant.s(self,value#)) function_return TYPE.INTEGER
+    if (iIsStringConstant.s(self,value#)) function_return TYPE.STRING
+    if (iIsDateConstant.s(self,value#)) function_return TYPE.DATE
+    if (iIsNumberConstant.s(self,value#)) function_return TYPE.NUMBER
+    function_return TYPE.UNKNOWN
+  end_function
+
+  function iSymbolType.si string name# integer class# returns integer
+    integer liType id# liFileField
+    if class# eq CLASS.UNKNOWN get iSymbolClass.s name# to class#
+    if class# eq CLASS.LABEL function_return TYPE.UNTYPED
+    if class# eq CLASS.VAR begin
+      get iVarType.s of (pVM_Object(self)) name# to liType
+      if liType eq VARTYP_INTEGER function_return TYPE.INTEGER
+      if liType eq VARTYP_NUMBER  function_return TYPE.NUMBER
+      if liType eq VARTYP_DATE    function_return TYPE.DATE
+      if liType eq VARTYP_STRING  function_return TYPE.STRING
+    end
+    if class# eq CLASS.CONST   function_return (iConstType.s(self,name#))
+    if class# eq CLASS.EXPR    function_return TYPE.UNKNOWN
+    if class# eq CLASS.KEYWORD function_return TYPE.UNTYPED
+    if class# eq CLASS.COMMAND function_return TYPE.UNTYPED
+    if class# eq CLASS.REPLACE_SYMBOL begin
+    end
+    if class# eq CLASS.FUNCTION begin
+      get iFuncNameToFuncNo.s of (pVM_Object(self)) name# to id#
+      get iFuncType.i of (pVM_Object(self)) id# to liType
+      if liType eq VARTYP_INTEGER function_return TYPE.INTEGER
+      if liType eq VARTYP_NUMBER  function_return TYPE.NUMBER
+      if liType eq VARTYP_DATE    function_return TYPE.DATE
+      if liType eq VARTYP_STRING  function_return TYPE.STRING
+    end
+    if class# eq CLASS.FIELD begin
+      get iFileField.s of (pVM_Object(self)) name# to liFileField
+      get iFieldType.i of (pVM_Object(self)) liFileField to liType
+      if liType eq FLDTYP_STRING function_return TYPE.STRING
+      if liType eq FLDTYP_NUMBER function_return TYPE.NUMBER
+      if liType eq FLDTYP_DATE   function_return TYPE.DATE
+    end
+    function_return TYPE.UNKNOWN
+  end_function
+
+  function iVM_ArgType.ii integer class# integer liType returns integer
+    if class#      eq CLASS.UNKNOWN function_return AT_NOT_VALID
+    else if class# eq CLASS.LABEL   function_return AT_LBL
+    else if class# eq CLASS.VAR     function_return AT_VAR
+    else if class# eq CLASS.CONST begin
+      if liType      eq TYPE.UNKNOWN function_return AT_NOT_VALID
+      else if liType eq TYPE.UNTYPED function_return AT_NOT_VALID
+      else if liType eq TYPE.INTEGER function_return AT_CINT
+      else if liType eq TYPE.STRING  function_return AT_CSTR
+      else if liType eq TYPE.NUMBER  function_return AT_CNUM
+      else if liType eq TYPE.DATE    function_return AT_CDAT
+    end
+    else if class# eq CLASS.EXPR    function_return AT_EXPR
+    else if class# eq CLASS.KEYWORD function_return AT_NOT_VALID
+    else if class# eq CLASS.COMMAND function_return AT_NOT_VALID
+    else if class# eq CLASS.REPLACE_SYMBOL function_return AT_NOT_VALID
+    else if class# eq CLASS.FIELD   function_return AT_FIELD
+    function_return AT_NOT_VALID
+  end_function
+
+  function iVM_ArgType.i integer arg# returns integer
+    function_return (iVM_ArgType.ii(self,piClass.i(self,arg#),piType.i(self,arg#)))
+  end_function
+
+  function sReplaceNameToNo.s string name# returns string
+    function_return (sNameToValue.s(oReplaces(self),name#))
+  end_function
+
+  function iIsLegalVarName.s string name# returns integer
+    integer pos# len#
+    ifnot (left(name#,1)) in CHARLIST.SYMBOL.START function_return 0
+    move (length(name#)) to len#
+    for pos# from 1 to len#
+      ifnot (mid(name#,1,pos#)) in (CHARLIST.SYMBOL.START+CHARLIST.SYMBOL.CHAR) function_return 0
+    loop
+    function_return 1
+  end_function
+
+  function iCheckNumberOfArguments.i integer should_be# returns integer
+    integer max#
+    get row_count to max#
+    decrement max#
+    if max# gt should_be# send ScriptError ERR.SCRIPT.TOO_MANY_ARGUMENTS 0
+    if max# lt should_be# send ScriptError ERR.SCRIPT.MISSING_ARGUMENT 0
+    if max# eq should_be# function_return 1
+  end_function
+
+  procedure declare_variable integer liType
+    integer liRow max#
+    string name#
+    get row_count to max#
+    for liRow from 1 to (max#-1)
+      get psItem.i liRow to name#
+      move (uppercase(name#)) to name#
+      if (iIsLegalVarName.s(self,name#)) begin
+        ifnot (iSymbolClass.s(self,name#)) ;
+          send declare_var to (pVM_Object(self)) name# liType
+        else send ScriptError ERR.SCRIPT.SYMBOL_ALREADY_DEF (piPos.i(self,liRow)) ("Delaring variable: "+name#)
+      end
+      else send ScriptError ERR.SCRIPT.ILLEGAL_VARNAME (piPos.i(self,liRow)) ("Delaring variable: "+name#)
+    loop
+  end_procedure
+
+  procedure replace_symbol string name# string value#
+    move (uppercase(name#)) to name#
+    if (iIsLegalVarName.s(self,name#)) begin
+      ifnot (iSymbolClass.s(self,name#)) begin
+        if (iNameDeclare.ss(oReplaces(self),name#,value#)) ;
+          send ScriptError ERR.SCRIPT.CIRCULAR_REFERENCE 0 ("Defining replace: "+name#+" -> "+value#)
+      end
+      else send ScriptError ERR.SCRIPT.SYMBOL_ALREADY_DEF 0 ("Defining replace: "+name#+" -> "+value#)
+    end
+    else send ScriptError ERR.SCRIPT.ILLEGAL_SYMBNAME 0 ("Defining replace: "+name#+" -> "+value#)
+  end_procedure
+
+  // Symbol checking (positive logic):
+  //
+  //    I Integer                   TYPE.INTEGER
+  //    D Date                      TYPE.DATE
+  //    N Number                    TYPE.NUMBER
+  //    S String                    TYPE.STRING
+  //    t Any type                  TYPE.INTEGER TYPE.DATE TYPE.NUMBER TYPE.STRING
+
+  //    C Constant                  CLASS.CONST
+  //    V Variable                  CLASS.VAR
+  //    E Expression                CLASS.EXPR
+  //    F File element              CLASS.FIELD
+  //    c Any of the above classes  CLASS.CONST CLASS.VAR CLASS.EXPR CLASS.FIELD
+
+  //    L Label                     CLASS.LABEL
+
+  //    R Required                  -
+  //    U Untyped                   -
+  //    . No more arguments         -
+
+  function iCheckItemPattern.isi integer quiet# string pattern# integer arg# returns integer
+    integer max# itm# rval# len# pos# liType class#
+    string key_word# char#
+    get piClass.i arg# to class#
+    get piType.i arg# to liType
+    if pattern# eq "L" begin
+      if (class#=CLASS.LABEL or class#=CLASS.UNKNOWN) function_return 1
+      ifnot quiet# send ScriptError ERR.SCRIPT.CLASS_CHECK_ERROR (piPos.i(self,arg#)) ("Symbol: "+psItem.i(self,arg#))
+      function_return 0
+    end
+    if '"' in pattern# begin // Keyword indication(s)
+      move 0 to rval#
+      move (HowManyWords(pattern#,'"')) to max#
+      for itm# from 1 to max#
+        if (uppercase(psItem.i(self,arg#))) eq (uppercase(ExtractWord(pattern#,'"',itm#))) move 1 to rval#
+      loop
+      ifnot rval# ifnot quiet# send ScriptError ERR.SCRIPT.KEYWORD_EXPECTED (piPos.i(self,arg#))
+    end
+    else begin
+      move (length(pattern#)) to len#
+      move 1 to rval#
+      for pos# from 1 to len#
+        move (mid(pattern#,1,pos#)) to char#
+        if (char#=".") begin
+          if (row_count(self)>arg#) begin
+            ifnot quiet# send ScriptError ERR.SCRIPT.TOO_MANY_ARGUMENTS (piPos.i(self,arg#))
+            function_return 0
+          end
+          else function_return 1 // There are no more arguments!
+        end
+        if (char#="R" and row_count(self)<arg#+1) begin
+          ifnot quiet# send ScriptError ERR.SCRIPT.MISSING_ARGUMENT 0
+          function_return 0
+        end
+        if (char#="U" and not(piType.i(self,arg#)=TYPE.UNKNOWN or piType.i(self,arg#)=TYPE.UNTYPED)) begin
+          ifnot quiet# send ScriptError ERR.SCRIPT.ARGUMENT_TYPED (piPos.i(self,arg#))
+          function_return 0
+        end
+      loop
+      if rval# begin // If we pass the above testing
+        move 0 to rval#
+        if class# eq CLASS.CONST   if "C" in pattern# move 1 to rval#
+        if class# eq CLASS.CONST   if "c" in pattern# move 1 to rval#
+        if class# eq CLASS.VAR     if "V" in pattern# move 1 to rval#
+        if class# eq CLASS.VAR     if "c" in pattern# move 1 to rval#
+        if class# eq CLASS.EXPR    if "E" in pattern# move 1 to rval#
+        if class# eq CLASS.EXPR    if "c" in pattern# move 1 to rval#
+        if class# eq CLASS.FIELD   if "F" in pattern# move 1 to rval#
+        if class# eq CLASS.FIELD   if "c" in pattern# move 1 to rval#
+        if class# eq CLASS.LABEL   if "L" in pattern# move 1 to rval#
+        if class# eq CLASS.UNKNOWN if "U" in pattern# move 1 to rval#
+        if rval# begin
+          move 0 to rval#
+          if liType eq TYPE.INTEGER if "I" in pattern# move 1 to rval#
+          if liType eq TYPE.INTEGER if "t" in pattern# move 1 to rval#
+          if liType eq TYPE.DATE    if "D" in pattern# move 1 to rval#
+          if liType eq TYPE.DATE    if "t" in pattern# move 1 to rval#
+          if liType eq TYPE.NUMBER  if "N" in pattern# move 1 to rval#
+          if liType eq TYPE.NUMBER  if "t" in pattern# move 1 to rval#
+          if liType eq TYPE.STRING  if "S" in pattern# move 1 to rval#
+          if liType eq TYPE.STRING  if "t" in pattern# move 1 to rval#
+          if liType eq TYPE.UNKNOWN if "U" in pattern# move 1 to rval#
+          if liType eq TYPE.UNTYPED if "U" in pattern# move 1 to rval#
+          ifnot rval# ifnot quiet# send ScriptError ERR.SCRIPT.TYPE_CHECK_ERROR (piPos.i(self,arg#))
+        end
+        else ifnot quiet# send ScriptError ERR.SCRIPT.CLASS_CHECK_ERROR (piPos.i(self,arg#)) ("Symbol: "+psItem.i(self,arg#))
+      end
+    end
+    function_return rval#
+  end_function
+
+  function iCheckPattern.is integer quiet# string pattern# returns integer
+    integer itm# max# rval#
+    move (HowManyWords(pattern#," ")) to max#
+    move 1 to rval#
+    for itm# from 1 to max#
+      if rval# get iCheckItemPattern.isi quiet# (ExtractWord(pattern#," ",itm#)) itm# to rval#
+    loop
+    function_return rval#
+  end_function
+
+  function iStructureCheck.i integer cmd# returns integer
+    integer obj# shouldbe# rval# pos#
+    move (piPos.i(self,0)) to pos#
+    move 1 to rval#
+    move (oStructuralStack(self)) to obj#
+    if (item_count(obj#)) begin
+      get iTopPendingCmd of obj# to shouldbe#
+      send pop_struct to obj#
+      if shouldbe# ne cmd# begin
+        if shouldbe# eq CMD_END send ScriptError ERR.SCRIPT.SHOULD_BE_END pos#
+        if shouldbe# eq CMD_ENDIF send ScriptError ERR.SCRIPT.SHOULD_BE_ENDIF pos#
+        if shouldbe# eq CMD_LOOP send ScriptError ERR.SCRIPT.SHOULD_BE_LOOP pos#
+        if shouldbe# eq CMD_UNTIL send ScriptError ERR.SCRIPT.SHOULD_BE_UNTIL pos#
+        move 0 to rval#
+      end
+    end
+    else begin
+      if cmd# eq CMD_END send ScriptError ERR.SCRIPT.UNINITIATED_END pos#
+      if cmd# eq CMD_ENDIF send ScriptError ERR.SCRIPT.UNINITIATED_ENDIF pos#
+      if cmd# eq CMD_LOOP send ScriptError ERR.SCRIPT.UNINITIATED_LOOP pos#
+      if cmd# eq CMD_UNTIL send ScriptError ERR.SCRIPT.UNINITIATED_UNTIL pos#
+      move 0 to rval#
+    end
+    function_return rval#
+  end_function
+  // ==================== INTERPRETATION METHODS ====================
+  procedure Interpret_Date
+    send declare_variable VARTYP_DATE
+  end_procedure
+  procedure Interpret_If
+    integer comp#
+    send push_struct to (oStructuralStack(self)) CMD_IF CMD_ENDIF (psFileName(self)) (piLine(self))
+    if (iCheckPattern.is(self,1,'ct .')) begin
+      if (iCheckPattern.is(self,0,'cI .')) ;
+        send add_instruction to (pVM_Object(self)) OP_IF_BEGIN (iVM_ArgType.i(self,1)) (psItem.i(self,1)) AT_CINT COMP_NE AT_CINT 0
+    end
+    else begin
+      if (iCheckPattern.is(self,0,'ct "LT""LE""EQ""NE""GE""GT" ct .')) begin
+        move (iCompStringToInt.s(psItem.i(self,2))) to comp#
+        send add_instruction to (pVM_Object(self)) OP_IF_BEGIN (iVM_ArgType.i(self,1)) (psItem.i(self,1)) AT_CINT comp# (iVM_ArgType.i(self,3)) (psItem.i(self,3))
+      end
+    end
+  end_procedure
+  procedure Interpret_Else
+    integer cmd#
+    if (iCheckPattern.is(self,0,'.')) begin
+      get iTopStackingCmd of (oStructuralStack(self)) to cmd#
+      if cmd# eq CMD_IF send add_instruction to (pVM_Object(self)) OP_ELSE
+      else send ScriptError ERR.SCRIPT.UNINITIATED_ELSE (piPos.i(self,0))
+    end
+  end_procedure
+  procedure Interpret_EndIf
+    if (iStructureCheck.i(self,CMD_ENDIF) and iCheckPattern.is(self,0,'.')) send add_instruction to (pVM_Object(self)) OP_ENDIF
+  end_procedure
+  procedure Interpret_End
+    integer cmd#
+    get iTopStackingCmd of (oStructuralStack(self)) to cmd#
+    if (iStructureCheck.i(self,CMD_END) and iCheckPattern.is(self,0,'.')) begin
+      if cmd# eq CMD_WHILE send add_instruction to (pVM_Object(self)) OP_LOOP
+      else send add_instruction to (pVM_Object(self)) OP_ENDIF
+    end
+  end_procedure
+  procedure Interpret_For // For iVar FROM cI TO
+    send push_struct to (oStructuralStack(self)) CMD_FOR CMD_LOOP (psFileName(self)) (piLine(self))
+    if (iCheckPattern.is(self,0,'IV "FROM" Ic "TO" Ic .')) begin
+      send add_instruction to (pVM_Object(self)) OP_FOR AT_VAR (psItem.i(self,1)) (iVM_ArgType.i(self,3)) (psItem.i(self,3)) (iVM_ArgType.i(self,5)) (psItem.i(self,5))
+    end
+  end_procedure
+  procedure Interpret_While
+    integer comp#
+    send push_struct to (oStructuralStack(self)) CMD_WHILE CMD_END (psFileName(self)) (piLine(self))
+    if (iCheckPattern.is(self,1,'ct .')) begin
+      if (iCheckPattern.is(self,0,'cI .')) ;
+        send add_instruction to (pVM_Object(self)) OP_WHILE (iVM_ArgType.i(self,1)) (psItem.i(self,1)) AT_CINT COMP_NE AT_CINT 0
+    end
+    else begin
+      if (iCheckPattern.is(self,0,'ct "LT""LE""NE""EQ""GE""GT" ct .')) begin
+        move (iCompStringToInt.s(psItem.i(self,2))) to comp#
+        send add_instruction to (pVM_Object(self)) OP_WHILE (iVM_ArgType.i(self,1)) (psItem.i(self,1)) AT_CINT comp# (iVM_ArgType.i(self,3)) (psItem.i(self,3))
+      end
+    end
+  end_procedure
+  procedure Interpret_Gosub
+    if (iCheckPattern.is(self,0,'L .')) send add_instruction to (pVM_Object(self)) OP_GOSUB AT_LBL (psItem.i(self,1))
+  end_procedure
+  procedure Interpret_Goto
+    if (iCheckPattern.is(self,0,'L .')) send add_instruction to (pVM_Object(self)) OP_GOTO AT_LBL (psItem.i(self,1))
+  end_procedure
+  procedure Interpret_Pause
+    if (iCheckPattern.is(self,0,'.')) send add_instruction to (pVM_Object(self)) OP_PAUSE
+  end_procedure
+  procedure Interpret_GotoXY
+    if (iCheckPattern.is(self,0,'Ic Ic .')) send add_instruction to (pVM_Object(self)) OP_GOTOXY (iVM_ArgType.i(self,1)) (psItem.i(self,1)) (iVM_ArgType.i(self,2)) (psItem.i(self,2))
+  end_procedure
+  procedure Interpret_Input
+    if (iCheckPattern.is(self,0,'tc tV .')) send add_instruction to (pVM_Object(self)) OP_INPUT AT_VAR (psItem.i(self,2)) (iVM_ArgType.i(self,1)) (psItem.i(self,1))
+  end_procedure
+  procedure Interpret_Integer
+    send declare_variable VARTYP_INTEGER
+  end_procedure
+  procedure Interpret_Loop
+    if (iStructureCheck.i(self,CMD_LOOP) and iCheckPattern.is(self,0,'.')) send add_instruction to (pVM_Object(self)) OP_LOOP
+  end_procedure
+  procedure Interpret_Move
+    integer liClass
+    if (iCheckPattern.is(self,0,'Rtc "TO" RtVF .')) begin
+//      send obs OP_ASSIGN AT_VAR (psItem.i(self,3)) (iVM_ArgType.i(self,1)) (psItem.i(self,1))
+      get piClass.i 3 to liClass // Class of target
+      if liClass eq CLASS.VAR ;
+        send add_instruction to (pVM_Object(self)) OP_ASSIGN AT_VAR (psItem.i(self,3)) (iVM_ArgType.i(self,1)) (psItem.i(self,1))
+      if liClass eq CLASS.FIELD ;
+        send add_instruction to (pVM_Object(self)) OP_ASSIGN AT_FIELD (psItem.i(self,3)) (iVM_ArgType.i(self,1)) (psItem.i(self,1))
+    end
+  end_procedure
+  procedure Interpret_Number
+    send declare_variable VARTYP_NUMBER
+  end_procedure
+  procedure Interpret_Return
+    if (iCheckPattern.is(self,0,'.')) send add_instruction to (pVM_Object(self)) OP_RETURN
+  end_procedure
+  procedure Interpret_Showln
+    send Interpret_Show
+    send add_instruction to (pVM_Object(self)) OP_SHOWLN AT_CSTR ""
+  end_procedure
+  procedure Interpret_Show
+    integer arg# max#
+    get row_count to max#
+    for arg# from 1 to (max#-1)
+      if (iCheckItemPattern.isi(self,0,'ct',arg#)) send add_instruction to (pVM_Object(self)) OP_SHOW (iVM_ArgType.i(self,arg#)) (psItem.i(self,arg#))
+    loop
+  end_procedure
+  procedure Interpret_String
+    send declare_variable VARTYP_STRING
+  end_procedure
+  procedure Interpret_ClearScreen
+    if (iCheckPattern.is(self,0,'.')) send add_instruction to (pVM_Object(self)) OP_CLEARSCREEN
+  end_procedure
+  procedure Interpret_Abort
+    if (iCheckPattern.is(self,0,'.')) send add_instruction to (pVM_Object(self)) OP_ABORT
+  end_procedure
+  procedure Interpret_#use
+  end_procedure
+  procedure Interpret_#include
+  end_procedure
+  procedure Interpret_Increment
+    if (iCheckPattern.is(self,0,'VI .')) send add_instruction to (pVM_Object(self)) OP_GVAR_INCR AT_VAR (psItem.i(self,1)) AT_CINT 1
+  end_procedure
+  procedure Interpret_Decrement
+    if (iCheckPattern.is(self,0,'VI .')) send add_instruction to (pVM_Object(self)) OP_GVAR_INCR AT_VAR (psItem.i(self,1)) AT_CINT -1
+  end_procedure
+  procedure Interpret_#noisy
+    if (iCheckPattern.is(self,0,'CI .')) set piDebugState to (integer(psItem.i(self,1)))
+  end_procedure
+  procedure Interpret_#replace
+    if (iCheckNumberOfArguments.i(self,2)) send replace_symbol (psItem.i(self,1)) (psItem.i(self,2))
+  end_procedure
+  procedure Interpret_Debug
+    string mode#
+    if (iCheckPattern.is(self,0,'"ON""OFF""SINGLE_STEP""DISPLAY_VAR" .')) begin
+      move (uppercase(psItem.i(self,1))) to mode#
+      if mode#      eq "ON"          send add_instruction to (pVM_Object(self)) OP_DEBUG AT_CINT DBG.ON
+      else if mode# eq "OFF"         send add_instruction to (pVM_Object(self)) OP_DEBUG AT_CINT DBG.OFF
+      else if mode# eq "SINGLE_STEP" send add_instruction to (pVM_Object(self)) OP_DEBUG AT_CINT DBG.SINGLESTEP
+      else if mode# eq "DISPLAY_VAR" send add_instruction to (pVM_Object(self)) OP_DEBUG AT_CINT DBG.VARDISPLAY
+      else send ScriptError ERR.SCRIPT.KEYWORD_DEBUG (piPos.i(self,1))
+    end
+  end_procedure
+  procedure Interpret_Repeat
+    send push_struct to (oStructuralStack(self)) CMD_REPEAT CMD_UNTIL (psFileName(self)) (piLine(self))
+    if (iCheckPattern.is(self,0,'.')) send add_instruction to (pVM_Object(self)) OP_REPEAT
+  end_procedure
+  procedure Interpret_Until
+    integer comp#
+    if (iCheckPattern.is(self,1,'ct .')) begin
+      if (iCheckPattern.is(self,0,'cI .')) begin
+        if (iStructureCheck.i(self,CMD_UNTIL)) ;
+          send add_instruction to (pVM_Object(self)) OP_UNTIL (iVM_ArgType.i(self,1)) (psItem.i(self,1)) AT_CINT COMP_NE AT_CINT 0
+      end
+    end
+    else begin
+      if (iStructureCheck.i(self,CMD_UNTIL) and iCheckPattern.is(self,0,'ct "LT""LE""EQ""NE""GE""GT" ct .')) begin
+        move (iCompStringToInt.s(psItem.i(self,2))) to comp#
+        send add_instruction to (pVM_Object(self)) OP_UNTIL (iVM_ArgType.i(self,1)) (psItem.i(self,1)) AT_CINT comp# (iVM_ArgType.i(self,3)) (psItem.i(self,3))
+      end
+    end
+  end_procedure
+  procedure Interpret_Log_Open
+    if (iCheckPattern.is(self,0,'Sc Ic .')) send add_instruction to (pVM_Object(self)) OP_LOG_OPEN (iVM_ArgType.i(self,1)) (psItem.i(self,1)) (iVM_ArgType.i(self,2)) (psItem.i(self,2))
+  end_procedure
+  procedure Interpret_Log_Close
+    if (iCheckPattern.is(self,0,'.')) send add_instruction to (pVM_Object(self)) OP_LOG_CLOSE
+  end_procedure
+  procedure Interpret_Log_Display
+    if (iCheckPattern.is(self,0,'.')) send add_instruction to (pVM_Object(self)) OP_LOG_DISPLAY
+  end_procedure
+  procedure Interpret_Log_Flush
+    if (iCheckPattern.is(self,0,'.')) send add_instruction to (pVM_Object(self)) OP_LOG_FLUSH
+  end_procedure
+  procedure Interpret_Log_Write
+    integer arg# max#
+    get row_count to max#
+    for arg# from 1 to (max#-1)
+      if (iCheckItemPattern.isi(self,0,'ct',arg#)) send add_instruction to (pVM_Object(self)) OP_LOG_WRITE (iVM_ArgType.i(self,arg#)) (psItem.i(self,arg#))
+    loop
+  end_procedure
+  procedure Interpret_Log_Writeln
+    send Interpret_Log_Write
+    send add_instruction to (pVM_Object(self)) OP_LOG_WRITELN AT_CSTR ""
+  end_procedure
+  procedure Interpret_Set_Attribute // liType
+    integer params# attr# liRow max# attrtype#
+    integer t1# t2# t3# t4# t5# t6#
+    string a1# a2# a3# a4# a5# a6#
+    if (iCheckPattern.is(self,1,'CI')) begin
+      // If we go in this branch an explicit attribute was specified
+      // and we are therefore able to check the number of parameters
+      move (psItem.i(self,1)) to attr#
+      ifnot (API_Attr_WriteAccess(attr#)) send ScriptError ERR.SCRIPT.ATTR_NO_SET (piPos.i(self,1)) (API_Attr_Name(attr#))
+      move (API_Attr_NumberOfParams(attr#)) to params#
+      if (API_AttrWorksOnStructure(attr#)) decrement params# // For these attributes the file handle is implicit
+      if (iCheckItemPattern.isi(self,0,'"TO"',params#+2)) begin
+        move (API_AttrType(attr#)) to attrtype#
+        if (attrtype#=ATTRTYPE_FILELIST or attrtype#=ATTRTYPE_FILE or attrtype#=ATTRTYPE_FIELD or attrtype#=ATTRTYPE_INDEX or attrtype#=ATTRTYPE_IDXSEG) begin
+          if attrtype# eq ATTRTYPE_FILELIST begin
+            move (iVM_ArgType.i(self,2)) to t2#
+            move (psItem.i(self,2)) to a2#
+            move (iVM_ArgType.i(self,4)) to t4#
+            move (psItem.i(self,4)) to a4#
+            send add_instruction to (pVM_Object(self)) OP_API_FILELIST AT_CINT attr# t2# a2# t4# a4#
+          end
+          if attrtype# eq ATTRTYPE_FILE begin
+            move (iVM_ArgType.i(self,3)) to t3#
+            move (psItem.i(self,3)) to a3#
+            send add_instruction to (pVM_Object(self)) OP_API_FILE AT_CINT attr# t3# a3#
+          end
+          if attrtype# eq ATTRTYPE_FIELD begin
+            move (iVM_ArgType.i(self,2)) to t2#
+            move (psItem.i(self,2)) to a2#
+            move (iVM_ArgType.i(self,4)) to t4#
+            move (psItem.i(self,4)) to a4#
+            send add_instruction to (pVM_Object(self)) OP_API_FIELD AT_CINT attr# t2# a2# t4# a4#
+          end
+          if attrtype# eq ATTRTYPE_INDEX begin
+            move (iVM_ArgType.i(self,2)) to t2#
+            move (psItem.i(self,2)) to a2#
+            move (iVM_ArgType.i(self,4)) to t4#
+            move (psItem.i(self,4)) to a4#
+            send add_instruction to (pVM_Object(self)) OP_API_INDEX AT_CINT attr# t2# a2# t4# a4#
+          end
+          if attrtype# eq ATTRTYPE_IDXSEG begin
+            move (iVM_ArgType.i(self,2)) to t2#
+            move (psItem.i(self,2)) to a2#
+            move (iVM_ArgType.i(self,3)) to t3#
+            move (psItem.i(self,3)) to a3#
+            move (iVM_ArgType.i(self,5)) to t5#
+            move (psItem.i(self,5)) to a5#
+            send add_instruction to (pVM_Object(self)) OP_API_IDXSEG AT_CINT attr# t2# a2# t3# a3# t5# a5#
+          end
+        end
+        else begin
+          // OK, it's got to be one of these which we do not support setting:
+          //  ATTRTYPE_GLOBAL     ATTRTYPE_DRIVER   ATTRTYPE_DRVSRV
+          //  ATTRTYPE_SPECIAL1   ATTRTYPE_FLSTNAV
+          send ScriptError ERR.SCRIPT.ATTR_NO_CHANGING (piPos.i(self,1))
+        end
+      end
+    end
+    else begin
+      // If we go in this branch an attribute in the form of a variable was
+      // handed, and we just fill up with parameters. We can't type check it
+      // until we execute it and know which attribute is actually set.
+      send ScriptError ERR.SCRIPT.ATTR_IMPLICIT (piPos.i(self,1))
+    end
+  end_procedure
+  procedure Interpret_Create_Field  // field# name# liType
+    integer t1# t2# t3#
+    string a1# a2# a3#
+    if (iCheckPattern.is(self,0,'cI cS cI .')) begin
+      move (iVM_ArgType.i(self,1)) to t1#
+      move (iVM_ArgType.i(self,2)) to t2#
+      move (iVM_ArgType.i(self,3)) to t3#
+      move (psItem.i(self,1)) to a1#
+      move (psItem.i(self,2)) to a2#
+      move (psItem.i(self,3)) to a3#
+      send add_instruction to (pVM_Object(self)) OP_API_CREATEFIELD t1# a1# t2# a2# t3# a3#
+    end
+  end_procedure
+  procedure Interpret_Append_Field  // name liType
+    if (iCheckPattern.is(self,0,'cS cI .')) send add_instruction to (pVM_Object(self)) OP_API_APPENDFIELD (iVM_ArgType.i(self,1)) (psItem.i(self,1)) (iVM_ArgType.i(self,2)) (psItem.i(self,2))
+  end_procedure
+  procedure Interpret_Delete_Field  //
+    if (iCheckPattern.is(self,0,'cI .')) send add_instruction to (pVM_Object(self)) OP_API_DELETEFIELD (iVM_ArgType.i(self,1)) (psItem.i(self,1))
+  end_procedure
+  procedure Interpret_Delete_Index  //
+    if (iCheckPattern.is(self,0,'cI .')) send add_instruction to (pVM_Object(self)) OP_API_DELETEINDEX (iVM_ArgType.i(self,1)) (psItem.i(self,1))
+  end_procedure
+  procedure Interpret_Structure_Abort
+    if (iCheckPattern.is(self,0,'.')) send add_instruction to (pVM_Object(self)) OP_API_STRUCTURE_ABORT
+  end_procedure
+  procedure Interpret_Structure_End
+    if (iCheckPattern.is(self,0,'.')) send add_instruction to (pVM_Object(self)) OP_API_STRUCTURE_END
+  end_procedure
+  procedure Interpret_Probe_End
+    if (iCheckPattern.is(self,0,'.')) send add_instruction to (pVM_Object(self)) OP_API_PROBE_END
+  end_procedure
+  procedure Interpret_Set_Field     //
+    if (iCheckPattern.is(self,0,'cI .')) send add_instruction to (pVM_Object(self)) OP_API_SETFIELDNUMBER (iVM_ArgType.i(self,1)) (psItem.i(self,1))
+  end_procedure
+  procedure Interpret_InfoBox
+    if (iCheckPattern.is(self,0,'ct .')) send add_instruction to (pVM_Object(self)) OP_MSGBOX (iVM_ArgType.i(self,1)) (psItem.i(self,1))
+  end_procedure
+
+  procedure add_item.si string str# integer pos#
+    integer liRow
+    get row_count to liRow
+    set psItem.i  liRow to str#
+    set piPos.i   liRow to pos#
+    set piClass.i liRow to CLASS.UNKNOWN
+    set piType.i  liRow to TYPE.UNKNOWN
+  end_procedure
+
+  enumeration_list
+    define ITEMTYPE.NOT_IN_ITEM
+    define ITEMTYPE.UNKNOWN
+    define ITEMTYPE.STRING_CONSTANT
+    define ITEMTYPE.EXPRESSION
+    define ITEMTYPE.EXPRESSION_STRING_PART
+  end_enumeration_list
+
+  procedure split_line_in_items string str#
+    integer pos# len# start_pos# item_type# error_code# error_pos# balance# comment#
+    string item# char# decr_balance_char# incr_balance_char#
+    string expr_string_const_stopper#
+    move (length(str#)) to len#
+    move 0 to start_pos#
+    move 0 to comment#
+    move "" to item#
+    move ERR.SCRIPT.NO_ERROR to error_code#
+    move 0 to error_pos#
+    move ITEMTYPE.NOT_IN_ITEM to item_type#
+    for pos# from 1 to len#
+      if (error_code#=0 and comment#<>2) begin
+        move (mid(str#,1,pos#)) to char#
+        if start_pos# begin // We are currently in an item
+          if comment# begin
+            if char# eq "/" begin
+              move 0 to start_pos#
+              move 2 to comment#
+            end
+            else move 0 to comment#
+          end
+          if comment# ne 2 begin
+            if item_type# eq ITEMTYPE.EXPRESSION_STRING_PART begin
+              if char# eq expr_string_const_stopper# begin
+                move ITEMTYPE.EXPRESSION to item_type#
+              end
+              move (item#+char#) to item#
+            end
+            else if item_type# eq ITEMTYPE.EXPRESSION begin
+              if char# eq '"' begin
+                move ITEMTYPE.EXPRESSION_STRING_PART to item_type#
+                move char# to expr_string_const_stopper#
+              end
+              if char# eq "'" begin
+                move ITEMTYPE.EXPRESSION_STRING_PART to item_type#
+                move char# to expr_string_const_stopper#
+              end
+              if char# eq decr_balance_char# decrement balance#
+              if char# eq incr_balance_char# increment balance#
+              move (item#+char#) to item#
+              if balance# eq 0 begin
+                send add_item.si item# start_pos#
+                move 0 to start_pos#
+                move "" to item#
+                move ITEMTYPE.NOT_IN_ITEM to item_type#
+              end
+            end
+            else if item_type# eq ITEMTYPE.STRING_CONSTANT begin
+              move (item#+char#) to item#
+              if char# eq decr_balance_char# begin
+                send add_item.si item# start_pos#
+                move 0 to start_pos#
+                move "" to item#
+                move ITEMTYPE.NOT_IN_ITEM to item_type#
+              end
+            end
+            else if item_type# eq ITEMTYPE.UNKNOWN begin
+              if char# eq " " begin
+                send add_item.si item# start_pos#
+                move 0 to start_pos#
+                move "" to item#
+                move ITEMTYPE.NOT_IN_ITEM to item_type#
+              end
+              else begin
+                move (item#+char#) to item#
+                if char# eq ":" begin
+                  send add_item.si item# start_pos#
+                  move 0 to start_pos#
+                  move "" to item#
+                  move ITEMTYPE.NOT_IN_ITEM to item_type#
+                end
+              end
+            end
+          end
+        end
+        else begin // We are currently not in an item
+          if char# eq "/" ifnot comment# increment comment#
+          if char# ne " " begin
+            if char# in CHARLIST.ILLEGAL_ITEM_START begin
+              move ERR.SCRIPT.ERROR_ILLEGAL_CHAR to error_code#
+              move pos# to error_pos#
+            end
+            else begin
+              if char# eq "(" begin
+                move "(" to incr_balance_char#
+                move ")" to decr_balance_char#
+                move 1 to balance#
+                move ITEMTYPE.EXPRESSION to item_type#
+              end
+              else if char# eq "{" begin
+                move "{" to incr_balance_char#
+                move "}" to decr_balance_char#
+                move 1 to balance#
+                move ITEMTYPE.EXPRESSION to item_type#
+              end
+              else if char# eq "[" begin
+                move "[" to incr_balance_char#
+                move "]" to decr_balance_char#
+                move 1 to balance#
+                move ITEMTYPE.EXPRESSION to item_type#
+              end
+              else if char# eq "'" begin
+                move "'" to decr_balance_char#
+                move ITEMTYPE.STRING_CONSTANT to item_type#
+              end
+              else if char# eq '"' begin
+                move '"' to decr_balance_char#
+                move ITEMTYPE.STRING_CONSTANT to item_type#
+              end
+              else move ITEMTYPE.UNKNOWN to item_type#
+              move char# to item#
+              move pos# to start_pos#
+            end
+          end
+        end
+      end
+    loop
+    if start_pos# send add_item.si item# start_pos#
+    if (error_code#=0 and item_type#=ITEMTYPE.STRING_CONSTANT) begin
+      move ERR.SCRIPT.MISSING_END_QUOTE to error_code#
+      move pos# to error_pos#
+    end
+    if error_code# ne ERR.SCRIPT.NO_ERROR send ScriptError error_code# error_pos#
+  end_procedure
+
+  // Label declarations are supposed to be at the beginning of the line.
+  // The DoLabels procedure will declare any such labels in the VM and
+  // remove them from the list of items.
+  procedure DoLabels
+    integer liRow max# islabel#
+    string str#
+    get row_count to max#
+    move 0 to liRow
+    repeat
+      get psItem.i liRow to str#
+      get iIsLabelDeclaration.s str# to islabel#
+      if islabel# begin
+        move (StringLeftBut(str#,1)) to str#
+        ifnot (iSymbolClass.s(self,str#)) send declare_label to (pVM_Object(self)) str#
+        else send ScriptError ERR.SCRIPT.SYMBOL_ALREADY_DEF (piPos.i(self,liRow))
+        increment liRow
+      end
+    until (not(islabel#))
+    // Now, delete the labels from the list:
+    decrement liRow
+    while liRow ge 0
+      send delete_row liRow
+      decrement liRow
+    loop
+  end_procedure
+
+  procedure DoCommand
+    integer cmd#
+    if (row_count(self)) begin
+      // Get Command ID of command in row 0:
+      get iCommand.s (psItem.i(self,0)) to cmd#
+      // Set the aux value of row 0 to the Command ID
+      if cmd# ge 0 set piAuxVal.i 0 to cmd#
+      else send ScriptError ERR.SCRIPT.COMMAND_NOT_FOUND (piPos.i(self,0)) ("Command: "+psItem.i(self,0))
+    end
+  end_procedure
+
+  procedure DoReplaces // Perform symbol replaces
+    integer liRow max#
+    get row_count to max#
+    for liRow from 1 to (max#-1) // We do not replace the command column
+      set psItem.i liRow to (sReplaceNameToNo.s(self,psItem.i(self,liRow)))
+    loop
+  end_procedure
+
+  procedure DoClassColumn // Identify the classes
+    integer liRow max# liClass
+    string lsItem
+    get row_count to max#
+    for liRow from 0 to (max#-1)
+      get psItem.i liRow to lsItem
+      get iSymbolClass.s lsItem to liClass
+      set piClass.i liRow to liClass
+    loop
+  end_procedure
+
+  procedure DoTypeColumn // Identify the types
+    integer liRow max#
+    get row_count to max#
+    for liRow from 0 to (max#-1)
+      set piType.i liRow to (iSymbolType.si(self,psItem.i(self,liRow),piClass.i(self,liRow)))
+    loop
+  end_procedure
+
+  procedure DoExpressions
+    integer liRow max# exprid#
+    get row_count to max#
+    for liRow from 1 to (max#-1)
+      if (piErrorCode(self)=ERR.SCRIPT.NO_ERROR) begin
+        if (piClass.i(self,liRow)=CLASS.EXPR and piType.i(self,liRow)=TYPE.UNKNOWN) begin
+          set psExprBeingParsed to (psItem.i(self,liRow))
+          get iParse_expression.si of (oExpressionParser(self)) (psItem.i(self,liRow)) (piPos.i(self,liRow)) to exprid#
+          set piType.i liRow to (piExprType(oExpressionParser(self)))
+          set psItem.i liRow to exprid#
+          if (piDebugState(self)) send DisplayExpressionDebugInfo (oExpressionParser(self))
+        end
+      end
+    end
+  end_procedure
+
+  procedure DoPrepareArguments
+    integer liRow max#
+    get row_count to max#
+    for liRow from 1 to (max#-1)
+      // Remove quotation characters from string constants:
+      if (piClass.i(self,liRow)=CLASS.CONST and piType.i(self,liRow)=TYPE.STRING) set psItem.i liRow to (StringRightBut(StringLeftBut(psItem.i(self,liRow),1),1))
+    loop
+  end_procedure
+
+  procedure parse_line string str# integer line# string fn#
+    integer msg#
+    set piErrorCode to 0
+    set piErrorPos  to 0
+    set piLine      to line#
+    set psFileName  to fn#
+    set psLineBeingParsed to str#
+    send ListingFileWriteLn (string(piProgramCounter(pVM_Object(self)))+"> "+str#)
+    send delete_data
+    send split_line_in_items str#
+    ifnot (piErrorCode(self)) begin
+      send DoLabels  //
+      send DoCommand
+      ifnot (piErrorCode(self)) begin
+        ifnot (piErrorCode(self)) send DoReplaces
+        ifnot (piErrorCode(self)) send DoClassColumn
+        ifnot (piErrorCode(self)) send DoTypeColumn
+        ifnot (piErrorCode(self)) send DoExpressions
+        ifnot (piErrorCode(self)) send DoPrepareArguments
+        get piCompileMsg.i of (oCommandList(self)) (piAuxVal.i(self,0)) to msg#
+        ifnot (piErrorCode(self)) send msg#
+      end
+    end
+    if (piErrorCode(self)) ne ERR.SCRIPT.NO_ERROR set piInvalidProgram of (pVM_Object(self)) to true
+    if (piDebugState(self) and item_count(self)) send DisplayInterpreterDebugInfo self
+  end_procedure
+  function iParse_Line.sis string str# integer line# string fn# returns integer
+    send parse_line str# line# fn#
+    if (piErrorCode(self)) function_return (piLine(self)*65536+piErrorPos(self))
+    //function_return 0
+  end_function
+  // After having called this function you may query the piExprType
+  // and piExprID properties
+  function iParse_Expr.s string lsExpression returns integer
+    integer lhExpr
+    set piErrorCode to 0
+    set piErrorPos  to 0
+    set piLine      to 0
+    set psFileName  to "Expression"
+//    send obs lsExpression
+    get iParse_expression.si of (oExpressionParser(self)) lsExpression 1 to lhExpr
+    set piExprType to (piExprType(oExpressionParser(self)))
+    set piExprID   to lhExpr
+    if (piDebugState(self)) send DisplayExpressionDebugInfo (oExpressionParser(self))
+    if (piErrorCode(self)) function_return (piLine(self)*65536+piErrorPos(self))
+    //function_return 0
+  end_function
+  procedure ListingFileWriteLn string str#
+    if (piListingFileState(self)) writeln channel (piListingFileCh(self)) str#
+  end_procedure
+  procedure script_begin
+    if (piListingFileState(self)) begin
+      set piListingFileCh to (SEQ_DirectOutput(psListingFile(self)))
+      send ListingFileWriteLn "Script interpreter listing file"
+      send ListingFileWriteLn (string(dSysdate())+", "+sSysTime())
+    end
+    send reset
+    send script_begin to (pVM_Object(self))
+  end_procedure
+  procedure script_end
+    if (item_count(oStructuralStack(self))) send ScriptError ERR.SCRIPT.UNFINISHED_STRUCT 0
+    send script_end to (pVM_Object(self))
+    if (piListingFileState(self)) send SEQ_CloseOutput (piListingFileCh(self))
+  end_procedure
+  procedure run_script
+    send run_script to (pVM_Object(self))
+  end_procedure
+end_class // cScriptInterpreter
+
+object oDFScriptParserTest is a aps.ModalPanel label "Line being parsed"
+  set locate_mode to CENTER_ON_SCREEN
+  object oFrm is a aps.Form abstract AFT_ASCII80
+    set object_shadow_state to true
+  end_object
+  send aps_goto_max_row
+  object oLst is a aps.Grid
+    set highlight_row_state to true
+    set highlight_row_color to (rgb(0,255,255))
+    set current_item_color to (rgb(0,255,255))
+    set select_mode to no_select
+    set size to 196 0
+    set line_width to 5 0
+    set form_margin item 0 to 35
+    set form_margin item 1 to 4
+    set form_margin item 2 to 13
+    set form_margin item 3 to 13
+    set form_margin item 4 to 6
+    set header_label item 0 to "Item"
+    set header_label item 1 to "Pos"
+    set header_label item 2 to "Class"
+    set header_label item 3 to "Type"
+    set header_label item 4 to "Aux"
+    on_key knext_item send switch
+    on_key kprevious_item send switch_back
+    procedure fill_list.i integer obj#
+      integer max# liRow pos# class# liType aux#
+      string str#
+      send delete_data
+      get row_count of obj# to max#
+      for liRow from 0 to (max#-1)
+        get psItem.i   of obj# liRow to str#
+        get piPos.i    of obj# liRow to pos#
+        get piClass.i  of obj# liRow to class#
+        get piType.i   of obj# liRow to liType
+        get piAuxVal.i of obj# liRow to aux#
+        send add_item msg_none str#
+        send add_item msg_none (string(pos#))
+        send add_item msg_none (dfscript_item_class(class#))
+        send add_item msg_none (dfscript_item_type(liType))
+        send add_item msg_none (string(aux#))
+      loop
+      get item_count to max#
+      for liRow from 0 to (max#-1)
+        set entry_state item liRow to false
+      loop
+    end_procedure
+  end_object
+  object oBtn is a aps.Multi_Button
+    on_item t.btn.close send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure run.i integer obj#
+    set value of (oFrm(self)) item 0 to (psLineBeingParsed(obj#))
+    send fill_list.i to (oLst(self)) obj#
+    send popup
+  end_procedure
+end_object
+
+procedure DisplayInterpreterDebugInfo global integer obj#
+  send run.i to (oDFScriptParserTest(self)) obj#
+end_procedure
+
+object oDFScriptExprTest is a aps.ModalPanel label "Expression parsed"
+  set locate_mode to CENTER_ON_SCREEN
+  object oFrm is a aps.Form abstract AFT_ASCII80
+    set object_shadow_state to true
+  end_object
+  send aps_goto_max_row
+  object oLst is a aps.Grid
+    set line_width to 8 0
+    set highlight_row_state to true
+    set highlight_row_color to (rgb(0,255,255))
+    set current_item_color to (rgb(0,255,255))
+    set select_mode to no_select
+    set size to 196 0
+    set form_margin item 0 to 14
+    set form_margin item 1 to 4
+    set form_margin item 2 to 6
+    set form_margin item 3 to 3
+    set form_margin item 4 to 8
+    set form_margin item 5 to 7
+    set form_margin item 6 to 3
+    set form_margin item 7 to 3
+    set header_label item 0 to "Item"
+    set header_label item 1 to "Pos"
+    set header_label item 2 to "EIT"
+    set header_label item 3 to "Opr"
+    set header_label item 4 to "Class"
+    set header_label item 5 to "Type"
+    set header_label item 6 to "Lvl"
+    set header_label item 7 to "Par"
+    on_key kenter send close_panel
+    on_key knext_item send switch
+    on_key kprevious_item send switch_back
+    procedure fill_list.i integer obj#
+      string item#
+      integer pos# class# liType structtype# level# max# liRow params# op_type#
+      send delete_data
+      get row_count of obj# to max#
+      for liRow from 0 to (max#-1)
+        get psItem.i       of obj# liRow to item#       // The item in clear text
+        get piStructType.i of obj# liRow to structtype# // What part of the expression is this?
+        get piPos.i        of obj# liRow to pos#        // What is the starting position?
+        get piClass.i      of obj# liRow to class#      // If item, what is item class?
+        get piType.i       of obj# liRow to liType       // If item, what is item type?
+        get piEvalLevel.i  of obj# liRow to level#      // When evaluating
+        get piFuncParams.i of obj# liRow to params#     // Number of params#
+        get piOperator.i   of obj# liRow to op_type#    // If operator, which one?
+
+        send add_item msg_none item#
+        send add_item msg_none (string(pos#))
+        send add_item msg_none (ExprItemType_Text(structtype#))
+        send add_item msg_none (sOperatorSymbol.i(op_type#))
+        if (structtype#=EIT.SYMBOL or structtype#=EIT.LEFT or structtype#=EIT.COMMA) begin
+          send add_item msg_none (dfscript_item_class(class#))
+          send add_item msg_none (dfscript_item_type(liType))
+        end
+        else begin
+          send add_item msg_none ""
+          send add_item msg_none ""
+        end
+        send add_item msg_none (string(level#))
+        send add_item msg_none (string(params#))
+      loop
+      get item_count to max#
+      for liRow from 0 to (max#-1)
+        set entry_state item liRow to false
+      loop
+    end_procedure
+  end_object
+  object oBtn is a aps.Multi_Button
+    on_item t.btn.close send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure run.i integer obj#
+    set value of (oFrm(self)) item 0 to (psExprBeingParsed(obj#))
+    send fill_list.i to (oLst(self)) obj#
+    send popup
+  end_procedure
+end_object
+
+procedure DisplayExpressionDebugInfo global integer obj#
+  send run.i to (oDFScriptExprTest(self)) obj#
+end_procedure
+
+object oDFScriptExprSequence is a aps.ModalPanel label "Expression evaluation sequence"
+  set locate_mode to CENTER_ON_SCREEN
+  object oLst is a aps.Grid
+    set line_width to 2 0
+    set highlight_row_state to true
+    set highlight_row_color to (rgb(0,255,255))
+    set current_item_color to (rgb(0,255,255))
+    set select_mode to no_select
+    set size to 196 0
+    set form_margin item 0 to 14
+    set form_margin item 1 to 60
+    set header_label item 0 to "OP-Code"
+    set header_label item 1 to "Value"
+    on_key kenter send close_panel
+    on_key knext_item send switch
+    on_key kprevious_item send switch_back
+    procedure fill_list.i integer obj#
+      integer max# liRow class# op# liType
+      string val#
+      send delete_data
+      get row_count of obj# to max#
+      for liRow from 0 to (max#-1)
+        get piOpCode.i  of obj# liRow to op#
+        get psVar.i     of obj# liRow to val#
+        send add_item msg_none (sExprOp_Text.i(op#))
+        send add_item msg_none val#
+      loop
+    end_procedure
+  end_object
+  object oBtn is a aps.Multi_Button
+    on_item t.btn.close send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure run.i integer obj#
+    integer grb#
+    send fill_list.i to (oLst(self)) obj#
+    send popup
+  end_procedure
+end_object
+procedure DisplayEvalSequence global integer obj#
+  send run.i to (oDFScriptExprSequence(self)) obj#
+end_procedure
+

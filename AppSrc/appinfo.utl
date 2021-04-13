@@ -1,0 +1,28 @@
+// Use AppInfo.utl  // Setup application information
+
+enumeration_list
+  define AI_TITLE        // Application title
+  define AI_SUBTITLE     // Application sub-title
+  define AI_SUBTITLE2    // Application sub-title 2
+  define AI_VERSION      // Version
+  define AI_REVISION     // Revision
+  define AI_AUTHOR       // Author or Company
+  define AI_WATERMARK    // Set to "Beta" or "Demo" (May be used for splashes)
+  define AI_RELEASEDATE  //
+  define AI_LOG_IMAGE    //
+  define AI_KNOWN_ISSUES //
+  define TMP_GA_OBJECTID // Used internally by the packages to hold an object id
+  define AI_CONTACT1
+  define AI_CONTACT2
+  define AI_CONTACT3
+end_enumeration_list
+
+object oApplicationInfo is an Array
+end_object
+procedure set AppInfo global integer type# string value#
+  set value of (oApplicationInfo(self)) item type# to value#
+end_procedure
+function AppInfo global integer type# returns string
+  function_return (value(oApplicationInfo(self),type#))
+end_function
+

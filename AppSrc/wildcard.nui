@@ -1,0 +1,357 @@
+// Use WildCard.nui // vdfq_WildCardMatch function
+//
+// This package may be used when checking strings containing wildcard
+// characters "*" and "?" against strings. I would not bet my life that
+// this is not exactly the same as undocumentet operator "matches" does.
+//
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Strings.nui  // String manipulation for VDF
+
+// The interface of this package is WildCardMatchPrepare and
+// vdfq_WildCardMatch messages.
+//
+//   Use like this:
+//
+//      send WildCardMatchPrepare "*.nui"
+//      if (vdfq_WildCardMatch("WildCard.nui")) showln "Matches"
+//      else showln "No Match"
+
+enumeration_list
+  define WCAS_THE_HARD_WAY         //
+  define WCAS_ALWAYS_TRUE          // *
+  define WCAS_EQUAL                // Sture
+  define WCAS_LEFT_MATCH           // Sture*
+  define WCAS_RIGHT_MATCH          // *Andersen
+  define WCAS_LEFT_AND_RIGHT_MATCH // Sture*Andersen
+  define WCAS_CONTAINS             // *B*
+end_enumeration_list
+enumeration_list
+  define WCAS_CONSTANT
+  define WCAS_QUESTIONMARK
+  define WCAS_ASTERISK
+end_enumeration_list
+
+class cWildCardMatcher is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    // The properties defined here are used only to try to optimise
+    // the evaluation of lsTestValues.
+    property integer piAltStrategy           WCAS_THE_HARD_WAY
+    // If an alternative strategy is active can we use it to accept a
+    // value (piAltStrategyRejectOnly=TRUE) or must we run it the hard
+    // way afterwards (piAltStrategyRejectOnly=FALSE)?
+    property integer piAltStrategyRejectOnly DFFALSE
+    property string  psAltStrategyLeftValue  ""
+    property string  psAltStrategyRightValue ""
+  end_procedure
+  item_property_list
+    item_property integer piType.i  // 0=constant 1=? 2=*
+    item_property string  psValue.i // Only relevant when piType.i is 0
+  end_item_property_list cWildCardMatcher
+
+  procedure add_row integer liType string lsValue
+    integer liRow
+    get row_count to liRow
+    set piType.i  liRow to liType
+    set psValue.i liRow to lsValue
+  end_procedure
+
+  procedure DoReset
+    send delete_data
+    set piAltStrategy to WCAS_THE_HARD_WAY
+  end_procedure
+
+  // This procedure tries to find a optimized way to evaluate the expression
+  procedure DoFindShortCuts
+    integer liRows
+    get row_count to liRows
+    set piAltStrategy to WCAS_THE_HARD_WAY
+    set piAltStrategyRejectOnly to DFFALSE
+    if (liRows=1) begin
+      if (piType.i(self,0)=WCAS_ASTERISK) set piAltStrategy to WCAS_ALWAYS_TRUE
+      if (piType.i(self,0)=WCAS_CONSTANT) begin
+        set piAltStrategy to WCAS_EQUAL
+        set psAltStrategyLeftValue to (psValue.i(self,0))
+      end
+    end
+    else begin
+      if (piType.i(self,0)=WCAS_CONSTANT) begin // If leftmost is a constant
+        if (piType.i(self,liRows-1)=WCAS_CONSTANT) begin // if rightmost is also a constant
+          if (liRows=3 and piType.i(self,1)=WCAS_ASTERISK) begin
+            set piAltStrategy to WCAS_LEFT_AND_RIGHT_MATCH
+            set psAltStrategyLeftValue to (psValue.i(self,0))
+            set psAltStrategyRightValue to (psValue.i(self,liRows-1))
+          end
+          else begin
+            set piAltStrategy to WCAS_LEFT_AND_RIGHT_MATCH
+            set psAltStrategyLeftValue to (psValue.i(self,0))
+            set psAltStrategyRightValue to (psValue.i(self,liRows-1))
+            set piAltStrategyRejectOnly to DFTRUE
+          end
+        end
+        else begin
+          if (liRows=2 and piType.i(self,1)=WCAS_ASTERISK) begin
+            set piAltStrategy to WCAS_LEFT_MATCH
+            set psAltStrategyLeftValue to (psValue.i(self,0))
+          end
+          else begin
+            set piAltStrategy to WCAS_LEFT_MATCH
+            set psAltStrategyLeftValue to (psValue.i(self,0))
+            set piAltStrategyRejectOnly to DFTRUE
+          end
+        end
+      end
+      else begin
+        if (piType.i(self,liRows-1)=WCAS_CONSTANT) begin // If rightmost is a constant
+          if (liRows=2 and piType.i(self,0)=WCAS_ASTERISK) begin
+            set piAltStrategy to WCAS_RIGHT_MATCH
+            set psAltStrategyRightValue to (psValue.i(self,liRows-1))
+          end
+          else begin
+            set piAltStrategy to WCAS_RIGHT_MATCH
+            set psAltStrategyRightValue to (psValue.i(self,liRows-1))
+            set piAltStrategyRejectOnly to DFTRUE
+          end
+        end
+        else begin // Now we check if first and last are asterisks
+          if (liRows=3 and piType.i(self,0)=WCAS_ASTERISK and piType.i(self,1)=WCAS_CONSTANT and piType.i(self,2)=WCAS_ASTERISK) begin
+            set piAltStrategy to WCAS_CONTAINS
+            set psAltStrategyLeftValue to (psValue.i(self,1))
+          end
+        end
+      end
+    end
+  end_procedure
+
+  procedure BreakDownMask string lsMask
+    integer liPos liLen liType
+    string lsChar lsItem
+    send DoReset
+    move (replaces("**",lsMask,"*")) to lsMask // Simple reduction
+    move (length(lsMask)) to liLen
+    move "" to lsItem
+    for liPos from 1 to liLen
+      move (mid(lsMask,1,liPos)) to lsChar
+      if lsChar eq "*" begin
+        if lsItem ne "" begin
+          send add_row WCAS_CONSTANT lsItem
+          move "" to lsItem
+        end
+        send add_row WCAS_ASTERISK ""
+      end
+      else if lsChar eq "?" begin
+        if lsItem ne "" begin
+          send add_row WCAS_CONSTANT lsItem
+          move "" to lsItem
+        end
+        send add_row WCAS_QUESTIONMARK ""
+      end
+      else move (lsItem+lsChar) to lsItem
+    loop
+    if lsItem ne "" send add_row WCAS_CONSTANT lsItem
+    send DoFindShortCuts
+  end_procedure
+  function iMatch.is integer liRow string lsTestValue returns integer
+    integer lsMax liType liLen liPos
+    string lsItem
+    get row_count to lsMax
+    if liRow ge lsMax begin
+      if (lsTestValue="") function_return 1
+      function_return 0
+    end
+    get piType.i liRow to liType
+    if liType eq WCAS_CONSTANT begin // constant
+      if (length(lsTestValue)) eq 0 function_return 0
+      get psValue.i liRow to lsItem
+      move (length(lsItem)) to liLen
+      if lsItem eq (left(lsTestValue,liLen)) function_return (iMatch.is(self,liRow+1,StringRightBut(lsTestValue,liLen)))
+      function_return 0
+    end
+    if liType eq WCAS_QUESTIONMARK begin // ?
+      if (length(lsTestValue)) eq 0 function_return 0
+      function_return (iMatch.is(self,liRow+1,StringRightBut(lsTestValue,1)))
+    end
+    if liType eq WCAS_ASTERISK begin // *
+      if liRow eq (lsMax-1) function_return 1
+      move (length(lsTestValue)) to liLen
+      for liPos from 0 to liLen
+        if (iMatch.is(self,liRow+1,StringRightBut(lsTestValue,liPos))) function_return 1
+      loop
+    end
+    //function_return 0
+  end_function
+  function iMatch.s string lsTestValue returns integer
+    integer liAltStrategy liAltStrategyRejectOnly
+    get piAltStrategy to liAltStrategy
+    get piAltStrategyRejectOnly to liAltStrategyRejectOnly
+    if liAltStrategy eq WCAS_ALWAYS_TRUE function_return DFTRUE
+    if liAltStrategy eq WCAS_EQUAL       function_return (lsTestValue=psAltStrategyLeftValue(self))
+    if liAltStrategy eq WCAS_LEFT_MATCH begin
+      if liAltStrategyRejectOnly begin
+        ifnot (StringBeginsWith(lsTestValue,psAltStrategyLeftValue(self))) function_return DFFALSE
+      end
+      else function_return (StringBeginsWith(lsTestValue,psAltStrategyLeftValue(self)))
+    end
+    if liAltStrategy eq WCAS_RIGHT_MATCH begin
+      if liAltStrategyRejectOnly begin
+        ifnot (StringEndsWith(lsTestValue,psAltStrategyRightValue(self))) function_return DFFALSE
+      end
+      else function_return (StringEndsWith(lsTestValue,psAltStrategyRightValue(self)))
+    end
+    if liAltStrategy eq WCAS_LEFT_AND_RIGHT_MATCH begin
+      if liAltStrategyRejectOnly begin
+        ifnot (StringBeginsWith(lsTestValue,psAltStrategyLeftValue(self)) and StringEndsWith(lsTestValue,psAltStrategyRightValue(self))) function_return DFFALSE
+      end
+      else function_return (StringBeginsWith(lsTestValue,psAltStrategyLeftValue(self)) and StringEndsWith(lsTestValue,psAltStrategyRightValue(self)))
+    end
+    if liAltStrategy eq WCAS_CONTAINS begin
+      function_return (lsTestValue contains psAltStrategyLeftValue(self))
+    end
+    function_return (iMatch.is(self,0,lsTestValue))
+  end_function
+  function iAnyWildCards returns integer
+    if (row_count(self)>1) function_return DFTRUE
+    function_return (piType.i(self,0)<>WCAS_CONSTANT)
+  end_function
+end_class // cWildCardMatcher
+
+desktop_section
+  object oPrivateWildCardMatch is a cWildCardMatcher 
+  end_object // oPrivateWildCardMatch
+end_desktop_section
+
+procedure WildCardMatchPrepare global string lsMask
+  send BreakDownMask to (oPrivateWildCardMatch(self)) lsMask
+end_procedure
+
+function vdfq_WildCardMatch global string lsTestValue returns integer
+  function_return (iMatch.s(oPrivateWildCardMatch(self),lsTestValue))
+end_function
+
+// This may be used to check if the test value was broken down into
+// more items indicating whether a wildcard character was actually
+// part of it.
+function WildCardBreakDownItems global returns integer
+  function_return (iAnyWildCards(oPrivateWildCardMatch(self)))
+end_function
+// Test source for DF 3.x (not at all object oriented)
+//
+// /Test
+//   Mask......: _________________
+//   Test value: _________________
+//   Result....: _________________
+// /*
+//
+// repeat
+//   accept test.1
+//   accept test.2
+//   send WildCardMatchPrepare (trim(Test.1))
+//   if (vdfq_WildCardMatch(trim(Test.2))) move "Match!" to Test.3
+//   else move "No match!" to Test.3
+// [~key.escape] loop
+// abort
+
+class cSetOfMasks is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property string psName ""
+  end_procedure
+  item_property_list
+    item_property string psMask.i
+    item_property string psDecription.i
+  end_item_property_list cSetOfMasks
+  procedure DoReset
+    send delete_data
+  end_procedure
+
+  function iFindMask.s string lsMask returns integer
+    integer liRow liMax
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      if (lsMask=psMask.i(self,liRow)) function_return liRow
+    loop
+    function_return -1
+  end_function
+
+  procedure DoAddMask string lsMask string lsDecription
+    integer liRow
+    if (lsMask<>"" and iFindMask.s(self,lsMask)=-1) begin
+      get row_count to liRow
+      set psMask.i       liRow to lsMask
+      set psDecription.i liRow to lsDecription
+    end
+  end_procedure
+  // This may be used for merging with another cSetOfMasks:
+  procedure DoImport integer lhSetOfMasks
+    integer liRow liMax
+    get row_count of lhSetOfMasks to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      send DoAddMask (psMask.i(lhSetOfMasks,liRow)) (psDecription.i(lhSetOfMasks,liRow))
+    loop
+  end_procedure
+  function sMasksAsString string lsSeparator returns string
+    integer liRow liMax
+    string lsRval
+    move "" to lsRval
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      move (lsRval+psMask.i(self,liRow)) to lsRval
+      if (liRow<>liMax) move (lsRval+lsSeparator) to lsRval
+    loop
+    function_return lsRval
+  end_function
+  procedure DoCallBack integer liMsg integer lhObj
+    integer liRow liMax
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      send liMsg to lhObj (psMask.i(self,liRow)) (psDecription.i(self,liRow))
+    loop
+  end_procedure
+end_class // cSetOfMasks
+
+class cWildCardMatcherArray is a cArray
+  procedure DoReset
+    integer liMax liItm
+    get item_count to liMax
+    decrement liMax
+    for liItm from 0 to liMax
+      send request_destroy_object to (integer(value(self,liItm)))
+    loop
+    send delete_data
+  end_procedure
+            procedure BreakDownMask string lsMask
+              integer liObj
+              object oWildCardMatcher is a cWildCardMatcher
+                send BreakDownMask lsMask
+                move self to liObj
+              end_object
+              set value item (item_count(self)) to liObj
+            end_procedure
+  procedure BreakDownSetOfMasks integer lhObj // An object of the cSetOfMasks class
+    integer liRow liMax
+    get row_count of lhObj to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      send BreakDownMask (psMask.i(lhObj,liRow))
+    loop
+  end_procedure
+  function iMatch.s string lsTestValue returns integer
+    integer liMax liItm
+    get item_count to liMax
+    decrement liMax
+    for liItm from 0 to liMax
+      if (iMatch.s(integer(value(self,liItm)),lsTestValue)) function_return (liItm+1)
+    loop
+    function_return 0
+  end_function
+  // Returns the number of items the last added mask was broken into.
+  function iAnyWildCards returns integer
+    integer liObj
+    get value item (item_count(self)-1) to liObj
+    function_return (iAnyWildCards(liObj))
+  end_function
+end_class // cWildCardMatchArray

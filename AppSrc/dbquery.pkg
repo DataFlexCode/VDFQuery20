@@ -1,0 +1,175 @@
+// Use dbQuery.pkg // Launching of dbQuery
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Files.nui    //
+
+class cDbQueryLauncher is a cArray
+  procedure construct_object
+    forward send construct_object
+    property string  psRunPrgName          "dbquery"
+    property string  psSendMailProgramPath ""
+    property string  psDefaultPrinterPort  ""
+    property string  psOpenPath            ""
+#IFDEF _UNIX_
+    set psSendMailProgramPath to ". /dfds01/appl/scripts/sendfile #F# #A#"
+#ENDIF
+  end_procedure
+  item_property_list
+    item_property integer piType.i // 0=Printer, 1=Email
+    item_property string  psName.i
+    item_property string  psValue.i // port or e-mail address
+  end_item_property_list cDbQueryLauncher
+  procedure add_printer string lsName string lsPort
+    integer liRow
+    get row_count to liRow
+    set piType.i  liRow to 0
+    set psName.i  liRow to (trim(lsName))
+    set psValue.i liRow to (trim(lsPort))
+  end_procedure
+  procedure add_email string lsName string lsEmail
+    integer liRow
+    get row_count to liRow
+    set piType.i  liRow to 1
+    set psName.i  liRow to (trim(lsName))
+    set psValue.i liRow to (trim(lsEmail))
+  end_procedure
+  procedure OnQueryCall
+  end_procedure
+  procedure OnQueryEnd
+    send refresh_screen
+  end_procedure
+                      function iNewReadMode string lsLine integer liMode returns integer
+                        if (left(lsLine,11)="[send mail]")       move 0 to liMode
+                        if (left(lsLine,17)="[default printer]") move 1 to liMode
+                        if (left(lsLine,10)="[printers]")        move 2 to liMode
+                        if (left(lsLine,17)="[email addresses]") move 3 to liMode
+                        if (left(lsLine,11)="[open path]")       move 4 to liMode
+                        function_return liMode
+                      end_function
+
+            procedure ReadConfigFileName string lsFileName
+              integer liChannel lbSeqEof
+              integer lbMode // 0=send mail 1=default printer 2=printer port 3=e-mail addresses 4=open path
+              integer lbNewMode
+              integer liLine
+              string lsLine lsArg2
+              send delete_data
+              get SEQ_DirectInput lsFileName to liChannel
+              if (liChannel>=0) begin
+                readln channel liChannel lsLine
+                if (lsLine="dbquery ver 2.0 config file") begin
+                  move -1 to lbMode
+                  repeat
+                    readln channel liChannel lsLine
+                    increment liLine
+                    move (seqeof) to lbSeqEof
+                    ifnot lbSeqEof begin
+                      if (left(lsLine,1)="[") begin
+                        get iNewReadMode lsLine lbMode to lbMode
+                      end
+                      else begin
+                        if (lbMode=0) begin // Send mail program
+                          set psSendMailProgramPath to lsLine
+                        end
+                        else if (lbMode=1) begin // default printer port
+                          set psDefaultPrinterPort to lsLine
+                        end
+                        else if (lbMode=2) begin // printers
+                          readln lsArg2
+                          increment liLine
+                          send add_printer lsLine lsArg2
+                        end
+                        else if (lbMode=3) begin // email addresses
+                          readln lsArg2
+                          increment liLine
+                          send add_email lsLine lsArg2
+                        end
+                        else if (lbMode=4) begin // open path
+                          set_attribute DF_OPEN_PATH to lsLine
+                          set psOpenPath to lsLine
+                        end
+                        else begin
+                          send obs ("Error in dbquery config file line "+string(liLine)) ("("+lsFileName+")") "Remaining content will be ignored..."
+                          move 1 to lbSeqEof
+                        end
+                      end
+                    end
+                  until lbSeqEof
+                end
+                else send obs "Incompatible dbquery config file" ("("+lsFileName+")") "Config file ignored..."
+                send SEQ_CloseInput liChannel
+              end
+              else if (lowercase(lsFileName)<>"dbquery.cfg") send obs "dbquery config file not found" ("("+lsFileName+")") "Config file ignored..."
+            end_procedure
+
+            procedure WriteConfigFile integer liChannel
+              integer liMax liRow
+
+              writeln channel liChannel "dbquery ver 2.0 config file"
+              if (psDefaultPrinterPort(self)<>"") begin
+                writeln "[default printer]"
+                writeln (psDefaultPrinterPort(self))
+              end
+              if (psSendMailProgramPath(self)<>"") begin
+                writeln "[send mail]"
+                writeln (psSendMailProgramPath(self))
+              end
+              get row_count to liMax
+              decrement liMax
+              writeln "[printers]"
+              for liRow from 0 to liMax
+                if (piType.i(self,liRow)=0) begin // printer port
+                  writeln (psName.i(self,liRow))
+                  writeln (psValue.i(self,liRow))
+                end
+              loop
+              writeln "[email addresses]"
+              for liRow from 0 to liMax
+                if (piType.i(self,liRow)=1) begin // e-mail address
+                  writeln (psName.i(self,liRow))
+                  writeln (psValue.i(self,liRow))
+                end
+              loop
+              if (psOpenPath(self)<>"") begin
+                writeln "[open path]"
+                writeln (psOpenPath(self))
+              end
+            end_procedure
+
+            procedure CallQuery
+              integer liChannel
+              string lsDfPath lsTmpFile
+              get_attribute DF_OPEN_PATH to lsDfPath  // This is the path we want dbquery to use
+              get SEQ_UniqueFileNamePath "." "dbqc" to lsTmpFile
+              if (lsTmpFile<>"") begin
+              //get SEQ_UniqueFileNamePathAndExt "." "dfq" "bat" to lsBatFile
+              //get SEQ_DirectOutput lsBatFile to liChannel
+              //if (liChannel>=0) begin
+              //#IFDEF _UNIX_
+              //  writeln channel liChannel ("export DFENV="+fn#)
+              //#ELSE
+              //  writeln channel liChannel ("set DFENV="+fn#)
+              //#ENDIF
+              //  writeln ("dfrun "+psRunPrgName(self)+" -config "+lsTmpFile)
+              //  send SEQ_CloseOutput liChannel
+              //end
+
+                get SEQ_DirectOutput lsTmpFile to liChannel
+                if (liChannel>=0) begin
+                  set psOpenPath to lsDfPath
+                  send WriteConfigFile liChannel
+                  send SEQ_CloseOutput liChannel
+                  runprogram wait ("dfrun "+psRunPrgName(self)) ("-config "+lsTmpFile)
+                  erasefile lsTmpFile
+                end
+                else error 832 "No available channels"
+              end
+              else send obs "Unique file name could not be generated!" "Call to DBQuery abandoned"
+            end_procedure
+  procedure DoCallQuery
+    send OnQueryCall
+    send sort_rows 0 1 //
+    send CallQuery
+    send OnQueryEnd
+  end_procedure
+end_class // cDbQueryLauncher

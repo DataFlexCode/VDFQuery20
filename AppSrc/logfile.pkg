@@ -1,0 +1,98 @@
+// Use LogFile.pkg  // Object for specifying log file properties
+//
+// by Sture Andersen
+//
+Use LogFile.nui  // Class for handling a log file (No User Interface)
+Use Files.utl    // Utilities for handling file related stuff
+Use Output.utl   // Basic sequential output service
+Use Dates.nui    // Date routines (No User Interface)
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+Use Buttons.utl  // Button texts
+register_object oFrm1
+register_object oFrm2
+register_object oFrm3
+#IF LNG_DEFAULT=LNG_DANISH
+object oLogFilePropertiesPanel is a aps.ModalPanel label "Log file settings"
+#ELSE
+object oLogFilePropertiesPanel is a aps.ModalPanel label "Log fil"
+#ENDIF
+  set locate_mode to CENTER_ON_SCREEN
+  property integer phLogFile 0
+  on_key kcancel send close_panel
+#IF LNG_DEFAULT=LNG_DANISH
+  object oFrm1 is a aps.Form abstract AFT_ASCII60 label "Logfilnavn:"
+#ELSE
+  object oFrm1 is a aps.Form abstract AFT_ASCII60 label "Current log file is:"
+#ENDIF
+    set label_justification_mode to JMODE_TOP
+    set object_shadow_state to DFTRUE
+  end_object
+  send aps_new_field_row
+  send aps_make_row_space 5
+#IF LNG_DEFAULT=LNG_DANISH
+  object oFrm2 is a aps.Form abstract AFT_ASCII15 label "Stõrrelse:"
+#ELSE
+  object oFrm2 is a aps.Form abstract AFT_ASCII15 label "Size:"
+#ENDIF
+    set object_shadow_state to DFTRUE
+  end_object
+  procedure DoUpdateFile
+    integer lhLogFile
+    string lsFile
+    get phLogFile to lhLogFile
+    get psFileName of lhLogFile to lsFile
+    set value of (oFrm1(self)) item 0 to lsFile
+    if (SEQ_FileExists(lsFile)=SEQIT_FILE) begin
+      set value of (oFrm2(self)) item 0 to (SEQ_FileSizeToString(SEQ_FileSize(lsFile)))
+      set value of (oFrm3(self)) item 0 to (TS_ConvertToString(SEQ_FileModTime(lsFile)))
+    end
+    else begin
+      set value of (oFrm2(self)) item 0 to "-"
+      set value of (oFrm3(self)) item 0 to "-"
+    end
+  end_procedure
+
+  procedure DoView
+    runprogram BACKGROUND ("notepad "+psFileName(phLogFile(self)))
+  end_procedure
+  procedure DoReset
+    send DeleteFile to (phLogFile(self))
+    send DoUpdateFile
+  end_procedure
+#IF LNG_DEFAULT=LNG_DANISH
+  object oFrm3 is a aps.Form abstract AFT_ASCII25 label "Time stamp:" snap SL_RIGHT_SPACE
+#ELSE
+  object oFrm3 is a aps.Form abstract AFT_ASCII25 label "Tidsstempling:" snap SL_RIGHT_SPACE
+#ENDIF
+    set object_shadow_state to DFTRUE
+  end_object
+  object oBtn1 is a aps.Multi_Button
+#IF LNG_DEFAULT=LNG_DANISH
+    on_item "èbn fil"   send DoView
+#ELSE
+    on_item "View file"   send DoView
+#ENDIF
+  end_object
+  object oBtn1 is a aps.Multi_Button
+#IF LNG_DEFAULT=LNG_DANISH
+    on_item "Nulstil fil"  send DoReset
+#ELSE
+    on_item "Reset file"  send DoReset
+#ENDIF
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.close send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure popup.i integer lhLogFile
+     integer rval#
+   set phLogFile to lhLogFile
+    send DoUpdateFile
+    send popup
+  end_procedure
+end_object // oLogFilePropertiesPanel
+
+procedure Popup_LogFileProperties global integer lhLogFile
+  send popup.i to (oLogFilePropertiesPanel(self)) lhLogFile
+end_procedure

@@ -1,0 +1,981 @@
+﻿// **********************************************************************
+// Use VpeBase6
+//
+// Version: 1.0
+//
+// Create:
+// Update: 25/09/1998 - Implemented changes in procedures OpenDoc and
+//                      SetupPrinter. (Suggested by Peter Starkner, Nordteam)
+//         16/09/1998 - Fixed text vertical alignment.
+//         06/01/1999 - Changed vertical alignment.
+//         12/05/2000 - Updated to use VPE 3.x and changed name to VpeBase3.
+//                      Remove the AuxDoc in the process (uses rendering now).
+//                      All 3.x changes by Jakob Kruse.
+//         07/02/2002 - Compatibility with StarZen's VPE4VDF classes:
+//                      Commented out Procedure Vpe_Print (Peter van Mil).
+//         12/02/2002 - Uncommented Procedure Vpe_Print (Sture).
+//         27/02/2004 - Renamed procedure Vpe_Print to Vpe_Print_Print
+//         02/08/2004 - VpeWriteRTF error fixed
+//         29/07/2006 - Paper bin functions interfaced by David Lack (taken from the newsgroups)
+//                      Vpe_DevEnumPaperBins and Vpe_GetDevPaperBinName
+//         03/02/2006 - Modification suggested by
+//         01/11/2008 - Modifications for VPE 4.x (Peter van Mil).
+//         01/06/2009 - Modifications for VPE Library 1.0 (Peter van Mil).
+//         02/09/2009 - VPE_OemToChar replaced by ToAnsi (Peter van Mil).
+//         03/09/2009 - PIC_IN_FILE in Vpe_Picture removed (Peter van Mil).
+//         07/10/2009 - Serial number from Vpe.pkg.
+// ***********************************************************************
+
+Use Vpe.pkg     // VPE Library.
+
+Integer Vpe$ReturnGrb#
+
+Use Files.utl    // Utilities for handling file related stuff
+Use WinUser.nui  // User_Windows_User_Name function
+Use FList.nui    // A lot of FLIST- procedures and functions
+Use Language.pkg
+Use Html.utl
+
+//External_Function VpeSetPictureEmbedInDoc     "VpeSetPictureEmbedInDoc"     VPE_DLL DWord hdoc Integer on_off Returns Integer // New for VPE4.x
+
+//#IFDEF VPE_USE_EMBEDDED_PREVIEW
+//   Use Embedpre.vw
+//   Use ErrorHnd.nui // cErrorHandlerRedirector class and oErrorHandlerQuiet object (No User Interface)
+//#ENDIF
+
+#IFDEF glMainClientId#
+#ELSE
+    Use Macros.utl   // Various macros (FOR_EX...)
+    Global_Variable Integer glMainClientId#
+
+    Desktop_Section
+        Move 0 to glMainClientId#
+        Procedure Set iGlobal_MainClient_Id Integer obj#
+            Move obj# to glMainClientId#
+        End_Procedure
+      
+        Function iGlobal_MainClient_Id Returns Integer
+            Integer Self#
+            IfNot glMainClientId# Begin
+                Move Self to Self#
+                Move (Client_Id(Self#)) to glMainClientId#
+            End
+            Function_Return glMainClientId#
+        End_Function
+    End_Desktop_Section
+#ENDIF
+
+Class cVPE is an Array
+  Procedure construct_object
+    Forward Send construct_object
+    Set delegation_mode to delegate_to_parent
+    Property Handle  phDoc            0         // Document handle
+    Property String  pTitle           "Preview"
+    Property String  pCurFont         "Arial"
+    Property Integer pCurFontSize     12
+    Property Real    pCurTopMargin    200
+    Property Real    pCurBottomMargin 200
+    Property Real    pCurLeftMargin   200
+    Property Real    pCurRightMargin  200
+    Property String  pFont            "Arial"
+    Property Integer pFontSize        12
+    Property Real    pLeftMargin      200
+    Property Real    pRightMargin     200
+    Property Real    pTopMargin       200
+    Property Real    pBottomMargin    200
+    Property Real    pPageWidth       VPAPER_A4 // VPAPER_LETTER
+    Property Real    pPageLength      0
+    Property DWord   pOpenOptions     0
+    Property Integer pBold            0
+    Property Integer pUnderLine       0
+    Property Integer pItalics         0
+    Property Integer pLandscape       0
+    Property Integer piPreviewMode    0 // 0=VPE, 1=PDF
+    // The property pNewPageOnNextLine is tested and set by the following
+    // three procedure: NewPage, Write and WriteLn. It was introduced to
+    // handle continuos Write/WriteLn across more pages.
+    Property Integer pNewPageOnNextLine 0
+    Property String  psPdfTempFileName "c:\apps\changeit.pdf"
+  End_Procedure
+
+ // VpeSetAutoBreak - parameters :
+  //  AUTO_BREAK_ON              // auto break
+  //  AUTO_BREAK_OFF             // limited positioning, rendering
+  //  AUTO_BREAK_NO_LIMITS       // none of above
+  //  AUTO_BREAK_FULL
+
+  Procedure Vpe_SetAutoBreak Integer liValue
+    Integer liGrb
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSetAutoBreak(hDoc,liValue)) to liGrb
+  End_Procedure
+
+  Function sDefaultSetupFileName Returns String
+    Integer lbCreateError liChannel
+    String lsUserName lsFolder
+    Get User_Windows_User_Name to lsUserName
+    Get FLIST_CurrentFileListFolder to lsFolder // ???? Denne linie var fjernet ???? Genindsat aht. KGIS. Sture 20101217
+    Get Files_AppendPath lsFolder "VpeSetup" to lsFolder
+    If (SEQ_FileExists(lsFolder)=SEQIT_NONE) Begin
+      Get wvaWin32_CreateDirectory (ToAnsi(lsFolder)) to lbCreateError
+      If lbCreateError Function_Return "c:\vpe6.set"
+      Get SEQ_DirectOutput (Files_AppendPath(lsFolder,"readme.txt")) to liChannel
+      If (liChannel>=0) Begin
+        Writeln channel liChannel "This folder was created automatically to store setup files for the"
+        Writeln "Virtual Print Engine (VPE)."
+        Writeln ""
+        Writeln "These files contain information about the currently selected printer."
+        Send SEQ_CloseOutput liChannel
+      End
+    End
+    Get Files_AppendPath lsFolder (lsUserName+".set") to lsUserName // overload
+    Function_Return lsUserName
+  End_Function
+
+  Function Vpe_GetDevice Returns String
+    Handle hDoc
+    Pointer lpDevice
+    String lsDevice
+    Integer liGrb
+    Move (pad("",255)) to lsDevice
+//    GetAddress of lsDevice to lpDevice
+    Move (AddressOf(lsDevice)) to lpDevice
+
+    Send OpenDoc   
+    Get phDoc to hDoc
+    // Next line doesn't work:
+    Move (VpeGetDevice(hDoc,lpDevice,255)) to liGrb
+//    Move (VpeGetDevice(hDoc,lsDevice,250)) to liGrb
+    Send Vpe_CloseDoc
+    Move (CString(lsDevice)) to lsDevice
+    Move (ToOEM(lsDevice)) to lsDevice
+    Function_Return lsDevice
+//    Integer iVoid
+//    String  sName
+//    DWord   dwNameSize
+//    Address pName pNameSize
+//    Handle hVpe
+//    
+//    ZeroString 256 to sName
+//    Move 256 to dwNameSize
+//    Move (AddressOf(sName)) to pName
+//    Move (AddressOf(dwNameSize)) to pNameSize
+//
+//    Send OpenDoc   
+//    Get phDoc to hVpe
+//    Move (VpeGetDevice(hVpe, pName, pNameSize)) to iVoid
+//    Send Vpe_CloseDoc
+//
+//    Function_Return (CString(sName))
+  End_Function
+
+  Function IsLandscape Returns DWord
+    Integer rval#
+    Get Vpe_GetPageOrientation to rval#
+    Function_Return (rval# = VORIENT_LANDSCAPE)
+  End_Function
+
+  Procedure Vpe_SelectFont String Font# Integer FontSize#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSetFont(hDoc,Font#,FontSize#)) to Vpe$ReturnGrb#
+    Set pCurFont to Font#
+    Set pCurFontSize to FontSize#
+  End_Procedure
+
+  Procedure ExportCurMargins
+    Real   left# right# top# bottom# Width# Length#
+    Handle hDoc
+    Get phDoc to hDoc
+    Get pPageWidth  to Width#
+    Get pPageLength to Length#
+     // If landscape: switch length and width:
+    If (IsLandscape(Self)) Begin
+      Move Width# to Left#  // Overload!
+      Move Length# to Width#
+      Move Left# to Length# // End overload!
+    End
+    Get pCurLeftMargin   to Left#
+    Get pCurRightMargin  to Right#
+    Get pCurTopMargin    to Top#
+    Get pCurBottomMargin to Bottom#
+    Move (VpeSet(hDoc,VLEFTMARGIN,  Left#))           to Vpe$ReturnGrb#
+    Move (VpeSet(hDoc,VRIGHTMARGIN, Width#-Right#))   to Vpe$ReturnGrb#
+    Move (VpeSet(hDoc,VTOPMARGIN,   Top#))            to Vpe$ReturnGrb#
+    Move (VpeSet(hDoc,VBOTTOMMARGIN,Length#-Bottom#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure SetMargins Real left# Real right# Real top# Real bottom#
+    Set pCurLeftMargin   to Left#
+    Set pCurRightMargin  to Right#
+    Set pCurTopMargin    to Top#
+    Set pCurBottomMargin to Bottom#
+    Send ExportCurMargins
+  End_Procedure
+
+  Procedure Vpe_Set Real what# Real val# // Same as SetCoord
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSet(hDoc,what#,val#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure SetCoord Real what# Real val#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSet(hDoc,what#,val#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Function GetCoord Real what# Returns Real
+    Handle hDoc
+    Get phDoc to hDoc
+    Function_Return (VpeGet(hDoc,what#))
+  End_Function
+
+  Function Vpe_Get Real what# Returns Real // Same as GetCoord
+    Handle hDoc
+    Get phDoc to hDoc
+    Function_Return (VpeGet(hDoc,what#))
+  End_Function
+
+  Procedure Vpe_OpenDoc Handle parent# String title# DWord flags#
+    Handle hDoc
+    Integer target# main_client#
+    String bypass#
+    Move (ToANSI(title#)) to title#
+
+//    #IFDEF VPE_USE_EMBEDDED_PREVIEW
+//      Get iGlobal_MainClient_Id to main_client#
+//      Move "" to bypass#
+//      Get_Profile_String "VEJMAN_SETUP" "OLD_PREVIEW" to bypass#
+//      If (bypass# = "") Begin
+//        Create_Object_Group OG_VpePreview PARENT main_client# (pTitle(Self))
+//        Send ErrorHnd_Quiet_Activate
+//        Send Popup to OG_Current_Object#
+//        Send ErrorHnd_Quiet_Deactivate
+//        Send Make_Invisible to OG_Current_Object#
+//        Get Target of OG_Current_Object# to target#
+//        Move (VpeOpenDoc(target#,title#,flags# ior VPE_EMBEDDED ior VPE_NO_USER_CLOSE)) to hDoc
+//        Set phDoc of OG_Current_Object# to hDoc
+//      End
+//      Else Move (VpeOpenDoc(parent#,title#,flags#)) to hDoc
+//    #ELSE
+      Move (VpeOpenDoc(parent#,title#,flags#)) to hDoc
+//    #ENDIF
+
+    // Compatibility mode in VPE6.0 for VPE3
+    Move (VpeSetUnitTransformation(hDoc,VUNIT_FACTOR_MM10)) to Vpe$ReturnGrb#  // PvM
+
+    // License as defined in Vpe6x.cfg.
+    Move (VpeLicense(hDoc,VPE_LICENSE1,VPE_LICENSE2)) to Vpe$ReturnGrb#
+    
+    Set phDoc to hDoc
+
+    If (pLandscape(Self)) Begin
+      Send Vpe_SetDevOrientation  VORIENT_LANDSCAPE
+      Send Vpe_SetPageOrientation VORIENT_LANDSCAPE
+    End
+  End_Procedure
+
+  Procedure OpenDoc String tmpTitle# String tmpSetupFile#
+    Handle hDoc
+    String title# SetupFile#
+    Real length# width#
+    Integer target# main_client#
+    String bypass#
+    if num_arguments gt 0 move tmpTitle# to title#
+    Else Get pTitle to title#
+    If num_arguments gt 1 Move tmpSetupFile# to SetupFile#
+    Else Get sDefaultSetupFileName to SetupFile# // "c:\vpe3.set"
+    If (SetupFile# = "") Get sDefaultSetupFileName  to SetupFile# // "c:\vpe3.set"
+    Move (ToANSI(title#)) to title#
+    get pPageWidth  to Width#
+    Get pPageLength to Length#
+    if (width# = VPAPER_A4) begin
+      Move 2100 to Width#
+      Move 2970 to Length#
+    End
+    If (width# = VPAPER_LETTER) Begin
+      Move 2159 to Width#
+      Move 2794 to Length#
+    End
+    Set pPageWidth  to Width#
+    Set pPageLength to Length#
+    // width and length are no longer passed as params to opendoc
+    // we might have to set paper size diffently
+//    #IFDEF VPE_USE_EMBEDDED_PREVIEW
+//     Get iGlobal_MainClient_Id to main_client#
+//     Move "" to bypass#
+//     Get_Profile_String "VEJMAN_SETUP" "OLD_PREVIEW" to bypass#
+//     If (bypass# = "") Begin
+//       Create_Object_Group OG_VpePreview PARENT main_client# (pTitle(Self))
+//       Send ErrorHnd_Quiet_Activate
+//       Send Popup to OG_Current_Object#
+//       Send ErrorHnd_Quiet_Deactivate
+//       Send Make_Invisible to OG_Current_Object#
+//       Get Target of OG_Current_Object# to target#
+//       Move (VpeOpenDoc(target#,title#,pOpenOptions(Self) ior VPE_EMBEDDED ior VPE_NO_USER_CLOSE)) to hDoc
+//       Set phDoc of OG_Current_Object# to hDoc
+//     End
+//     Else Move (VpeOpenDoc(0,title#,pOpenOptions(Self))) to hDoc
+//    #ELSE
+     Move (VpeOpenDoc(0,title#,pOpenOptions(Self))) to hDoc
+//    #ENDIF
+
+    // Compatibility mode in VPE6.0 for VPE3
+    Move (VpeSetUnitTransformation(hDoc,VUNIT_FACTOR_MM10)) to Vpe$ReturnGrb#  // PvM
+
+    // License as defined in Vpe6x.cfg.
+    Move (VpeLicense(hDoc,VPE_LICENSE1,VPE_LICENSE2))       to Vpe$ReturnGrb#
+
+    Set phDoc to hDoc
+    If (pLandscape(Self)) Begin
+      Send Vpe_SetDevOrientation  VORIENT_LANDSCAPE
+      Send Vpe_SetPageOrientation VORIENT_LANDSCAPE
+    End
+    move (VpeSetupPrinter(hDoc,SetupFile#,PRINTDLG_ONFAIL)) to Vpe$ReturnGrb#
+    If (Vpe$ReturnGrb# = 1) Begin // User pressed cancel
+      Send Vpe_CloseDoc
+    End
+    Else Begin
+      Send SetMargins (pLeftMargin(Self)) (pRightMargin(Self)) (pTopMargin(Self)) (pBottomMargin(Self))
+      Send Vpe_SelectFont (pFont(Self)) (pFontSize(Self))
+      Set pBold      to False
+      Set pUnderLine to False
+      Set pItalics   to False
+      Set pNewPageOnNextLine to 0
+    End
+  End_Procedure
+
+  Procedure Vpe_CloseDoc
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeCloseDoc(hDoc)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_PreviewDoc
+    Handle hDoc
+    String bypass# lsFolder
+    Get phDoc to hDoc
+    Move (VpeSetPaperView(hDoc,1)) to Vpe$ReturnGrb# // Display paper size
+    // My preference is a 100% scale initial preview in stead of a full width (PvM).
+    // The GUI theme is Office 2003 and the language is Dutch (PvM).
+    Move (VpeSetScalePercent(hDoc,100)) to Vpe$ReturnGrb#                  // Scale 100%.
+    Move (VpeSetGuiTheme(hDoc, VGUI_THEME_OFFICE2003)) to Vpe$ReturnGrb#   // Office 2003 Theme.
+
+    #IF LNG_DEFAULT=LNG_DUTCH
+    Move (VpeSetGuiLanguage(hDoc, VGUI_LANGUAGE_DUTCH     )) to Vpe$ReturnGrb#  // Forced to Dutch language.
+    #ENDIF
+    #IF LNG_DEFAULT=LNG_ITALIAN
+    Move (VpeSetGuiLanguage(hDoc, VGUI_LANGUAGE_ITALIAN   )) to Vpe$ReturnGrb#  // Forced to Dutch language.
+    #ENDIF
+    #IF LNG_DEFAULT=LNG_SPANISH
+    Move (VpeSetGuiLanguage(hDoc, VGUI_LANGUAGE_SPANISH   )) to Vpe$ReturnGrb#  // Forced to Dutch language.
+    #ENDIF
+    #IF LNG_DEFAULT=LNG_ENGLISH
+    Move (VpeSetGuiLanguage(hDoc, VGUI_LANGUAGE_ENGLISH   )) to Vpe$ReturnGrb#  // Forced to Dutch language.
+    #ENDIF
+    #IF LNG_DEFAULT=LNG_DANISH
+    Move (VpeSetGuiLanguage(hDoc, VGUI_LANGUAGE_DANISH    )) to Vpe$ReturnGrb#  // Forced to Dutch language.
+    #ENDIF
+    #IF LNG_DEFAULT=LNG_SWEDISH
+    Move (VpeSetGuiLanguage(hDoc, VGUI_LANGUAGE_SWEDISH   )) to Vpe$ReturnGrb#  // Forced to Dutch language.
+    #ENDIF
+    #IF LNG_DEFAULT=LNG_NORWEGIAN
+    Move (VpeSetGuiLanguage(hDoc, VGUI_LANGUAGE_NORWEGIAN )) to Vpe$ReturnGrb#  // Forced to Dutch language.
+    #ENDIF
+    #IF LNG_DEFAULT=LNG_GERMAN
+    Move (VpeSetGuiLanguage(hDoc, VGUI_LANGUAGE_GERMAN    )) to Vpe$ReturnGrb#  // Forced to Dutch language.
+    #ENDIF
+    #IF LNG_DEFAULT=LNG_PORTUGUESE
+    Move (VpeSetGuiLanguage(hDoc, VGUI_LANGUAGE_PORTUGUESE)) to Vpe$ReturnGrb#  // Forced to Dutch language.
+    #ENDIF
+    #IF LNG_DEFAULT=LNG_FRENCH
+    Move (VpeSetGuiLanguage(hDoc, VGUI_LANGUAGE_FRENCH    )) to Vpe$ReturnGrb#  // Forced to Dutch language.
+    #ENDIF
+
+
+    If (piPreviewMode(Self)=0) Begin // VPE viewer
+      Move (VpeSetSaveFileName(hDoc,"*.pdf")) to Vpe$ReturnGrb#              // Defaults to PDF file in SaveAs dialog.
+      Move (VpePreviewDoc(hDoc, VPE_NULL, VPE_SHOW_MAXIMIZED)) to Vpe$ReturnGrb#
+//      #IFDEF VPE_USE_EMBEDDED_PREVIEW
+//       Move "" to bypass#
+//       Get_Profile_String "VEJMAN_SETUP" "OLD_PREVIEW" to bypass#
+//       If (bypass# = "") Send Make_Visible to OG_Current_Object#
+//      #ENDIF
+    End
+    If (piPreviewMode(Self)=1) Begin // PDF viewer
+      Send vpe_WriteDoc  (psPdfTempFileName(Self)) // "c:\apps\chageit.pdf"
+      Send html_StartDoc (psPdfTempFileName(Self)) // "c:\apps\chageit.pdf"
+    End
+  End_Procedure
+
+  Procedure PreviewDoc
+    Handle hDoc
+    Get phDoc to hDoc
+    //JK (2000.04.11): VpeGotoPage replaced with VpeGotoVisualPage
+    //Move (VpeGotoPage(hDoc,1)) to Vpe$ReturnGrb#
+    Move (VpeGotoVisualPage(hDoc,1)) to Vpe$ReturnGrb#
+    Send Vpe_PreviewDoc
+  End_Procedure
+
+   //JK (2000.04.11): Updates an open preview when the document has changed
+  // Warning: if the user closes the preview, the document will also be closed,
+  // and DispatchAllMessages will then return true.
+  // At that point you immediately have to end all printing activites or
+  // the program will crash!!!
+
+  Function DispatchAllMessages Returns Integer
+    Handle hDoc
+    Integer bClosed
+    Get phDoc to hDoc
+    Move (VpeDispatchAllMessages(hDoc)) to bClosed
+    Function_Return bClosed
+  End_Function
+
+  Procedure Vpe_PrintDoc
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpePrintDoc(hDoc, VPE_FALSE)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure PrintDoc
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpePrintDoc(hDoc, VPE_FALSE)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_SetupPrinter String file# Integer mode#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSetupPrinter(hDoc,file#,mode#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+   //JK: Writes current document to specified file
+  Procedure Vpe_WriteDoc String file#
+    Handle hDoc
+    String sRegistrationName
+    Registration sRegistrationName
+    Get phDoc to hDoc
+    Move (VpeSetAuthor(hDoc,sRegistrationName)) to Vpe$ReturnGrb#
+    Move (VpeSetkeywords(hDoc,psProduct(ghoApplication))) to Vpe$ReturnGrb#
+    Move (VpeSetCreator(hDoc,psProduct(ghoApplication))) to Vpe$ReturnGrb#
+    Move (VpeWriteDoc(hDoc,file#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+   //JK: Reads specified file into current document
+  Procedure Vpe_ReadDoc String file#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeReadDoc(hDoc,file#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Function iTextHeight.is Real width# String str# Returns Real
+    Handle hDoc
+    Real rval#
+    Get phDoc to hDoc
+    Move (ToANSI(str#)) to str#
+    Move (VpeRenderWrite(hDoc,100,100,(100+width#),VFREE,str#)) to Vpe$ReturnGrb#
+    // Vpe$ReturnGrb# now contains info on whether autobreak occured
+    Move (VpeGet(hDoc,VRENDERHEIGHT)) to rval#
+    Function_Return rval#
+  End_Function
+
+  Procedure Vpe_SetDevOrientation Integer orient#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSetDevOrientation(hDoc,orient#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Function Vpe_GetDevOrientation Returns Integer
+    Handle hDoc
+    Get phDoc to hDoc
+    Function_Return (VpeGetDevOrientation(hDoc))
+  End_Function
+
+  Procedure Vpe_SetPageOrientation Integer orient#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSetPageOrientation(hDoc,orient#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Function Vpe_GetPageOrientation Returns Integer
+    Handle hDoc
+    Get phDoc to hDoc
+    Function_Return (VpeGetPageOrientation(hDoc))
+  End_Function
+
+          Procedure _SetupPrinter Integer iMode String tmpSetupFile#
+            Handle hDoc
+            String SetupFile#
+            If (num_arguments>1) Begin
+                Move tmpSetupFile# to SetupFile#
+            End
+            Else Begin
+                Get sDefaultSetupFileName to SetupFile#
+            End
+            
+            If (SetupFile#="") Begin
+                Get sDefaultSetupFileName to SetupFile#
+            End
+            
+            Send OpenDoc
+            Get phDoc to hDoc
+            Move (VpeSetupPrinter(hDoc,SetupFile#,iMode)) to Vpe$ReturnGrb#
+            Send Vpe_CloseDoc
+          End_Procedure
+  
+  Procedure SetupPrinter String tmpSetupFile#
+    If (num_arguments>0) Begin
+        Send _SetupPrinter PRINTDLG_ALWAYS tmpSetupFile#
+    End
+    Else Begin
+        Send _SetupPrinter PRINTDLG_ALWAYS
+    End
+  End_Procedure
+  
+  Procedure SetupPrinterQuiet
+    Send _SetupPrinter PRINTDLG_NEVER
+  End_Procedure
+
+   // The procedures Write and WriteLn simulates the good old way of
+  // outputting to the printer.
+  Function AttributeString Returns String
+    Function_Return ("["+If(pBold(Self),"B ","BO ")+If(pUnderLine(Self),"U ","UO ")+If(pItalics(Self),"I ","IO ")+"]")
+  End_Function
+
+  Function AttributeString.iii Integer lbBold Integer lbItalics Integer lbUnderline Returns String
+    Function_Return ("["+If(lbBold,"B ","BO ")+If(lbUnderline,"U ","UO ")+If(lbItalics,"I","IO")+"]")
+  End_Function
+
+  // When something has been printed that is known to be one line, this
+  // function will tell you how many more lines may printed on the current
+  // page. In general the function will tell you how many more of the
+  // previous objects may be printed on the current page.
+
+  Function RemainingLines Returns Real
+    Real wy1 wy2 wy3
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeGet(hDoc,VTOP))          to wy1
+    Move (VpeGet(hDoc,VBOTTOM))       to wy2
+    Move (VpeGet(hDoc,VBOTTOMMARGIN)) to wy3
+    If (wy1=wy2) Function_Return 999 // No lines have been written yet
+    Function_Return (wy3-wy2/Number(wy2-wy1))
+  End_Function
+
+  Function LinesPerPage Returns Real
+    Real   wy1 wy2 wy3 wy4
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeGet(hDoc,VTOP))          to wy1
+    Move (VpeGet(hDoc,VBOTTOM))       to wy2
+    Move (VpeGet(hDoc,VBOTTOMMARGIN)) to wy3
+    Move (VpeGet(hDoc,VTOPMARGIN))    to wy4
+    If (wy1=wy2) Function_Return 999 // No lines have been written yet
+    Function_Return (wy3-wy4/Number(wy2-wy1)-1)
+  End_Function
+
+  Function CheckPage Real Lins# Returns Real
+    Function_Return (Lins#>RemainingLines(Self))
+  End_Function
+
+  Procedure Vpe_PageBreak
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpePageBreak(hDoc)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure NewPage
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpePageBreak(hDoc)) to Vpe$ReturnGrb#
+    Send ExportCurMargins
+    Set pNewPageOnNextLine to 0
+  End_Procedure
+
+  Procedure Write String str#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (ToANSI(str#)) to str#
+    If (Trim(str#)="") Begin
+        Move (Repeat(" ",Length(str#))) to str#
+        If (Length(str#)=0) Begin
+            Move " " to str#
+        End
+    End
+    If (pNewPageOnNextLine(Self)=2) Send NewPage
+    If (CheckPage(Self,1)) Set pNewPageOnNextLine to 1
+    If (VpeGet(hDoc,VBOTTOM)=VpeGet(hDoc,VTOP)) Begin
+//        Showln (String(hDoc)+": "+"Write1 "+str#+" at top: "+String(pCurTopMargin(Self))+" indent: "+String(pCurLeftMargin(Self)))
+        Move (VpePrint(hDoc,pCurLeftMargin(Self),pCurTopMargin(Self),AttributeString(Self)+str#)) to Vpe$ReturnGrb#
+    End
+    Else Begin
+//        Showln (String(hDoc)+": "+"Write2 "+str#+" at top: "+String(VpeGet(hDoc,VTOP))+" indent: "+String(VpeGet(hDoc,VRIGHT)))
+        Move (VpePrint(hDoc,VRIGHT,VTOP,AttributeString(Self)+str#)) to Vpe$ReturnGrb#
+    End
+  End_Procedure
+
+  Procedure WriteLn String str#
+    Handle hDoc
+    Real VTOP# VBOTTOM#
+    Get phDoc to hDoc
+    Send Write str#
+    Move (VpeGet(hDoc,VTOP)) to VTOP#
+    Move (VpeGet(hDoc,VBOTTOM)) to VBOTTOM#
+    Move (VpeSet(hDoc,VTOP,VTOP#+VBOTTOM#-VTOP#)) to Vpe$ReturnGrb#
+ // These two lines are not equivalent ???
+ // Move (VpeSet(hDoc,VTOP,      VBOTTOM#      )) to Vpe$ReturnGrb#
+    Move (VpeSet(hDoc,VBOTTOM,VBOTTOM#+VBOTTOM#-VTOP#)) to Vpe$ReturnGrb#
+    Move (VpeSet(hDoc,VRIGHT,pCurLeftMargin(Self))) to Vpe$ReturnGrb#
+    If (pNewPageOnNextLine(Self)=1) Set pNewPageOnNextLine to 2
+  End_Procedure
+  
+//  Procedure WriteLn String str#
+//    Handle hDoc
+//    Real VTOP# VBOTTOM#
+//    Get phDoc to hDoc
+//    Send Write str#
+//    Move (VpeGet(hDoc,VTOP)) to VTOP#
+//    Move (VpeGet(hDoc,VBOTTOM)) to VBOTTOM#
+// 
+//    Move (VpeSet(hDoc,VTOP,VTOP#+VBOTTOM#-VTOP#)) to Vpe$ReturnGrb#
+// // These two lines are not equivalent ???
+// // Move (VpeSet(hDoc,VTOP,      VBOTTOM#      )) to Vpe$ReturnGrb#
+// 
+////    Move (VpeSet(hDoc,VBOTTOM,VBOTTOM#+VBOTTOM#-VTOP#)) to Vpe$ReturnGrb#
+//    
+////    Showln ("Set top/bottom to "+String(VTOP#+VBOTTOM#-VTOP#)+"/"+String(VBOTTOM#+VBOTTOM#-VTOP#))
+//    Move (VpeSet(hDoc,VBOTTOM,VTOP#+VBOTTOM#-VTOP#)) to Vpe$ReturnGrb#
+//
+//    Move (VpeSet(hDoc,VRIGHT,pCurLeftMargin(Self))) to Vpe$ReturnGrb#
+//    
+//    If (pNewPageOnNextLine(Self)=1) Set pNewPageOnNextLine to 2
+//  End_Procedure
+
+  Procedure Vpe_Write Real x1# Real y1# Real x2# Real y2# String str#
+    Handle hDoc
+    Move str# to str#
+    If (str#<>"") Begin
+      // Showln x1# ":" y1# ":" x2# ":" y2# ":" str#
+      Get phDoc to hDoc
+      Move (ToANSI(str#)) to str#
+      Move (VpeWrite(hDoc,x1#,y1#,x2#,y2#,str#)) to Vpe$ReturnGrb#
+    End
+  End_Procedure
+
+  Procedure Vpe_WriteRTF Real x1# Real y1# Real x2# Real y2# String str#
+    #IFSAME _VPEDLL_ VPEP3240.DLL VPEE3240.DLL
+     Handle hDoc
+     Get phDoc to hDoc
+     Move (ToANSI(str#)) to str#
+     Move (VpeWriteRTF(hDoc,x1#,y1#,x2#,y2#,str#)) to Vpe$ReturnGrb#
+    #ELSE
+     Showln "RTF functions can not be used with this version of VPE!"
+    #ENDIF
+  End_Procedure
+
+  Procedure GenericWrite Real x1# Real y1# Real x2# Real y2# String str#
+    Showln "GenericWrite should be Vpe_Write"
+  End_Procedure
+
+  Procedure Vpe_Line Real x1# Real y1# Real x2# Real y2#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeLine(hDoc,x1#,y1#,x2#,y2#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_HorizontalLineKeepPos Real tmpleft# Real tmpright#
+    Real left# right#
+    Handle hDoc
+    If num_arguments gt 0 Move tmpleft# to left#
+    Else Move VLEFTMARGIN to left#
+    If num_arguments gt 1 Move tmpright# to right#
+    Else Move VRIGHTMARGIN to right#
+    Get phDoc to hDoc
+    Move (VpeStorePos(hDoc)) to Vpe$ReturnGrb#
+    Send Vpe_Line left# VBOTTOM right# VBOTTOM
+    Move (VpeRestorePos(hDoc)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure WriteLine Real tmpleft# Real tmpright#
+    Real left# right#
+    Handle hDoc
+    If num_arguments gt 0 Move tmpleft# to left#
+    Else Move VLEFTMARGIN to left#
+    If num_arguments gt 1 Move tmpright# to right#
+    Else Move VRIGHTMARGIN to right#
+    Get phDoc to hDoc
+    Move (VpeStorePos(hDoc)) to Vpe$ReturnGrb#
+    Send Vpe_Line left# VTOP right# VTOP
+    Move (VpeRestorePos(hDoc)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_Box Real x1# Real y1# Real x2# Real y2#
+    Handle hDoc
+    If (x1# > x2#) Begin // Coordinates MUST be upper left, lower right.
+      Move x1# to hDoc   // Otherwise errors in pre-viewer.
+      Move x2# to x1#
+      Move hDoc to x2#
+    End
+    If (y1# > y2#) Begin
+      Move y1# to hDoc
+      Move y2# to y1#
+      Move hDoc to y2#
+    End
+    Get phDoc to hDoc
+    Move (VpeBox(hDoc,x1#,y1#,x2#,y2#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_Ellipse Real x1# Real y1# Real x2# Real y2#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeEllipse(hDoc,x1#,y1#,x2#,y2#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_SetTransparentMode Integer onoff#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSetTransparentMode(hDoc,onoff#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_SetBkgColor Integer color#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSetBkgColor(hDoc,color#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_SetHatchStyle Integer hatch#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSetHatchStyle(hDoc,hatch#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_SetHatchColor Integer color#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSetHatchColor(hDoc,color#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_Print_Print Real x1# Real y1# String str#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (ToANSI(str#)) to str#
+    Move (VpePrint(hDoc,x1#,y1#,str#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_PrintBox Real x1# Real y1# String str#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (ToANSI(str#)) to str#
+    Move (VpePrintBox(hDoc,x1#,y1#,str#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_WriteBox Real x1# Real y1# Real x2# Real y2# String str#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (ToANSI(str#)) to str#
+    Move (VpeWriteBox(hDoc,x1#,y1#,x2#,y2#,str#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_Polygon Integer arrayhandle# Real length#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpePolygon(hDoc,arrayhandle#,length#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_Polyline Integer arrayhandle# Real length#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpePolyline(hDoc,arrayhandle#,length#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+//External_Function32 VpePolyLine "VpePolyLine" Handle hDoc Dword array# Integer size# Returns dword#
+//// long EXPO VpePolygon(long hDoc, POINT *pt, unsigned int size);
+//External_Function32 VpePolyLine "VpePolyLine" Handle hDoc Dword array# Integer size# Returns dword#
+
+  Procedure Vpe_SetAlign Integer attr#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSetAlign(hDoc,attr#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_SetPen Real size# Integer style# Integer color#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSetPen(hDoc,size#,style#,color#)) to Vpe$ReturnGrb#
+  End_Procedure
+  
+  Procedure Vpe_NoPen
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeNoPen(hDoc)) to Vpe$ReturnGrb#
+  End_Procedure
+  
+  Procedure Vpe_SetBarCodeParms Integer top_bottom Integer add_top_bottom
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSetBarcodeParms(hDoc,top_bottom,add_top_bottom)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure vpe_barcode Integer x1# Integer y1# Integer x2# Integer y2# Integer code_type String str#
+    Handle hDoc
+    Get phDoc to hDoc
+    If (trim(Str#) = "") Move " " to str#
+//    Get VPE_OemToChar str# to str#
+    Move (ToANSI(str#)) to str#
+    Move (VpeBarcode(hDoc,x1#,y1#,x2#,y2#,code_type,str#,"" )) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_Picture Real x1# Real y1# Real x2# Real y2# String bmpstr# Integer flags#
+    Handle hDoc
+    String path#
+    Get phDoc to hDoc
+     //JK - 2000.06.26:
+    // Check if bitmap really exists
+    // If it doesn't, don't try top print it.
+    // If it does, convert to full path/filename.
+    If (pos(sysconf(SYSCONF_DIR_SEPARATOR),bmpstr#) > 0) Begin
+      // File has path already
+      If (not(SEQ_FileExists(bmpstr#))) Procedure_Return
+    End
+    Else Begin
+      // File has no path, so we search along dfpath
+      Move (SEQ_FindFileAlongDFPath(bmpstr#)) to path#
+      If (path# = "") Procedure_Return
+      Move (path# + sysconf(SYSCONF_DIR_SEPARATOR) + bmpstr#) to bmpstr#
+    End
+     //JK - 2000.06.08:
+    // Dirty hack to always save bitmaps in the generated document
+    // Move (flags# ior PIC_IN_FILE) to flags#
+    // PvM - 2009.09.03:
+    // Now official trick for embedded pictures.
+    Move (VpeSetPictureEmbedInDoc(hDoc, VPE_TRUE)) to Vpe$ReturnGrb#
+    Move (VpePicture(hDoc,x1#,y1#,x2#,y2#,bmpstr#,flags#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_PictureKeepPos Real x1# Real y1# Real x2# Real y2# String bmpstr# Integer flags#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeStorePos(hDoc)) to Vpe$ReturnGrb#
+    Send Vpe_Picture x1# y1# x2# y2# bmpstr# flags#
+    Move (VpeRestorePos(hDoc)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_StorePos
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeStorePos(hDoc)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_RestorePos
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeRestorePos(hDoc)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_DefineHeader Real x1# Real y1# Real x2# Real y2# String text#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeDefineHeader(hDoc,x1#,y1#,x2#,y2#,text#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_DefineFooter Real x1# Real y1# Real x2# Real y2# String text#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeDefineFooter(hDoc,x1#,y1#,x2#,y2#,text#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_SetTextColor DWord color#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSetTextColor(hDoc,color#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure vpe_SetDefOutRectSP Real left# Real top# Real right# Real bottom#
+    Handle lhDoc
+    Get phDoc to lhDoc
+    Move (VpeSetDefOutRectSP(lhDoc,left#,top#,right#,bottom#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_SetDefOutRect Real left# Real top# Real right# Real bottom#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSetDefOutRect(hDoc,left#,top#,right#,bottom#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Function Vpe_GetCurrentPage Returns Integer
+    Handle hDoc
+    Get phDoc to hDoc
+    Function_Return (VpeGetCurrentPage(hDoc))
+  End_Function
+
+  Function Vpe_GetPageCount Returns Integer
+    Handle hDoc
+    Get phDoc to hDoc
+    Function_Return (VpeGetPageCount(hDoc))
+  End_Function
+
+  Procedure Vpe_GotoPage Integer page#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeGotoPage(hDoc,page#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Procedure Vpe_Addbookmark Handle parent# String title#
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeAddBookmark(hDoc,parent#,title#)) to Vpe$ReturnGrb#
+  End_Procedure
+
+  Function Vpe_DevEnumPaperBins Returns Integer
+    Handle hDoc#
+    Integer iVal
+    Get phDoc to hDoc#
+    Move (vpeDevEnumPaperBins(hDoc#)) to iVal
+    Function_Return iVal
+  End_Function
+
+  Function Vpe_GetDevPaperBinName Integer iIndex Returns String
+    Handle hDoc#
+    Integer iVal
+    Address p2BinName
+    String sBinName
+    ZeroString 65 to sBinName
+//    GetAddress of sBinName to p2BinName
+    Move (AddressOf(sBinName)) to p2BinName
+    Get phDoc to hDoc#
+    Move (vpeGetDevPaperBinName(hDoc#,iIndex,p2BinName,64)) to iVal
+    Function_Return sBinName
+  End_Function
+
+  Procedure Vpe_SetScalePercent Integer scale
+    Handle hDoc
+    Get phDoc to hDoc
+    Move (VpeSetScalePercent(hDoc,scale)) to Vpe$ReturnGrb#
+  End_Procedure
+
+End_Class // cVPE
+
+Global_Variable Integer oVPE#
+
+Object oVPE is a cVPE
+  // Adjusted to my preferences (PvM).
+  // No open button (only for .vpe files, too confusing).
+  // No rulers, but in stead of the a grid button.
+  // No info button.
+
+//  Set pOpenOptions to (VPE_NO_OPEN_BUTTON + VPE_NO_RULERS + VPE_GRIDBUTTON + VPE_NO_INFOBUTTON)
+
+  Procedure Display_Previous_Object
+    Showln ("Left/Right/Top/Bottom:"+String(GetCoord(oVPE#,VLeft))*String(GetCoord(oVPE#,VRight))*String(GetCoord(oVPE#,VTop))*String(GetCoord(oVPE#,VBottom)))
+  End_Procedure
+
+  Procedure Display_Stuff
+    Showln "****vpe_get*******************************************"
+    Showln ("Text: Left/Right/Top/Bottom:"+String(GetCoord(oVPE#,VLeft))*String(GetCoord(oVPE#,VRight))*String(GetCoord(oVPE#,VTop))*String(GetCoord(oVPE#,VBottom)))
+    Showln ("Marg: Left/Right/Top/Bottom:"+String(GetCoord(oVPE#,VLeftMargin))*String(GetCoord(oVPE#,VRightMargin))*String(GetCoord(oVPE#,VTopMargin))*String(GetCoord(oVPE#,VBottomMargin)))
+  End_Procedure
+
+  Move Self to oVPE#
+End_Object

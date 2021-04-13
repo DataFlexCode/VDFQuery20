@@ -1,0 +1,314 @@
+// Use URL.nui      // URL manipulation
+
+//> From the point of view of the URL string manipulation functions an URL
+//> is composed of the following items:
+//>
+//>    * Protocol      "http:"
+//>    * User ID       "sture"
+//>    * Password      "headset"
+//>    * Host          "www.sture.dk"
+//>    * Port          80
+//>    * Path          "/Images/EDUC2001"
+//>    * Type          "type=xml"
+//>
+//> function URL_ParseURL global string lsURL returns integer
+//>
+//> To have a URL decomposed into the items above use the URL_ParseURL
+//> function. The function returns TRUE if a host could be identidfied
+//> as part of the lsURL string and FALSE if not.
+//>
+//>
+//> function URL_Value global integer liSegment returns string
+//>
+//> After having used the URL_ParseURL to decompose an URL you should use
+//> the URL_Value function to obtain the value of each component in the
+//> URL. For example, to obtain the 'Path' part of the URL you would write
+//>
+//>   get URL_Value URL_SEGMENT_PATH to lsPath
+//>
+//> The URL_SEGMENT_PATH symbol is a constant defined by the URL.nui package.
+//> You may pass the following segment identifiers to the function:
+//>
+//>    URL_SEGMENT_PROTOCOL, URL_SEGMENT_USER, URL_SEGMENT_PASSWORD,
+//>    URL_SEGMENT_HOST, URL_SEGMENT_PORT, URL_SEGMENT_PATH and
+//>    URL_SEGMENT_TYPE
+//>
+//> These symbols may also be used as arguments to a the 'set URL_Value'
+//> procedure anabling you to set the value of each individual before
+//> calling this function:
+//>
+//> function URL_Compose global returns string
+//>
+//> This function combines all the segments setup via the 'set URL_Value'
+//> procedure (and possebly leftovers from the most recent call to
+//> URL_ParseURL) and returns a URL.
+//>
+//>
+//> Note that the URL functions decribed here are merely string manipulations.
+//> They do not interact with any internet componenents locally on the machine
+//> or on the internet itself.
+//>
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Strings.nui  // String manipulation for VDF
+
+enumeration_list
+  define URL_SEGMENT_PROTOCOL
+  define URL_SEGMENT_USER
+  define URL_SEGMENT_PASSWORD
+  define URL_SEGMENT_HOST
+  define URL_SEGMENT_PORT
+  define URL_SEGMENT_PATH
+  define URL_SEGMENT_TYPE
+end_enumeration_list
+
+
+desktop_section
+  object oUrlParser is a cArray
+    function iFindToken string lsToken string lsValue returns integer
+      integer liPos liLen liTokenLen
+      string lsString
+      move (length(lsToken)) to liTokenLen
+      move (length(lsValue)) to liLen
+      for liPos from 1 to liLen
+        move (left(lsValue,liPos)) to lsString
+        if (right(lsString,liTokenLen)=lsToken) function_return liPos
+      loop
+      function_return 0
+    end_function
+
+    //   ftp://<user>:<password>@<host>:<port>/<url-path>;type=<typecode>
+
+    function sParseUrl string lsUrl returns integer
+      integer liPos lbRval
+      string lsValue lsValue2 lsHost
+      send delete_data
+      move DFTRUE to lbRval
+      get iFindToken ("/"+"/") lsUrl to liPos // Protokol?
+      if liPos begin // Protokol
+        move (left(lsUrl,liPos)) to lsValue
+        move (replace(lsValue,lsUrl,"")) to lsUrl
+        set value item URL_SEGMENT_PROTOCOL to (StringLeftBut(lsValue,2))
+      end
+
+      get iFindToken "@" lsUrl to liPos // User ?
+      if liPos begin // User
+        move (left(lsUrl,liPos)) to lsValue
+        move (replace(lsValue,lsUrl,"")) to lsUrl
+        get iFindToken ":" lsValue to liPos
+        if liPos begin // User and Password
+          move (left(lsValue,liPos)) to lsValue2
+          set value item URL_SEGMENT_USER to (StringLeftBut(lsValue2,1))
+          move (replace(lsValue2,lsValue,"")) to lsValue
+          set value item URL_SEGMENT_PASSWORD to (StringLeftBut(lsValue,1))
+        end
+        else begin // User without password
+          set value item URL_SEGMENT_USER to (StringLeftBut(lsValue,1))
+        end
+      end
+
+      //   ftp://<user>:<password>@<host>:<port>/<url-path>;type=<typecode>
+
+      get iFindToken ";" lsUrl to liPos // Type ?
+      if liPos begin // Type!
+        move (left(lsUrl,liPos)) to lsValue
+        move (replace(lsValue,lsUrl,"")) to lsUrl
+        set value item URL_SEGMENT_TYPE to lsUrl
+        move (StringLeftBut(lsValue,1)) to lsValue
+        get iFindToken "/" lsValue to liPos // Path ?
+        if liPos begin // Path! www.dataaccess.dk:80/magicpath/Images
+          move (left(lsValue,liPos-1)) to lsValue2
+          set value item URL_SEGMENT_PATH to (replace(lsValue2,lsValue,""))
+          move lsValue2 to lsValue
+        end
+        get iFindToken ":" lsValue to liPos // Port ?
+        if liPos begin // Port !  Dataaccess.kn:80
+          move (left(lsValue,liPos)) to lsHost
+          set value item URL_SEGMENT_HOST to (StringLeftBut(lsHost,1))
+          set value item URL_SEGMENT_PORT to (replace(lsHost,lsValue,""))
+        end
+        else set value item URL_SEGMENT_HOST to lsValue
+      end
+      else begin
+        get iFindToken "/" lsUrl to liPos // Path ?
+        if liPos begin
+          move lsUrl to lsValue
+
+          if liPos begin // Path! www.dataaccess.dk:80/magicpath/Images
+            move (left(lsValue,liPos-1)) to lsValue2
+            set value item URL_SEGMENT_PATH to (replace(lsValue2,lsValue,""))
+            move lsValue2 to lsValue
+          end
+          get iFindToken ":" lsValue to liPos // Port ?
+          if liPos begin // Port!  Dataaccess.kn:80
+            move (left(lsValue,liPos)) to lsHost
+            set value item URL_SEGMENT_HOST to (StringLeftBut(lsHost,1))
+            set value item URL_SEGMENT_PORT to (replace(lsHost,lsValue,""))
+          end
+          else set value item URL_SEGMENT_HOST to lsValue
+        end
+        else begin
+          get iFindToken ":" lsUrl to liPos // Port?
+          if liPos begin
+            move (left(lsUrl,liPos)) to lsValue
+            move (replace(lsValue,lsUrl,"")) to lsUrl
+            set value item URL_SEGMENT_HOST to (StringLeftBut(lsValue,1))
+            set value item URL_SEGMENT_PORT to lsUrl
+          end
+          else begin
+            set value item URL_SEGMENT_HOST to lsUrl
+          end
+        end
+      end
+      if (value(self,URL_SEGMENT_HOST)="") move DFFALSE to lbRval
+      function_return lbRval
+    end_function
+  end_object
+end_desktop_section
+
+// interface:
+
+function URL_ParseURL global string lsValue returns integer
+  function_return (sParseUrl(oUrlParser(self),lsValue))
+end_function
+
+function URL_Value global integer liSegment returns string
+  function_return (value(oUrlParser(self),liSegment))
+end_function
+
+procedure set URL_Value global integer liSegment string lsValue
+  set value of (oUrlParser(self)) item liSegment to lsValue
+end_procedure
+
+procedure URL_Reset
+  send delete_data to (oUrlParser(self))
+end_procedure
+
+function URL_Compose global returns string
+  integer liPort
+  string lsUser lsPassword lsHost lsPath lsType lsProtocol
+  string lsRval
+
+  //   ftp://<user>:<password>@<host>:<port>/<url-path>;type=<typecode>
+
+  get URL_Value URL_SEGMENT_PROTOCOL to lsProtocol
+  get URL_Value URL_SEGMENT_USER     to lsUser
+  get URL_Value URL_SEGMENT_PASSWORD to lsPassword
+  get URL_Value URL_SEGMENT_HOST     to lsHost
+  get URL_Value URL_SEGMENT_PORT     to liPort
+  get URL_Value URL_SEGMENT_PATH     to lsPath
+  get URL_Value URL_SEGMENT_TYPE     to lsType
+
+  if (lsProtocol<>"") move (lsProtocol+"/"+"/") to lsRval
+
+  if (lsUser<>"") begin
+    move (lsRval+lsUser) to lsRval
+    if (lsPassword<>"") move (lsRval+":"+lsPassword) to lsRval
+    move (lsRval+"@") to lsRval
+  end
+  move (lsRval+lsHost) to lsRval
+  if (liPort<>0) move (lsRval+":"+string(liPort)) to lsRval
+  if (lsPath<>"") begin
+    if (left(lsPath,1)="/") move (lsRval+lsPath) to lsRval
+    else move (lsRval+"/"+lsPath) to lsRval
+  end
+  if (lsType<>"") move (lsRval+";"+lsType) to lsRval
+  function_return lsRval
+end_function
+
+// The URL_InsertLinks is meant to be used to insert links into a string
+// of text as a preparation for writing it to a html page.
+//
+// If an URL occurs in the text the function will insert link tags
+// around the URL in order to make it a clickable.
+//
+// If you have an 'ugly' link like this:
+//
+//  ftp://jakob:magic@ftp.kruse-net.dk:8000/magic/data;type=xml
+//
+// and you want the browser to simply display
+//
+//         Click [here] to download some magic data
+//
+// where [] denotes the scope of the link, just pass this text to the
+// function:
+//
+//   Click ftp://jakob:magic@ftp.kruse-net.dk:8000/magic/data;type=xml[here]
+//   to download some magic data
+//
+//
+//
+//
+function URL_InsertLinks global string lsValue returns string
+  integer liPos liLen lbInLink lbFin
+  string lsRval lsChar lsLeadIn lsLink lsLinkText lsDblSlash
+  move (length(lsValue)) to liLen
+  move "" to lsRval
+  move 1 to liPos
+  move ("/"+"/") to lsDblSlash
+  repeat
+    move "" to lsLeadIn
+    if (lowercase(mid(lsValue,4,liPos))="www.") begin
+      //move "http://www." to lsLeadIn
+      move ("http:"+lsDblSlash+"www.") to lsLeadIn
+      move (liPos+4) to liPos
+    end
+    if (lowercase(mid(lsValue,4,liPos))="ftp.") begin
+      //move "ftp://ftp." to lsLeadIn
+      move ("ftp:"+lsDblSlash+"ftp.") to lsLeadIn
+      move (liPos+4) to liPos
+    end
+    if (lowercase(mid(lsValue,6,liPos))="ftp:"+lsDblSlash) begin
+      move ("ftp:"+lsDblSlash) to lsLeadIn
+      move (liPos+6) to liPos
+    end
+    if (lowercase(mid(lsValue,7,liPos))="http:"+lsDblSlash) begin
+      move ("http:"+lsDblSlash) to lsLeadIn
+      move (liPos+7) to liPos
+    end
+    if (lowercase(mid(lsValue,8,liPos))="https:"+lsDblSlash) begin
+      move ("https:"+lsDblSlash) to lsLeadIn
+      move (liPos+8) to liPos
+    end
+    if (lsLeadIn<>"") begin
+      move lsLeadIn to lsLink
+      repeat
+        move (mid(lsValue,1,liPos)) to lsChar
+        move (not(("abcdefghijklmnopqrstuvwxyz:;=?@/.-+%*_01234567890#&|~'"+'"') contains lowercase(lsChar))) to lbFin
+        ifnot lbFin begin
+          move (lsLink+lsChar) to lsLink
+          increment liPos
+        end
+      until (lbFin or (liPos>liLen))
+      if (".:@;=" contains right(lsLink,1)) begin
+        get StringLeftBut lsLink 1 to lsLink
+        decrement liPos
+      end
+      move lsLink to lsLinkText
+      // Insert:
+      if (mid(lsValue,1,liPos)="[") begin
+        increment liPos // Beyond the "[" sign
+        move "" to lsLinkText
+        repeat
+          move (mid(lsValue,1,liPos)) to lsChar
+          move (lsChar="]") to lbFin
+          increment liPos
+          ifnot lbFin begin
+            move (lsLinkText+lsChar) to lsLinkText
+          end
+        until (lbFin or (liPos>liLen))
+      end
+      // End insert
+      move ('<A href="'+lsLink+'" target="_self">'+lsLinkText+'</A>') to lsLink
+      move (lsRval+lsLink) to lsRval
+    end
+    else begin
+      move (mid(lsValue,1,liPos)) to lsChar
+      move (lsRval+lsChar) to lsRval
+      increment liPos
+    end
+  until (liPos>liLen)
+  function_return lsRval
+end_function
+
+

@@ -1,0 +1,1235 @@
+//**********************************************************************
+// Use Structur.utl // Object for restructuring table definitions
+//
+// By Sture Andersen
+//
+// Create: Sun  24-10-1999
+// Update: Tue  25-01-2000 - Windows interface added to the waiter...
+//         Fri  03-03-2000 - RS_RestructureGroup class added
+//         Sat  22-04-2000 - RS_TableOpenName function added
+//**********************************************************************
+//
+// This package defines a global object for restructuring tables. This global
+// object is manipulated via a bunch of global messages all prefixed with
+// the letters "RS_".
+//
+// The advantage of using this object instead of using the SET_ATTRIBUTE and
+// GET_ATTRIBUTE commands directly is that the global object makes up for a
+// few shortcomings that these commands exhibits.
+//
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Structur.nui
+
+Use LogFile.nui  // Class for handling a log file (No User Interface)
+Use FdxIndex.nui // Index analysing functions
+
+#IFDEF Structur$UI
+#ELSE
+ #IFDEF Is$WebApp
+  define Structur$UI for 0
+ #ELSE
+  define Structur$UI for 1
+ #ENDIF
+#ENDIF
+
+#IF Structur$UI
+ Use Fdx2.utl     // FDX aware object for displaying a table definiton
+ Use Wait.utl     // Something to put on screen while batching.
+ Use MsgBox.utl   // obs procedure
+#ENDIF
+
+desktop_section
+  object oStructure_LogFile is a cLogFile
+    set psFileName     to "dfmatrix.log"
+    set piCloseOnWrite to DFTRUE
+    set psPurpose      to "Events during table restructuring"
+    property integer pbError 0
+    procedure OnLogFileOpen
+      set pbError to DFFALSE
+    end_procedure
+
+    register_object oBatchModeLogFile
+    procedure WriteLn string lsValue
+      forward send WriteLn lsValue
+      #IFDEF GET_DfmBatchMode
+        if (DfmBatchMode()) send WriteLn to (oBatchModeLogFile(self)) lsValue
+      #ENDIF
+    end_procedure
+
+    procedure OnLogFileClose
+    end_procedure
+    procedure WriteLnError string lsValue
+      send WriteLn ("Error: "+lsValue)
+      set pbError to DFTRUE
+    end_procedure
+  end_object
+end_desktop_section
+
+#IF Structur$ErrorTrapping // Defined in Structur.nui
+ #IF Structur$UI
+   Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+   object oStructureError is a aps.ModalPanel label "Restructure error"
+     set Locate_Mode to CENTER_ON_SCREEN
+     on_key kcancel send close_panel
+
+     // Must be provided if local error handler is to be created
+
+     property integer error_processing_state      DFFALSE
+     property integer piOriginalErrorObject       0
+
+     object oTb1 is a aps.TextBox label "DataFlex reported this error:"
+     end_object
+     object oFrm1 is a aps.Form abstract AFT_ASCII50 snap SL_DOWN
+       set object_shadow_state to true
+     end_object
+     object oFrm2 is a aps.Form abstract AFT_ASCII50 snap SL_DOWN
+       set object_shadow_state to true
+     end_object
+     object oTb2 is a aps.TextBox label "While executing this instruction:" snap SL_DOWN
+     end_object
+     object oFrm3 is a aps.Form abstract AFT_ASCII50 snap SL_DOWN
+       set object_shadow_state to true
+     end_object
+     object oFrm4 is a aps.Form abstract AFT_ASCII50 snap SL_DOWN
+       set object_shadow_state to true
+     end_object
+     object oFrm5 is a aps.Form abstract AFT_ASCII50 snap SL_DOWN
+       set object_shadow_state to true
+     end_object
+     object oBtn1 is a aps.Multi_Button
+       on_item "End script"  send end_script
+     end_object
+     object oBtn2 is a aps.Multi_Button
+       on_item "Display def" send display_definition
+     end_object
+     object oBtn3 is a aps.Multi_Button
+       on_item "Continue" send close_panel
+     end_object
+     send aps_locate_multi_buttons
+     procedure Error_Report integer liErrNum integer liErr_Line string lsValue
+       integer lhObj lhStructure_LogFile
+       string lsValue1 lsValue2 lsError1 lsError2
+       If (error_processing_state(self)) procedure_return // this prevents recursion
+       set error_processing_state to DFTRUE
+       move (Error_Description(self,liErrNum,lsValue))                      to lsError1
+       move ("(Error "+string(liErrNum)+" on line "+string(liErr_Line)+")") to lsError2
+       set value of (oFrm1(self)) item 0 to lsError1
+       set value of (oFrm2(self)) item 0 to lsError2
+       move (oStructureErrorInfo(self)) to lhObj
+       send DoPrepare to lhObj
+       get psLine1 of lhObj to lsValue1
+       get psLine2 of lhObj to lsValue2
+       set value of (oFrm3(self)) item 0 to lsValue1
+       set value of (oFrm4(self)) item 0 to lsValue2
+       set value of (oFrm5(self)) item 0 to Struc$ErrDescr
+       move (oStructure_LogFile(self)) to lhStructure_LogFile
+       send WriteLnError to lhStructure_LogFile "  DataFlex reported this error:"
+       send WriteLn to lhStructure_LogFile ("    "+lsError1)
+       send WriteLn to lhStructure_LogFile ("    "+lsError2)
+       if (lsValue1<>"" or lsValue2<>"") begin
+         send WriteLn to lhStructure_LogFile "  While executing this instruction:"
+         if lsValue1 ne "" send WriteLn to lhStructure_LogFile ("    "+lsValue1)
+         if lsValue2 ne "" send WriteLn to lhStructure_LogFile ("    "+lsValue2)
+         if Struc$ErrDescr ne "" send WriteLn to lhStructure_LogFile ("    "+Struc$ErrDescr)
+       end
+       send popup
+       set error_processing_state to DFFALSE
+     end_procedure
+
+     // Stolen right out of error.pkg:
+     //*** Build complete error description from Flexerrs and user error message.
+     function Error_Description integer liError string lsErrMsg returns string
+       string lsFullErrorText
+       trim lsErrMsg to lsErrMsg
+       move (trim(error_text(DESKTOP,liError))) to lsFullErrorText
+       if lsErrMsg ne "" begin
+         if ((lsFullErrorText ne "") AND error_text_available(DESKTOP,liError)) append lsFullErrorText " " lsErrMsg
+         else move lsErrMsg to lsFullErrorText
+       end
+       function_return lsFullErrorText
+     end_function
+
+     procedure end_script
+       error 774 "No such thing as 'End script'"
+     end_procedure
+
+     procedure display_definition
+       send RS_DisplayDef
+     end_procedure
+   end_object // oStructureError
+ #ELSE
+  object oStructureError is a cArray
+    property integer piOriginalErrorObject       0
+  end_object // oStructureError
+ #ENDIF
+#ENDIF
+
+procedure DFMatrixError_On global // Set error trapping mode to DFMatrix
+  #IF Structur$ErrorTrapping // Defined in Structur.nui
+    integer lhObj
+    move (oStructureError(self)) to lhObj
+    if Error_Object_Id ne lhObj begin
+      set piOriginalErrorObject of lhObj to Error_Object_Id
+      move lhObj to Error_Object_Id
+    end
+  #ENDIF
+end_procedure
+procedure DFMatrixError_Off global // Set error trapping mode back to normal
+  #IF Structur$ErrorTrapping // Defined in Structur.nui
+    integer lhObj
+    move (oStructureError(self)) to lhObj
+    if Error_Object_Id eq lhObj get piOriginalErrorObject of lhObj to Error_Object_Id
+  #ENDIF
+end_procedure
+
+
+enumeration_list // Progress modes
+  define RS_PG_DEFAULT
+  define RS_PG_NONE
+  define RS_PG_LEAVE_ON
+  define RS_PG_OFF
+end_enumeration_list
+
+
+#IF Structur$UI
+  object oStructureWait is a cBatchCompanion
+    property string psMostRecentProgressTitle ""
+    set allow_cancel_state to false
+    function callback string lsText integer liType returns integer
+      if liType eq DF_MESSAGE_HEADING_1 send batch_update lsText
+      else if liType eq DF_MESSAGE_PROGRESS_TITLE begin
+        set psMostRecentProgressTitle to (lsText+": ")
+        send batch_update2 lsText
+      end
+      else if liType eq DF_MESSAGE_PROGRESS_VALUE send batch_update2 lsText (psMostRecentProgressTitle(self)+replace(",",lsText," of "))
+      else begin
+        if liType eq DF_MESSAGE_HEADING_2 send batch_update3 lsText ("HDR2: "+lsText)
+        else if liType eq DF_MESSAGE_HEADING_3 send batch_update3 ("HDR3: "+lsText)
+        else if liType eq DF_MESSAGE_HEADING_4 send batch_update3 ("HDR4: "+lsText)
+        else if liType eq DF_MESSAGE_HEADING_5 send batch_update3 ("HDR5: "+lsText)
+        else if liType eq DF_MESSAGE_WARNING   begin
+          send batch_update3 ("WARN: "+lsText)
+          send WriteLnError to (oStructure_LogFile(self)) ("  Warning: "+lsText)
+        end
+        else if liType eq DF_MESSAGE_TEXT      send batch_update3 ("      "+lsText)
+        else send batch_update3 ("????: "+lsText)
+      end
+      function_return 0 // Continue please
+    end_function
+    procedure activate_title string lsTitle
+      send batch_on lsTitle
+      send batch_update  "Doing something" // 1
+      send batch_update2 "No idea..."
+      send batch_update3 ""
+      set psMostRecentProgressTitle to ""
+    end_procedure
+    procedure deactivate_display
+      send batch_off
+    end_procedure
+    function batch_interrupt returns integer // Cancel (no interupting!)
+    end_function
+  end_object
+#ELSE
+ object oStructureWait is a Array 
+   property string psMostRecentProgressTitle ""
+   function callback string lsText integer liType returns integer
+     function_return 0 // Continue please
+   end_function
+   procedure activate_title string lsTitle
+   end_procedure
+   procedure deactivate_display
+   end_procedure
+   function batch_interrupt returns integer // Cancel (no interupting!)
+   end_function
+ end_object
+#ENDIF
+
+define FIX_31D_RESTRUCT_ERROR for 1
+
+define IMPLICIT_FIELD for -1
+
+#COMMAND define_rserr
+  define !1
+  if op# eq !1 function_return !2
+#ENDCOMMAND
+
+function sRSErr_Text.i global integer op# returns string
+  enumeration_list
+    define_rserr RSERR.NO_ERROR         "No error"
+    define_rserr RSERR.NOTAVALIDFLENTRY "Not a valid FILELIST entry"
+    define_rserr RSERR.NOEXCLACCESS     "Exclusive access could not be obtained"
+    define_rserr RSERR.NOT_A_DF_FILE    "Cannot restructure files in foreign DB"
+  end_enumeration_list
+  function_return "Undefined error"
+end_function
+
+#REPLACE GENERIC_FIELD_MAXIMUM 255
+
+// This class is used for setting FILE attribute DF_FILE_RECORD_LENGTH. I would
+// agree if you argue that it seems gross overkill to handle this with an
+// array and procedures instead of simply a single property.
+register_function piTraceState returns integer
+class cPostponedFileSettings is a cArray
+  item_property_list
+    item_property integer piAttribute.i
+    item_property string  psValue.i
+  end_item_property_list cPostponedFileSettings
+  procedure postponed_setting integer attr# string value#
+    integer row#
+    get row_count to row#
+    set piAttribute.i row# to attr#
+    set psValue.i     row# to value#
+  end_procedure
+  procedure execute string physname#
+    integer row# max# liFile attr#
+    string value#
+    get piFileHandle to liFile
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      get piAttribute.i row# to attr#
+      get psValue.i     row# to value#
+      // If DF_FILE_RECORD_LENGTH and -1 we must trim the record size:
+      if (attr#=DF_FILE_RECORD_LENGTH and integer(value#)=-1) get_attribute DF_FILE_RECORD_LENGTH_USED of liFile to value#
+      ErrorTrapping.set_attribute attr# of liFile to value#
+      send NotifyTracer RSOP_SETFILEATTR attr# 0 0 0 value#
+    loop
+  end_procedure
+end_class
+// This is used simply for postponing setting the DF_FIELD_INDEX attribute.
+class cPostponedFieldSettings is a cArray
+  item_property_list
+    item_property integer piAttribute.i
+    item_property integer piField.i
+    item_property string  psValue.i
+  end_item_property_list cPostponedFieldSettings
+  procedure postponed_setting integer attr# integer field# string value#
+    integer row#
+    get row_count to row#
+    set piAttribute.i row# to attr#
+    set piField.i     row# to field#
+    set psValue.i     row# to value#
+  end_procedure
+
+  function iCheckMainIndexSetting integer liFile integer field# integer index# returns integer
+    integer segment# max_seg# seg_field# liMaxField liTestField lbOverlaps
+    if index# begin
+      // Either index is non-zero in which case we need to check that the
+      // field is actuially part of the index:
+      get_attribute DF_INDEX_NUMBER_SEGMENTS of liFile index# to max_seg#
+      for segment# from 1 to max_seg#
+        get_attribute DF_INDEX_SEGMENT_FIELD of liFile index# segment# to seg_field#
+        if seg_field# eq field# function_return 1
+        if (integer(FDX_AttrValue_SPECIAL1(0,DF_FIELD_OVERLAP,liFile,field#,seg_field#))) function_return 1
+      loop
+    end
+    else begin
+      // Or index is zero in which case field cannot be part of ANY index.
+      // (Unfortunately I don't have time to code this so we just say it's
+      // alright. The point is that if a field is not part of ANY index
+      // its main_index is automatically set to zero - I think).
+      function_return 1
+    end
+    // function_return 0
+  end_function
+  procedure execute string physname#
+    integer row# max# attr# liFile field# lhStructure_LogFile
+    string value# test# lsValue
+    get piFileHandle to liFile
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      get piAttribute.i row# to attr#
+      get piField.i     row# to field#
+      get psValue.i     row# to value#
+      move "#, Field: #, value: #" to Struc$ErrDescr
+      Move (Replace("#",Struc$ErrDescr,physname#)) to Struc$ErrDescr // replace "#" in Struc$ErrDescr with physname#
+      Move (Replace("#",Struc$ErrDescr,field#))    to Struc$ErrDescr // replace "#" in Struc$ErrDescr with field#   
+      Move (Replace("#",Struc$ErrDescr,value#))    to Struc$ErrDescr // replace "#" in Struc$ErrDescr with value#   
+      get_attribute attr# of liFile field# to test#
+      if (integer(value#)<>integer(test#)) begin
+        if (iCheckMainIndexSetting(self,liFile,field#,value#)) begin
+          ErrorTrapping.set_attribute attr# of liFile field# to value#
+          send NotifyTracer RSOP_SETFIELDATTR attr# field# 0 0 value#
+//        send obs Struc$ErrDescr (API_Attr_Name(ATTR#))
+        end
+        else begin
+          move (oStructure_LogFile(self)) to lhStructure_LogFile
+          move "Can not set index.# as main index for field #." to lsValue
+          move (replace("#",lsValue,value#)) to lsValue
+          move (replace("#",lsValue,string(field#))) to lsValue
+//          send obs lsValue "" "Field is not part of (or overlapped by a field that" "is path of) the index."
+          send WriteLnError to lhStructure_LogFile ("  "+lsValue+" "+"Field is not part of (or overlapped by a field that is path of) the index.")
+        end
+      end
+    loop
+    move "" to Struc$ErrDescr
+  end_procedure
+end_class // cPostponedFieldSettings
+
+//> The cRSIndexCreations class is used within an cBasicRestructurer object
+//> to keep track of indices that were created as part of a restructure
+//> operation. Why? Because we may need to manually move the corresponding
+//> index files next to the DAT files. Otherwise the index files will
+//> remain in the first directory in the current search path (DF_OPEN_PATH)
+class cRSIndexCreations is an cArray
+end_class
+
+//> This class is also used from within an cBasicRestructurer object for
+//> the following reason. The '@' is not allowed as part of a field name.
+//> However, in vintage DataFlex the '@' sign is perfectly valid and in fact
+//> was used as part of a field name as an indication that the field is an
+//> overlap field or otherwise should not be presented to the end user
+//> (DFQuery and VDFQuery automatically filters such fields out).
+//> The cFieldNameRepair class is used to temporarily substitute 'illegal'
+//> field names with something legal. After the restructure has ended
+//> this object will edit the resulting TAG file.
+class cFieldNameRepair is an cArray
+  item_property_list
+    item_property string psRealName.i // "@ROAD_ID"
+    item_property string psTempName.i // "RSTMPFLDNAME001"
+  end_item_property_list cFieldNameRepair
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piTmpCounter private 0
+    object oTagFileArray is an cArray 
+    end_object
+  end_procedure
+  procedure reset
+    send delete_data
+    set !$.piTmpCounter to 1
+  end_procedure
+  function sRealName.s string tempname# returns string
+    integer max# row#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      if (psTempName.i(self,row#)) eq tempname# function_return (psRealName.i(self,row#))
+    loop
+    function_return ""
+  end_function
+  function sTempName.s string realname# returns string
+    integer max# row#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      if (psRealName.i(self,row#)) eq realname# function_return (psTempName.i(self,row#))
+    loop
+    function_return ""
+  end_function
+  function sAddField.s string realname# returns string
+    integer counter# row#
+    string rval#
+    get !$.piTmpCounter to counter#
+    move ("RSTMPFLDNAME"+IntToStrRzf(counter#,3)) to rval#
+    get row_count to row#
+    set psRealName.i row# to realname#
+    set psTempName.i row# to rval#
+    set !$.piTmpCounter to (counter#+1)
+    function_return rval#
+  end_function
+  procedure fix_the_tag_file
+    integer arr# ch# max# itm#
+    string root# name# real_name#
+    if (row_count(self)) begin // Only if necessary
+      get sRootInclPath to root#
+      move (root#+".tag") to root#
+      //send obs "sRootInclPath" root#
+      move (SEQ_DirectInput(root#)) to ch#
+      if ch# ge 0 begin
+        move (oTagFileArray(self)) to arr#
+        send delete_data to arr#
+        repeat
+          move (SEQ_ReadLn(ch#)) to name#
+          if name# ne "" set value of arr# item (item_count(arr#)) to name#
+        until name# eq ""
+        send SEQ_CloseInput ch#
+        move (SEQ_DirectOutput(root#)) to ch#
+        get item_count of arr# to max#
+        for itm# from 0 to (max#-1)
+          move (value(arr#,itm#)) to name#
+          get sRealName.s name# to real_name#
+          if real_name# ne "" writeln real_name#
+          else writeln name#
+        loop
+        send SEQ_CloseOutput ch#
+      end
+      else error 672 ("TAG file not found ("+root#+")")
+    end
+  end_procedure
+end_class // cFieldNameRepair
+
+//> Attribute DF_FILE_NUMBER_FIELDS does not work as stated by the
+//> documentation (it simply returns the current position of the
+//> field at any time). To overcome this a stunt based on this class
+//> is performed.
+class cBleedingOldFieldNumbers is a cArray // Godammit!
+  procedure initialize
+    integer liFile max# field#
+    send delete_data
+    get piFileHandle to liFile
+    get_attribute DF_FILE_NUMBER_FIELDS of liFile to max#
+    for field# from 1 to max#
+      set value item field# to field#
+    loop
+  end_procedure
+  procedure delete_field integer field#
+    send delete_item field#
+  end_procedure
+  procedure insert_item integer itm#
+    integer xitm# max#
+    get item_count to max#
+    for_ex xitm# from max# down_to (itm#+1)
+      set value item xitm# to (value(self,xitm#-1))
+    loop
+    set value item itm# to 0
+  end_procedure
+  procedure create_field integer field#
+    integer append#
+    move 0 to append#
+    ifnot field# move 1 to append#
+    if field# gt (item_count(self)) move 1 to append#
+    if append# set value item (item_count(self)) to 0
+    else begin
+      send insert_item field#
+      set value item field# to 0
+    end
+  end_procedure
+  function iFindFieldOldNumber.i integer old_field# returns integer
+    integer itm# max# field#
+    get item_count to max#
+    for itm# from 1 to (max#-1)
+      get value item itm# to field#
+      if old_field# eq field# function_return itm#
+    loop
+    function_return -1
+  end_function
+end_class // cBleedingOldFieldNumbers
+
+register_procedure RegisterUpdate integer op# integer attr# integer field# integer index# integer seg# string value#
+class cBasicRestructurer is a cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer         piRS_State        0 // Are preconditions ok for RS?
+    property integer         piFileHandle      0 // File handle during restructure, File number during probe
+    property integer         piMainFile        0 // File number during restructure and probe
+    property string          psDriver          "DATAFLEX"
+    // Used for tracking field insertion error in DF31D:
+    property integer piInitialNumberOfFields   0
+    property integer piIgnoreTheRestState      0
+
+    property integer         piErrorHandling   0 // Catch DF errors?
+    property integer         piProbeState      0 //
+    property integer private.piOrigOnError     0
+    property integer private.piDropCounter     0
+    property integer private.piCurrentField    0
+    property integer         piFieldTrackState 1
+    // Name of DAT file being restructured
+    property string          psDatFilePath     ""
+    property string          psDatFileName     "" //
+    property integer         piTraceState      0
+    property integer         piTraceObject     0
+    property integer         piProgressMode    RS_PG_DEFAULT // Wait image behavior
+
+    property integer private.piSortOnEndStructure DFFALSE
+
+    object oPostponedFileSettings is a cPostponedFileSettings
+    end_object
+    object oPostponedFieldSettings is a cPostponedFieldSettings
+    end_object
+    object oRSIndexCreations is a cRSIndexCreations
+    end_object
+    object oTmpArray is a cArray
+      // Used when creating indices.
+    end_object
+    object oFieldNameRepair is a cFieldNameRepair 
+    end_object
+    object oOldFieldNumbersRepair is a cBleedingOldFieldNumbers
+    end_object
+  end_procedure
+
+//procedure reset // I don't know who'd call this
+//  set piRS_State to 0
+//  set piProbeState to 0
+//  set piFileHandle to 0
+//  set piMainFile   to 0
+//  set private.piCurrentField to -1
+//  send delete_data to (oRSIndexCreations(self))
+//end_procedure
+
+  function field_count returns integer
+    integer liFile rval#
+    get piFileHandle to liFile
+    get_attribute DF_FILE_NUMBER_FIELDS of liFile to rval#
+    function_return rval#
+  end_function
+
+  procedure SetFieldNumber integer field#
+    set private.piCurrentField to field#
+  end_procedure
+
+  procedure CreateField integer field# string name# integer type#
+    integer liFile WasIRightOrWasIRight# InitialNumberOfFields#
+    integer liFieldNameAlreadyExists
+    ifnot (piIgnoreTheRestState(self)) begin
+      get piFileHandle to liFile
+      if field# gt (field_count(self)) move 0 to field# // Append
+      get piInitialNumberOfFields to InitialNumberOfFields#
+      ErrorTrapping.create_field liFile at field#
+      send create_field to (oOldFieldNumbersRepair(self)) field#
+      // If fieldname begins with "@" we have to cheat
+      if "@"      in    name# move (sAddField.s(oFieldNameRepair(self),name#)) to name#
+      // If fieldname begins with "FIELD" we have to cheat
+      if (StringBeginsWith(name#,"FIELD")) move (sAddField.s(oFieldNameRepair(self),name#)) to name#
+      // If fieldname already exists (but we intend to create the other field later) we have to cheat
+      get iFindFieldName.s name# to liFieldNameAlreadyExists
+      if (liFieldNameAlreadyExists<>-1) move (sAddField.s(oFieldNameRepair(self),name#)) to name#
+      ErrorTrapping.set_attribute DF_FIELD_NAME of liFile field# to name#
+      ErrorTrapping.set_attribute DF_FIELD_TYPE of liFile field# to type#
+      if field# set private.piCurrentField to field#
+      else set private.piCurrentField to (field_count(self))
+      send NotifyTracer RSOP_CREATEFIELD 0 field# type# 0 name#
+    end
+  end_procedure
+  procedure CreateField_OldNumber integer old_number# string name# integer type#
+    integer field#
+    get iFindFieldOldNumber.i old_number# to field#
+    if field# ne -1 send CreateField field# name# type#
+    else error 667 ("Old number not found ("+string(old_number#)+")")
+  end_procedure
+
+  procedure AppendField string name# integer type#
+    ifnot (piIgnoreTheRestState(self)) ;
+      send CreateField 0 name# type#
+  end_procedure
+  procedure DeleteField integer field#
+    integer liFile
+    ifnot (piIgnoreTheRestState(self)) begin
+      get piFileHandle to liFile
+      ErrorTrapping.delete_field liFile field#
+      send delete_field to (oOldFieldNumbersRepair(self)) field#
+      send NotifyTracer RSOP_DELETEFIELD 0 field# 0 0 ""
+    end
+  end_procedure
+
+  procedure DeleteField_OldNumber integer old_number#
+    integer field#
+    get iFindFieldOldNumber.i old_number# to field#
+    if field# ne -1 send DeleteField field#
+    else error 668 ("Old number not found ("+string(old_number#)+")")
+  end_procedure
+
+  procedure DeleteIndex integer idx#
+    integer liFile segments#
+    ifnot (piIgnoreTheRestState(self)) begin
+      get piFileHandle to liFile
+      get_attribute DF_INDEX_NUMBER_SEGMENTS of liFile idx# to segments#
+      // We have to check if there are any segments in the index before we
+      // delete it. If there aren't we will get an error if we try to delete it.
+      if segments# delete_index liFile idx#
+      send NotifyTracer RSOP_DELETEINDEX 0 0 idx# 0 ""
+    end
+  end_procedure
+
+  procedure structure_abort
+    integer liFile
+    get piFileHandle to liFile
+    structure_abort liFile
+    set piFileHandle to liFile
+    if (piErrorHandling(self)) get private.piOrigOnError to |VI31 // Restore normal error handling routine
+  end_procedure
+  procedure structure_error
+    integer liFile
+    get piFileHandle to liFile
+    error 673 ("An error occured while re-structuring file number "+string(liFile)+". Program will abort.")
+    send structure_abort
+    system
+  end_procedure
+  procedure structure_start
+    integer liFile
+    string root#
+    if (piErrorHandling(self)) begin
+      move self to cRestructurer#  // Make global integer cRestructurer# point to this object
+      set private.piOrigOnError to |VI31     // If an error occurs while restructuring we must abort the
+      on error gosub cRestructurer_Error     // re-structuring AND the program
+      indicate err false                     // This just needs to be done (can't remember why)
+    end
+    send delete_data to (oPostponedFileSettings(self))
+    send delete_data to (oPostponedFieldSettings(self))
+    send reset to (oFieldNameRepair(self))
+    get piMainFile to liFile
+    structure_start liFile (psDriver(self))
+    set piFileHandle to liFile
+    send initialize to (oOldFieldNumbersRepair(self))
+    if (piTraceState(self)) begin
+      get sRootInclPath to root#
+      send NotifyTracer RSOP_BEGIN 0 0 0 0 root#
+    end
+  end_procedure
+  procedure SetProgressMode integer mode#
+    // Possible values for mode# are: RS_PG_DEFAULT RS_PG_NONE RS_PG_LEAVE_ON RS_PG_OFF
+    if mode# eq RS_PG_OFF begin
+      send deactivate_display to (oStructureWait(self))
+      set piProgressMode to RS_PG_DEFAULT
+    end
+    else set piProgressMode to mode#
+  end_procedure
+  procedure structure_end
+    integer liFile callback_obj# wmode# lbOpen
+    integer lhSortHandle
+    string physical_name#
+    if (piProbeState(self)) begin
+      error 773 "No STRUCTURE_END while in probe mode"
+      procedure_return
+    end
+    move (oStructureWait(self)) to callback_obj#
+    get piProgressMode to wmode#
+    get piFileHandle to liFile
+    get_attribute DF_FILE_PHYSICAL_NAME of liFile to physical_name#
+    send execute to (oPostponedFileSettings(self)) physical_name#
+    send execute to (oPostponedFieldSettings(self)) physical_name#
+    if wmode# ne RS_PG_NONE begin
+      send activate_title to callback_obj# physical_name#
+      structure_end liFile DF_STRUCTEND_OPT_NONE "." callback_obj# // (pRestuctOpt(self)) (pTempDir(self)) (pCallBackObj(self))
+    end
+    else begin
+      structure_end liFile DF_STRUCTEND_OPT_NONE "." // (pRestuctOpt(self)) (pTempDir(self))
+    end
+
+    send fix_the_tag_file to (oFieldNameRepair(self))
+    set piFileHandle to liFile
+//  send DFMatrixError_Off
+//  if (piErrorHandling(self)) get private.piOrigOnError to |VI31 // Restore normal error handling routine
+    send NotifyTracer RSOP_END 0 0 0 0 ""
+    send delete_data to (oOldFieldNumbersRepair(self))
+
+    if (private.piSortOnEndStructure(self)) begin
+      get piMainFile to lhSortHandle
+      if lhSortHandle begin // We don't reindex files that were just created
+        send WriteLn to (oStructure_LogFile(self)) "  Forcing reindex..."
+        close lhSortHandle
+//      send WriteLn to (oStructure_LogFile(self)) ("  And the sort handle is: "+string(lhSortHandle))
+//      send WriteLn to (oStructure_LogFile(self)) ("  And the rootname is: "+physical_name#)
+//      if (lhSortHandle=1 or lhSortHandle=21 or lhSortHandle=95) begin
+//        send obs "open physical_name# as" physical_name# lhSortHandle DF_EXCLUSIVE
+
+//        send obs "Errors?" WINDOWINDEX
+//      end
+//      open physical_name# as lhSortHandle DF_EXCLUSIVE
+
+        get DBMS_OpenFileAs physical_name# lhSortHandle DF_EXCLUSIVE 0 to lbOpen
+        if lbOpen begin
+          if wmode# ne RS_PG_NONE sort lhSortHandle '' (DF_SORT_OPTION_BAD_DATA_FILE ior DF_SORT_OPTION_DUP_DATA_FILE) callback_obj#
+          else sort lhSortHandle '' (DF_SORT_OPTION_BAD_DATA_FILE ior DF_SORT_OPTION_DUP_DATA_FILE)
+        end
+        else send WriteLnError to (oStructure_LogFile(self)) "  Table could not be opened for reindexing!"
+//      if (FDX_SetOfIndices(0,lhSortHandle,DF_INDEX_TYPE_ONLINE)+FDX_SetOfIndices(0,lhSortHandle,DF_INDEX_TYPE_BATCH)) ne "" begin
+//        if wmode# ne RS_PG_NONE sort lhSortHandle '' (DF_SORT_OPTION_BAD_DATA_FILE ior DF_SORT_OPTION_DUP_DATA_FILE) callback_obj#
+//        else sort lhSortHandle '' (DF_SORT_OPTION_BAD_DATA_FILE ior DF_SORT_OPTION_DUP_DATA_FILE)
+//      end
+//      else send WriteLn to (oStructure_LogFile(self)) "  No indices on table, reindex abandoned!"
+        close lhSortHandle
+      end
+    end
+
+    send DFMatrixError_Off
+    if (piErrorHandling(self)) get private.piOrigOnError to |VI31 // Restore normal error handling routine
+
+    send CloseOutput to (oStructure_LogFile(self)) // Structure_End
+
+    if wmode# eq RS_PG_DEFAULT send deactivate_display to callback_obj#
+  end_procedure
+
+  procedure SetFileAttr integer attr# string value#
+    integer liFile
+    if (piProbeState(self)) begin
+      error 674 "Sorry, no SETFILEATTR while in probe mode"
+      procedure_return
+    end
+    ifnot (piIgnoreTheRestState(self)) begin
+      if attr# eq DF_FILE_RECORD_LENGTH send postponed_setting to (oPostponedFileSettings(self)) attr# value#
+      else begin
+        get piFileHandle to liFile
+        //send obs "SET FileAttribute of" liFile (API_Attr_Name(attr#)) value#
+        ErrorTrapping.set_attribute attr# of liFile to value#
+        send NotifyTracer RSOP_SETFILEATTR attr# 0 0 0 value#
+      end
+    end
+  end_procedure
+  procedure SetFieldAttr integer attr# integer field# string value#
+    integer liFile
+    if (piProbeState(self)) begin
+      error 675 "Sorry, no SETFIELDATTR while in probe mode"
+      procedure_return
+    end
+    ifnot (piIgnoreTheRestState(self)) begin
+      if attr# eq DF_FIELD_NAME begin
+        if "@" in value# move (sAddField.s(oFieldNameRepair(self),value#)) to value#
+        if (StringBeginsWith(value#,"FIELD")) move (sAddField.s(oFieldNameRepair(self),value#)) to value#
+      end
+      if attr# eq DF_FIELD_INDEX begin
+        // We postpone main index setting until the very end. Then we are
+        // sure that the relevant index is present
+        if field# eq IMPLICIT_FIELD get private.piCurrentField to field#
+        send postponed_setting to (oPostponedFieldSettings(self)) attr# field# value#
+      end
+      else begin
+        if field# eq IMPLICIT_FIELD get private.piCurrentField to field#
+        get piFileHandle to liFile
+        ErrorTrapping.set_attribute attr# of liFile field# to value#
+        send NotifyTracer RSOP_SETFIELDATTR attr# field# 0 0 value#
+      end
+    end
+  end_procedure
+  function iFindFieldOldNumber.i integer old_number# returns integer
+    integer liFile max# field# test#
+    // Very unfortunately, this function doesn't work! (DF_FIELD_OLD_NUMBER returns rubbish)
+    // Therefore we call another procedure until DAW gets it fixed
+    function_return (iFindFieldOldNumber.i(oOldFieldNumbersRepair(self),old_number#))
+    get piFileHandle to liFile
+    get_attribute DF_FILE_NUMBER_FIELDS of liFile to max#
+    for field# from 1 to max#
+      get_attribute DF_FIELD_OLD_NUMBER of liFile field# to test#
+      if test# eq old_number# function_return field#
+    loop
+    function_return -1
+  end_function
+  function iFindFieldName.s string name# returns integer
+    integer field# max# liFile
+    string test_name#
+    get piFileHandle to liFile
+    get field_count to max#
+    // First we look for the name passed:
+    for field# from 1 to max#
+      get_attribute DF_FIELD_NAME of liFile field# to test_name#
+      if test_name# eq name# function_return field#
+    loop
+    // If not found we now see if it helps to translate it:
+    get sTempName.s of (oFieldNameRepair(self)) name# to name#
+    if name# ne "" begin
+      for field# from 1 to max#
+        get_attribute DF_FIELD_NAME of liFile field# to test_name#
+        if test_name# eq name# function_return field#
+      loop
+    end
+    function_return -1
+  end_function
+  procedure SetFieldAttr_OldNumber integer attr# integer old_number# string value#
+    integer field#
+    error 678 "Procedure SetFieldAttr_OldNumber in STRUCTUR.UTL) was called"
+    get iFindFieldOldNumber.i old_number# to field#
+    if field# ne -1 send SetFieldAttr attr# field# value#
+    else error 669 ("Old number not found ("+string(old_number#)+")")
+  end_procedure
+  procedure SetFieldAttr_ByName integer attr# string name# string value#
+    integer field#
+    ifnot (piIgnoreTheRestState(self)) begin
+      get iFindFieldName.s name# to field#
+      if field# ne -1 send SetFieldAttr attr# field# value#
+      else error 670 ("Field name not found ("+name#+")")
+    end
+  end_procedure
+  procedure SetIndexAttr_Help integer index#
+    integer liFile index_handle# arr# max#
+    if (index#<1 or index#>15) error 671 ("Index number out of bounds ("+string(index#)+")")
+    move (oTmpArray(self)) to arr#
+    send delete_data to arr#
+    get piFileHandle to liFile
+    move index# to index_handle#
+    repeat
+      ErrorTrapping.create_index liFile at index_handle#
+      if index_handle# ne index# set value of arr# item index_handle# to 1
+    until index_handle# eq index#
+    get item_count of arr# to max#
+    for index# from 0 to (max#-1)
+      if (integer(value(arr#,index#))) ErrorTrapping.delete_index liFile index#
+    loop
+    send delete_data to arr#
+  end_procedure
+  procedure SetIndexAttr integer attr# integer index# string value#
+    integer liFile segments#
+    if (piProbeState(self)) begin
+      error 676 "Sorry, not while in probe mode"
+      procedure_return
+    end
+    ifnot (piIgnoreTheRestState(self)) begin
+      if (attr#=DF_INDEX_NUMBER_SEGMENTS and integer(value#)=0) send DeleteIndex index#
+      else begin
+        get piFileHandle to liFile
+        get_attribute DF_INDEX_NUMBER_SEGMENTS of liFile index# to segments#
+        ifnot segments# send SetIndexAttr_Help index# // create_index liFile at index#
+        ErrorTrapping.set_attribute attr# of liFile index# to value#
+        send NotifyTracer RSOP_SETINDEXATTR attr# 0 index# 0 value#
+      end
+    end
+  end_procedure
+  procedure SetIndexSegAttr integer attr# integer index# integer seg# string value#
+    integer liFile field# type#
+    if (piProbeState(self)) begin
+      error 677 "Sorry, not while in probe mode"
+      procedure_return
+    end
+    ifnot (piIgnoreTheRestState(self)) begin
+      get piFileHandle to liFile
+      if attr# eq DF_INDEX_SEGMENT_CASE begin
+        get_attribute DF_INDEX_SEGMENT_FIELD of liFile index# seg# to field#
+        get_attribute DF_FIELD_TYPE of liFile field# to type#
+        if (type#<>DF_ASCII and integer(value#)=DF_CASE_IGNORED) procedure_return // We only do this for ASCII fields
+      end
+      ErrorTrapping.set_attribute attr# of liFile index# seg# to value#
+      send NotifyTracer RSOP_SETINDEXSEGATTR attr# 0 index# seg# value#
+    end
+  end_procedure
+
+  function GetFileAttr integer attr# returns string
+    integer liFile
+    string value#
+    get piFileHandle to liFile
+    get_attribute attr# of liFile to value#
+    function_return value#
+  end_function
+  function GetFieldAttr integer attr# integer field# returns string
+    integer liFile
+    string value#
+    if field# eq IMPLICIT_FIELD get private.piCurrentField to field#
+    get piFileHandle to liFile
+    get_attribute attr# of liFile field# to value#
+    function_return value#
+  end_function
+  function GetIndexAttr integer attr# integer index# returns string
+    integer liFile
+    string value#
+    get piFileHandle to liFile
+    get_attribute attr# of liFile index# to value#
+    function_return value#
+  end_function
+  function GetIndexSegAttr integer attr# integer index# integer seg# returns string
+    integer liFile
+    string value#
+    get piFileHandle to liFile
+    get_attribute attr# of liFile index# seg# to value#
+    function_return value#
+  end_function
+  function GetFileListAttr integer attr# returns string
+    integer liFile
+    string value#
+    get piFileHandle to liFile
+    get_attribute attr# of liFile to value#
+    function_return value#
+  end_function
+
+  procedure TableDropHelp string lsFile
+    integer liError
+    move (uppercase(lsFile)) to lsFile
+    if (right(lsFile,3)="DAT") move 1 to liError
+    if (right(lsFile,3)="TAG") move 1 to liError
+    if (right(lsFile,3)="VLD") move 1 to liError
+    if (right(lsFile,3)="HDR") move 1 to liError
+//    if (right(lsFile,1)="K")   move 1 to liError
+    if (right(lsFile,3)="DEF") move 1 to liError
+    if (right(lsFile,2)="FD")  move 1 to liError
+    if liError set private.piDropCounter to (private.piDropCounter(self)+1)
+  end_procedure
+  function iTableDrop.s string lsRoot returns integer
+    string lsDatFile lsPath liGrb
+    move (lowercase(lsRoot)) to lsRoot
+    move (lsRoot+".dat") to lsDatFile
+    move (SEQ_FindFileAlongDFPath(lsDatFile)) to lsPath
+    move (SEQ_ComposeAbsoluteFileName(lsPath,lsRoot)) to lsRoot
+    get SEQ_EraseFile (lsRoot+".dat") to liGrb
+    get SEQ_EraseFile (lsRoot+".tag") to liGrb
+    get SEQ_EraseFile (lsRoot+".vld") to liGrb
+    get SEQ_EraseFile (lsRoot+".hdr") to liGrb
+    get SEQ_EraseFile (lsRoot+".k?") to liGrb
+    get SEQ_EraseFile (lsRoot+".def") to liGrb
+    get SEQ_EraseFile (lsRoot+".fd") to liGrb
+    send SEQ_Load_ItemsInDir (lsRoot+".*")
+    set private.piDropCounter to 0
+    send SEQ_CallBack_ItemsInDir SEQCB_FILES_ONLY msg_TableDropHelp self
+    function_return (private.piDropCounter(self))
+  end_function
+  function iTableProbe.i integer liFile returns integer
+    integer rval#
+    move (DBMS_OpenFile(liFile,DF_SHARE,0)) to rval#
+    set piProbeState to rval#
+    if rval# begin
+      set piMainFile to liFile
+      set piFileHandle to liFile
+    end
+    function_return (not(rval#)) // Returns 0 if success
+  end_function
+  procedure Probe_End
+    if (piProbeState(self)) begin
+      close (piMainFile(self))
+      set piProbeState to false
+    end
+    else error 679 "Probing not initialized"
+  end_procedure
+
+  procedure reset.is integer liFile string lsRootName
+    send DFMatrixError_On
+    if liFile send DoWriteTimeEntry to (oStructure_LogFile(self)) ("Restructuring table: "+lsRootName+" ("+string(liFile)+")")
+    else      send DoWriteTimeEntry to (oStructure_LogFile(self)) ("Creating table: "+lsRootName)
+    set piMainFile to liFile
+    if liFile set piInitialNumberOfFields to (API_AttrValue_FILE(DF_FILE_NUMBER_FIELDS,liFile))
+    else set piInitialNumberOfFields to 0
+    set piIgnoreTheRestState to 0
+  end_procedure
+
+  function iTableOpen.is integer liFile string fn# returns integer
+    integer rval#
+    string path#
+    move (DBMS_OpenFileAs(fn#,liFile,DF_EXCLUSIVE,0)) to rval#
+    if rval# begin
+      //move (rval#=DBMS_DRIVER_DATAFLEX) to rval# // Only DataFlex files
+      ifnot rval# close liFile
+    end
+    if rval# begin
+      send AppendOutput to (oStructure_LogFile(self))
+      send reset.is liFile fn#
+      move (fn#+".dat") to fn#
+      move (SEQ_ExtractPathFromFileName(fn#)) to path#
+      set psDatFileName to (SEQ_RemovePathFromFileName(fn#))
+      if path# eq "" move (SEQ_FindFileAlongDFPath(fn#)) to path#
+      set psDatFilePath to path#
+      send structure_start
+    end
+    else send CloseOutput to (oStructure_LogFile(self)) // Close log file if table could not open
+    set piRS_State to rval#
+    function_return (not(rval#)) // Returns 0 if success
+  end_function
+
+  function iTableOpen.i integer liFile returns integer
+    integer rval#
+    string fn# path#
+    move (DBMS_IsOpenFile(liFile)) to rval#
+    if rval# ifnot (integer(API_AttrValue_FILE(DF_FILE_OPEN_MODE,liFile))=DF_EXCLUSIVE) move 0 to rval#
+    ifnot rval# move (DBMS_OpenFile(liFile,DF_EXCLUSIVE,0)) to rval#
+    if rval# begin
+      //move (rval#=DBMS_DRIVER_DATAFLEX) to rval# // Only DataFlex files
+      ifnot rval# close liFile
+    end
+    if rval# begin
+      move (API_AttrValue_FILELIST(DF_FILE_ROOT_NAME,liFile)) to fn#
+      send AppendOutput to (oStructure_LogFile(self))
+      send reset.is liFile fn#
+      move (fn#+".dat") to fn#
+      move (SEQ_ExtractPathFromFileName(fn#)) to path#
+      set psDatFileName to (SEQ_RemovePathFromFileName(fn#))
+      if path# eq "" move (SEQ_FindFileAlongDFPath(fn#)) to path#
+      set psDatFilePath to path#
+      send structure_start
+    end
+    else send CloseOutput to (oStructure_LogFile(self)) //
+    set piRS_State to rval#
+    function_return (not(rval#)) // Returns 0 if success
+  end_function
+
+  function iTableExists.s string root# returns integer
+    integer rval#
+    function_return 1
+  end_function
+
+  //> Specifying a root name that does already exist on
+  //> disk will overwrite existing data.
+  //> Omitting the path from the root name will place the
+  //> table in the first directory of the current DFPATH.
+  //> Returns 0 if all is well
+  function iTableCreate.s string lsRoot returns integer
+    send AppendOutput to (oStructure_LogFile(self))
+    send reset.is 0 lsRoot
+    set psDatFileName to (SEQ_RemovePathFromFileName(lsRoot)+".dat")
+    set psDatFilePath to (SEQ_ExtractPathFromFileName(lsRoot))
+    if (SEQ_FileExists(ToAnsi(lsRoot)+".dat")=SEQIT_NONE) begin
+    //send obs "psDatFileName" (psDatFileName(self)) "psDatFilePath" (psDatFilePath(self))
+      send structure_start
+      send SetFileAttr DF_FILE_MAX_RECORDS   10000 // Set up a few default values
+      send SetFileAttr DF_FILE_MULTIUSER     DF_FILE_USER_MULTI
+      send SetFileAttr DF_FILE_REUSE_DELETED DF_FILE_DELETED_REUSE
+      send SetFileAttr DF_FILE_PHYSICAL_NAME (ToAnsi(lsRoot))
+      function_return 0 // 0 means OK
+    end
+    send WriteLnError to (oStructure_LogFile(self)) ("  Cannot create existing file "+lsRoot+".dat")
+    send DFMatrixError_Off
+    send CloseOutput to (oStructure_LogFile(self)) // Closes log file if Table could not be created
+    function_return 1
+  end_function
+  procedure display_definition
+    integer liFile
+    get piFileHandle to liFile
+
+#IF Structur$UI
+    send FDX_ModalDisplayFileAttributes 0 liFile
+#ELSE
+    // Here one could insert code to dump the definition to a log file
+#ENDIF
+  end_procedure
+  procedure NotifyTracer integer op# integer attr# integer field# integer index# integer seg# string value#
+    integer liFile
+    get piFileHandle to liFile
+    if (piTraceObject(self)) send RegisterUpdate to (piTraceObject(self)) liFile op# attr# field# index# seg# value#
+  end_procedure
+
+  //> This function returns the root name of the file including path
+  //> if a path was originally specified:
+  function sRootInclPath returns string
+    string root# path#
+    get psDatFileName to root#
+    move (replace(".dat",root#,"")) to root#
+    move (replace(".DAT",root#,"")) to root#
+    get psDatFilePath to path#
+    if path# ne "" move (SEQ_ComposeAbsoluteFileName(path#,root#)) to root#
+    function_return root#
+  end_function
+end_class // cBasicRestructurer
+
+integer oRestructurer#
+object oRestructurer is a cBasicRestructurer
+  move self to oRestructurer#
+end_object
+
+// This one is used to control whether the sentinel should be
+// removed from screen when a restructure has ended.
+procedure RS_Progress global integer mode#
+  send SetProgressMode to oRestructurer# mode#
+end_procedure
+
+// ********************** GLOBAL INTERFACE ******************************
+//> Display the definition as it looks right now. May be sent during a
+//> restructure for debug purposes.
+procedure RS_DisplayDef global
+  send Display_Definition to oRestructurer#
+end_procedure
+//> May be used to manually set the field pointed to by the symbol
+//> IMPLICIT_FIELD (which is in fact -1)
+procedure RS_SetFieldNumber global integer field#
+  send SetFieldNumber to oRestructurer# field#
+end_procedure
+//> Inserts a new field before existing field number field#. When this
+//> is done you should take care manually to change the offsets and
+//> lengths of affected overlap fields.
+procedure RS_CreateField global integer field# string name# integer type#
+  send CreateField to oRestructurer# field# name# type#
+end_procedure
+procedure RS_CreateField_OldNumber global integer field# string name# integer type#
+  send CreateField_OldNumber to oRestructurer# field# name# type#
+end_procedure
+//> Appends a field to the existing ones. Following this there should
+//> always be messages to set the length of the field.
+procedure RS_AppendField global string name# integer type#
+  send AppendField to oRestructurer# name# type#
+end_procedure
+//> Deletes a field.
+procedure RS_DeleteField global integer field#
+  send DeleteField to oRestructurer# field#
+end_procedure
+//> Deletes a field.
+procedure RS_DeleteField_OldNumber global integer old_field#
+  send DeleteField_OldNumber to oRestructurer# old_field#
+end_procedure
+//> Deletes an index.
+procedure RS_DeleteIndex global integer idx#
+  send DeleteIndex to oRestructurer# idx#
+end_procedure
+//> Abort the restructure.
+procedure RS_Structure_Abort global
+  send Structure_Abort to oRestructurer#
+end_procedure
+//> Lets the changes that you have made so far take effect.
+procedure RS_Structure_End global integer liForceExtraSort
+  integer liDoSort
+  if num_arguments gt 0 move liForceExtraSort to liDoSort
+  else move DFFALSE to liDoSort
+  set private.piSortOnEndStructure of oRestructurer# to liDoSort
+  send Structure_End to oRestructurer#
+  set private.piSortOnEndStructure of oRestructurer# to DFFALSE
+end_procedure
+//> Closes the file formerly opened for probing.
+procedure RS_Probe_End global
+  send Probe_End to oRestructurer#
+end_procedure
+
+//> Returns the current number of fields.
+function RS_CurrentFieldCount global returns integer
+  function_return (field_count(oRestructurer#))
+end_function
+
+//> RS_TableOpenNumber returns 1 if the file was successfully opened
+//> for restructuring. The restructuring presumably anout to take place
+//> should be terminated with a RS_Structure_End or RS_Structure_Abort
+//> message.
+function RS_TableOpenNumber global integer liFile returns integer
+  function_return (not(iTableOpen.i(oRestructurer#,liFile)))
+end_function
+
+//> RS_TableOpenName returns 1 if the file was successfully opened
+//> for restrucuring. The restructuring presumably about to take place
+//> should be terminated with a RS_Structure_End or RS_Structure_Abort
+//> message.
+function RS_TableOpenName global integer liFile string fn# returns integer
+  function_return (not(iTableOpen.is(oRestructurer#,liFile,fn#)))
+end_function
+
+//> RS_TableProbeNumber returns 1 if the file was successfully opened
+//> for probing. Probing should be ended with a RS_Probe_End message.
+function RS_TableProbeNumber global integer liFile returns integer
+  function_return (not(iTableProbe.i(oRestructurer#,liFile)))
+end_function
+function RS_TableCreateName global string root# returns integer
+  function_return (not(iTableCreate.s(oRestructurer#,root#)))
+end_function
+
+function RS_TableDropName global string root# returns integer
+  function_return (not(iTableDrop.s(oRestructurer#,root#)))
+end_function
+function RS_TableExistsName global string root# returns integer
+  function_return (iTableExists.s(oRestructurer#,root#))
+end_function
+
+//> Set value of File type attribute during restructuring.
+procedure RS_SetFileAttr global integer attr# string value#
+  send SetFileAttr to oRestructurer# attr# value#
+end_procedure
+//> Set value of Field type attribute during restructuring.
+procedure RS_SetFieldAttr global integer attr# integer field# string value#
+  send SetFieldAttr to oRestructurer# attr# field# value#
+end_procedure
+//> Set value of Field type attribute during restructuring. Field referenced by OLD_NUMBER
+procedure RS_SetFieldAttr_OldNumber global integer attr# integer field# string value#
+  send SetFieldAttr_OldNumber to oRestructurer# attr# field# value#
+end_procedure
+//> Set value of Field type attribute during restructuring. Field referenced by NAME
+procedure RS_SetFieldAttr_ByName global integer attr# string name# string value#
+  send SetFieldAttr_ByName to oRestructurer# attr# name# value#
+end_procedure
+//> Set value of Index type attribute during restructuring.
+procedure RS_SetIndexAttr global integer attr# integer index# string value#
+  send SetIndexAttr to oRestructurer# attr# index# value#
+end_procedure
+//> Set value of Index Segment type attribute during restructuring.
+procedure RS_SetIndexSegAttr global integer attr# integer index# integer seg# string value#
+  send SetIndexSegAttr to oRestructurer# attr# index# seg# value#
+end_procedure
+//> Set value of FileList type attribute during restructuring.
+procedure RS_SetFileListAttr global integer attr# integer liFile string value#
+  ErrorTrapping.set_attribute attr# of liFile to value#
+end_procedure
+
+//> Get value of File type attribute while restructuring or probing.
+function RS_GetFileAttr global integer attr# returns string
+  function_return (GetFileAttr(oRestructurer#,attr#))
+end_function
+//> Get value of Field type attribute while restructuring or probing.
+function RS_GetFieldAttr global integer attr# integer field# returns string
+  function_return (GetFieldAttr(oRestructurer#,attr#,field#))
+end_function
+//> Get value of Index type attribute while restructuring or probing.
+function RS_GetIndexAttr global integer attr# integer index# returns string
+  function_return (GetIndexAttr(oRestructurer#,attr#,index#))
+end_function
+//> Get value of Index Segment type attribute while restructuring or probing.
+function RS_GetIndexSegAttr global integer attr# integer index# integer seg# returns string
+  function_return (GetIndexSegAttr(oRestructurer#,attr#,index#,seg#))
+end_function
+//> Get value of FileList type attribute while restructuring or probing.
+function RS_GetFileListAttr global integer attr# returns string
+  function_return (GetFileListAttr(oRestructurer#,attr#))
+end_function
+

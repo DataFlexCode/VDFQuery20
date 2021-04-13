@@ -1,0 +1,752 @@
+// Use StrucPgm.nui // Class for storing a sequence of restructure instructions
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Fdx_Attr.nui // FDX compatible attribute functions
+Use Structur.utl // Object for restructuring table definitions
+Use DBMS.nui     // Basic DBMS functions
+Use API_Attr.nui // Functions for querying API attributes
+Use Files.nui    // Utilities for handling file related stuff
+Use FDX.nui      // cFDX class
+
+enumeration_list // Program types
+  define PGM_TYPE_NONE
+  define PGM_TYPE_EMPTY
+  define PGM_TYPE_EDIT
+  define PGM_TYPE_CREATE
+  define PGM_TYPE_DROP
+  define PGM_TYPE_FILELIST
+end_enumeration_list
+
+function StructPgm_ProgramType_Text global integer type# returns string
+  if type# eq PGM_TYPE_NONE     function_return "Unknown"
+  if type# eq PGM_TYPE_EMPTY    function_return "Unchanged"
+  if type# eq PGM_TYPE_EDIT     function_return "Changed"
+  if type# eq PGM_TYPE_CREATE   function_return "Create"
+  if type# eq PGM_TYPE_DROP     function_return "Drop"
+  if type# eq PGM_TYPE_FILELIST function_return "Filelist"
+end_function
+
+enumeration_list // Instruction types
+  define INSTR_TYPE_EDIT
+  define INSTR_TYPE_CREATE
+  define INSTR_TYPE_DELETE
+  define INSTR_TYPE_APPEND
+end_enumeration_list
+
+function StructPgm_FieldInstructionType_Text global integer type# returns string
+  if type# eq INSTR_TYPE_EDIT   function_return "Edit"
+  if type# eq INSTR_TYPE_CREATE function_return "Insert"
+  if type# eq INSTR_TYPE_DELETE function_return "Delete"
+  if type# eq INSTR_TYPE_APPEND function_return "Append"
+end_function
+
+// This package defines a class called cFdxRestructureProgram meant to
+// be used for storing the instructions making up a restructure program.
+// Due to the different nature of changing FILE, FIELD, INDEX and INDEX
+// SEGMENT attributes the instructions for these are stored in four
+// separate embedded arrays that are all based on the cStrucPgmHelpClass
+// class.
+//
+// The cStrucPgmHelpClass class itself supports storing a text version
+// in an embedded array (object oReportText).
+
+class cStrucPgmHelpClass is a cArray
+  procedure construct_object integer iImg
+    forward send construct_object iImg
+    object oReportText is a cArray
+    end_object
+  end_procedure
+  procedure reset
+    send delete_data to (oReportText(self))
+    send delete_data
+  end_procedure
+end_class // cStrucPgmHelpClass
+
+class cStrucPgmHelp1 is a cStrucPgmHelpClass // FILELIST/FILE instructions
+  item_property_list
+    item_property integer piAttr.i
+    item_property string  psValue.i
+    item_property string  psPrevValue.i
+  end_item_property_list cStrucPgmHelp1
+  procedure add_instruction integer attr# string value#
+    integer row#
+    get row_count to row#
+    set piAttr.i  row# to attr#
+    set psValue.i row# to value#
+  end_procedure
+  function sInstructionText.i integer row# returns string
+    integer attr#
+    string val# prev_val# rval#
+    get piAttr.i      row# to attr#
+    get psValue.i     row# to val#
+    get psPrevValue.i row# to prev_val#
+    move ("Set "+API_Attr_Name(attr#)+" To "+API_Attr_ValueName(attr#,val#)) to rval#
+    if prev_val# ne "" move (rval#+" (Prev: "+API_Attr_ValueName(attr#,prev_val#)+")") to rval#
+    function_return rval#
+  end_function
+  procedure seq_report_on_changes integer liChannel
+    integer liMax liRow liAttr
+    string lsFrom lsTo lsValue
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get piAttr.i      liRow to liAttr
+      get psValue.i     liRow to lsTo
+      get psPrevValue.i liRow to lsFrom
+      get API_Attr_ValueName liAttr lsTo to lsTo
+      get API_Attr_ValueName liAttr lsFrom to lsFrom
+
+      move "Set Ï#Ï to Ï#Ï (previously: Ï#Ï)" to lsValue
+      move (replace("Ï#Ï",lsValue,API_Attr_Name(liAttr))) to lsValue
+      move (replace("Ï#Ï",lsValue,lsTo)) to lsValue
+      move (replace("Ï#Ï",lsValue,lsFrom)) to lsValue
+
+      writeln channel liChannel "  " lsValue
+    loop
+  end_procedure
+end_class // cStrucPgmHelp1
+
+class cStrucPgmHelp2 is a cStrucPgmHelpClass // FIELD instructions
+  item_property_list
+    item_property integer piInstrType.i // Instruction type
+    item_property integer piAttr.i      // Set_Attribute Attr#
+    item_property integer piField.i     //        Field Field#
+    item_property string  psFieldName.i //        (with name#)
+    item_property string  psValue.i     //           To Value#
+    item_property string  psPrevValue.i // (value was previously: prev)
+  end_item_property_list cStrucPgmHelp2
+
+  function sInstructionText.i integer row# returns string
+    integer type# field# attr#
+    string name# val# prev_val# rval#
+    get piInstrType.i row# to type#
+    get piAttr.i      row# to attr#
+    get piField.i     row# to field#
+    get psFieldName.i row# to name#
+    get psValue.i     row# to val#
+    get psPrevValue.i row# to prev_val#
+    if type# eq INSTR_TYPE_DELETE function_return ("Delete field "+string(field#)+" ("+name#+")")
+    if type# eq INSTR_TYPE_CREATE function_return ("Insert field "+val#+" before field "+string(field#)+", "+name#)
+    if type# eq INSTR_TYPE_APPEND function_return ("Append field "+val#)
+    move ("Set "+API_Attr_Name(attr#)+" field "+string(field#)+" ("+name#+")"+" To "+API_Attr_ValueName(attr#,val#)) to rval#
+    if prev_val# ne "" move (rval#+" (Prev: "+API_Attr_ValueName(attr#,prev_val#)+")") to rval#
+    function_return rval#
+  end_function
+
+  procedure seq_report_on_changes integer liChannel
+    integer liMax liRow liAttr liType liIgnoreField
+    string lsFrom lsTo lsValue
+    get row_count to liMax
+    decrement liMax
+    move -1 to liIgnoreField
+    for liRow from 0 to liMax
+      get piInstrType.i liRow to liType
+      get piAttr.i liRow      to liAttr
+      if (liType=INSTR_TYPE_DELETE or liType=INSTR_TYPE_CREATE or liType=INSTR_TYPE_APPEND) begin
+        get sInstructionText.i liRow to lsValue
+        writeln channel liChannel "  " lsValue
+        get piField.i liRow to liIgnoreField
+      //if liType eq INSTR_TYPE_DELETE begin
+      //end
+      //if liType eq INSTR_TYPE_CREATE begin
+      //  get liField.i liRow to liIgnoreField
+      //end
+      //if liType eq INSTR_TYPE_APPEND begin
+      //  get liField.i liRow to liIgnoreField
+      //end
+      end
+      else begin
+        if (piField.i(self,liRow)) ne liIgnoreField begin
+          get sInstructionText.i liRow to lsValue
+          writeln channel liChannel "  " lsValue
+        end
+      end
+    loop
+  end_procedure
+
+  procedure add_instruction integer type# integer attr# integer field# string name# string value#
+    integer row#
+    get row_count to row#
+    set piInstrType.i row# to type#
+    set piAttr.i      row# to attr#
+    set piField.i     row# to field#
+    set psFieldName.i row# to name#
+    set psValue.i     row# to value#
+  end_procedure
+
+  // This function derives the attributes of a field stored in a sequence of
+  // rows in this object starting at liStartRow.
+  function sFillReportTextArrayHelp integer liStartRow returns string
+    integer liMax liRow liBreak liField
+    integer liPrevField liType liLength liPrecision liRelFile liRelField
+    string lsRval lsLength
+    move "#1 #2 (->#3,#4)" to lsRval
+    get piField.i liStartRow to liPrevField
+    get row_count to liMax
+    move 0 to liBreak
+    move liStartRow to liField
+    while (not(liBreak) and liField<=liMax and liPrevField=liField)
+    end
+    move (replace("#1",lsRval,"?")) to lsRval
+    move (replace("#2",lsRval,"?")) to lsRval
+    move (replace("#3",lsRval,"?")) to lsRval
+    move (replace("#4",lsRval,"?")) to lsRval
+    function_return lsRval
+  end_function
+
+  procedure FillReportTextArray
+    integer liReportText liMax liRow liType liAttr liField liDontListField
+    string  lsStr lsName lsVal lsPrevVal
+    move (oReportText(self)) to liReportText
+    get row_count to liMax
+    move -1 to liDontListField
+    decrement liMax
+    for liRow from 0 to liMax
+      get piInstrType.i liRow to liType
+      get piAttr.i      liRow to liAttr
+      get piField.i     liRow to liField
+      get psFieldName.i liRow to lsName
+      get psValue.i     liRow to lsVal
+      get psPrevValue.i liRow to lsPrevVal
+
+      if liType eq INSTR_TYPE_DELETE begin
+        move ("Delete field "+string(liField)+" ("+lsName+")") to lsStr
+        set value of liReportText item (item_count(liReportText)) to lsStr
+        move -1 to liDontListField
+      end
+      else if liType eq INSTR_TYPE_CREATE begin
+        move ("Insert field "+lsVal+" before field "+string(liField)+", "+lsName) to lsStr
+        set value of liReportText item (item_count(liReportText)) to lsStr
+        move liField to liDontListField
+      end
+      else if liType eq INSTR_TYPE_APPEND begin
+        move ("Append field "+lsVal) to lsStr
+        set value of liReportText item (item_count(liReportText)) to lsStr
+        move 0 to liDontListField
+      end
+      else begin
+        if liField ne liDontListField move -2 to liDontListField
+      end
+      if liDontListField ge 0 set value of liReportText item (item_count(liReportText)) to lsStr
+    loop
+  end_procedure
+end_class // cStrucPgmHelp2
+
+class cStrucPgmHelp3 is a cStrucPgmHelpClass // INDEX instructions
+  item_property_list
+    item_property integer piInstrType.i // Instruction type
+    item_property integer piAttr.i      // Set_Attribute Attr#
+    item_property integer piIndex.i     //        Index index#
+    item_property string  psValue.i     //           To Value#
+  end_item_property_list cStrucPgmHelp3
+  procedure add_instruction integer type# integer attr# integer index# string value#
+    integer row#
+    get row_count to row#
+    set piInstrType.i row# to type#
+    set piAttr.i      row# to attr#
+    set piIndex.i     row# to index#
+    set psValue.i     row# to value#
+  end_procedure
+  function sInstructionText.i integer row# returns string
+    integer type# index# attr#
+    string val# rval#
+    get piInstrType.i row# to type#
+    get piAttr.i      row# to attr#
+    get piIndex.i     row# to index#
+    get psValue.i row# to val#
+    move ("Set "+API_Attr_Name(attr#)+" index "+string(index#)+" To "+API_Attr_ValueName(attr#,val#)) to rval#
+    function_return rval#
+  end_function
+  procedure seq_report_on_changes integer liChannel
+  end_procedure
+end_class // cStrucPgmHelp3
+
+class cStrucPgmHelp4 is a cStrucPgmHelpClass // INDEX SEGMENT instructions
+  item_property_list
+    item_property integer piInstrType.i // Instruction type
+    item_property integer piAttr.i      // Set_Attribute Attr#
+    item_property integer piIndex.i     //        Index index#
+    item_property integer piSegment.i   //    segment segment#
+    item_property string  psValue.i     //           To Value#
+  end_item_property_list cStrucPgmHelp4
+  procedure add_instruction integer type# integer attr# integer index# integer segment# string value#
+    integer row#
+    get row_count to row#
+    set piInstrType.i row# to type#
+    set piAttr.i      row# to attr#
+    set piIndex.i     row# to index#
+    set piSegment.i   row# to segment#
+    set psValue.i     row# to value#
+  end_procedure
+  function sInstructionText.i integer row# returns string
+    integer type# index# attr# segment#
+    string val# rval#
+    get piInstrType.i row# to type#
+    get piAttr.i      row# to attr#
+    get piIndex.i     row# to index#
+    get piSegment.i   row# to segment#
+    get psValue.i row# to val#
+    move ("Set "+API_Attr_Name(attr#)+" index "+string(index#)+" segment "+string(segment#)+" To "+API_Attr_ValueName(attr#,val#)) to rval#
+    function_return rval#
+  end_function
+  procedure seq_report_on_changes integer liChannel
+  end_procedure
+end_class // cStrucPgmHelp4
+
+class cFdxRestructureProgram is a cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+
+    property integer piFile               0
+    property string  psRootName           ""
+    property integer piProgramType        PGM_TYPE_NONE // PGM_TYPE_NONE PGM_TYPE_EMPTY PGM_TYPE_EDIT PGM_TYPE_CREATE PGM_TYPE_DROP
+    property integer piExecuted           0
+    property integer piSortOnEndStructure  DFFALSE
+    property integer pbDeleteDroppedTables DFFALSE
+    property integer pbRestructureError   DFFALSE
+
+    object oFileListPgm is a cStrucPgmHelp1 
+    end_object
+    object oFilePgm     is a cStrucPgmHelp1 
+    end_object
+    object oFieldPgm    is a cStrucPgmHelp2 
+    end_object
+    object oIndexPgm    is a cStrucPgmHelp3 
+    end_object
+    object oIndexSegPgm is a cStrucPgmHelp4 
+    end_object
+    object oInitialStateFDX is a cFdxFileDef 
+    end_object
+  end_procedure
+
+  procedure callback_deleted_fields integer lhMsg integer lhObj
+    integer liRow liMax liFile lhFieldPgm liField
+    integer liInstrMax liInstr liInstrType
+    string  lsRoot lsName
+    if (not(piExecuted(self)) and piProgramType(self)=PGM_TYPE_EDIT) begin
+      get piFile     to liFile
+      get psRootName to lsRoot
+      move (oFieldPgm(self)) to lhFieldPgm
+
+      get row_count of lhFieldPgm to liInstrMax
+      decrement liInstrMax
+      for liInstr from 0 to liInstrMax
+        if (piInstrType.i(lhFieldPgm,liInstr)=INSTR_TYPE_DELETE) begin
+
+          get piField.i of lhFieldPgm liInstr to liField
+          get psFieldName.i of lhFieldPgm liInstr to lsName
+          send lhMsg to lhObj liFile liField lsName lsRoot
+        end
+      loop
+    end
+  end_procedure
+
+  function sTitle returns string
+    integer lbExecuted lbError
+    string lsRval
+    get piExecuted to lbExecuted
+    get pbRestructureError to lbError
+
+    get psRootName to lsRval
+    move (lsRval+" ("+string(piFile(self))+"): "+StructPgm_ProgramType_Text(piProgramType(self))) to lsRval
+
+    if lbExecuted begin
+      if lbError move (lsRval+" (EXEC-ERROR)") to lsRval
+      else move (lsRval+" (Executed)") to lsRval
+    end
+    else if lbError move (lsRval+" (INIT-ERROR)") to lsRval
+    function_return lsRval
+  end_function
+  procedure reset
+    send reset to (oFileListPgm(self))
+    send reset to (oFilePgm(self))
+    send reset to (oFieldPgm(self))
+    send reset to (oIndexPgm(self))
+    send reset to (oInitialStateFDX(self))
+    set piExecuted to DFFALSE
+  end_procedure
+  procedure add_filelist_instruction integer attr# string value#
+    send add_instruction to (oFileListPgm(self)) attr# value#
+  end_procedure
+  procedure add_file_instruction integer attr# string value#
+    send add_instruction to (oFilePgm(self)) attr# value#
+  end_procedure
+  procedure add_field_instruction integer type# integer attr# integer field# string name# string value#
+    send add_instruction to (oFieldPgm(self)) type# attr# field# name# value#
+  end_procedure
+  procedure add_index_instruction integer type# integer attr# integer index# string value#
+    send add_instruction to (oIndexPgm(self)) type# attr# index# value#
+  end_procedure
+  procedure add_indexseg_instruction integer type# integer attr# integer index# integer segment# string value#
+    send add_instruction to (oIndexSegPgm(self)) type# attr# index# segment# value#
+  end_procedure
+  procedure apply_filelist_changes
+    integer obj# row# max# attr# file#
+    string str#
+    move (oFileListPgm(self)) to obj#
+    get row_count of obj# to max#
+    get piFile to file#
+    for row# from 0 to (max#-1)
+      get piAttr.i  of obj# row# to attr#
+      get psValue.i of obj# row# to str#
+      send RS_SetFileListAttr attr# file# str#
+    loop
+  end_procedure
+  procedure apply_file_changes
+    integer obj# row# max# attr#
+    string str#
+    move (oFilePgm(self)) to obj#
+    get row_count of obj# to max#
+    for row# from 0 to (max#-1)
+      get piAttr.i  of obj# row# to attr#
+      get psValue.i of obj# row# to str#
+      send RS_SetFileAttr attr# str#
+    loop
+  end_procedure
+  procedure apply_field_changes
+    integer obj# row# max# attr# field# type#
+    string str# name#
+    move (oFieldPgm(self)) to obj#
+    get row_count of obj# to max#
+    for row# from 0 to (max#-1)
+      get piInstrType.i of obj# row# to type#
+      get piAttr.i      of obj# row# to attr#
+      get piField.i     of obj# row# to field#
+      get psFieldName.i of obj# row# to name#
+      get psValue.i     of obj# row# to str#
+      if type# eq INSTR_TYPE_EDIT begin
+        if field# eq 0 begin // Field has just been created
+          send RS_SetFieldAttr attr# IMPLICIT_FIELD str#
+        end
+        else begin
+          send RS_SetFieldAttr_ByName attr# name# str#
+        end
+      end
+      if type# eq INSTR_TYPE_CREATE send RS_CreateField field# str# DF_ASCII // DF_ASCII is just temporary
+      if type# eq INSTR_TYPE_DELETE send RS_DeleteField_OldNumber field#
+      if type# eq INSTR_TYPE_APPEND send RS_AppendField str# DF_ASCII // DF_ASCII is just temporary
+    loop
+  end_procedure
+  procedure initialize.i integer oFDX# integer file#
+  end_procedure
+  procedure apply_index_changes
+    integer obj# row# max# attr# index# segment#
+    string str#
+    move (oIndexPgm(self)) to obj#
+    get row_count of obj# to max#
+    for row# from 0 to (max#-1)
+      get piAttr.i  of obj# row# to attr#
+      get piIndex.i of obj# row# to index#
+      get psValue.i of obj# row# to str#
+      send RS_SetIndexAttr attr# index# str#
+    loop
+    move (oIndexSegPgm(self)) to obj#
+    get row_count of obj# to max#
+    for row# from 0 to (max#-1)
+      get piAttr.i    of obj# row# to attr#
+      get piIndex.i   of obj# row# to index#
+      get piSegment.i of obj# row# to segment#
+      get psValue.i   of obj# row# to str#
+      send RS_SetIndexSegAttr attr# index# segment# str#
+    loop
+  end_procedure
+  enumeration_list
+    define PCE_NO_ERROR
+    define PCE_NOT_A_VALID_ENTRY
+    define PCE_ROOTNAME_MISMATCH
+    define PCE_INCOMPATIBLE_TABLE_DEFINITION
+    define PCE_NOT_FLEXERRS
+  end_enumeration_list
+  function iPreconditionsError returns integer
+    integer file# rval#
+    string rn# current_rn#
+    move PCE_NO_ERROR to rval#
+    get piFile to file# // This is the file we're supposed to restructure
+    // Do we have such a file?
+    move (API_AttrValue_FILELIST(DF_FILE_ROOT_NAME,file#)) to current_rn#
+//  if current_rn# ne "" begin
+      get psRootName to rn#
+      if (uppercase(DBMS_StripPathAndDriver(rn#))=uppercase(DBMS_StripPathAndDriver(current_rn#)) or current_rn#="") begin
+        if (uppercase(rn#)<>"FLEXERRS") begin
+          // In the future one could check the initial definition of the
+          // table here!
+        end
+        else move PCE_NOT_FLEXERRS to rval#
+      end
+      else begin
+        //send obs (uppercase(DBMS_StripPathAndDriver(rn#))) (uppercase(DBMS_StripPathAndDriver(current_rn#)))
+        move PCE_ROOTNAME_MISMATCH to rval#
+      end
+//  end
+//  else move PCE_NOT_A_VALID_ENTRY to rval#
+    function_return rval#
+  end_function
+  procedure Execute
+    integer type# file# ok# err#
+    string rn#
+    ifnot (piExecuted(self)) begin
+      get piFile     to file#
+      get psRootName to rn#
+      get iPreconditionsError to err#
+      if err# eq PCE_NO_ERROR begin
+        get piProgramType to type#
+        if (type#<>PGM_TYPE_NONE and type#<>PGM_TYPE_EMPTY) begin // If it's there and it's not empty
+          if type# eq PGM_TYPE_CREATE   get RS_TableCreateName rn# to ok#
+          else begin
+            if (RS_TableExistsName(rn#)) begin
+              if type# eq PGM_TYPE_DROP begin
+                if (pbDeleteDroppedTables(self)) get RS_TableDropName rn# to ok#
+                else move 1 to ok# // No delete
+              end
+              if type# eq PGM_TYPE_EDIT begin
+                get RS_TableOpenName file# rn# to ok#
+                ifnot ok# error 321 ("Could not open: "+trim(rn#))
+              end
+              if type# eq PGM_TYPE_FILELIST begin
+                move 1 to ok#
+              end
+            end
+            else error 322 ("Table not found: "+trim(rn#))
+          end
+
+          if ok# begin
+            set pbRestructureError to  DFFALSE
+            send apply_filelist_changes
+            if (type#<>PGM_TYPE_DROP and type#<>PGM_TYPE_FILELIST) begin
+              send apply_file_changes
+              send apply_field_changes
+              send apply_index_changes
+              send RS_Structure_End (piSortOnEndStructure(self))
+              set pbRestructureError to (pbError(oStructure_LogFile(self)))
+            end
+            set piExecuted to DFTRUE
+          end
+          else set pbRestructureError to DFTRUE
+        end
+      end
+      else begin
+        if err# eq PCE_NOT_A_VALID_ENTRY send error 323 (string(file#)+" is not a valid entry")
+        if err# eq PCE_NOT_FLEXERRS      send error 324 ("I refuse to restructure FLEXERRS.DAT. Sorry! (File number: "+string(file#)+")")
+        if err# eq PCE_ROOTNAME_MISMATCH send error 325 "Incorrect root name"
+      end
+    end
+  end_procedure
+  // Procedure seq_write writes the contents of the object so that seq_read
+  // will read it back in again
+  procedure seq_write integer liChannel
+    writeln channel liChannel (piFile(self))
+    writeln (psRootName(self))
+    writeln (piProgramType(self))
+    writeln (piExecuted(self))
+    send SEQ_WriteArrayItems liChannel (oFileListPgm(self))
+    send SEQ_WriteArrayItems liChannel (oFilePgm(self))
+    send SEQ_WriteArrayItems liChannel (oFieldPgm(self))
+    send SEQ_WriteArrayItems liChannel (oIndexPgm(self))
+    send SEQ_WriteArrayItems liChannel (oIndexSegPgm(self))
+    send Seq_Write to (oInitialStateFDX(self)) liChannel
+  end_procedure
+  // Procedure seq_read reads what seq_write has written
+  procedure seq_read integer liChannel
+    set piFile        to (SEQ_ReadLn(liChannel))
+    set psRootName    to (SEQ_ReadLn(liChannel))
+    set piProgramType to (SEQ_ReadLn(liChannel))
+    set piExecuted    to (SEQ_ReadLn(liChannel))
+    send SEQ_ReadArrayItems liChannel (oFileListPgm(self))
+    send SEQ_ReadArrayItems liChannel (oFilePgm(self))
+    send SEQ_ReadArrayItems liChannel (oFieldPgm(self))
+    send SEQ_ReadArrayItems liChannel (oIndexPgm(self))
+    send SEQ_ReadArrayItems liChannel (oIndexSegPgm(self))
+    send Seq_Read to (oInitialStateFDX(self)) liChannel
+  end_procedure
+//
+//  /StrucPgm.ProgList.Header
+//
+//  /*
+//
+//    // Procedure seq_report outputs changes in report format
+//           ÄÄÄFieldsÄÄ Att Idx
+//  Root     Ins Del Alt Alt Alt Location
+//  ________ __. __. __. __. __. _______________________________________________
+//
+
+  procedure seq_report_on_changes integer liChannel
+    integer liObj liProgType
+    string lsRootName lsString
+    get piProgramType to liProgType
+    get psRootName    to lsRootName
+    if (liProgType=PGM_TYPE_CREATE or liProgType=PGM_TYPE_DROP or liProgType=PGM_TYPE_EDIT) begin
+      writeln channel liChannel ""
+      if liProgType eq PGM_TYPE_CREATE writeln channel liChannel ("Create "+lsRootName)
+      if liProgType eq PGM_TYPE_DROP   writeln channel liChannel ("Drop "+lsRootName)
+      if liProgType eq PGM_TYPE_EDIT   begin
+        writeln channel liChannel ("Edit "+lsRootName)
+        send seq_report_on_changes to (oFileListPgm(self)) liChannel
+        send seq_report_on_changes to (oFilePgm(self)) liChannel
+        send seq_report_on_changes to (oFieldPgm(self)) liChannel
+        send seq_report_on_changes to (oIndexPgm(self)) liChannel
+      end
+    end
+  end_procedure
+            procedure callback_program_listing_help integer lhPgmFragment integer liMsg integer lhObj
+              integer liRow liMax
+              get row_count of lhPgmFragment to liMax
+              for liRow from 0 to (liMax-1)
+                send liMsg to lhObj (sInstructionText.i(lhPgmFragment,liRow))
+              loop
+            end_procedure
+  procedure callback_program_listing integer liMsg integer lhObj
+    send liMsg to lhObj "******* Filelist parameters *******"
+    send callback_program_listing_help (oFileListPgm(self)) liMsg lhObj
+    send liMsg to lhObj "******* File parameters *******"
+    send callback_program_listing_help (oFilePgm(self)) liMsg lhObj
+    send liMsg to lhObj "******* Field parameters *******"
+    send callback_program_listing_help (oFieldPgm(self)) liMsg lhObj
+    send liMsg to lhObj "******* Index parameters *******"
+    send callback_program_listing_help (oIndexPgm(self)) liMsg lhObj
+    send callback_program_listing_help (oIndexSegPgm(self)) liMsg lhObj
+  end_procedure
+end_class // cFdxRestructureProgram
+
+function iCreateFdxRestructureProgram global returns integer
+  integer lhRval lhSelf
+  move self to lhSelf
+  move desktop to self
+  object oFdxRestructureProgram is a cFdxRestructureProgram 
+    move self to lhRval
+  end_object
+  move lhSelf to self
+  function_return lhRval
+end_function
+
+class cFdxRestructureProgramArray is a cArray
+  procedure construct_object integer liImg
+    forward send construct_object liImg
+    property integer piSortOnEndStructure   DFFALSE
+    property integer pbDeleteDroppedTables DFFALSE
+    property integer piErrorDuringStructure DFFALSE
+  end_procedure
+  item_property_list
+    item_property integer piFile.i
+    item_property string  psRootName.i
+    item_property integer piObject.i
+  end_item_property_list cFdxRestructureProgramArray
+  procedure Reset
+    integer row# max# obj#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      get piObject.i row# to obj#
+      if obj# send request_destroy_object to obj#
+    loop
+    send delete_data
+  end_procedure
+  procedure Reset.i integer liRow
+    integer lhObj
+    get piObject.i liRow to lhObj
+    if lhObj send request_destroy_object to lhObj
+    set piObject.i liRow to 0
+    send delete_row liRow
+  end_procedure
+  function iAddPgmRow.is integer liFile string lsRoot returns integer
+    integer liRow
+    get row_count to liRow
+    set piFile.i     liRow to liFile
+    set psRootName.i liRow to lsRoot
+    function_return liRow
+  end_function
+  function iFindPgmRow.is integer liFile string lsRoot returns integer
+    integer liMax liRow
+    get row_count to liMax
+    for liRow from 0 to (liMax-1)
+      if (uppercase(lsRoot)=uppercase(psRootName.i(self,liRow))) function_return liRow
+    loop
+    function_return -1
+  end_function
+  function iFindRowFromFile.i integer liFile returns integer
+    integer liMax liRow
+    get row_count to liMax
+    for liRow from 0 to (liMax-1)
+      if (liFile=piFile.i(self,liRow)) function_return liRow
+    loop
+    function_return -1
+  end_function
+  function iFindRowFromPgm.i integer pgm# returns integer
+    integer liMax liRow
+    get row_count to liMax
+    for liRow from 0 to (liMax-1)
+      if (pgm#=piObject.i(self,liRow)) function_return liRow
+    loop
+    function_return -1
+  end_function
+  //  procedure HandleDeletedField integer liFile integer liField string lsName
+  procedure callback_deleted_fields integer lhMsg integer lhObj
+    integer liRow liMax lhPgm liFile lhFieldPgm liField
+    integer liInstrMax liInstr liInstrType
+    string  lsRoot lsName
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get piObject.i liRow to lhPgm
+      if lhPgm send callback_deleted_fields to lhPgm lhMsg lhObj
+    loop
+  end_procedure
+  // procedure HandleDeletedTable integer liFile string lsRoot
+  procedure callback_deleted_tables integer lhMsg integer lhObj
+    integer liRow liMax lhPgm liFile
+    string  lsRoot
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get piObject.i liRow to lhPgm
+      if lhPgm begin
+        if (not(piExecuted(lhPgm)) and piProgramType(lhPgm)=PGM_TYPE_DROP) begin
+          get piFile.i     liRow to liFile
+          get psRootName.i liRow to lsRoot
+          send lhMsg to lhObj liFile lsRoot (piProgramType(lhPgm)) (piExecuted(lhPgm)) (sTitle(lhPgm))
+        end
+      end
+    loop
+  end_procedure
+  procedure callback_all integer lhMsg integer lhObj
+    integer liRow liMax lhPgm liFile
+    string  lsRoot
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get piObject.i liRow to lhPgm
+      if lhPgm begin
+        get piFile.i     liRow to liFile
+        get psRootName.i liRow to lsRoot
+        send lhMsg to lhObj liFile lsRoot (piProgramType(lhPgm)) (piExecuted(lhPgm)) (sTitle(lhPgm))
+      end
+    loop
+  end_procedure
+  procedure callback_program_listing integer liFile integer liMsg integer lhObj
+    integer liRow lhPgm
+    get iFindRowFromFile.i liFile to liRow
+    if (liRow<>-1) begin
+      get piObject.i liRow to lhPgm
+      send callback_program_listing to lhPgm liMsg lhObj
+    end
+  end_procedure
+  procedure Execute
+    integer max# row# liState liObj
+    set piErrorDuringStructure to DFFALSE
+    send RS_Progress RS_PG_LEAVE_ON
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      get piObject.i row# to liObj
+      get piSortOnEndStructure  of liObj to liState
+      set piSortOnEndStructure  of liObj to (piSortOnEndStructure(self))
+      set pbDeleteDroppedTables of liObj to (pbDeleteDroppedTables(self))
+      send Execute to liObj
+      if (pbRestructureError(liObj)) set piErrorDuringStructure to DFTRUE
+      set piSortOnEndStructure of liObj to liState
+    loop
+    send RS_Progress RS_PG_OFF
+  end_procedure
+end_class // cFdxRestructureProgramArray
+
+desktop_section
+  object oFdxRestructureProgramArray is a cFdxRestructureProgramArray
+  end_object // oFdxRestructureProgramArray
+end_desktop_section

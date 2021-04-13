@@ -1,0 +1,837 @@
+// Use API_Attr.nui // Functions for querying API attributes (No User Interface)
+// Part of VDFQuery by Sture ApS
+//
+// Create: Mon  25-10-1999
+// Update: Fri  10-11-1999 - Changed
+//         Sat  15-01-2000 - Sysconf atributes added
+//         Tue  16-02-2000 - OA_DFPATH taken out. Made superfluous by DF_OPEN_PATH
+//         Wed  22-03-2000 - Internal workings simplified
+//         Wed  27-06-2001 - OA_COLLATE_PATH, OA_COLLATE_SIZE and
+//                           OA_COLLATE_TIME changed
+//         Tue  07-08-2001 - OA_CURRENT_USER_COUNT added
+//         Mon  13-08-2001 - DF_FILE_REVISION changed from DF_BCD to DF_ASCII
+//         Sat  11-09-2004 - OA_LOCK_COUNT added
+
+//> pkgdoc.begin
+//> This package defines a number of functions designed to replace
+//> the GET_ATTRIBUTE command. Now, the GET_ATTRIBUTE is very very (very)
+//> flexible in that it allows you to query any attribute whether it is
+//> file-, field- or index related.
+//>
+//> However, the attributes are so different in nature that it is useful
+//> to group them into categories. Actually, the attribute names that are
+//> used as first parameter to the GET_ATTRIBUTE command in any case,
+//> indicates a grouping of the attributes:
+//>
+//> Example of file related attributes:
+//> <code>
+//> DF_FILE_MAX_RECORDS
+//> DF_FILE_LOCK_TYPE
+//> </code>
+//>
+//> and field related dittos:
+//> <code>
+//> DF_FIELD_NAME
+//> DF_FIELD_TYPE
+//> </code>
+//>
+//> and global attributes (for the entire application):
+//> <code>
+//> DF_DECIMAL_SEPARATOR
+//> DF_OPEN_PATH
+//> </code>
+//>
+//> As you can see, the first part of the name indicates which group Data
+//> Access considers it belongs to.
+//>
+//> But, their grouping is not strong enough (for my purpose anyway). Consider
+//> these attributes:
+//>
+//> <code>
+//> 1: DF_FILE_RECORD_LENGTH
+//> 2: DF_FILE_DISPLAY_NAME
+//> 3: DF_FILE_NEXT_EMPTY
+//> </code>
+//>
+//> According to their names they all belong in the group of file related
+//> attributes. But in reality only the DF_FILE_RECORD_LENGTH returns
+//> an attribute of the file definition itself. The DF_FILE_DISPLAY_NAME
+//> attribute (together with DF_FILE_LOGICAL_NAME and DF_FILE_ROOT_NAME)
+//> returns an attribute of FILELIST.CFG. The same could be said about
+//> DF_FILE_NEXT_EMPTY but again it differs from the two others in that
+//> it returns the next entry (relative to its parameter) in FILELIST.CFG
+//> that is currently not used (empty root name).
+//>
+//> Therefore this package divides the attributes into the following groups:
+//>
+//> <code>
+//> ATTRTYPE_GLOBAL    Attributes not related to tables or drivers
+//> ATTRTYPE_FILELIST  Filelist attributes (root name, display name and
+//>                    logical name)
+//> ATTRTYPE_FILE      Table attributes
+//> ATTRTYPE_FIELD     Field attributes
+//> ATTRTYPE_INDEX     Index attributes
+//> ATTRTYPE_IDXSEG    Index segment attributes
+//> ATTRTYPE_DRIVER    Driver attributes
+//> ATTRTYPE_DRVSRV    Server attributes
+//> ATTRTYPE_SPECIAL1  Used to figure out whether 2 fields overlap each
+//>                    other
+//> ATTRTYPE_FLSTNAV   Filelist.cfg navigation (next empty, next used,
+//>                    next open)
+//> </code>
+//>
+//> If you want to retrieve an attribute value using one of the functions in
+//> this package, you have to know which type of attribute you are querying
+//> in order to use the correct function:
+//>
+//> <code>
+//> Type               Function
+//> ------------------ -----------------------
+//> ATTRTYPE_GLOBAL    API_AttrValue_GLOBAL
+//> ATTRTYPE_FILELIST  API_AttrValue_FILELIST
+//> ATTRTYPE_FILE      API_AttrValue_FILE
+//> ATTRTYPE_FIELD     API_AttrValue_FIELD
+//> ATTRTYPE_INDEX     API_AttrValue_INDEX
+//> ATTRTYPE_IDXSEG    API_AttrValue_IDXSEG
+//> ATTRTYPE_DRIVER    API_AttrValue_DRIVER
+//> ATTRTYPE_DRVSRV    API_AttrValue_DRVSRV
+//> ATTRTYPE_SPECIAL1  API_AttrValue_SPECIAL1
+//> ATTRTYPE_FLSTNAV   API_AttrValue_FLSTNAV
+//> </code>
+//>
+//> These functions are defined like this:
+//>
+//> </code>
+//> FUNCTION API_AttrValue_GLOBAL global INTEGER attr# RETURNS string
+//>
+//> FUNCTION API_AttrValue_FILELIST global INTEGER attr# integer file# ;
+//>                                                            RETURNS string
+//>
+//> FUNCTION API_AttrValue_FILE global INTEGER attr# INTEGER file# ;
+//>                                                            RETURNS string
+//>
+//> FUNCTION API_AttrValue_FIELD global INTEGER attr# INTEGER file# ;
+//>                                           INTEGER field# RETURNS string
+//>
+//> FUNCTION API_AttrValue_INDEX global INTEGER attr# INTEGER file# ;
+//>                                            INTEGER index# RETURNS string
+//>
+//> FUNCTION API_AttrValue_IDXSEG global INTEGER attr# INTEGER file# ;
+//>                             INTEGER index# INTEGER segment# RETURNS string
+//>
+//> FUNCTION API_AttrValue_DRIVER global INTEGER attr# INTEGER driver# ;
+//>                                                             RETURNS string
+//>
+//> FUNCTION API_AttrValue_DRVSRV global INTEGER attr# INTEGER driver# ;
+//>                                             INTEGER server# RETURNS string
+//>
+//> FUNCTION API_AttrValue_SPECIAL1 global INTEGER attr# INTEGER file# ;
+//>                              INTEGER field1# INTEGER field2# RETURNS string
+//>
+//> FUNCTION API_AttrValue_FLSTNAV global INTEGER attr# INTEGER file# ;
+//>                                                           RETURNS string
+//> </code>
+//>
+//> Take a moment to convince yourself that each function takes a reasonable
+//> number of parameters. Note that even if these functions most often will
+//> return an integer (some indeed always return integers) their return type
+//> is string. This was done for reasons of simplicity.
+//> pkgdoc.end
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Files.nui    // Utilities for handling file related stuff
+Use DBMS.nui     // Basic DBMS functions
+Use AppFolders.nui // Function AppFolder returns the absolute folder name of strategic folders
+enumeration_list // Global read only attributes from sysconf and other (OA = Other Attributes)
+  define OA_REG_NAME
+  define OA_SERIAL_NUMBER
+  define OA_MAX_USERS
+  define OA_DATAFLEX_REV
+  define OA_OS_SHORT_NAME
+  define OA_OS_MAJOR_REV
+  define OA_OS_MINOR_REV
+  define OA_OS_NAME
+  define OA_MACHINE_NAME
+  define OA_WORKDIR
+  define OA_PATH
+  define OA_DIR_SEPARATOR // "/" or "\"
+  define OA_FILE_MASK
+  define OA_SYSTEM_NAME
+  define OA_PATH_SEPARATOR // ":" or ";"
+  define OA_DATE4_STATE
+  define OA_SYSDATE4_STATE
+  define OA_EPOCH_VALUE
+  define OA_TIMER_RESOLUTION
+  define OA_COLLATE_PATH     // Path to COLLATE.CFG (excluding the file name itself)
+  define OA_COLLATE_SIZE     // Size of COLLATE.CFG in bytes
+  define OA_COLLATE_TIME     // Time stamp of COLLATE.CFG in TS-number format (see DATES.UTL)
+  define OA_RUNTIME_NAME     // SYSCONF_RUNTIME_NAME
+  define OA_UTC_TIME_OFFSET  // SYSCONF_UTC_TIME_OFFSET
+  define OA_MAX_ARGUMENT_SIZE
+  define OA_CURRENT_USER_COUNT
+  define OA_DFPRINTER
+  define OA_LOCK_COUNT
+
+  define OA_FOLDER_VDF_ROOT
+  define OA_FOLDER_FILELIST
+  define OA_FOLDER_HTML
+  define OA_FOLDER_PROGRAM
+
+  define OA_MAX // Pointer to highest OA index+1 (formerly OA_PATH_MAX)
+end_enumeration_list
+
+enumeration_list // Enumerate attribute types
+  define ATTRTYPE_NONE      // Not an attribute type
+  define ATTRTYPE_GLOBAL    // No parameters
+  define ATTRTYPE_DRIVER    // 1: Driver number
+  define ATTRTYPE_DRVSRV    // 1: Driver number  2: Server number
+  define ATTRTYPE_FILELIST  // 1: File  (No changes to structure, filelist only)
+  define ATTRTYPE_FILE      // 1: File
+  define ATTRTYPE_FIELD     // 1: File   2: Field
+  define ATTRTYPE_INDEX     // 1: File   2: Index
+  define ATTRTYPE_IDXSEG    // 1: File   2: Index   3: Segment
+  define ATTRTYPE_SPECIAL1  // 1: File 2/3: Field/Field  (overlap check)
+  define ATTRTYPE_FLSTNAV   // 1: File (for navigating filelist)
+end_enumeration_list
+
+desktop_section // Compile as if on desktop
+  object oAPI_AttributeTypes is a cArray
+    item_property_list
+      item_property string  psName.i
+      item_property integer piParams.i // Number of parameters (DFScript feature)
+    end_item_property_list
+    procedure DefAttrType integer type# string name# integer params#
+      set psName.i type# to name#
+      set piParams.i type# to params#
+    end_procedure                   // Number of parameters럫
+    send DefAttrType ATTRTYPE_GLOBAL   "Global"              0
+    send DefAttrType ATTRTYPE_DRIVER   "Driver"              1
+    send DefAttrType ATTRTYPE_DRVSRV   "Server"              2
+    send DefAttrType ATTRTYPE_FILELIST "Filelist"            1
+    send DefAttrType ATTRTYPE_FILE     "File"                1
+    send DefAttrType ATTRTYPE_FIELD    "Field"               2
+    send DefAttrType ATTRTYPE_INDEX    "Index"               2
+    send DefAttrType ATTRTYPE_IDXSEG   "Index segment"       3
+    send DefAttrType ATTRTYPE_SPECIAL1 "Special1"            3
+    send DefAttrType ATTRTYPE_FLSTNAV  "Filelist navigation" 1
+  end_object
+  class cAPI_AttrValueArray is a cArray
+    item_property_list
+      item_property integer piValue.i        // Actual value
+      item_property string  psCodeName.i     // Value as written in code
+      item_property string  psDisplayName.i  // Value as presented to an unknowing user
+    end_item_property_list cAPI_AttrValueArray
+    procedure add_value integer value# string codename# string displayname#
+      integer row#
+      get row_count to row#
+      set piValue.i       row# to value#
+      set psCodeName.i    row# to codename#
+      set psDisplayName.i row# to displayname#
+    end_procedure
+    function iValue2Row.i integer value# returns integer
+      integer row# max#
+      get row_count to max#
+      for row# from 0 to (max#-1)
+        if (piValue.i(self,row#)) eq value# function_return row#
+      loop
+      function_return -1
+    end_function
+  end_class // cAPI_AttrValueArray
+  object oAPI_Attributes is a cArray
+    item_property_list
+      item_property string  psName.i
+      item_property integer piAttrType.i     // Attribute type
+      item_property string  psDisplayName.i  // Attribute display name
+      item_property integer piWrite.i        // Write access?
+      item_property integer piOnlyDAC.i      // Internal DAC use
+      item_property integer piValueType.i    // DF_BCD or DF_ASCII
+      item_property integer piValueArray.i   // Legal values
+      item_property integer piRuntimeOnly.i  // Runtime only attribute (FILE attr)
+    end_item_property_list
+
+    procedure callback_attrtype.iii integer attrtype# integer msg# integer lhObj
+      integer max# attr#
+      get row_count to max#
+      for attr# from 0 to (max#-1)
+        if (piAttrType.i(self,attr#)=attrtype#) send msg# to lhObj attr#
+      loop
+    end_procedure
+
+    procedure callback_attrvalue.iii integer attr# integer msg# integer lhObj
+      integer arr# max# row#
+      get piValueArray.i attr# to arr#
+      if arr# begin
+        get row_count of arr# to max#
+        for row# from 0 to (max#-1)
+          send msg# to lhObj (piValue.i(arr#,row#)) (psCodeName.i(arr#,row#)) (psDisplayName.i(arr#,row#))
+        loop
+      end
+    end_procedure
+
+    function iAttrValueArrayObj integer attr# returns integer
+      integer rval#
+      get piValueArray.i attr# to rval#
+      ifnot rval# begin
+        object oAPI_AttrValueArray is a cAPI_AttrValueArray
+          move self to rval#
+        end_object
+        set piValueArray.i attr# to rval#
+      end
+      function_return rval#
+    end_function
+
+    procedure AddAttrValue integer attr# integer value# string codename# string displayname#
+      integer lhObj
+      get iAttrValueArrayObj attr# to lhObj
+      send add_value to lhObj value# codename# displayname#
+    end_procedure
+
+    send AddAttrValue DF_FIELD_TYPE DF_ASCII   "DF_ASCII"   "Ascii"
+    send AddAttrValue DF_FIELD_TYPE DF_BCD     "DF_BCD"     "Bcd"
+    send AddAttrValue DF_FIELD_TYPE DF_DATE    "DF_DATE"    "Date"
+    send AddAttrValue DF_FIELD_TYPE DF_OVERLAP "DF_OVERLAP" "Overlap"
+    send AddAttrValue DF_FIELD_TYPE DF_TEXT    "DF_TEXT"    "Text"
+    send AddAttrValue DF_FIELD_TYPE DF_BINARY  "DF_BINARY"  "Binary"
+
+    send AddAttrValue DF_FILE_HANDLE_TYPE DF_FILE_HANDLE_BAD                   "DF_FILE_HANDLE_BAD"                  "Bad"
+    send AddAttrValue DF_FILE_HANDLE_TYPE DF_FILE_HANDLE_CLOSED                "DF_FILE_HANDLE_CLOSED"               "Closed"
+    send AddAttrValue DF_FILE_HANDLE_TYPE DF_FILE_HANDLE_OPENED                "DF_FILE_HANDLE_OPENED"               "Opened"
+    send AddAttrValue DF_FILE_HANDLE_TYPE DF_FILE_HANDLE_EXISTING_RESTRUCTURE  "DF_FILE_HANDLE_EXISTING_RESTRUCTURE" "Existing restructure"
+    send AddAttrValue DF_FILE_HANDLE_TYPE DF_FILE_HANDLE_NEW_RESTRUCTURE       "DF_FILE_HANDLE_NEW_RESTRUCTURE"      "New restructure"
+
+    send AddAttrValue DF_DATE_FORMAT DF_DATE_USA      "DF_DATE_USA"      "USA (mm/dd/yyyy)"
+    send AddAttrValue DF_DATE_FORMAT DF_DATE_EUROPEAN "DF_DATE_EUROPEAN" "European (dd/mm/yyyy)"
+    send AddAttrValue DF_DATE_FORMAT DF_DATE_MILITARY "DF_DATE_MILITARY" "Military (yyyy/mm/dd)"
+
+    send AddAttrValue DF_FILE_LOCK_TYPE DF_LOCK_TYPE_NONE   "DF_LOCK_TYPE_NONE"   "None"
+    send AddAttrValue DF_FILE_LOCK_TYPE DF_LOCK_TYPE_FILE   "DF_LOCK_TYPE_FILE"   "File"
+    send AddAttrValue DF_FILE_LOCK_TYPE DF_LOCK_TYPE_RECORD "DF_LOCK_TYPE_RECORD" "Record"
+
+    send AddAttrValue DF_FILE_OPEN_MODE DF_SHARE     "DF_SHARE"     "Share"
+    send AddAttrValue DF_FILE_OPEN_MODE DF_EXCLUSIVE "DF_EXCLUSIVE" "Exclusive"
+
+    send AddAttrValue DF_FILE_COMPRESSION DF_FILE_COMPRESS_NONE     "DF_FILE_COMPRESS_NONE"     "None"
+    send AddAttrValue DF_FILE_COMPRESSION DF_FILE_COMPRESS_FAST     "DF_FILE_COMPRESS_FAST"     "Fast"
+    send AddAttrValue DF_FILE_COMPRESSION DF_FILE_COMPRESS_STANDARD "DF_FILE_COMPRESS_STANDARD" "Standard"
+    send AddAttrValue DF_FILE_COMPRESSION DF_FILE_COMPRESS_CUSTOM   "DF_FILE_COMPRESS_CUSTOM"   "Custom"
+
+    send AddAttrValue DF_FILE_TRANSACTION DF_FILE_TRANSACTION_NONE          "DF_FILE_TRANSACTION_NONE"          "None"
+    send AddAttrValue DF_FILE_TRANSACTION DF_FILE_TRANSACTION_CLIENT_ATOMIC "DF_FILE_TRANSACTION_CLIENT_ATOMIC" "Client atomic"
+    send AddAttrValue DF_FILE_TRANSACTION DF_FILE_TRANSACTION_SERVER_ATOMIC "DF_FILE_TRANSACTION_SERVER_ATOMIC" "Server atomic"
+    send AddAttrValue DF_FILE_TRANSACTION DF_FILE_TRANSACTION_SERVER_LOGGED "DF_FILE_TRANSACTION_SERVER_LOGGED" "Server logged"
+
+    send AddAttrValue DF_FILE_STATUS DF_FILE_INACTIVE       "DF_FILE_INACTIVE"       "Inactive"
+    send AddAttrValue DF_FILE_STATUS DF_FILE_ACTIVE         "DF_FILE_ACTIVE"         "Active"
+    send AddAttrValue DF_FILE_STATUS DF_FILE_ACTIVE_CHANGED "DF_FILE_ACTIVE_CHANGED" "Changed"
+
+    send AddAttrValue DF_FILE_COMMITTED DFTRUE  "DFTRUE"  "True"
+    send AddAttrValue DF_FILE_COMMITTED DFFALSE "DFFALSE" "False"
+
+    send AddAttrValue DF_FILE_RESTRUCTURE DF_NO_RESTRUCTURE    "DF_NO_RESTRUCTURE"    "None"
+    send AddAttrValue DF_FILE_RESTRUCTURE DF_RESTRUCTURE_FILE  "DF_RESTRUCTURE_FILE"  "File"
+    send AddAttrValue DF_FILE_RESTRUCTURE DF_RESTRUCTURE_INDEX "DF_RESTRUCTURE_INDEX" "Index"
+    send AddAttrValue DF_FILE_RESTRUCTURE DF_RESTRUCTURE_BOTH  "DF_RESTRUCTURE_BOTH"  "File/Index"
+
+    send AddAttrValue DF_FILE_MULTIUSER DF_FILE_USER_SINGLE "DF_FILE_USER_SINGLE" "Single user"
+    send AddAttrValue DF_FILE_MULTIUSER DF_FILE_USER_MULTI  "DF_FILE_USER_MULTI"  "Multi user"
+
+    send AddAttrValue DF_FILE_MODE DF_FILE_ALIAS_DEFAULT "DF_FILE_ALIAS_DEFAULT" "Default"
+    send AddAttrValue DF_FILE_MODE DF_FILE_IS_MASTER     "DF_FILE_IS_MASTER"     "Master"
+    send AddAttrValue DF_FILE_MODE DF_FILE_IS_ALIAS      "DF_FILE_IS_ALIAS"      "Alias"
+
+    send AddAttrValue DF_FILE_REUSE_DELETED DF_FILE_DELETED_NOREUSE "DF_FILE_DELETED_NOREUSE" "No reuse"
+    send AddAttrValue DF_FILE_REUSE_DELETED DF_FILE_DELETED_REUSE   "DF_FILE_DELETED_REUSE"   "Reuse"
+
+    send AddAttrValue DF_FILE_INTEGRITY_CHECK DFTRUE  "DFTRUE"  "True"
+    send AddAttrValue DF_FILE_INTEGRITY_CHECK DFFALSE "DFFALSE" "False"
+
+    send AddAttrValue DF_INDEX_TYPE DF_INDEX_TYPE_ONLINE "DF_INDEX_TYPE_ONLINE" "Online"
+    send AddAttrValue DF_INDEX_TYPE DF_INDEX_TYPE_BATCH  "DF_INDEX_TYPE_BATCH"  "Batch"
+
+    send AddAttrValue DF_INDEX_SEGMENT_DIRECTION DF_ASCENDING  "DF_ASCENDING"  "Ascending"
+    send AddAttrValue DF_INDEX_SEGMENT_DIRECTION DF_DESCENDING "DF_DESCENDING" "Descending"
+
+    send AddAttrValue DF_INDEX_SEGMENT_CASE DF_CASE_USED    "DF_CASE_USED"    "Case used"
+    send AddAttrValue DF_INDEX_SEGMENT_CASE DF_CASE_IGNORED "DF_CASE_IGNORED" "Case ignored"
+
+    function sValueRead_separator.i integer value# returns string
+      function_return (character(value#)+" ("+string(value#)+")")
+    end_function
+
+    procedure DefAttr integer attr# string name# integer attrtype# string dname# integer write# integer onlyDAC# integer valuetype# integer rt_only#
+      set psName.i        attr# to name#
+      set piAttrType.i    attr# to attrtype#
+      set psDisplayName.i attr# to dname#
+      set piWrite.i       attr# to write#
+      set piOnlyDAC.i     attr# to onlyDAC#
+       set piValueType.i   attr# to valuetype#
+      set piRuntimeOnly.i attr# to rt_only#
+    end_procedure
+    //                                     Runtime only컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴훀untime only컴컴컴컴컴컴컴컴컴�
+    //                                     Value type컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴훆alue type컴컴컴컴컴커        �
+    //                                     Internal DAC?컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴Internal DAC?컴컴컴� �        �
+    //                                     Write access?컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴Write access?컴컴          
+    send DefAttr DF_LOCK_DELAY              "DF_LOCK_DELAY"              ATTRTYPE_GLOBAL   "Lock delay"            1 0 DF_BCD   0
+    send DefAttr DF_LOCK_TIMEOUT            "DF_LOCK_TIMEOUT"            ATTRTYPE_GLOBAL   "Lock timeout"          1 0 DF_BCD   0
+    send DefAttr DF_OPEN_PATH               "DF_OPEN_PATH"               ATTRTYPE_GLOBAL   "Open path"             1 0 DF_ASCII 0
+    send DefAttr DF_DATE_FORMAT             "DF_DATE_FORMAT"             ATTRTYPE_GLOBAL   "Date format"           1 0 DF_BCD   0
+    send DefAttr DF_DATE_SEPARATOR          "DF_DATE_SEPARATOR"          ATTRTYPE_GLOBAL   "Date separator"        1 0 DF_BCD   0
+    send DefAttr DF_DECIMAL_SEPARATOR       "DF_DECIMAL_SEPARATOR"       ATTRTYPE_GLOBAL   "Decimal separator"     1 0 DF_BCD   0
+    send DefAttr DF_THOUSANDS_SEPARATOR     "DF_THOUSANDS_SEPARATOR"     ATTRTYPE_GLOBAL   "Thousands separator"   1 0 DF_BCD   0
+    send DefAttr DF_ALL_FILES_TOUCHED       "DF_ALL_FILES_TOUCHED"       ATTRTYPE_GLOBAL   "All files touched"     0 0 DF_BCD   0
+    send DefAttr DF_HIGH_DATA_INTEGRITY     "DF_HIGH_DATA_INTEGRITY"     ATTRTYPE_GLOBAL   "High data integrity"   1 0 DF_BCD   0
+    send DefAttr DF_TRAN_COUNT              "DF_TRAN_COUNT"              ATTRTYPE_GLOBAL   "Transact. nest. level" 0 0 DF_BCD   0
+    send DefAttr DF_TRANSACTION_ABORT       "DF_TRANSACTION_ABORT"       ATTRTYPE_GLOBAL   "Transaction abort"     0 0 DF_BCD   0
+    send DefAttr DF_REREAD_REQUIRED         "DF_REREAD_REQUIRED"         ATTRTYPE_GLOBAL   "Reread required"       0 0 DF_BCD   0
+    send DefAttr DF_FILELIST_NAME           "DF_FILELIST_NAME"           ATTRTYPE_GLOBAL   "Filelist name"         1 0 DF_ASCII 0
+    send DefAttr DF_REPORT_UNSUPPORTED_ATTRIBUTES ;
+                                        "DF_REPORT_UNSUPPORTED_ATTRIBUTES" ;
+                                                                         ATTRTYPE_GLOBAL   "Report unsup. attr."   1 0 DF_BCD   0
+    send DefAttr DF_STRICT_ATTRIBUTES       "DF_STRICT_ATTRIBUTES"       ATTRTYPE_GLOBAL   "Strict attributes"     1 0 DF_BCD   0
+    send DefAttr DF_NUMBER_DRIVERS          "DF_NUMBER_DRIVERS"          ATTRTYPE_GLOBAL   "Number drivers"        0 0 DF_BCD   0
+    send DefAttr DF_DRIVER_NAME             "DF_DRIVER_NAME"             ATTRTYPE_DRIVER   "Driver name"           0 0 DF_ASCII 0
+    send DefAttr DF_DRIVER_NUMBER_SERVERS   "DF_DRIVER_NUMBER_SERVERS"   ATTRTYPE_DRIVER   "Driver number servers" 0 0 DF_BCD   0
+    send DefAttr DF_DRIVER_SERVER_NAME      "DF_DRIVER_SERVER_NAME"      ATTRTYPE_DRVSRV   "Driver server name"    0 0 DF_ASCII 0
+    send DefAttr DF_API_DISABLED            "DF_API_DISABLED"            ATTRTYPE_GLOBAL   "API disabled"          0 1 DF_BCD   0
+    send DefAttr DF_API_DISABLED_ERROR      "DF_API_DISABLED_ERROR"      ATTRTYPE_GLOBAL   "API disabled error"    0 1 DF_BCD   0
+
+    send DefAttr DF_FILE_STATUS             "DF_FILE_STATUS"             ATTRTYPE_FILE     "Status"                0 0 DF_BCD   1
+    send DefAttr DF_FILE_MODE               "DF_FILE_MODE"               ATTRTYPE_FILE     "Mode"                  1 0 DF_BCD   1
+    send DefAttr DF_FILE_MAX_RECORDS        "DF_FILE_MAX_RECORDS"        ATTRTYPE_FILE     "Max records"           1 0 DF_BCD   0
+    send DefAttr DF_FILE_RECORDS_USED       "DF_FILE_RECORDS_USED"       ATTRTYPE_FILE     "Records used"          0 0 DF_BCD   0
+    send DefAttr DF_FILE_TYPE               "DF_FILE_TYPE"               ATTRTYPE_FILE     "Type"                  0 0 DF_BCD   0
+    send DefAttr DF_FILE_MULTIUSER          "DF_FILE_MULTIUSER"          ATTRTYPE_FILE     "Multiuser"             1 0 DF_BCD   0
+    send DefAttr DF_FILE_REUSE_DELETED      "DF_FILE_REUSE_DELETED"      ATTRTYPE_FILE     "Reuse deleted"         1 0 DF_BCD   0
+    send DefAttr DF_FILE_NUMBER             "DF_FILE_NUMBER"             ATTRTYPE_FILE     "Number"                0 0 DF_BCD   1
+    send DefAttr DF_FILE_COMPRESSION        "DF_FILE_COMPRESSION"        ATTRTYPE_FILE     "Compression"           1 0 DF_BCD   0
+    send DefAttr DF_FILE_LAST_INDEX_NUMBER  "DF_FILE_LAST_INDEX_NUMBER"  ATTRTYPE_FILE     "Last index number"     0 0 DF_BCD   0
+    send DefAttr DF_FILE_NUMBER_FIELDS      "DF_FILE_NUMBER_FIELDS"      ATTRTYPE_FILE     "Number fields"         0 0 DF_BCD   0
+    // Max 8 characters:
+    send DefAttr DF_FILE_LOGICAL_NAME       "DF_FILE_LOGICAL_NAME"       ATTRTYPE_FILELIST "Logical name"          1 0 DF_ASCII 0
+    // Max 40 characters:
+    send DefAttr DF_FILE_ROOT_NAME          "DF_FILE_ROOT_NAME"          ATTRTYPE_FILELIST "Root name"             1 0 DF_ASCII 0
+    send DefAttr DF_FILE_CHANGED            "DF_FILE_CHANGED"            ATTRTYPE_FILE     "Changed"               0 0 DF_BCD   1
+    send DefAttr DF_FILE_ALIAS              "DF_FILE_ALIAS"              ATTRTYPE_FILE     "Alias"                 1 0 DF_BCD   1
+    send DefAttr DF_FILE_TOUCHED            "DF_FILE_TOUCHED"            ATTRTYPE_FILE     "Touched"               0 0 DF_BCD   1
+    send DefAttr DF_FILE_TRANSACTION        "DF_FILE_TRANSACTION"        ATTRTYPE_FILE     "Transaction"           1 0 DF_BCD   0
+    send DefAttr DF_FILE_OPENED             "DF_FILE_OPENED"             ATTRTYPE_FILE     "Opened"                0 0 DF_BCD   1
+    // Max 32 characters:
+    send DefAttr DF_FILE_DISPLAY_NAME       "DF_FILE_DISPLAY_NAME"       ATTRTYPE_FILELIST "Display name"          1 0 DF_ASCII 0
+    send DefAttr DF_FILE_PHYSICAL_NAME      "DF_FILE_PHYSICAL_NAME"      ATTRTYPE_FILE     "Physical name"         0 0 DF_ASCII 0
+    send DefAttr DF_FILE_NEXT_OPENED        "DF_FILE_NEXT_OPENED"        ATTRTYPE_FLSTNAV  "Next opened"           0 0 DF_BCD   0
+    send DefAttr DF_FILE_NEXT_USED          "DF_FILE_NEXT_USED"          ATTRTYPE_FLSTNAV  "Next used"             0 0 DF_BCD   0
+    send DefAttr DF_FILE_NEXT_EMPTY         "DF_FILE_NEXT_EMPTY"         ATTRTYPE_FLSTNAV  "Next empty"            0 0 DF_BCD   0
+    send DefAttr DF_FILE_RECORD_LENGTH      "DF_FILE_RECORD_LENGTH"      ATTRTYPE_FILE     "Record length"         1 0 DF_BCD   0
+    send DefAttr DF_FILE_RESTRUCTURE        "DF_FILE_RESTRUCTURE"        ATTRTYPE_FILE     "Restructure"           0 0 DF_BCD   1
+    send DefAttr DF_FILE_OPEN_MODE          "DF_FILE_OPEN_MODE"          ATTRTYPE_FILE     "Open mode"             0 0 DF_BCD   1
+    send DefAttr DF_FILE_INTEGRITY_CHECK    "DF_FILE_INTEGRITY_CHECK"    ATTRTYPE_FILE     "Integrity check"       1 0 DF_BCD   0
+    send DefAttr DF_FILE_OWNER              "DF_FILE_OWNER"              ATTRTYPE_FILE     "Owner"                 0 0 DF_ASCII 1
+    send DefAttr DF_FILE_IS_SYSTEM_FILE     "DF_FILE_IS_SYSTEM_FILE"     ATTRTYPE_FILE     "Is system file"        0 0 DF_BCD   0
+    send DefAttr DF_FILE_LOCK_TYPE          "DF_FILE_LOCK_TYPE"          ATTRTYPE_FILE     "Lock type"             0 0 DF_BCD   0
+    send DefAttr DF_FILE_COMMITTED          "DF_FILE_COMMITTED"          ATTRTYPE_FILE     "Committed"             0 0 DF_BCD   1
+    send DefAttr DF_FILE_DRIVER             "DF_FILE_DRIVER"             ATTRTYPE_FILE     "Driver"                0 0 DF_ASCII 0
+    send DefAttr DF_FILE_RECORD_LENGTH_USED "DF_FILE_RECORD_LENGTH_USED" ATTRTYPE_FILE     "Record length used"    0 0 DF_BCD   0
+    send DefAttr DF_FILE_HANDLE_TYPE        "DF_FILE_HANDLE_TYPE"        ATTRTYPE_FILE     "Handle type"           0 1 DF_BCD   1
+    send DefAttr DF_FILE_RECORD_IDENTITY    "DF_FILE_RECORD_IDENTITY"    ATTRTYPE_FILE     "Record identity"       1 0 DF_BCD   0
+    send DefAttr DF_FILE_LOGIN              "DF_FILE_LOGIN"              ATTRTYPE_FILE     "Login"                 1 0 DF_ASCII 1
+    send DefAttr DF_FILE_RECORD_PRIVILEGE   "DF_FILE_RECORD_PRIVILEGE"   ATTRTYPE_FILE     "Record privilege"      0 1 DF_BCD   1
+    send DefAttr DF_FILE_PRIVILEGE          "DF_FILE_PRIVILEGE"          ATTRTYPE_FILE     "Privilege"             0 1 DF_BCD   1
+    send DefAttr DF_FILE_CREATION_SERIAL    "DF_FILE_CREATION_SERIAL"    ATTRTYPE_FILE     "Creation serial"       0 1 DF_BCD   1
+    send DefAttr DF_FILE_REVISION           "DF_FILE_REVISION"           ATTRTYPE_FILE     "Revision"              0 0 DF_ASCII 0
+    send DefAttr DF_FILE_RELATED_COUNT      "DF_FILE_RELATED_COUNT"      ATTRTYPE_FILE     "Related count"         0 1 DF_BCD   1
+    send DefAttr DF_FILE_RELATED_FIELDS     "DF_FILE_RELATED_FIELDS"     ATTRTYPE_FILE     "Related fields"        0 1 DF_BCD   1
+    send DefAttr DF_FILE_SYSTEM_FILE        "DF_FILE_SYSTEM_FILE"        ATTRTYPE_FILE     "System file"           0 1 DF_BCD   1
+    send DefAttr DF_FILE_SYSTEM_FIELD       "DF_FILE_SYSTEM_FIELD"       ATTRTYPE_FILE     "System field"          0 1 DF_BCD   1
+    send DefAttr DF_FILE_RECORD_REREAD      "DF_FILE_RECORD_REREAD"      ATTRTYPE_FILE     "Record reread"         0 1 DF_BCD   1
+    send DefAttr DF_FIELD_NUMBER            "DF_FIELD_NUMBER"            ATTRTYPE_FIELD    "Number"                0 1 DF_BCD   0
+    send DefAttr DF_FIELD_TYPE              "DF_FIELD_TYPE"              ATTRTYPE_FIELD    "Type"                  1 0 DF_BCD   0
+    send DefAttr DF_FIELD_LENGTH            "DF_FIELD_LENGTH"            ATTRTYPE_FIELD    "Length"                1 0 DF_BCD   0
+    send DefAttr DF_FIELD_PRECISION         "DF_FIELD_PRECISION"         ATTRTYPE_FIELD    "Precision"             1 0 DF_BCD   0
+    send DefAttr DF_FIELD_RELATED_FILE      "DF_FIELD_RELATED_FILE"      ATTRTYPE_FIELD    "Related file"          1 0 DF_BCD   0
+    send DefAttr DF_FIELD_RELATED_FIELD     "DF_FIELD_RELATED_FIELD"     ATTRTYPE_FIELD    "Related field"         1 0 DF_BCD   0
+    send DefAttr DF_FIELD_NAME              "DF_FIELD_NAME"              ATTRTYPE_FIELD    "Name"                  1 0 DF_ASCII 0
+    send DefAttr DF_FIELD_INDEX             "DF_FIELD_INDEX"             ATTRTYPE_FIELD    "Index"                 1 0 DF_BCD   0
+    send DefAttr DF_FIELD_OFFSET            "DF_FIELD_OFFSET"            ATTRTYPE_FIELD    "Offset"                1 0 DF_BCD   0
+    send DefAttr DF_FIELD_OLD_NUMBER        "DF_FIELD_OLD_NUMBER"        ATTRTYPE_FIELD    "Old number"            0 0 DF_BCD   0
+    send DefAttr DF_FIELD_OVERLAP           "DF_FIELD_OVERLAP"           ATTRTYPE_SPECIAL1 "Overlap"               0 0 DF_BCD   0
+    send DefAttr DF_FIELD_NATIVE_LENGTH     "DF_FIELD_NATIVE_LENGTH"     ATTRTYPE_FIELD    "Native length"         0 0 DF_BCD   0
+
+    send DefAttr DF_INDEX_NUMBER_SEGMENTS   "DF_INDEX_NUMBER_SEGMENTS"   ATTRTYPE_INDEX    "Number segments"       1 0 DF_BCD   0
+    send DefAttr DF_INDEX_NUMBER_BUFFERS    "DF_INDEX_NUMBER_BUFFERS"    ATTRTYPE_INDEX    "Number buffers"        0 0 DF_BCD   0
+    send DefAttr DF_INDEX_TYPE              "DF_INDEX_TYPE"              ATTRTYPE_INDEX    "Type"                  1 0 DF_BCD   0
+    send DefAttr DF_INDEX_LEVELS            "DF_INDEX_LEVELS"            ATTRTYPE_INDEX    "Levels"                0 0 DF_BCD   0
+    send DefAttr DF_INDEX_KEY_LENGTH        "DF_INDEX_KEY_LENGTH"        ATTRTYPE_INDEX    "Key length"            0 0 DF_BCD   0
+
+    send DefAttr DF_INDEX_SEGMENT_DIRECTION "DF_INDEX_SEGMENT_DIRECTION" ATTRTYPE_IDXSEG   "Segment direction"     1 0 DF_BCD   0
+    send DefAttr DF_INDEX_SEGMENT_CASE      "DF_INDEX_SEGMENT_CASE"      ATTRTYPE_IDXSEG   "Segment case"          1 0 DF_BCD   0
+    send DefAttr DF_INDEX_SEGMENT_FIELD     "DF_INDEX_SEGMENT_FIELD"     ATTRTYPE_IDXSEG   "Segment field"         1 0 DF_BCD   0
+    function sAttrCodeValueText.is integer attr# string value# returns string
+      integer arr# row#
+      get piValueArray.i attr# to arr#
+      if arr# begin
+        get iValue2Row.i of arr# value# to row#
+        if row# eq -1 move "Unknown" to value#
+        else move (psCodeName.i(arr#,row#)) to value#
+      end
+      function_return value#
+    end_function
+    function sAttrReadValueText.is integer attr# string value# returns string
+      integer arr# row#
+      get piValueArray.i attr# to arr#
+      if arr# begin
+        get iValue2Row.i of arr# value# to row#
+        if row# eq -1 move "Unknown" to value#
+        else move (psDisplayName.i(arr#,row#)) to value#
+      end
+      function_return value#
+    end_function
+  end_object // oAPI_Attributes
+end_desktop_section
+
+function API_AttrType_Count global returns integer
+  function_return (row_count(oAPI_AttributeTypes(self)))
+end_function
+function API_AttrType_Name global integer type# returns string
+  function_return (psName.i(oAPI_AttributeTypes(self),type#))
+end_function
+function API_AttrType_Params global integer type# returns integer
+  function_return (piParams.i(oAPI_AttributeTypes(self),type#))
+end_function
+
+function API_Attr_Count global returns integer
+  function_return (row_count(oAPI_Attributes(self)))
+end_function
+function API_Attr_WriteAccess global integer attr# returns integer
+  function_return (piWrite.i(oAPI_Attributes(self),attr#))
+end_function
+function API_Attr_Name global integer attr# returns string
+  function_return (psName.i(oAPI_Attributes(self),attr#))
+end_function
+function API_Attr_DisplayName global integer attr# returns string
+  function_return (psDisplayName.i(oAPI_Attributes(self),attr#))
+end_function
+function API_Attr_ValueName global integer attr# string value# returns string
+  function_return (sAttrCodeValueText.is(oAPI_Attributes(self),attr#,value#))
+end_function
+function API_Attr_DisplayValueName global integer attr# string value# returns string
+  function_return (sAttrReadValueText.is(oAPI_Attributes(self),attr#,value#))
+end_function
+function API_Attr_NumberOfParams global integer attr# returns integer
+  function_return (API_AttrType_Params(piAttrType.i(oAPI_Attributes(self),attr#)))
+end_function
+function API_AttrType global integer attr# returns integer
+  function_return (piAttrType.i(oAPI_Attributes(self),attr#))
+end_function
+function API_AttrValueType global integer attr# returns integer
+  function_return (piValueType.i(oAPI_Attributes(self),attr#))
+end_function
+function API_AttrRuntimeOnly global integer attr# returns integer
+  function_return (piRuntimeOnly.i(oAPI_Attributes(self),attr#))
+end_function
+//> Is the attribute represented by a set of (symbolic) discrete values?
+function API_AttrDiscreteValues global integer attr# returns integer
+  function_return (piValueArray.i(oAPI_Attributes(self),attr#))
+end_function
+procedure API_AttrType_Callback global integer attrtype# integer msg# integer lhObj
+  send callback_attrtype.iii to (oAPI_Attributes(self)) attrtype# msg# lhObj
+end_procedure
+procedure API_AttrValue_Callback global integer attr# integer msg# integer lhObj
+  send callback_attrvalue.iii to (oAPI_Attributes(self)) attr# msg# lhObj
+end_procedure
+
+//> Returns true if Attribute queried is relevant to restructure
+//> oprations.
+function API_AttrWorksOnStructure global integer attr# returns integer
+  integer type#
+  get API_AttrType attr# to type#
+  if type# eq ATTRTYPE_FILE function_return 1
+  if type# eq ATTRTYPE_FIELD function_return 1
+  if type# eq ATTRTYPE_INDEX function_return 1
+  if type# eq ATTRTYPE_IDXSEG function_return 1
+  if type# eq ATTRTYPE_SPECIAL1 function_return 1
+  // function_return 0
+end_function
+
+function API_ShortFieldTypeName global integer type# returns string
+  if type# eq DF_ASCII   function_return "Asc"
+  if type# eq DF_BCD     function_return "Num"
+  if type# eq DF_DATE    function_return "Dat"
+  if type# eq DF_OVERLAP function_return "Ove"
+  if type# eq DF_TEXT    function_return "Tex"
+  if type# eq DF_BINARY  function_return "Bin"
+end_function
+
+function API_AttrValue_GLOBAL global integer attr# returns string
+  string rval#
+  if (API_AttrType(attr#)=ATTRTYPE_GLOBAL) get_attribute attr# to rval#
+  else begin
+    error 666 "Attribute queried is not of GLOBAL type"
+    move "" to rval#
+  end
+  function_return rval#
+end_function
+function API_AttrValue_FILELIST global integer attr# integer file# returns string
+  string rval#
+  if (API_AttrType(attr#)=ATTRTYPE_FILELIST) get_attribute attr# of file# to rval#
+  else begin
+    //send obs (API_Attr_Name(attr#)+" on file "+string(file#))
+    error 666 "Attribute queried is not of FILELIST type"
+    move "" to rval#
+  end
+  function_return rval#
+end_function
+function API_AttrValue_FILE global integer attr# integer file# returns string
+  string rval#
+  if (API_AttrType(attr#)=ATTRTYPE_FILE) get_attribute attr# of file# to rval#
+  else begin
+    //send obs (API_Attr_Name(attr#)+" on file "+string(file#))
+    error 666 ("Attribute queried is not of FILE type")
+    move "" to rval#
+  end
+  function_return rval#
+end_function
+function API_AttrValue_FIELD global integer attr# integer file# integer field# returns string
+  string rval#
+  if (API_AttrType(attr#)=ATTRTYPE_FIELD) get_attribute attr# of file# field# to rval#
+  else begin
+    error 666 "Attribute queried is not of FIELD type"
+    move "" to rval#
+  end
+  function_return rval#
+end_function
+function API_AttrValue_INDEX global integer attr# integer file# integer index# returns string
+  string rval# lsDriver
+  if (API_AttrType(attr#)=ATTRTYPE_INDEX) begin
+    get_attribute DF_FILE_DRIVER of file# to lsDriver
+    if lsDriver eq "ODBC_DRV" function_return ""
+    get_attribute attr# of file# index# to rval#
+  end
+  else begin
+    error 666 "Attribute queried is not of INDEX type"
+    move "" to rval#
+  end
+  function_return rval#
+end_function
+function API_AttrValue_IDXSEG global integer attr# integer file# integer index# integer segment# returns string
+  string rval#
+  if (API_AttrType(attr#)=ATTRTYPE_IDXSEG) get_attribute attr# of file# index# segment# to rval#
+  else begin
+    error 666 "Attribute queried is not of IDXSEG type"
+    move "" to rval#
+  end
+  function_return rval#
+end_function
+function API_AttrValue_SPECIAL1 global integer attr# integer file# integer field1# integer field2# returns string
+  string rval#
+  if (API_AttrType(attr#)=ATTRTYPE_SPECIAL1) get_attribute attr# of file# field1# field2# to rval#
+  else begin
+    error 666 "Attribute queried is not of SPECIAL1 type"
+    move "" to rval#
+  end
+  function_return rval#
+end_function
+function API_AttrValue_FLSTNAV global integer attr# integer file# returns string
+  string rval#
+  if (API_AttrType(attr#)=ATTRTYPE_FLSTNAV) get_attribute attr# of file# to rval#
+  else begin
+    error 666 "Attribute queried is not of FLSTNAV type"
+    move "" to rval#
+  end
+  function_return rval#
+end_function
+function API_AttrValue_DRIVER global integer attr# integer driver# returns string
+  string rval#
+  if (API_AttrType(attr#)=ATTRTYPE_DRIVER) get_attribute attr# of driver# to rval#
+  else begin
+    error 666 "Attribute queried is not of DRIVER type"
+    move "" to rval#
+  end
+  function_return rval#
+end_function
+function API_AttrValue_DRVSRV global integer attr# integer driver# integer server# returns string
+  string rval#
+  if (API_AttrType(attr#)=ATTRTYPE_DRVSRV) get_attribute attr# of driver# server# to rval#
+  else begin
+    error 666 "Attribute queried is not of DRVSRV type"
+    move "" to rval#
+  end
+  function_return rval#
+end_function
+
+function API_FieldNameToNumber global integer file# string name# returns integer
+  integer max# field#
+  move (API_AttrValue_FILE(DF_FILE_NUMBER_FIELDS,file#)) to max#
+  for field# from 1 to max#
+    if name# eq (API_AttrValue_FIELD(DF_FIELD_NAME,file#,field#)) function_return field#
+  loop
+  //function_return 0
+end_function
+
+desktop_section // Compile as if on desktop
+  object oFilesThatCanBeOpened is a cArray
+    property integer piValidContents 0
+    procedure reset
+      set piValidContents to false
+      send delete_data
+    end_procedure
+    procedure RegisterValidEntries
+      integer file#
+      send reset
+      move 0 to file#
+      repeat
+        move (API_AttrValue_FLSTNAV(DF_FILE_NEXT_USED,file#)) to file#
+        if file# set value item file# to (DBMS_CanOpenFile(file#))
+      until (not(file#))
+      set piValidContents to true
+    end_procedure
+    function iNextFileThatCanOpen integer file# returns integer
+      integer itm# max#
+      ifnot (piValidContents(self)) send RegisterValidEntries
+      get item_count to max#
+      move (file#+1) to itm#
+      while itm# lt max#
+        if (value(self,itm#)) ne 0 function_return itm#
+        increment itm#
+      end
+      //function_return 0
+    end_function
+  end_object // oFilesThatCanBeOpened
+end_desktop_section
+
+function API_NextFileThatCanOpen global integer liFile returns integer
+  function_return (iNextFileThatCanOpen(oFilesThatCanBeOpened(self),liFile))
+end_function
+procedure API_ResetListOfFilesThatCanOpen global
+  send reset to (oFilesThatCanBeOpened(self))
+end_procedure
+
+function API_OtherAttr_Value global integer liScAttr returns string
+  string lsRval lsValue
+  if liScAttr eq OA_DIR_SEPARATOR    function_return (SysConf(SYSCONF_DIR_SEPARATOR))
+  if liScAttr eq OA_TIMER_RESOLUTION function_return (SysConf(SYSCONF_TIMER_RESOLUTION))
+  if liScAttr eq OA_OS_SHORT_NAME    function_return (SysConf(SYSCONF_OS_SHORT_NAME))
+  if liScAttr eq OA_OS_MAJOR_REV     function_return (SysConf(SYSCONF_OS_MAJOR_REV))
+  if liScAttr eq OA_OS_MINOR_REV     function_return (SysConf(SYSCONF_OS_MINOR_REV))
+  if liScAttr eq OA_OS_NAME          function_return (SysConf(SYSCONF_OS_NAME))
+  if liScAttr eq OA_MACHINE_NAME     function_return (SysConf(SYSCONF_MACHINE_NAME))
+  if liScAttr eq OA_FILE_MASK        function_return (SysConf(SYSCONF_FILE_MASK))
+  if liScAttr eq OA_DATAFLEX_REV     function_return (SysConf(SYSCONF_DATAFLEX_REV))
+  if liScAttr eq OA_SYSTEM_NAME      function_return (SysConf(SYSCONF_SYSTEM_NAME))
+  if liScAttr eq OA_PATH_SEPARATOR   function_return (SysConf(SYSCONF_PATH_SEPARATOR))
+  if liScAttr eq OA_SERIAL_NUMBER    registration lsValue lsRval
+  if liScAttr eq OA_REG_NAME         registration lsRval lsValue
+  if liScAttr eq OA_WORKDIR          begin
+    get_current_directory to lsRval
+    move (ToOem(lsRval)) to lsRval
+  end
+  if liScAttr eq OA_PATH             begin
+    get_environment "PATH" to lsRval
+    move (ToOem(lsRval)) to lsRval
+  end
+  if liScAttr eq OA_MAX_USERS        get_licensed_max_users to lsRval
+  if liScAttr eq OA_DATE4_STATE      get_date_attribute DATE4_STATE to lsRval
+  if liScAttr eq OA_SYSDATE4_STATE   get_date_attribute SYSDATE4_STATE to lsRval
+  if liScAttr eq OA_EPOCH_VALUE      get_date_attribute EPOCH_VALUE to lsRval
+  //if liScAttr eq OA_COLLATE_PATH move (SEQ_FindFileAlongDFPath("collate.cfg")) to lsRval
+  if liScAttr eq OA_COLLATE_PATH begin
+    get_profile_string "defaults" "VDFRootDir" to lsRval
+    get SEQ_ComposeAbsoluteFileName lsRval "\bin\" to lsRval
+    if (SEQ_FileExists(lsRval+"\collate.cfg")=SEQIT_FILE) function_return lsRval
+    move (SEQ_FindFileAlongPath(API_OtherAttr_Value(OA_PATH),"collate.cfg")) to lsRval
+  end
+  if liScAttr eq OA_COLLATE_SIZE move (SEQ_FileSize(SEQ_ComposeAbsoluteFileName(API_OtherAttr_Value(OA_COLLATE_PATH),"collate.cfg"))) to lsRval
+  if liScAttr eq OA_COLLATE_TIME move (SEQ_FileModTime(SEQ_ComposeAbsoluteFileName(API_OtherAttr_Value(OA_COLLATE_PATH),"collate.cfg"))) to lsRval
+  #IFDEF SYSCONF_RUNTIME_NAME // From DF3.2 and VDF?
+    if liScAttr eq OA_RUNTIME_NAME    function_return (ToOem(SysConf(SYSCONF_RUNTIME_NAME)))
+    if liScAttr eq OA_UTC_TIME_OFFSET function_return (SysConf(SYSCONF_UTC_TIME_OFFSET))
+  #ELSE
+    if liScAttr eq OA_RUNTIME_NAME    function_return "Not supported"
+    if liScAttr eq OA_UTC_TIME_OFFSET function_return 0
+  #ENDIF
+  if liScAttr eq OA_MAX_ARGUMENT_SIZE get_argument_size to lsRval
+  if liScAttr eq OA_CURRENT_USER_COUNT move -1 to lsRval //get_current_user_count to lsRval
+  if liScAttr eq OA_DFPRINTER get_environment "DFPRINTER" to lsRval
+  if liScAttr eq OA_LOCK_COUNT get_current_lockcount to lsRval
+
+
+  if liScAttr eq OA_FOLDER_FILELIST  get AppFolder APPFOLDER_FILELIST to lsRval
+  if liScAttr eq OA_FOLDER_PROGRAM   get AppFolder APPFOLDER_PROGRAM  to lsRval
+  if liScAttr eq OA_FOLDER_HTML      get AppFolder APPFOLDER_HTML     to lsRval
+  if liScAttr eq OA_FOLDER_VDF_ROOT  get AppFolder APPFOLDER_VDF_ROOT to lsRval
+  function_return lsRval
+end_function // API_OtherAttr_Value
+function OtherAttr_ValueDisplayName global integer liScAttr string lsValue returns string
+  if liScAttr eq OA_DIR_SEPARATOR     function_return lsValue
+  if liScAttr eq OA_TIMER_RESOLUTION  function_return lsValue
+  if liScAttr eq OA_OS_SHORT_NAME     function_return lsValue
+  if liScAttr eq OA_OS_MAJOR_REV      function_return lsValue
+  if liScAttr eq OA_OS_MINOR_REV      function_return lsValue
+  if liScAttr eq OA_OS_NAME           function_return lsValue
+  if liScAttr eq OA_MACHINE_NAME      function_return lsValue
+  if liScAttr eq OA_FILE_MASK         function_return lsValue
+  if liScAttr eq OA_DATAFLEX_REV      function_return lsValue
+  if liScAttr eq OA_SYSTEM_NAME       function_return lsValue
+  if liScAttr eq OA_PATH_SEPARATOR    function_return lsValue
+  if liScAttr eq OA_SERIAL_NUMBER     function_return lsValue
+  if liScAttr eq OA_REG_NAME          function_return lsValue
+  if liScAttr eq OA_WORKDIR           function_return lsValue
+  if liScAttr eq OA_PATH              function_return lsValue
+  if liScAttr eq OA_MAX_USERS         function_return lsValue
+  if liScAttr eq OA_DATE4_STATE       function_return (if(integer(lsValue),"True","False"))
+  if liScAttr eq OA_SYSDATE4_STATE    function_return (if(integer(lsValue),"True","False"))
+  if liScAttr eq OA_EPOCH_VALUE       function_return lsValue
+  if liScAttr eq OA_COLLATE_PATH      function_return lsValue
+  if liScAttr eq OA_COLLATE_SIZE      function_return (lsValue+" bytes")
+  if liScAttr eq OA_COLLATE_TIME      function_return (TS_ConvertToString(lsValue))
+  if liScAttr eq OA_RUNTIME_NAME      function_return lsValue
+  if liScAttr eq OA_UTC_TIME_OFFSET   function_return (TS_ExtractTime(lsValue))
+  if liScAttr eq OA_MAX_ARGUMENT_SIZE  function_return lsValue
+  if liScAttr eq OA_CURRENT_USER_COUNT function_return lsValue
+  if liScAttr eq OA_DFPRINTER         function_return lsValue
+  if liScAttr eq OA_LOCK_COUNT        function_return lsValue
+  if liScAttr eq OA_FOLDER_HTML       function_return lsValue
+  if liScAttr eq OA_FOLDER_FILELIST   function_return lsValue
+  if liScAttr eq OA_FOLDER_PROGRAM    function_return lsValue
+  if liScAttr eq OA_FOLDER_VDF_ROOT   function_return lsValue
+end_function
+function OtherAttr_DisplayName global integer liScAttr returns string
+  if liScAttr eq OA_DIR_SEPARATOR     function_return "Dir separator"
+  if liScAttr eq OA_TIMER_RESOLUTION  function_return "Timer resolution"
+  if liScAttr eq OA_OS_SHORT_NAME     function_return "OS short name"
+  if liScAttr eq OA_OS_MAJOR_REV      function_return "OS major rev."
+  if liScAttr eq OA_OS_MINOR_REV      function_return "OS minor rev."
+  if liScAttr eq OA_OS_NAME           function_return "OS name"
+  if liScAttr eq OA_MACHINE_NAME      function_return "Machine name"
+  if liScAttr eq OA_FILE_MASK         function_return "File mask"
+  if liScAttr eq OA_DATAFLEX_REV      function_return "DF revision"
+  if liScAttr eq OA_SYSTEM_NAME       function_return "System name"
+  if liScAttr eq OA_PATH_SEPARATOR    function_return "Path separator"
+  if liScAttr eq OA_SERIAL_NUMBER     function_return "Serial number"
+  if liScAttr eq OA_REG_NAME          function_return "Registration name"
+  if liScAttr eq OA_WORKDIR           function_return "Working dir."
+  if liScAttr eq OA_PATH              function_return "Search path"
+  if liScAttr eq OA_MAX_USERS         function_return "Max. users"
+  if liScAttr eq OA_DATE4_STATE       function_return "Date4 state"
+  if liScAttr eq OA_SYSDATE4_STATE    function_return "Sysdate4 state"
+  if liScAttr eq OA_EPOCH_VALUE       function_return "Epoch value"
+  if liScAttr eq OA_COLLATE_PATH      function_return "Collate file"
+  if liScAttr eq OA_COLLATE_SIZE      function_return "Collate size"
+  if liScAttr eq OA_COLLATE_TIME      function_return "Collate timestamp"
+  if liScAttr eq OA_RUNTIME_NAME      function_return "Module path & name"
+  if liScAttr eq OA_UTC_TIME_OFFSET   function_return "Seconds from Meridian"
+  if liScAttr eq OA_MAX_ARGUMENT_SIZE function_return "Max string size"
+  if liScAttr eq OA_CURRENT_USER_COUNT function_return "Current user count"
+  if liScAttr eq OA_DFPRINTER         function_return "Default printer (DF3.2)"
+  if liScAttr eq OA_LOCK_COUNT        function_return "Current lock count"
+  if liScAttr eq OA_FOLDER_HTML       function_return "HTML folder"
+  if liScAttr eq OA_FOLDER_FILELIST   function_return "Filelist folder"
+  if liScAttr eq OA_FOLDER_PROGRAM    function_return "Programs folder"
+  if liScAttr eq OA_FOLDER_VDF_ROOT   function_return "VDF root folder"
+end_function
+
+procedure API_OtherAttributes_CallBack global integer lhMsg integer lhObj
+  integer liAttr
+  for liAttr from 0 to (OA_MAX-1)
+    send lhMsg to lhObj (OtherAttr_DisplayName(liAttr)) (OtherAttr_ValueDisplayName(liAttr,API_OtherAttr_Value(liAttr)))
+  loop
+end_procedure

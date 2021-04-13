@@ -1,0 +1,394 @@
+// Use FdxUiCls.pkg // UI classes for displaying FDX data
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+Use ApsTree.pkg  // APS version of TreeView class
+Use FdxField.nui // FDX Field things
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+Use FDX_Attr.nui // FDX compatible attribute functions
+Use Buttons.utl  // Button texts
+Use Fdx2.utl     // FDX aware object for displaying a table definition
+//Use Version.nui
+Use FdxTable.nui // Procedure FDX_TablesCallback ...
+
+class Fdx.TreeViewFieldSelectorImageList is a cImageList
+  procedure construct_object
+    forward send construct_object
+    set piMaxImages To 3
+    property integer pbImageError DFFALSE
+  end_procedure
+  function AddImageAutoPath string lsBitmap returns integer
+    Integer liImage
+    string lsDir lsPath
+    get AddTransparentImage lsBitmap clFuchsia To liImage
+    if (liImage=-1) begin
+      get_profile_string "WorkSpaces" "SystemDFPath" to lsPath
+      get SEQ_FindFileAlongPath lsPath lsBitmap to lsDir
+      if (lsDir<>"") get AddTransparentImage (SEQ_ComposeAbsoluteFileName(lsDir,lsBitmap)) clFuchsia To liImage
+    end
+    function_return liImage
+  end_function
+  Procedure OnCreate // add the images
+    integer liImage lbError
+    move DFFALSE to lbError
+    get AddImageAutoPath 'Clsfldof.bmp' to liImage
+    if (liImage=-1) move DFTRUE to lbError
+    get AddImageAutoPath 'Clsfldon.bmp' to liImage
+    if (liImage=-1) move DFTRUE to lbError
+    get AddImageAutoPath 'Cls_Tab.bmp'  to liImage
+    if (liImage=-1) move DFTRUE to lbError
+    set pbImageError to lbError
+//    Get AddTransparentImage 'Clsfldof.bmp' clFuchsia To iImage
+//    Get AddTransparentImage 'Clsfldon.bmp' clFuchsia To iImage
+//    Get AddTransparentImage 'Cls_Tab.bmp'  clFuchsia To iImage
+//    Get AddTransparentImage 'xzynaksu.bmp' clNone To iImage
+  End_Procedure
+end_class // Fdx.TreeViewFieldSelectorImageList
+
+class Fdx.TreeViewFieldSelector is a aps.TreeView
+            procedure construct_object
+              forward send construct_object
+              property string  priv.psVisitedFiles        ""
+              property integer priv.pbRecursive           0
+              property integer priv.phCurrentItemHandle   0
+              property integer priv.phFDX                 0
+              property integer priv.piFile                0
+              property string  priv.psValue               ""
+              object oStack is a cStack
+              end_object
+              property integer pbMultiSelectState      false //> Select more than one field at a time
+              property integer pbExcludeOverlaps       false //> Do not display overlap fields
+              property integer pbExcludeRelatingFields false //> Leave out the relating field itself
+              property integer pbExcludeAllFields      false //> Overrules all of the above
+              On_Key kEnter Send Default_Key
+              On_Key key_space send ToggleSelectStateCurrentItem
+              On_Key KEY_CTRL+KEY_I send DisplayTableDefinition
+            end_procedure
+
+  procedure OnFileSelect integer liFile
+  end_procedure
+  procedure OnFieldSelect integer liFile integer liField
+  end_procedure
+  procedure OnFileCurrent integer liFile
+  end_procedure
+  procedure OnFieldCurrent integer liFile integer liField
+  end_procedure
+
+                     function iFindFileHelp integer liFile integer lhRoot returns integer
+                       integer lhItem liTest lhRval
+                       get ItemData lhRoot to liTest
+                       if (liTest=liFile) function_return lhRoot
+
+                       get ChildItem lhRoot to lhItem
+                       while lhItem
+                         get ItemData lhItem to liTest
+                         if (liTest=liFile) function_return lhItem
+                         get NextSiblingItem lhItem to lhItem
+                       end
+                       function_return 0
+                     end_function
+
+  function iFindFile integer liFile returns integer
+    integer lhRoot
+    get RootItem to lhRoot
+    if lhRoot function_return (iFindFileHelp(self,liFile,lhRoot))
+    function_return 0
+  end_function
+
+  procedure GotoFile integer liFile
+    integer lhItem
+    get iFindFile liFile to lhItem
+    if (lhItem<>0) set CurrentTreeItem to lhItem
+  end_procedure
+
+            procedure OnItemChanged handle lhItem handle lhItemOld
+              integer liFile liField
+              get ItemData lhItem to liFile
+              if (liFile<65536) send OnFileCurrent liFile
+              else begin
+                move (mod(liFile,65536)) to liField
+                move (liFile/65536) to liFile
+                send OnFieldCurrent liFile liField
+              end
+            end_procedure
+
+            procedure OnItemDblClick Handle lhItem
+              integer liFile liField
+              ifnot (pbMultiSelectState(self)) begin
+                get ItemData lhItem to liFile
+                if (liFile<65536) send OnFileSelect liFile
+                else begin
+                  move (mod(liFile,65536)) to liField
+                  move (liFile/65536) to liFile
+                  send OnFieldSelect liFile liField
+                end
+              end
+            end_procedure
+            procedure OnItemEnter
+              send OnItemDblClick (CurrentTreeItem(self))
+            end_procedure
+
+            procedure push_handle
+              send push.i to (oStack(self)) (priv.phCurrentItemHandle(self))
+            end_procedure
+            procedure pop_handle
+              set priv.phCurrentItemHandle to (iPop(oStack(self)))
+            end_procedure
+
+            function bIsVisited integer liFile returns integer
+              integer lbRval
+              string lsValue
+              get priv.psVisitedFiles to lsValue
+              if (IsIntegerPresent(lsValue,liFile)) move DFTRUE to lbRval
+              else begin
+                get AddIntegerToString lsValue liFile to lsValue
+                set priv.psVisitedFiles to lsValue
+                move DFFALSE to lbRval
+              end
+              function_return lbRval
+            end_function
+
+            procedure HandleAddField integer liFile integer liField string lsName integer liType integer liLen integer liPrec integer liRelFile integer liRelField integer liIndex integer liOffSet
+              integer lhHandle
+
+              if (not(pbExcludeAllFields(self))) begin
+                if (not(pbExcludeRelatingFields(self)) or (liType<>DF_OVERLAP)) begin
+                  if (not(pbExcludeOverlaps(self)) or (liRelFile=0)) begin
+                    if (pbMultiSelectState(self)) ;
+                         get AddTreeItem lsName (priv.phCurrentItemHandle(self)) (liFile*65536+liField) 0 0 to lhHandle
+                    else get AddTreeItem lsName (priv.phCurrentItemHandle(self)) (liFile*65536+liField) 0 0 to lhHandle
+                  end
+                  else get priv.phCurrentItemHandle to lhHandle
+                end
+                else get priv.phCurrentItemHandle to lhHandle
+              end
+              else get priv.phCurrentItemHandle to lhHandle
+              if (liRelFile and priv.pbRecursive(self)) begin
+                send push_handle
+                set priv.phCurrentItemHandle to lhHandle
+                send HandleAddFile (priv.phFDX(self)) liRelFile
+                send pop_handle
+              end
+            end_procedure
+
+            procedure HandleAddFile integer lhFDX integer liFile
+              integer lhHandle liImage
+              ifnot (bIsVisited(self,liFile)) begin
+                if (FDX_CanOpenFile(lhFDX,liFile)) begin
+                  if (pbMultiSelectState(self)) move 2 to liImage
+                  else move 0 to liImage
+                  get AddTreeItem (rtrim(FDX_AttrValue_FILELIST(lhFDX,DF_FILE_DISPLAY_NAME,liFile))) (priv.phCurrentItemHandle(self)) liFile liImage liImage to lhHandle
+                  send push_handle
+                  set priv.phCurrentItemHandle to lhHandle
+                  send FDX_FieldCallBack lhFDX liFile MSG_HandleAddField self // Protected against relating file not present
+                  send pop_handle
+                  send DoExpandItem lhHandle // We want table items to be expanded by default
+                end
+              end
+            end_procedure
+
+  procedure OnCreateTree
+    integer lhRoot lhFDX lbRecursive liFile
+    get priv.phFDX to lhFDX
+    get priv.pbRecursive to lbRecursive
+    get priv.piFile to liFile
+    send delete_data to (oStack(self))
+    set priv.psVisitedFiles to ""
+
+    get rootitem to lhRoot
+    if lhRoot send DoDeleteItem lhRoot
+
+    set priv.phCurrentItemHandle to 0
+    send HandleAddFile lhFDX liFile
+    get rootitem to lhRoot
+    if lhRoot send DoExpandItem lhRoot
+  end_procedure
+
+  procedure fill_list integer lhFDX integer liFile integer lbRecursive
+    integer lhObj
+    set priv.phFDX to lhFDX
+    set priv.pbRecursive to lbRecursive
+    set priv.piFile to liFile
+    if (pbMultiSelectState(self)) begin
+      get ImageListObject to lhObj
+      if (pbImageError(lhObj)) begin
+        send obs "Bitmap files that are necessary to display this dialog are not found." "You will not be able to see which fields you have selected." "These following files are needed:" "'Clsfldof.bmp', 'Clsfldon.bmp' and 'Cls_Tab.bmp'"
+      end
+    end
+  end_procedure
+
+            procedure ToggleSelectState integer lhItem
+              integer lbSelect liData
+              if (pbMultiSelectState(self)) begin
+                get ItemData lhItem to liData
+                if (liData>65535) begin
+                  get ItemSelectedImage lhItem to lbSelect
+                  set ItemImage lhItem to (not(lbSelect))
+                  set ItemSelectedImage lhItem to (not(lbSelect))
+                end
+              end
+            end_procedure
+            procedure ToggleSelectStateCurrentItem
+              send ToggleSelectState (CurrentTreeItem(self))
+            end_procedure
+
+            procedure OnItemClick Handle lhItem
+              send ToggleSelectState lhItem
+            end_procedure
+
+            procedure CreateImageList
+              // create an ImageList for the images
+              // Now assign the ImageList to the TreeView
+              object oImageList is a Fdx.TreeViewFieldSelectorImageList
+              end_object
+              Set ImageListObject To (oImageList(self))
+            end_procedure
+
+            procedure end_construct_object
+              forward send end_construct_object
+              if (pbMultiSelectState(self)) send CreateImageList
+            end_procedure
+
+            procedure DisplayTableDefinition
+              integer liFile lhItem
+              get CurrentTreeItem to lhItem
+              get ItemData lhItem to liFile
+              if (liFile>=65536) move (liFile/65536) to liFile
+              send FDX_ModalDisplayFileAttributes (priv.phFDX(self)) liFile
+            end_procedure
+
+  procedure AddSelectedFields integer lhItem
+    integer liFile liField lbSelect liData
+    string lsValue
+    get ItemSelectedImage lhItem to lbSelect
+    if lbSelect begin
+      get ItemData lhItem to liData
+      if (liData>65535) begin
+        move (mod(liData,65536)) to liField
+        move (liData/65536) to liFile
+        get priv.psValue to lsValue
+        move (lsValue+pad(liFile,4)+pad(liField,4)) to lsValue
+        set priv.psValue to lsValue
+      end
+    end
+  end_procedure
+
+  function sSelectedFields returns string
+    string lsRval
+    if (pbMultiSelectState(self)) begin
+      set priv.psValue to ""
+      send CallBack_Root.ii MSG_AddSelectedFields self
+      get priv.psValue to lsRval
+    end
+    else move "" to lsRval
+    function_return lsRval
+  end_function
+end_class // Fdx.TreeViewFieldSelector
+
+object oFdxTreeViewFieldSelector is a aps.ModalPanel label "Add fields"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult DFFALSE
+  property string  psResultFields ""
+
+  object oLst is a Fdx.TreeViewFieldSelector
+    set size to 200 200
+    set pbMultiSelectState to DFTRUE
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    set psResultFields to (sSelectedFields(oLst(self)))
+    set piResult to DFTRUE
+    send close_panel
+  end_procedure
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  set pMinimumSize to 100 150
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oLst(self)) delta_rw# delta_cl#
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+  function sPopup.iii integer lhFDX integer liFile integer lbRecursive returns string
+    set piResult to DFFALSE
+    send fill_list to (oLst(self)) lhFDX liFile lbRecursive
+    send popup
+    if (piResult(self)) function_return (psResultFields(self))
+    else function_return ""
+  end_function
+end_object // oFdxTreeViewFieldSelector
+
+function FDX_PopupFdxTreeViewFieldSelector global integer lhFDX integer liFile integer lbRecursive returns string
+  string lsValue
+  get sPopup.iii of (oFdxTreeViewFieldSelector(self)) lhFDX liFile lbRecursive to lsValue
+  function_return lsValue
+end_function
+
+// --- Comboform class for selecting a table
+
+class Fdx.TableSelectorComboForm is a aps.ComboFormAux
+  procedure construct_object
+    forward send construct_object
+    set combo_sort_state to false    // No sorting
+    set entry_state item 0 to false  // No typing
+    set allow_blank_state to true    // Initially blank
+    set p_abstract to AFT_ASCII40    // Default object size
+    property integer phFdx 0
+    property integer priv.pbOK
+    on_key KEY_CTRL+KEY_I send DisplayTableDefinition
+  end_procedure
+  procedure DisplayTableDefinition
+    integer liFile
+    get Combo_Current_Aux_Value to liFile
+    send FDX_ModalDisplayFileAttributes (phFdx(self)) liFile
+  end_procedure
+  procedure HandleTable integer liFile string lsRoot string lsLogical string lsDisplay
+    send combo_add_item lsDisplay liFile
+  end_procedure
+  procedure fill_list integer lhFdx
+    send Combo_Delete_Data
+    send combo_add_item "" 0
+    send FDX_TablesCallback lhFdx MSG_HandleTable self
+  end_procedure
+  procedure fill_list_constrained_tables integer lhFdx integer liFile
+    send Combo_Delete_Data
+    send combo_add_item "" 0
+    send FDX_ConstrainedTablesCallback lhFdx liFile MSG_HandleTable self
+  end_procedure
+            function iValidateTable.i integer liFile returns integer
+              function_return (iFindAuxValue(self,liFile)<>-1)
+            end_function
+  procedure popup_select_table integer lhFDX
+    integer liFile lhSelf
+    string lsValue
+    if (enabled_state(self)) begin // Only if we haven't been disabled
+      move self to lhSelf
+      get Combo_Current_Aux_Value to liFile
+//      move (iFdxSelectOneFileValidate(lhFDX,liFile,GET_iValidateTable.i,lhSelf)) to liFile
+      get iFdxSelectOneFileValidate lhFDX liFile GET_iValidateTable.i lhSelf to liFile
+      if liFile begin
+        get_attribute DF_FILE_DISPLAY_NAME of liFile to lsValue
+        set value item 0 to (rtrim(lsValue))
+        send OnChange
+      end
+    end
+  end_procedure
+end_class // Fdx.TableSelectorComboForm
+
+//  procedure AdvancedTableOpen
+//    send popup_select_table to (Fdx.TableSelectorComboForm(self))
+//  end_procedure
+//
+//  object oToolButton is a aps.ToolButton snap SL_RIGHT
+//    set p_extra_external_width to 1
+//    send Add_Button ICO_STD_FIND msg_AdvancedTableOpen
+//    send Add_ToolTip t.DfQuery.tt.AdvTableOpen
+//  end_object
+

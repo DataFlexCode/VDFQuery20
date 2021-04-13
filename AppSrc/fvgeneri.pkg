@@ -1,0 +1,115 @@
+// Use FvGeneri.pkg //
+
+use Base.nui
+
+#COMMAND FV_TESTFILEENTRY
+ #PUSH !e
+ #SET E$ !1
+ #SPUSH !$
+ #SET $$ FILE!e
+ #IFDEF !$.file_number
+  send add_file to (oCompiledLogicalTableNames(self)) !e "!$"
+ #ENDIF
+ #SPOP
+ #POP E$
+#ENDCOMMAND
+
+#COMMAND CALL10TIMES
+ FV_TESTFILEENTRY !E
+ FV_TESTFILEENTRY !E
+ FV_TESTFILEENTRY !E
+ FV_TESTFILEENTRY !E
+ FV_TESTFILEENTRY !E
+ FV_TESTFILEENTRY !E
+ FV_TESTFILEENTRY !E
+ FV_TESTFILEENTRY !E
+ FV_TESTFILEENTRY !E
+ FV_TESTFILEENTRY !E
+#ENDCOMMAND
+#COMMAND CALL200TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+ CALL10TIMES
+#ENDCOMMAND
+#COMMAND CALL4200TIMES
+  #SET E$ 0
+  CALL200TIMES // This really have to be changed.
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+  CALL200TIMES
+#ENDCOMMAND
+
+desktop_section
+object oCompiledLogicalTableNames is a cArray
+  procedure add_file integer liFile string lsLogicalName
+    if (lsLogicalName<>("FILE"+string(liFile)) and liFile<>CodeMast.file_number) set value item liFile to (uppercase(lsLogicalName))
+  end_procedure
+end_object
+end_desktop_section
+
+function FV_GenericTableName global integer liFile returns string
+  function_return (value(oCompiledLogicalTableNames(self),liFile))
+end_function
+
+function FV_GenericTablesPresent global returns integer
+  function_return (item_count(oCompiledLogicalTableNames(self)))
+end_function
+
+function FV_GenericTablesUnderUs global returns integer
+  integer lhObj liFile liMax
+  string lsArrLN lsApiLN
+  move (oCompiledLogicalTableNames(self)) to lhObj
+  get item_count of lhObj to liMax
+  decrement liMax
+  for liFile from 0 to liMax
+#IFDEF CodeType.file_number
+    if (liFile<>CodeMast.file_number and liFile<>CodeType.file_number) begin
+#ELSE
+    if (liFile<>CodeMast.file_number) begin
+#ENDIF
+      get value of lhObj liFile to lsArrLN
+      if (lsArrLN<>"") begin
+        get_attribute DF_FILE_LOGICAL_NAME of liFile to lsApiLN
+        //showln liFile " " lsApiLN " <-> " lsArrLN
+        if (lsArrLN<>"DUMMYFILE") if (uppercase(lsApiLN)<>lsArrLN) function_return DFFALSE
+      end
+    end
+  loop
+  function_return DFTRUE
+end_function
+
+

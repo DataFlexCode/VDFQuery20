@@ -1,0 +1,83 @@
+// Use FdxFldMp.utl // Field mapping dialog
+
+Use Fdx_Attr.nui // FDX compatible attribute functions
+Use FdxField.nui // FDX Field things
+Use Mapper.nui   // Classes for (field) mapping
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+Use Mapper.pkg   // Dialog for mapping (fields)
+
+
+class cFdxField_MapObject is a cMapObject
+  procedure construct_object integer lhObj
+    forward send construct_object lhObj
+    property integer phFdx 0
+  end_procedure
+
+            Procedure HandleField integer liFile integer liField string lsName integer liType integer liLen integer liPrec integer liRelFile integer liRelField integer liIndex integer liOffSet
+              if (liType<>DF_OVERLAP) send DoAddItem liField lsName (StringFieldText(liType,liLen,liPrec))
+            End_Procedure
+  procedure read_fdx_file integer lhFdx integer liFile
+    set phFdx to lhFdx
+    send DoReset
+    send FDX_FieldCallBack lhFdx liFile MSG_HandleField self // Protected against relating file not present
+  end_procedure
+end_class // cFdxField_MapObject
+
+object oFdxFieldMapper is a cMapper
+  object oFieldsFrom is a cFdxField_MapObject
+  end_object
+  object oFieldsTo is a cFdxField_MapObject
+  end_object
+
+  set piMapMode to 0 // 0=random 1=sequential
+  set phObject1 to (oFieldsFrom(self))
+  set phObject2 to (oFieldsTo(self))
+  set psTitle1  to "Title 1"
+  set psTitle2  to "Title 2"
+  set psTitle3  to "Title 3"
+
+  procedure read_fdx_file_from integer lhFdx integer liFile
+    send read_fdx_file to (oFieldsFrom(self)) lhFdx liFile
+  end_procedure
+  procedure read_fdx_file_to integer lhFdx integer liFile
+    send read_fdx_file to (oFieldsTo(self)) lhFdx liFile
+  end_procedure
+
+  procedure read_current_map integer lhMap
+    integer liMax liIdentFrom liIdentTo
+    send DoReset
+    get item_count of lhMap to liMax
+    decrement liMax
+    for liIdentFrom from 0 to liMax
+      get value of lhMap item liIdentFrom to liIdentTo
+      if (liIdentTo>=0) send DoAddMap liIdentFrom liIdentTo
+    loop
+  end_procedure
+  procedure write_current_map integer lhMap
+    integer liMax liRow
+    send delete_data to lhMap
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      set value of lhMap item (piIdent1.i(self,liRow)) to (piIdent2.i(self,liRow))
+    loop
+  end_procedure
+
+end_object // oFdxFieldMapper
+
+// Parameter lhCurrentMap is a simple array that for each ident in the map-from definition holds the ident (if any) in the map-to
+// definition.
+function DoFdxFieldMapperDialog global integer lhCurrentMap integer lhFdxFrom integer liFileFrom integer lhFdxTo integer liFileTo returns integer
+  ifnot lhCurrentMap begin
+    object oCurrentMap is a cArray
+      move self to lhCurrentMap
+    end_object
+  end
+  send read_fdx_file_from to (oFdxFieldMapper(self)) lhFdxFrom liFileFrom
+  send read_fdx_file_to to (oFdxFieldMapper(self)) lhFdxTo liFileTo
+  send read_current_map to (oFdxFieldMapper(self)) lhCurrentMap
+  send DoMapperDialog "Main title" (oFdxFieldMapper(self)) "Header 1" "Header 2" "Header 3"
+  send write_current_map to (oFdxFieldMapper(self)) lhCurrentMap
+  function_return lhCurrentMap
+end_function
+

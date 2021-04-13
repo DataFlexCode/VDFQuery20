@@ -1,0 +1,42 @@
+// Use objtree.pkg // popup_objecttree procedure
+//
+// Purpose: Testing of tree class by generating a treeview of all objects
+//          in the application
+//
+// Use:     on_key KEY_CTRL+KEY_O send popup_objecttree
+//
+//
+use aps.pkg
+use objtree.nui // DoGenerateObjectTree procedure
+use treenode_treeview_class.pkg // cTreeNodeView class
+
+object oObjectTreePanel is a aps.ModalPanel label "All objects in the application"
+  set locate_mode to CENTER_ON_SCREEN
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  on_key kcancel send close_panel
+  object oTreeView is a aps.TreeNodeView
+    set size to 200 200
+    set phTreeNode to (oObjectTree(self))
+    set peAnchors to (anTop+anLeft+anRight+anBottom)
+  end_object
+  procedure report_to_object_tree integer lhNode // Do not display this panel itself
+  end_procedure
+  procedure DoRefresh
+  end_procedure
+  object oBtn1 is a aps.Multi_Button
+    on_item "Refresh" send DoRefresh
+    set peAnchors to (anRight+anBottom)
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item "Close" send close_panel
+    set peAnchors to (anRight+anBottom)
+  end_object
+  send aps_locate_multi_buttons
+end_object // oObjectTreePanel
+
+procedure popup_objecttree
+  send cursor_wait of Cursor_Control
+  send DoGenerateObjectTree desktop
+  send cursor_ready of Cursor_Control
+  send popup of oObjectTreePanel
+end_procedure

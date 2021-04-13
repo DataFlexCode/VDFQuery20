@@ -1,0 +1,529 @@
+// Use FTSCreate.pkg // Wizard for creating (and another one for dropping) a set of FTS tables
+
+Use ApsWiz.pkg   // APS wizard classes
+Use ToolUtilities.pkg // aps.YellowBox class
+Use GridUtil.utl // Grid and List utilities (not for dbGrid's or Table's)
+Use FTSData.nui  // cFTS_TableAccess class.
+Use DBMS.nui     // Basic DBMS functions (No User Interface)
+Use FTSTblCr.pkg // Free text search - Create FTS tables
+Use WildCard.nui // vdfq_WildCardMatch function
+
+object oFTS_DropTablesWizard is a aps.WizardPanel label "Drop FTS tables"
+  send make_nice_size WIZSIZE_NORMAL
+
+  property integer phTableAccessObject // This is here only to fool the cFTS_TableAccess into not complaining
+  object oFTS_TableAccess is a cFTS_TableAccess
+    set pbOpenTablesOnDefine to false
+  end_object // cFTS_TableAccess
+  object oPage1 is a aps.WizardPage
+    object oYellow is a aps.YellowBox
+      set size to 55 100
+      set value item 0 to "Use this wizard to drop a set of FTS tables (FTS)."
+      set value item 1 to ""
+      set value item 2 to "5 tables will be removed from filelist.cfg (and erased) with names that are fixed except for a prefix of two letters."
+      set value item 3 to ""
+      set value item 4 to "You will need exclusive access to these tables in order to complete this operation."
+    end_object
+    send aps_goto_max_row
+    send aps_make_row_space 5
+
+    object oLabel1 is a aps.TextBox label "Drop this set of FTS tables:"
+      set fixed_size to 10 200
+      set Fontweight to 900
+    end_object
+    send aps_goto_max_row
+    object oExisting is a aps.Grid
+      send GridPrepare_AddColumn "Prefix"                      AFT_ASCII6
+      send GridPrepare_AddColumn "Existing sets of FTS tables" AFT_ASCII40
+      send GridPrepare_Apply self
+      set select_mode to NO_SELECT
+      on_key KNEXT_ITEM send switch
+      on_key KPREVIOUS_ITEM send switch_back
+      set size to 43 0
+      procedure fill_list.i integer lhFTS
+        integer lhTableAccessObject lhObj liMax liRow
+        get phTableAccessObject of lhFTS to lhTableAccessObject
+        send delete_data
+        send DoBuildSetsOfTables of lhTableAccessObject
+        move (oListOfSets(lhTableAccessObject)) to lhObj
+        get row_count of lhObj to liMax
+        decrement liMax
+        for liRow from 0 to liMax
+          send add_item MSG_NONE (psPrefix.i(lhobj,liRow))
+          send add_item MSG_NONE (psOpenDescription.i(lhobj,liRow))
+        loop
+        send Grid_SetEntryState self 0
+      end_procedure
+      function sCurrentPrefix returns string
+        integer liBase
+        if (item_count(self)) begin
+          get Grid_BaseItem self to liBase
+          function_return (value(self,liBase))
+        end
+        function_return ""
+      end_function
+    end_object // oExisting
+
+    function sPrefix returns string
+      string lsValue
+      get sCurrentPrefix of oExisting to lsValue
+      function_return (lowercase(lsValue))
+    end_function
+    procedure DoInitialize
+      //send fill_list of oExisting
+    end_procedure
+
+    function iPageValidate returns integer
+      integer lbOK lhTableAccess
+      string lsValue
+      move oFTS_TableAccess to lhTableAccess
+      get sPrefix to lsValue
+      get FTS_ValidatePrefix of lhTableAccess lsValue to lbOK
+      if lbOK begin
+        send DoCloseTables of lhTableAccess
+        set psRootNamePrefix of lhTableAccess to lsValue
+        get DoOpenTables of lhTableAccess to lbOK
+        ifnot lbOK error 210 "FTS tables named with the specified prefix could not be opened"
+      end
+      function_return lbOK
+    end_function
+    procedure aps_beautify
+      send aps_align_inside_container_by_sizing (oYellow(self)) SL_ALIGN_RIGHT
+      send aps_align_inside_container_by_moving (oExisting(self)) SL_ALIGN_CENTER
+    end_procedure
+  end_object // oPage1
+  object oPage2 is a aps.WizardPage
+    send aps_make_row_space -10
+    object oLabel is a aps.TextBox label "These are the tables that you are about to drop:"
+      set fixed_size to 10 200
+      set Fontweight to 900
+    end_object
+    send aps_goto_max_row
+    object oYellow is a aps.YellowBox
+      set size to 20 100
+      set value item 0 to "Click the Finish button to drop the tables"
+    end_object
+    send aps_goto_max_row
+    send aps_make_row_space 5
+    object oGrid is a aps.Grid
+      send GridPrepare_AddColumn "Table"             AFT_ASCII10
+      send GridPrepare_AddColumn "User display name" AFT_ASCII32
+      send GridPrepare_AddColumn "Filelist"          AFT_NUMERIC4.0
+      send GridPrepare_AddColumn "Records"           AFT_NUMERIC8.0
+      send GridPrepare_Apply self
+      set select_mode to NO_SELECT
+      on_key KNEXT_ITEM send switch
+      on_key KPREVIOUS_ITEM send switch_back
+      set size to 62 0
+      procedure fill_list
+        integer liMax liRow lhTableAccess liFile liRecords
+        string lsValue
+        move oFTS_TableAccess to lhTableAccess
+        send delete_data
+        get row_count of lhTableAccess to liMax
+        decrement liMax
+        for liRow from 0 to liMax
+          get piFile.i of lhTableAccess liRow to liFile
+          get_attribute DF_FILE_LOGICAL_NAME of liFile to lsValue
+          send add_item MSG_NONE (lowercase(lsValue))
+          get_attribute DF_FILE_DISPLAY_NAME of liFile to lsValue
+          move (rtrim(lsValue)) to lsValue
+          send add_item MSG_NONE (lowercase(lsValue))
+          send add_item MSG_NONE (string(liFile))
+          get_attribute DF_FILE_RECORDS_USED of liFile to liRecords
+          send add_item MSG_NONE (string(liRecords))
+        loop
+        send Grid_SetEntryState self false
+      end_procedure
+    end_object // oGrid
+    procedure DoInitialize
+      send fill_list of oGrid
+    end_procedure
+    function iPageValidate returns integer
+      integer lbOK lhTableAccess
+      move oFTS_TableAccess to lhTableAccess
+      send DoCloseTables of lhTableAccess
+      get DoOpenTablesExclusive of lhTableAccess to lbOK
+      ifnot lbOK begin
+        send DoCloseTables of lhTableAccess
+        error 211 "Exclusive access could not be obtained"
+        function_return 0
+      end
+      send DoCloseTables of lhTableAccess
+      function_return 1
+    end_function
+    procedure aps_beautify
+      send aps_align_inside_container_by_sizing (oYellow(self)) SL_ALIGN_RIGHT
+    end_procedure
+  end_object // oPage2
+  procedure DisplayPage integer liPage
+    integer liCurrentPage
+    get piCurrentPage to liCurrentPage
+    if (liPage=1) begin //
+      if (liCurrentPage<1) send DoInitialize of oPage2
+    end
+    forward send DisplayPage liPage
+  end_procedure
+  procedure DoFinish
+    integer lbOK lhTableAccess
+    move oFTS_TableAccess to lhTableAccess
+    send cursor_wait to (cursor_control(self))
+    get DoEraseAllTables of lhTableAccess to lbOK
+    send cursor_ready to (cursor_control(self))
+    if lbOK send obs "Tables have been dropped"
+    else send obs "An error occurred while dropping the tables"
+  end_procedure
+  procedure aps_beautify
+    forward send aps_beautify
+    send aps_beautify of oPage1
+    send aps_beautify of oPage2
+  end_procedure
+  procedure popup.i integer lhFTS
+    send fill_list.i of (oExisting(oPage1(self))) lhFTS
+    send popup
+  end_procedure
+end_object // oFTS_DropTablesWizard
+
+procedure Popup_FTS_DropTablesWizard integer lhFTS
+  send popup.i of oFTS_DropTablesWizard lhFTS
+end_procedure
+
+// *****************************************************************************************************************************
+// *****************************************************************************************************************************
+// *****************************************************************************************************************************
+// *****************************************************************************************************************************
+// *****************************************************************************************************************************
+// *****************************************************************************************************************************
+// *****************************************************************************************************************************
+
+object oFTS_CreateTablesWizard is a aps.WizardPanel label "Create FTS tables"
+  send make_nice_size WIZSIZE_NORMAL
+
+  property integer phTableAccessObject // This is here only to fool the cFTS_TableAccess into not complaining
+  object oFTS_TableAccess is a cFTS_TableAccess
+    set pbOpenTablesOnDefine to false
+  end_object // cFTS_TableAccess
+
+  object oPage1 is a aps.WizardPage
+    object oYellow is a aps.YellowBox
+      set size to 70 100
+      set value item 0 to "Use this wizard to create a set of tables to be used with the free text search classes (FTS)."
+      set value item 1 to ""
+      set value item 2 to "5 tables will be created with names that are fixed except for a prefix of two letters. These tables will be added to filelist.cfg"
+      set value item 3 to ""
+      set value item 4 to "You may delete these tables again by using the 'Drop FTS tables' tool."
+    end_object
+    send aps_goto_max_row
+    send aps_make_row_space 10
+
+    object oPrefix is a aps.Form label "Enter a 2-letter prefix to be used when naming FTS tables:" abstract AFT_ASCII2
+      set p_extra_internal_width to 15
+    end_object
+    send aps_relocate (oPrefix(self)) 0 35
+    send aps_goto_max_row
+    send aps_make_row_space 10
+    object oPurpose is a aps.Form label "Enter an indication of purpose (or leave empty):" abstract AFT_ASCII10
+      set p_extra_internal_width to 15
+    end_object
+    send aps_relocate (oPurpose(self)) 0 35
+    procedure aps_beautify
+      send aps_align_inside_container_by_sizing (oYellow(self)) SL_ALIGN_RIGHT
+    end_procedure
+    function sPurpose returns string
+      string lsValue
+      get value of oPurpose to lsValue
+      function_return lsValue
+    end_function
+    function sPrefix returns string
+      string lsValue
+      get value of oPrefix to lsValue
+      function_return (lowercase(lsValue))
+    end_function
+    function iPageValidate returns integer
+      integer lbOK lhTableAccess
+      string lsValue lsPrefix lsPurpose
+      move oFTS_TableAccess to lhTableAccess
+      get sPrefix to lsPrefix
+      get FTS_ValidatePrefix of lhTableAccess lsPrefix to lbOK
+      if lbOK begin
+        get sPurpose to lsPurpose
+        set psRootNamePrefix of oFTS_TableAccess to lsPrefix
+        set psPurpose of oFTS_TableAccess to lsPurpose
+        send DoCalcFilelistValues of oFTS_TableAccess
+        get Precond_CreateTables of oFTS_TableAccess DFFALSE to lbOK
+      end
+      function_return lbOK
+    end_function
+  end_object
+  object oPage2 is a aps.WizardPage
+    send aps_make_row_space -10
+    object oLabel is a aps.TextBox label "Assigning filelist entries:"
+      set fixed_size to 10 200
+      set Fontweight to 900
+    end_object
+    send aps_goto_max_row
+    object oYellow is a aps.YellowBox
+      set size to 20 100
+      set value item 0 to "The tables that will be created need to be assigned to available entries in filelist.cfg"
+    end_object
+    send aps_goto_max_row
+    send aps_make_row_space 5
+    object oGrid is a aps.Grid
+      send GridPrepare_AddColumn "Table name"        AFT_ASCII10
+      send GridPrepare_AddColumn "User display name" AFT_ASCII32
+      send GridPrepare_AddColumn "Filelist entry"    AFT_NUMERIC4.0
+      send GridPrepare_Apply self
+      set select_mode to NO_SELECT
+      on_key KNEXT_ITEM send switch
+      on_key KPREVIOUS_ITEM send switch_back
+      set size to 62 0
+      procedure fill_list
+        integer lhTableAccess liRow liMax liBase
+        move oFTS_TableAccess to lhTableAccess
+        send delete_data
+        get row_count of lhTableAccess to liMax
+        decrement liMax
+        for liRow from 0 to liMax
+          get item_count to liBase
+          send add_item MSG_NONE (psRootname.i(lhTableAccess,liRow))
+          set aux_value item liBase to liRow
+          send add_item MSG_NONE (psUserName.i(lhTableAccess,liRow))
+          send add_item MSG_NONE (piFile.i(lhTableAccess,liRow))
+        loop
+        send Grid_SetEntryState self false
+      end_procedure
+      register_object oCombo
+      procedure DoAssignOne
+        integer liBase liFile
+        get Grid_BaseItem self to liBase
+        get value item (liBase+2) to liFile
+        ifnot liFile begin
+          get iTakeOutValue of oCombo to liFile
+          set value item (liBase+2) to liFile
+          set Current_Item to (current_item(self)+Grid_Columns(self))
+        end
+      end_procedure
+      procedure DoReset
+        integer liMax liRow liBase
+        get Grid_RowCount self to liMax
+        decrement liMax
+        for liRow from 0 to liMax
+          get Grid_RowBaseItem self liRow to liBase
+          set value item (liBase+2) to 0
+        loop
+      end_procedure
+      procedure UpdateTableAccess
+        integer lhTableAccess liRow liMax liAccessRow liBase liFile
+        move oFTS_TableAccess to lhTableAccess
+        get row_count of lhTableAccess to liMax
+        decrement liMax
+        for liRow from 0 to liMax
+          get Grid_RowBaseItem self liRow to liBase
+          get value item (liBase+2) to liFile
+          get aux_value item liBase to liAccessRow
+          set piFile.i of lhTableAccess liAccessRow to liFile
+        loop
+      end_procedure
+      function bValidate returns integer
+        integer liMax liRow liBase liFile
+        get Grid_RowCount self to liMax
+        decrement liMax
+        for liRow from 0 to liMax
+          get Grid_RowBaseItem self liRow to liBase
+          get value item (liBase+2) to liFile
+          ifnot liFile function_return 0
+        loop
+        function_return 1
+      end_function
+    end_object // oGrid
+    send aps_goto_max_row
+    send aps_make_row_space 5
+
+    object oCombo is a aps.ComboForm label "Entries available in filelist.cfg:" abstract AFT_ASCII6
+      set Combo_Sort_State to false
+      set entry_state item 0 to false
+      set p_extra_external_width to 10
+      procedure AddEntry integer liFile
+        send Combo_Add_Item (string(liFile))
+      end_procedure
+      procedure fill_list
+        integer liFile
+        send Combo_Delete_Data
+        send DBMS_Callback_FilelistEntries FLEC_EMPTY_NOT_OPEN msg_AddEntry self
+        get Combo_Value 0 to liFile
+        set value to liFile
+      end_procedure
+      function iTakeOutValue returns integer
+        integer liItem
+        string lsValue lsNext
+        get value item 0 to lsValue
+        get Combo_Item_Matching lsValue to liItem
+        if (liItem>-1) begin
+          get Combo_Value (liItem+1) to lsNext
+          send Combo_Delete_Item liItem
+          set value item 0 to lsNext
+        end
+        else move "" to lsValue
+        function_return (integer(lsValue))
+      end_function
+    end_object
+    send aps_relocate (oCombo(self)) 0 15
+
+    procedure DoAssignAll
+      integer liFile
+      send cursor_wait to (cursor_control(self))
+      get value of oCombo to liFile
+      send DoReset
+      set current_item of oGrid to 0
+      set value of oCombo to liFile
+      send DoAssignOne of oGrid
+      send DoAssignOne of oGrid
+      send DoAssignOne of oGrid
+      send DoAssignOne of oGrid
+      send DoAssignOne of oGrid
+      send cursor_ready to (cursor_control(self))
+    end_procedure
+    procedure DoReset
+      send DoReset of oGrid
+      send fill_list of oCombo
+    end_procedure
+
+    object oBtnAll is a aps.Button snap SL_RIGHT_SPACE
+      set size to 13 46
+      on_item "Assign all" send DoAssignAll
+    end_object
+    object oBtnOne is a aps.Button snap SL_RIGHT
+      set size to 13 36
+      on_item "Assign" send DoAssignOne of oGrid
+    end_object
+    object oBtnReset is a aps.Button snap SL_RIGHT
+      set size to 13 36
+      on_item "Reset" send DoReset
+    end_object
+
+    procedure aps_beautify
+      send aps_align_inside_container_by_sizing (oYellow(self)) SL_ALIGN_RIGHT
+      send aps_align_inside_container_by_moving (oGrid(self)) SL_ALIGN_CENTER
+    end_procedure
+    function iPageValidate returns integer
+      integer lbOK
+      get bValidate of oGrid to lbOK
+      if lbOK begin
+        send UpdateTableAccess of oGrid
+      end
+      else error 207 "All tables must be assigned filelist entries"
+      function_return lbOK
+    end_function
+
+    procedure DoInitialize
+      string lsPrefix lsPurpose
+      get sPrefix of oPage1 to lsPrefix
+      get sPurpose of oPage1 to lsPurpose
+      set psRootNamePrefix of oFTS_TableAccess to lsPrefix
+      set psPurpose of oFTS_TableAccess to lsPurpose
+      send DoCalcFilelistValues of oFTS_TableAccess
+      send fill_list of oGrid
+      send fill_list of oCombo
+    end_procedure
+  end_object // oPage2
+  object oPage3 is a aps.WizardPage
+    send aps_make_row_space -10
+    object oLabel is a aps.TextBox label "Final parameters:"
+      set fixed_size to 10 200
+      set Fontweight to 900
+    end_object
+    send aps_goto_max_row
+    object oYellow1 is a aps.YellowBox
+      set size to 45 100
+      set value item 0 to "The FTS classes identifies an 'article' by a unique number. You must specify the maximum value of this number. The width ranges from 6 (a million) to 14 (a lot)."
+      set value item 1 to ""
+      set value item 2 to "For both values on this page it is true that smaller values increases the speed. I have however not verified to what degree this may be the case."
+    end_object
+    send aps_goto_max_row
+    send aps_make_row_space 5
+    object oArticleWidth is a aps.ComboForm label "Maximum with of article id:" abstract AFT_ASCII6
+      set Combo_Sort_State to false
+      set entry_state item 0 to false
+      send Combo_Add_Item (string(6))
+      send Combo_Add_Item (string(7))
+      send Combo_Add_Item (string(8))
+      send Combo_Add_Item (string(9))
+      send Combo_Add_Item (string(10))
+      send Combo_Add_Item (string(11))
+      send Combo_Add_Item (string(12))
+      send Combo_Add_Item (string(13))
+      send Combo_Add_Item (string(14))
+    end_object
+    send aps_relocate (oArticleWidth(self)) 0 60
+
+    send aps_goto_max_row
+    send aps_make_row_space 5
+
+    object oYellow2 is a aps.YellowBox
+      set size to 30 100
+      set value item 0 to "The FTS table that stores a sequence of words for each record is able to handle from 6 to 14 words in a phrase. This number is identical to the maximum number of words taken into account when phrase searching."
+    end_object
+    send aps_goto_max_row
+    send aps_make_row_space 5
+    object oPhraseWidth is a aps.ComboForm label "Maximum phrase length:" abstract AFT_ASCII6
+      set Combo_Sort_State to false
+      set entry_state item 0 to false
+      send Combo_Add_Item (string(6))
+      send Combo_Add_Item (string(7))
+      send Combo_Add_Item (string(8))
+      send Combo_Add_Item (string(9))
+      send Combo_Add_Item (string(10))
+      send Combo_Add_Item (string(11))
+      send Combo_Add_Item (string(12))
+      send Combo_Add_Item (string(13))
+      send Combo_Add_Item (string(14))
+    end_object
+    send aps_relocate (oPhraseWidth(self)) 0 60
+    procedure aps_beautify
+      send aps_align_inside_container_by_sizing (oYellow1(self)) SL_ALIGN_RIGHT
+      send aps_align_inside_container_by_sizing (oYellow2(self)) SL_ALIGN_RIGHT
+    end_procedure
+  end_object
+  object oPage99 is a aps.WizardPage
+    object oFinishText is an aps.Edit
+      set size to 110 300
+      set object_shadow_state to DFTRUE
+      set border_style to BORDER_NONE
+      set scroll_bar_visible_state to DFFALSE
+      set value item 0 to 'Click the "Finish" button to create the tables.'
+      set value item 1 to ''
+      set value item 2 to "You may delete these tables again by using the 'Drop FTS tables' tool."
+      set value item 3 to ''
+      procedure activate
+        send activate of oBtn2 // Nothing here will take focus. Givi it to the finish button
+      end_procedure
+    end_object
+  end_object
+  procedure DisplayPage integer liPage
+    integer liCurrentPage
+    get piCurrentPage to liCurrentPage
+    if (liPage=1) begin //
+      if (liCurrentPage<1) send DoInitialize of oPage2
+    end
+    forward send DisplayPage liPage
+  end_procedure
+  procedure DoFinish
+    integer lhTableAccess liArticleIdWidth lhPhraseLength
+    move oFTS_TableAccess to lhTableAccess
+    get value of (oArticleWidth(oPage3(self))) to liArticleIdWidth
+    get value of (oPhraseWidth(oPage3(self))) to lhPhraseLength
+    send FTS_CreateTables lhTableAccess liArticleIdWidth lhPhraseLength
+    send obs "Tables have been created"
+  end_procedure
+  procedure aps_beautify
+    forward send aps_beautify
+    send aps_beautify of oPage1
+    send aps_beautify of oPage2
+    send aps_beautify of oPage3
+  end_procedure
+end_object // oFTS_CreateTablesWizard
+
+procedure Popup_FTS_CreateTablesWizard
+  send popup of oFTS_CreateTablesWizard
+end_procedure
+

@@ -1,0 +1,92 @@
+Use DBMS.nui     // Basic DBMS functions
+Use MsgBox.utl   // obs procedure
+
+Use Windows.pkg
+Use File_dlg.pkg    // OpenDialog class (DAC)
+object oDBMS_FlDlg is a OpenDialog
+  set NoChangeDir_State to true
+end_object
+
+function DBMS_OpenFileBrowse global string fn# integer file# integer mode# integer buf_index# returns integer
+  integer obj# rval#
+  move 0 to rval#
+  move (oDBMS_FlDlg(self)) to obj#
+  set Dialog_Caption of obj# to ("Locate "+fn#)
+  set Filter_String  of obj# to ("Standard ("+fn#+")|"+fn#+"|DAT files|*.dat|All files|*.*")
+  if (Show_Dialog(obj#)) begin
+    move (File_Name(obj#)) to fn#
+    if fn# ne "" move (DBMS_OpenFileAs(fn#,file#,mode#,buf_index#)) to rval#
+  end
+  function_return rval#
+end_function
+
+// Procedure private.DBMS_OpenFile is used by the DBMS_OPEN command.
+// It takes the following parameters:
+//
+// line_no#   integer Number of the calling command line
+// file#      integer Number of the file to open
+// as#        boolean Is this an 'OPEN AS' thing?
+// as_string# string  Name of the file to open if opened as
+// mode#      integer DF_SHARE or DF_EXCLUSIVE
+// index#     integer If non zero this specifies which index should be buffered
+// dfname#    string  Logical name of the file#
+
+procedure private.DBMS_OpenFile global integer line_no# integer file# integer as# string as_str# integer mode# integer index# string dffile#
+  integer ok#
+  string msg#
+  if as# move (DBMS_OpenFileAs(as_str#,file#,mode#,index#)) to ok#
+  else move (DBMS_OpenFile(file#,mode#,index#)) to ok#
+  ifnot ok# begin
+    move ("Datafile could not be opened."+character(10)) to msg#
+    move (msg#+"File number "+string(file#)+" was attempted opened in line "+string(line_no#)+"."+character(10)) to msg#
+    if as# move (msg#+"Physical file name is: "+as_str#+character(10)) to msg#
+    else   move (msg#+"Physical file name is: "+DBMS_Rootname(file#)+character(10)) to msg#
+    if dffile# eq "DFFILE_NAME_NOT_FOUND" move (msg#+"No logical file name was specified.") to msg#
+    else move (msg#+"Logical file name is: "+dffile#) to msg#
+    send obs msg#
+  end
+end_procedure
+
+#REPLACE DBMS_OPEN$GENERIC 0
+#COMMAND DBMS_OPEN$HELP
+ #IFSAME !2 AS // Open AS
+  #IFCLASS !3 SNDIECWVF
+   #IFSAME !3 |FS0,0& |FN0,0& |FD0,0& // Mystery branch from FMAC.
+    // I don't know what this is! (Could it be indirect_file?)
+    #ERROR 999 UNKNOWN PARAMETER IN DBMS_OPEN COMMAND
+   #ELSE
+    #IFSAME !4 MODE
+     #IF (!0>5)
+      //                !1     !2 !3       !4   !5   !6
+      // DBMS_OPEN$HELP as_str AS file_num MODE mode index
+      #IFSAME !1 NOT_AS
+       send private.DBMS_OpenFile (!a +1) !3 0 "" !5 !6 "!$"
+      #ELSE
+       send private.DBMS_OpenFile (!a +1) !3 1 !1 !5 !6 "!$"
+      #ENDIF
+     #ELSE
+      DBMS_OPEN$HELP !1 !2 !3 !4 !5 |CI0 // Insert index ref#
+     #ENDIF
+    #ELSE
+     DBMS_OPEN$HELP !1 !2 !3 MODE DF_SHARE !4 !5 !6 !7 !8 !9 // Insert MODE branch
+    #ENDIF
+   #ENDIF
+  #ELSE
+   #SET $$ !3
+   DECLARE_DATAFILE !3
+   DBMS_OPEN$HELP !1 !2 !3.FILE_NUMBER !4 !5 !6 !7 !8 !9 // Convert filename to integer
+  #ENDIF
+ #ELSE
+  DBMS_OPEN$HELP NOT_AS AS !1 !2 !3 !4 !5 !6 !7 !8 !9 // Insert AS
+ #ENDIF
+#ENDCOMMAND
+#COMMAND DBMS_OPEN RLG#
+ #IF DBMS_OPEN$GENERIC
+  OPEN !1 !2 !3 !4 !5 !6 !7 !8 !9
+ #ELSE
+  #SPUSH !$
+  #SET $$ DFFILE_NAME_NOT_FOUND
+  DBMS_OPEN$HELP !1 !2 !3 !4 !5 !6 !7 !8 !9
+  #SPOP !$
+ #ENDIF
+#ENDCOMMAND

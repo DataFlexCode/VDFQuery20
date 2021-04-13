@@ -1,0 +1,154 @@
+// Use FList.nui    // A lot of FLIST- procedures and functions
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Files.nui    // Utilities for handling file related stuff
+
+desktop_section
+  object oFileListStack is a cStack
+  end_object
+end_desktop_section
+
+procedure FLIST_CloseAllFiles global
+  close DF_ALL
+end_procedure
+
+function FLIST_CurrentFilelist global returns string
+  string lsRval
+  get_attribute DF_FILELIST_NAME to lsRval
+  move (ToOem(lsRval)) to lsRval
+  function_return lsRval
+end_function
+
+procedure FLIST_SetCurrentFilelist global string lsFileName
+  set_attribute DF_FILELIST_NAME to (ToAnsi(lsFileName))
+end_procedure
+
+procedure FLIST_SetOpenPath global string lsPath
+  set_attribute DF_OPEN_PATH to (ToAnsi(lsPath))
+end_procedure
+
+procedure FLIST_PushCurrentFilelist global
+  send Push.s to (oFileListStack(self)) (FLIST_CurrentFilelist())
+end_procedure
+procedure FLIST_PopCurrentFilelist global
+  send FLIST_CloseAllFiles
+  send FLIST_SetCurrentFilelist (sPop(oFileListStack(self)))
+end_procedure
+
+function FLIST_CurrentFileListFolder global returns string
+  string lsFileList lsFolder
+  get FLIST_CurrentFilelist to lsFileList
+  if (lsFileList<>SEQ_RemovePathFromFileName(lsFileList)) function_return (SEQ_ExtractPathFromFileName(lsFileList))
+  get SEQ_FindFileAlongDFPath lsFileList to lsFolder
+  function_return lsFolder
+end_function
+
+// Find an empty entry in filelist cfg, that is not temporarily used
+// by an "open as" statement. Start the search at entry liFile + 1.
+function FLIST_TemporaryEntry global integer liFile returns integer
+  integer lbOpened
+  repeat
+    get_attribute DF_FILE_NEXT_EMPTY of liFile to liFile
+    if liFile begin
+      get_attribute DF_FILE_OPENED of liFile to lbOpened
+      ifnot lbOpened function_return liFile
+    end
+  until liFile eq 0
+  function_return -1
+end_function
+
+// Returns DFTRUE if a filelist.cfg was created OK.
+function FLIST_CreateEmptyFileList global string lsFileListPathAndName returns integer
+  integer liCount liOrg liChannel
+  string lsFiller
+  send FLIST_PushCurrentFilelist // Remember who we where.
+  send FLIST_CloseAllFiles       // Close all files just in case.
+  get SEQ_DirectOutput ("binary:"+lsFileListPathAndName) to liChannel
+
+  if (liChannel>=0) begin
+    if 1 begin
+      get_argument_size To liOrg      // Create the filelist. It has to be of size
+      set_argument_size 524277        // 32128, if it is any smaller errors occur
+      pad "" To lsFiller 524277       // when setting the filelist attributes.
+      move (repeat(character(0),524277)) to lsFiller
+      write "filelist.cfg"            // This has to be the first 12 characters
+      write lsFiller                  //
+      send SEQ_CloseOutput liChannel
+      set_argument_size liOrg         // Restore max argument size.
+//      set_attribute DF_FILELIST_NAME To lsFileListPathAndName // Setup the file list for DataFlex.
+      send FLIST_SetCurrentFilelist lsFileListPathAndName
+
+      set_attribute DF_FILE_ROOT_NAME    of 4095 to "temp"
+      set_attribute DF_FILE_LOGICAL_NAME of 4095 to "temp"
+      set_attribute DF_FILE_DISPLAY_NAME of 4095 to "temp"
+      set_attribute DF_FILE_ROOT_NAME    of 4095 to ""
+      set_attribute DF_FILE_LOGICAL_NAME of 4095 to ""
+      set_attribute DF_FILE_DISPLAY_NAME of 4095 to ""
+
+      set_attribute DF_FILE_ROOT_NAME    of 50 to "flexerrs"
+      set_attribute DF_FILE_LOGICAL_NAME of 50 to "FLEXERRS"
+      set_attribute DF_FILE_DISPLAY_NAME of 50 to "@DataFlex Error File"
+
+    //for liCount from 1 to 250                               // Fill the filelist.
+    //  set_attribute DF_FILE_ROOT_NAME    of liCount to ""   // Every slot must be
+    //  set_attribute DF_FILE_LOGICAL_NAME of liCount to ""   // emptied out. Otherwise
+    //  set_attribute DF_FILE_DISPLAY_NAME of liCount to ""   // the API thinks some of
+    //loop                                                    // the slots are used.
+    end
+    else begin
+      get_argument_size To liOrg      // Create the filelist. It has to be of size
+      set_argument_size 32117         // 32128, if it is any smaller errors occur
+      pad "" To lsFiller 32117        // when setting the filelist attributes.
+      write "filelist.cfg"            // This has to be the first 12 characters
+      write lsFiller                  //
+      send SEQ_CloseOutput liChannel
+      set_argument_size liOrg         // Restore max argument size.
+      set_attribute DF_FILELIST_NAME To lsFileListPathAndName // Setup the file list for DataFlex.
+      for liCount from 1 to 250                               // Fill the filelist.
+        set_attribute DF_FILE_ROOT_NAME    of liCount to ""   // Every slot must be
+        set_attribute DF_FILE_LOGICAL_NAME of liCount to ""   // emptied out. Otherwise
+        set_attribute DF_FILE_DISPLAY_NAME of liCount to ""   // the API thinks some of
+      loop                                                    // the slots are used.
+    end
+    send FLIST_PopCurrentFilelist   // Restore current filelist.
+    function_return (SEQ_FileExists(lsFileListPathAndName)=SEQIT_FILE)
+  end
+  else function_return 0
+end_function
+
+enumeration_list
+  define FLINFO_SIZE_BYTES     // Filesize of filelist.cfg (bytes)
+  define FLINFO_SIZE_ENTRIES   // Max number of entries in filelist.cfg
+  define FLINFO_LT_256         // Is this a (lt) 256 version (bool)
+end_enumeration_list
+
+function FLIST_Information global integer liWhat returns integer
+  integer liRval
+  string lsPath lsFileList
+
+  move -1 to liRval
+
+  if (liWhat=FLINFO_SIZE_BYTES) begin
+    get FLIST_CurrentFilelist to lsFileList
+    get SEQ_FileSize lsFileList to liRval
+  end
+  if (liWhat=FLINFO_LT_256) begin
+    get FLIST_Information FLINFO_SIZE_BYTES to liRval
+    move (liRval<=32768) to liRval
+  end
+  if (liWhat=FLINFO_SIZE_ENTRIES) begin
+    get FLIST_Information FLINFO_SIZE_BYTES to liRval
+    move (liRval/128-1) to liRval
+  end
+  function_return liRval
+end_function
+
+procedure FLIST_Make4095 global
+  if (FLIST_Information(FLINFO_LT_256)) begin
+    set_attribute DF_FILE_ROOT_NAME    of 4095 to "temp"
+    set_attribute DF_FILE_LOGICAL_NAME of 4095 to "temp"
+    set_attribute DF_FILE_DISPLAY_NAME of 4095 to "temp"
+    set_attribute DF_FILE_ROOT_NAME    of 4095 to ""
+    set_attribute DF_FILE_LOGICAL_NAME of 4095 to ""
+    set_attribute DF_FILE_DISPLAY_NAME of 4095 to ""
+  end
+end_procedure

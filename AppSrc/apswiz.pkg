@@ -1,0 +1,247 @@
+// Use ApsWiz.pkg   // APS wizard classes
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+Use Set.utl      // cArray, cSet and cStack classes
+Use Buttons.utl  // Button texts
+Use Language     // Default language setup
+
+#IF LNG_DEFAULT=LNG_ENGLISH
+ define t.wizbtn.back   for "< Back"
+ define t.wizbtn.next   for "Next >"
+ define t.wizbtn.finish for "Finish"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ITALIAN
+ define t.wizbtn.back   for "< Indietro"
+ define t.wizbtn.next   for "Avanti >"
+ define t.wizbtn.finish for "Finito"
+#ENDIF
+#IF LNG_DEFAULT=LNG_DANISH
+ define t.wizbtn.back   for "< Tilbage"
+ define t.wizbtn.next   for "Nëste >"
+ define t.wizbtn.finish for "Udfõr"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SWEDISH
+ define t.wizbtn.back   for "< Back"
+ define t.wizbtn.next   for "Next >"
+ define t.wizbtn.finish for "Finish"
+#ENDIF
+#IF LNG_DEFAULT=LNG_NORWEGIAN
+ define t.wizbtn.back   for "< Back"
+ define t.wizbtn.next   for "Next >"
+ define t.wizbtn.finish for "Finish"
+#ENDIF
+#IF LNG_DEFAULT=LNG_DUTCH
+ define t.wizbtn.back   for "< Vorige"           // PvM
+ define t.wizbtn.next   for "Volgende >"         // PvM
+ define t.wizbtn.finish for "Voltooien"          // PvM
+#ENDIF
+#IF LNG_DEFAULT=LNG_GERMAN
+ define t.wizbtn.back   for "< Back"
+ define t.wizbtn.next   for "Next >"
+ define t.wizbtn.finish for "Finish"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SPANISH  // 03/10/2002  to 31/01/2005 for 2.3 Pepe Guimar∆es Moose Software  pg@moose-software.com
+ define t.wizbtn.back   for "< Anterior"
+ define t.wizbtn.next   for "Siguiente >"
+ define t.wizbtn.finish for "Finalizar"
+#ENDIF
+#IF LNG_DEFAULT=LNG_PORTUGUESE
+ define t.wizbtn.back   for "< Back"
+ define t.wizbtn.next   for "Next >"
+ define t.wizbtn.finish for "Finish"
+#ENDIF
+
+enumeration_list
+  define WIZSIZE_SMALL
+  define WIZSIZE_NORMAL
+  define WIZSIZE_LARGE
+end_enumeration_list
+
+register_object oLine
+register_function iPageValidate returns integer
+
+class aps.WizardPanel is a aps.BasicPanel
+  procedure construct_object
+    forward send construct_object
+    set sysmenu_icon  to false
+    set minimize_icon to false
+    set maximize_icon to false
+    set popup_state to true
+    set modal_state to true
+    on_key kcancel send close_panel
+    object oPages is a cArray
+    end_object
+    Property Integer piCurrentPage -1
+    Property Integer piResult      0
+    Property Integer p_max_row_on_tabdialog    0
+    Property Integer p_max_column_on_tabdialog 0
+    set locate_mode to CENTER_ON_SCREEN
+    set border_style to BORDER_DIALOG
+    send aps_init
+  end_procedure
+  procedure end_construct_object
+    set p_max_row    to (p_max_row_on_tabdialog(self))
+    set p_max_column to (p_max_column_on_tabdialog(self))
+    send aps_goto_max_row
+    object oLine is a aps.LineControl
+    end_object
+    set multi_button_size to 16 50
+    object oBtn1 is a aps.Multi_Button
+      on_item t.wizbtn.back send DoPageBack
+      set p_extra_external_width to (-p_column_space(self))
+    end_object
+    object oBtn2 is a aps.Multi_Button
+      on_item t.wizbtn.next send DoPageForward
+      set p_extra_external_width to (p_column_space(self))
+    end_object
+    object oBtn3 is a aps.Multi_Button
+      on_item t.btn.cancel send close_panel
+    end_object
+    send aps_locate_multi_buttons
+    forward send end_construct_object
+  end_procedure
+  procedure set minimum_size integer height# integer width#
+    set p_max_row_on_tabdialog    to height#
+    set p_max_column_on_tabdialog to width#
+  end_procedure
+  procedure make_nice_size integer tmp_size_class#
+    integer size_class#
+    if num_arguments move tmp_size_class# to size_class#
+    else move WizSize_Normal to size_class#
+    if size_class# eq WIZSIZE_SMALL  set minimum_size to 100 200
+    if size_class# eq WIZSIZE_NORMAL set minimum_size to 150 300
+    if size_class# eq WIZSIZE_LARGE  set minimum_size to 200 400
+  end_procedure
+  procedure Register_WizardPage integer obj#
+    set value of (oPages(self)) item (item_count(oPages(self))) to obj#
+  end_procedure
+  function iNextPage integer liCurrentPage returns integer
+    function_return (liCurrentPage+1)
+  end_function
+  procedure DoPageForward
+    string label# obj# liNextPage liCurrentPage
+    get label of (oBtn2(self)) to label#
+    get piCurrentPage to liCurrentPage
+    get value of (oPages(self)) item liCurrentPage to obj#
+    if (iPageValidate(obj#)) begin
+      if label# eq t.wizbtn.finish send close_panel_ok
+      else begin
+        get iNextPage liCurrentPage to liNextPage
+        get value of (oPages(self)) item liNextPage to obj#
+        send OnDisplayPageForwardNavigation to obj# liCurrentPage
+        set piPreviousPage of (integer(value(oPages(self),liNextPage))) to liCurrentPage
+        send DisplayPage liNextPage
+      end
+    end
+  end_procedure
+  procedure DoPageBack
+    integer liPreviousPage
+    get piPreviousPage of (integer(value(oPages(self),piCurrentPage(self)))) to liPreviousPage
+    send DisplayPage liPreviousPage
+  end_procedure
+  procedure DoFinish
+  end_procedure
+  procedure close_panel_ok
+    set piResult to 1
+    send close_panel
+  end_procedure
+  procedure popup
+    set piCurrentPage to -1
+    set piResult to 0
+    forward send popup
+    if (piResult(self)) send DoFinish
+  end_procedure
+
+  procedure aps_beautify
+    send aps_align_inside_container_by_sizing (oLine(self)) SL_ALIGN_RIGHT
+  end_procedure
+
+  procedure DisplayPage integer new_pg#
+    integer cur_pg# new_page_obj# cur_page_obj#
+    get piCurrentPage to cur_pg#
+    move (value(oPages(self),new_pg#)) to new_page_obj#
+    if cur_pg# ne -1 move (value(oPages(self),cur_pg#)) to cur_page_obj#
+    if (cur_page_obj# and new_page_obj#) send deactivate to cur_page_obj#
+    if new_page_obj# begin
+      send popup_group to new_page_obj#
+      move new_pg# to cur_pg#
+    end
+    set object_shadow_state of (oBtn1(self)) to (cur_pg#=0)
+    if cur_pg# eq (item_count(oPages(self))-1) set label of (oBtn2(self)) to t.wizbtn.finish
+    else set label of (oBtn2(self)) to t.wizbtn.next
+    set piCurrentPage to cur_pg#
+  end_procedure
+  procedure page integer mode#
+    forward send page mode#
+    // Mode# must be 1, otherwise the object isn't created yet???
+    if (mode#=1 and piCurrentPage(self)=-1) send DisplayPage 0
+  end_procedure
+end_class // aps.WizardPanel
+
+class aps.WizardPage is a Container
+  // The APS functionality is a copy of that in a aps.TabPage
+  procedure construct_object
+    forward send construct_object
+    set popup_state to true         //
+    set caption_bar to false        //
+    send aps_init
+    set border_style to border_none // This is out of the Wizard.pkg (DAC)
+    property integer piPreviousPage 0 // Is set dynamically as the user navigates the dialog
+    set attach_parent_state to true // This achieves proper navigation to the buttons
+    send aps_goto_max_row
+    send aps_new_field_row
+  end_procedure
+  procedure set page_title string str#
+//    set label of (oTitle(self)) to str#
+  end_procedure
+  function iPageValidate returns integer
+    function_return 1
+  end_function
+  procedure OnDisplayPageForwardNavigation integer piPrevPage
+  end_procedure
+  procedure end_construct_object
+    integer max_row# max_column# self#
+    get p_max_row to max_row#
+    get p_max_column to max_column#
+    if max_row# gt (p_max_row_on_tabdialog(self)) set p_max_row_on_tabdialog to max_row#
+    if max_column# gt (p_max_column_on_tabdialog(self)) set p_max_column_on_tabdialog to max_column#
+    forward send end_construct_object
+    move self to self#
+    send Register_WizardPage self# // Register with parent object:
+  end_procedure
+end_class
+
+class aps.WizardPageTitle is a aps.TextBox
+  procedure construct_object
+    forward send construct_object
+    set Typeface to "Arial"
+    set FontSize to 18 0
+    set FontWeight to 700
+  end_procedure
+  procedure end_construct_object
+    forward send end_construct_object
+    send aps_goto_max_row
+    send aps_new_field_row
+  end_procedure
+end_class
+
+//
+//  object oWizard is a aps.WizardPanel label "Hello wiz"
+//    send make_nice_size WIZSIZE_NORMAL
+//    object oPage1 is a aps.WizardPage
+//        object oFrm is a Form
+//        set value item 0  "Der kan man sgu bare se"
+//        set form_margin item 0 to 5
+//        set size to 12 50
+//        set location to 5 5
+//      end_object
+//    end_object
+//    object oPage2 is a aps.WizardPage
+//      object oFrm is a aps.Form label "Der kan man sgu bare se (2)" abstract aft_ascii20
+//      end_object
+//    end_object
+//    object oPage3 is a aps.WizardPage
+//      object oFrm is a aps.Form label "Der kan man sgu bare se for sidste gang" abstract aft_ascii20
+//      end_object
+//    end_object
+//  end_object
+//  send popup to (oWizard(self))

@@ -1,0 +1,175 @@
+// Use Query.nui    // Basic things needed for a query tool
+
+Use DataScan.utl // Data scan classes
+use QueryLng.pkg // Language dependant constants
+Use FieldInf     // Global field info objects and abstract field types
+
+define DFQ.FORMAT.CD    for 1 // Comma delimited
+define DFQ.FORMAT.LD    for 2 // Line delimited
+define DFQ.FORMAT.PRINT for 3 // Printable
+define DFQ.FORMAT.HTML  for 4 // HTML
+define DFQ.FORMAT.XML   for 5 // XML
+
+define DFQ.DEST.PRINTER for 0 // The order of these are dictated by the
+define DFQ.DEST.SCREEN  for 1 // order of radio buttons in the destination
+define DFQ.DEST.FILE    for 2 // selector
+define DFQ.DEST.EMAIL   for 3 // selector
+
+integer Query$ExcludeAllRecnums
+move 0 to Query$ExcludeAllRecnums
+
+desktop_section // Place object on desktop no matter where declared
+  object oDfQuery_ExcludeFields is a cFieldInfoStuff
+  end_object
+end_desktop_section
+
+function DfQuery_ExcludeField global integer file# integer field# returns integer
+  if (not(field#) and Query$ExcludeAllRecnums) function_return 1
+  if file# if field# begin
+  end
+  function_return (integer_value.ii(oDfQuery_ExcludeFields(self),file#,field#))
+end_function
+procedure set DfQuery_ExcludeField global integer file# integer field# integer value#
+  ifnot (file# or field#) move value# to Query$ExcludeAllRecnums
+  else set integer_value.ii of (oDfQuery_ExcludeFields(self)) file# field# to value#
+end_procedure
+
+desktop_section // Place object on desktop no matter where declared
+  object oDfQuery_ExcludeFiles is a cArray
+  end_object
+end_desktop_section
+
+enumeration_list
+  define DFQ_FALSE
+  define DFQ_TRUE
+  define DFQ_ALWAYS
+end_enumeration_list
+
+define VDFQ_FALSE  for DFQ_FALSE  // For backwards compatibility
+define VDFQ_TRUE   for DFQ_TRUE   //
+define VDFQ_ALWAYS for DFQ_ALWAYS //
+
+function DfQuery_ExcludeFile global integer file# returns integer
+  function_return (value(oDfQuery_ExcludeFiles(self),file#))
+end_function
+procedure set DfQuery_ExcludeFile global integer file# integer value#
+  set value of (oDfQuery_ExcludeFiles(self)) item file# to value#
+end_procedure
+
+function DfQuery_CompModeTxt_Short global integer comp# returns string
+  if comp# eq SC_COMP_EQ        function_return "="  //"EQ"
+  if comp# eq SC_COMP_LT        function_return "<"  //"LT"
+  if comp# eq SC_COMP_LE        function_return "<=" //"LE"
+  if comp# eq SC_COMP_GE        function_return ">=" //"GE"
+  if comp# eq SC_COMP_GT        function_return ">"  //"GT"
+  if comp# eq SC_COMP_NE        function_return "<>" //"NE"
+  if comp# eq SC_COMP_IN        function_return "IN"
+  if comp# eq SC_COMP_CIN       function_return "CIN"
+  if comp# eq SC_COMP_BETWEEN   function_return "x-y" //"BT"
+  if comp# eq SC_COMP_CBETWEEN  function_return "CBT"
+  if comp# eq SC_COMP_NOT_BLANK function_return '<>""'
+  if comp# eq SC_COMP_BLANK     function_return '=""'
+  if comp# eq SC_COMP_OR_LIST   function_return "in list"
+end_function
+
+function DfQuery_CompModeTxt_Long global integer comp# returns string
+  if comp# eq SC_COMP_EQ        function_return t.DfQuery.EQ
+  if comp# eq SC_COMP_LT        function_return t.DfQuery.LT
+  if comp# eq SC_COMP_LE        function_return t.DfQuery.LE
+  if comp# eq SC_COMP_GE        function_return t.DfQuery.GE
+  if comp# eq SC_COMP_GT        function_return t.DfQuery.GT
+  if comp# eq SC_COMP_NE        function_return t.DfQuery.NE
+  if comp# eq SC_COMP_IN        function_return t.DfQuery.IN
+  if comp# eq SC_COMP_CIN       function_return t.DfQuery.CIN
+  if comp# eq SC_COMP_BETWEEN   function_return t.DfQuery.BT
+  if comp# eq SC_COMP_CBETWEEN  function_return t.DfQuery.CBT
+  if comp# eq SC_COMP_NOT_BLANK function_return t.DfQuery.NB
+  if comp# eq SC_COMP_BLANK     function_return t.DfQuery.B
+  if comp# eq SC_COMP_OR_LIST   function_return t.DfQuery.OrL
+end_function
+
+function DfQuery_CritText integer type# integer comp# string str1# string str2# returns string
+  date date1# date2#
+  number num1# num2#
+  string rval#
+  if type# eq ASCII_WINDOW move SC_TYPE_ASCII to type#
+  else begin
+    if type# eq DATE_WINDOW move SC_TYPE_DATE to type#
+    else move SC_TYPE_NUMERIC to type#
+  end
+
+  if comp# eq SC_COMP_OR_LIST function_return (replaces("|",str1#,"; ")) // or-list
+
+  if type# eq SC_TYPE_ASCII begin
+    if (comp#=SC_COMP_BETWEEN or comp#=SC_COMP_CBETWEEN) begin
+      if (str1#+str2#) ne "" begin
+        if str1# eq "" move (t.DfQuery.lt_or_eq+str2#) to rval#
+        else begin
+          if str2# eq "" move (t.DfQuery.gt_or_eq+str1#) to rval#
+          else begin
+            if str1# gt str2# move t.DfQuery.illegal_interval to rval#
+            else move ('"'+str1#+'"'+" - "+'"'+str2#+'"'+" "+t.DfQuery.both_incl) to rval#
+          end
+        end
+      end
+      else move t.DfQuery.no_limit to rval#
+    end
+    else move ('"'+str1#+'"') to rval# // EQ LT LE GE GT or NE
+  end
+  if type# eq SC_TYPE_DATE begin
+    move str1# to date1#
+    if (comp#=SC_COMP_BETWEEN or comp#=SC_COMP_CBETWEEN) begin
+      move str2# to date2#
+      if (date1#+date2#) begin
+        ifnot date1# move (t.DfQuery.before+string(date2#)) to rval#
+        else begin
+          ifnot date2# move (t.DfQuery.after+string(date1#)) to rval#
+          else begin
+            if date1# gt date2# move t.DfQuery.illegal_interval to rval#
+            else move (string(date1#)+" - "+string(date2#)+" "+t.DfQuery.both_incl) to rval#
+          end
+        end
+      end
+      else move t.DfQuery.no_limit to rval#
+    end
+    else begin // EQ LT LE GE GT or NE
+      if date1# ne 0 move date1# to rval#
+      else move t.DfQuery.no_limit to rval#
+    end
+  end
+  if type# eq SC_TYPE_NUMERIC begin
+    move str1# to num1#
+    if (comp#=SC_COMP_BETWEEN or comp#=SC_COMP_CBETWEEN) begin
+      move str2# to num2#
+      if (num1#<>0 or num2#<>0) begin
+        if (num1#=0) move (t.DfQuery.lt_or_eq+string(num2#)) to rval#
+        else begin
+          if (num2#=0) move (t.DfQuery.gt_or_eq+string(num1#)) to rval#
+          else begin
+            if num1# gt num2# move t.DfQuery.illegal_interval to rval#
+            else move (string(num1#)+" - "+string(num2#)+" "+t.DfQuery.both_incl) to rval#
+          end
+        end
+      end
+      else move t.DfQuery.no_limit to rval#
+    end
+    else move num1# to rval#
+  end
+  function_return rval#
+end_function
+
+// Also For backwards compatibility
+function VDFQuery_ExcludeFile global integer file# returns integer
+  function_return (VDFQuery_ExcludeFile(file#))
+end_function
+procedure set VDfQuery_ExcludeFile global integer file# integer value#
+  set DfQuery_ExcludeFile file# to value#
+end_procedure
+function VDFQuery_ExcludeField global integer file# integer field# returns integer
+  function_return (VDFQuery_ExcludeField(file#,field#))
+end_function
+procedure set VDfQuery_ExcludeField global integer file# integer field# integer value#
+  set DfQuery_ExcludeField file# field# to value#
+end_procedure
+
+

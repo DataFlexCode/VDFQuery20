@@ -1,0 +1,221 @@
+// Use ItemProp.nui // ITEM_PROPERTY command for use within arrays
+
+Use Strings.nui  // String manipulation for VDF
+Use Set.utl      // cArray, cSet and cStack classes
+Use Array.nui    // Item_Property command (No User Interface)
+
+// ************************************************
+// From here on down to the last couple of lines
+// is just one big private interface
+// ************************************************
+
+function SortValue_Number global number lnValue returns string
+  integer lbNeg
+  string lsValue
+  move (lnValue<0) to lbNeg
+  if lbNeg move (abs(lnValue)) to lnValue
+  get NumToStrR lnValue 8 23 to lsValue
+  // We use blank (for minus) and plus to make it sort right
+  // (and we need to move the sign to the end to make it work)
+  if lbNeg begin
+    get String_NegateSortOrder lsValue to lsValue
+    move (" "+lsValue) to lsValue
+  end
+  else     move ("+"+lsValue) to lsValue
+  function_return lsValue
+end_function
+function SortValue_Real global real lrValue returns string
+  string lsSortValue lsExponent
+  move lrValue to lsSortValue
+  move (ExtractWord(lsSortValue,"e",2)) to lsExponent
+  if lsExponent ne "" replace ("e"+lsExponent) in lsSortValue with ""
+  else move "    " to lsSortValue
+  function_return (append(lsExponent,lsSortValue))
+end_function
+function SortValue_Date global date ldValue returns string
+  function_return (NumToStrR(integer(ldValue),0,6))
+end_function
+function SortValue_Integer global integer liValue returns string
+  integer lbNeg
+  string lsValue
+  move (liValue<0) to lbNeg
+  if lbNeg move (abs(liValue)) to liValue
+  get NumToStrR liValue 0 10 to lsValue
+  // We use blank (for minus) and plus to make it sort right
+  // (and we need to move the sign to the end to make it work)
+  if lbNeg begin
+    get String_NegateSortOrder lsValue to lsValue
+    move (" "+lsValue) to lsValue
+  end
+  else     move ("+"+lsValue) to lsValue
+  function_return lsValue
+end_function
+
+function SortValueAuto global integer liType string lsValue returns string
+  if liType eq ITMP_INTEGER Begin 
+    function_return (SortValue_Integer(lsValue))
+  end  
+  if liType eq ITMP_STRING  Begin 
+    function_return (lsValue+" ")
+  end  
+  if liType eq ITMP_REAL Begin 
+    function_return (SortValue_Real(lsValue))
+  end  
+  if liType eq ITMP_NUMBER Begin 
+    function_return (SortValue_Number(lsValue))
+  end  
+  if liType eq ITMP_DATE Begin 
+    function_return (SortValue_Date(lsValue))
+  end  
+end_function
+
+function SortValue_ToNumber global string lsValue returns number
+  function_return (number(trim(lsValue)))
+end_function
+function SortValue_ToReal global string lsValue returns real
+  string lsExponent
+  move (left(lsValue,4)) to lsExponent
+  move (replace(lsExponent,lsValue,"")) to lsValue // replace lsExponent in lsValue with ""
+  if (lsExponent="") begin
+    function_return (real(lsValue))
+  end
+  function_return (real(lsValue+"e"+lsExponent))
+end_function
+function SortValue_ToDate global string lsValue returns date
+  function_return (date(trim(lsValue)))
+end_function
+function SortValue_ToInteger global string lsValue returns integer
+  function_return (integer(trim(lsValue)))
+end_function
+
+desktop_section
+  object ITMP_DataArray is a cArray
+  end_object
+  object ITMP_SortArray is a cArray
+  end_object
+  object ITMP_SortSegments is a cArray
+    property integer pbDescending 0
+    item_property_list // See? It's taking its own medicine!
+      item_property integer piColumn.i
+      item_property integer piType.i
+      item_property integer pbUppercase.i
+    end_item_property_list
+    register_function item_property_type integer liColumn returns integer
+    procedure DoColumnTypes integer lhObj
+      integer liMax liRow
+      get row_count to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        set piType.i liRow to (item_property_type(lhObj,piColumn.i(self,liRow)))
+      loop
+    end_procedure
+    procedure DoSortData integer lhObj
+      integer lhData lhSort liColumnCount liDataRowCount liDataRow
+      integer liColumn liType liRow liMaxSegment liSegment lbUppercase
+      string lsSortValue
+      move (ITMP_DataArray(self)) to lhData
+      move (ITMP_SortArray(self)) to lhSort
+      send delete_data to lhData
+      send delete_data to lhSort
+
+      send DoColumnTypes lhObj
+
+      get column_count of lhObj to liColumnCount
+      send Clone_Array lhObj lhData
+
+      get row_count of lhObj to liDataRowCount
+      decrement liDataRowCount
+
+      if (row_count(self)=1) begin // Fast
+        get piColumn.i 0 to liColumn
+        get piType.i 0 to liType
+        get pbUppercase.i 0 to lbUppercase
+        for liRow from 0 to liDataRowCount
+          get SortValueAuto liType (value(lhObj,liRow*liColumnCount+liColumn)) to lsSortValue
+          if lbUppercase move (uppercase(lsSortValue)) to lsSortValue
+          set value of lhSort item liRow to (lsSortValue+pad(string(liRow),10))
+        loop
+      end
+      else begin // Not so fast
+        get row_count to liMaxSegment
+        decrement liMaxSegment
+        for liRow from 0 to liDataRowCount
+          move "" to lsSortValue
+          for liSegment from 0 to liMaxSegment
+            get piColumn.i liSegment to liColumn
+            get piType.i liSegment to liType
+            get pbUppercase.i liSegment to lbUppercase
+            if lbUppercase ;
+              move (lsSortValue+uppercase(SortValueAuto(liType,value(lhObj,liRow*liColumnCount+liColumn)))) to lsSortValue
+            else ;
+              move (lsSortValue+SortValueAuto(liType,value(lhObj,liRow*liColumnCount+liColumn))) to lsSortValue
+          loop
+          set value of lhSort item liRow to (lsSortValue+pad(string(liRow),10))
+        loop
+      end
+
+      if (pbDescending(self)) send sort_items to lhSort DESCENDING
+      else send sort_items to lhSort
+      set pbDescending to DFFALSE
+
+      // Put the data back:
+      for liRow from 0 to liDataRowCount
+        get value of lhSort item liRow to lsSortValue
+        move (right(lsSortValue,10)) to liDataRow
+        for liColumn from 0 to (liColumnCount-1)
+          set value of lhObj item (liRow*liColumnCount+liColumn) to (value(lhData,liDataRow*liColumnCount+liColumn))
+        loop
+      loop
+      send delete_data to lhData
+      send delete_data to lhSort
+    end_procedure
+  end_object
+end_desktop_section
+
+procedure ITMP_Sort_DoReset global
+  send delete_data to (ITMP_SortSegments(self))
+  set pbDescending of (ITMP_SortSegments(self)) to DFFALSE
+end_procedure
+procedure ITMP_Sort_DoAddSegment global integer liColumn integer lbUppercase
+  integer lbTemp liRow
+  if (NUM_ARGUMENTS>1) move lbUppercase to lbTemp
+  else move DFFALSE to lbTemp
+  get row_count of (ITMP_SortSegments(self)) to liRow
+  set piColumn.i of (ITMP_SortSegments(self)) liRow to liColumn
+  set pbUppercase.i of (ITMP_SortSegments(self)) liRow to lbTemp
+end_procedure
+procedure ITMP_Sort_DoSortData global integer lhObj
+  send DoSortData to (ITMP_SortSegments(self)) lhObj
+end_procedure
+
+// **************************
+// Last couple of lines:
+// **************************
+
+// To sort the rows of an item_property array by the value
+// of the first subsequently the third "column",
+//
+//  send sort_rows of oMyArray 0 2
+//
+procedure sort_rows for Array integer liTemp // Actually takes a variable count of parameters
+  integer liArg liColumn
+  send ITMP_Sort_DoReset
+  for liArg from 1 to num_arguments
+    move liArg& to liColumn // tricky way to parse passed arguments
+    send ITMP_Sort_DoAddSegment liColumn
+  loop
+  send ITMP_Sort_DoSortData self
+end_procedure
+
+// Does the same as the one above, but sorts the rows of the array in
+// descending order:
+procedure sort_rows_descending for Array integer liTemp // Variable parameter count
+  integer liArg liColumn
+  send ITMP_Sort_DoReset
+  set pbDescending of (ITMP_SortSegments(self)) to DFTRUE
+  for liArg from 1 to num_arguments
+    move liArg& to liColumn // tricky way to parse passed arguments
+    send ITMP_Sort_DoAddSegment liColumn
+  loop
+  send ITMP_Sort_DoSortData self
+end_procedure

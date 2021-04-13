@@ -1,0 +1,53 @@
+// Use ApsTree.pkg  // APS version of TreeView class
+Use APS.pkg          // Auto Positioning and Sizing classes for VDF
+Use DFTreeVw.pkg // DAC TreeView class
+
+class aps.TreeView is a TreeView startmac APS.STARTMAC_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_auto_size_control_state to false
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+//Procedure CallBack_Branch.hii handle hRoot# integer msg# integer obj#
+//  handle hTest# hCurrent# hStop#
+//  move hRoot# to hCurrent#
+//  get NextSiblingItem hCurrent# to hStop#
+//  while hCurrent# ne hStop#
+//    send msg# to obj# hCurrent#
+//    get ChildItem hCurrent# to hTest#
+//    if hTest# move hTest# to hCurrent#
+//    else begin // No children
+//      get NextSiblingItem hCurrent# to hTest#
+//      if hTest# move hTest# to hCurrent#
+//      else begin // No siblings either
+//        while (hCurrent# and not(htest#))
+//          get ParentItem hCurrent# to hCurrent# // Back one
+//          if hCurrent# begin
+//            get NextSiblingItem hCurrent# to hTest#
+//            if hTest# move hTest# to hCurrent#
+//          end
+//        end // while
+//      end
+//    end
+//  end // while
+//End_Procedure
+  Procedure CallBack_Branch.hii handle lhRoot integer lhMsg integer lhObj
+    integer lhItem
+    send lhMsg to lhObj lhRoot
+    get ChildItem lhRoot to lhItem
+    while lhItem
+      send CallBack_Branch.hii lhItem lhMsg lhObj
+      get NextSiblingItem lhItem to lhItem
+    end
+  End_Procedure
+  Procedure CallBack_Root.ii integer msg# integer obj#
+    handle hRoot#
+    get RootItem to hRoot#
+    send CallBack_Branch.hii hRoot# msg# obj#
+  End_Procedure
+end_class

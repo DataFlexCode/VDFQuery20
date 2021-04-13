@@ -1,0 +1,61 @@
+// Use wObs
+//
+// send wObs "We all live in a yellow submarine"
+// send wObs "We all live in a yellow submarine" "yellow submarine"
+// send wObs "We all live in a yellow submarine" "yellow submarine" "yellow submarine"
+//
+// set wObs_Quiet_Mode to DFTRUE  // Ingen sk‘rm fidus!
+// for windowindex from 0 to 111
+//   send wObs windowindex
+// loop
+//
+// set wObs_Quiet_Mode to DFFALSE // Sk‘rm fidus p† igen!
+// send wObs "yellow submarine"
+
+
+//Use allentry
+use msgbox.utl
+Use Files.nui    // Utilities for handling file related stuff (No User Interface)
+Use Dates.nui
+
+string  wObsFileName
+integer wObsHasNotRunYet wObsQuietMode
+move 0 to wObsHasNotRunYet
+move 0 to wObsQuietMode
+
+procedure wObs global string str#
+  integer iArg max# self# focus#
+  string msg# line# lsModule lsPath
+  move "" to msg#
+  if wObsHasNotRunYet eq 0 begin
+    get module_name to lsModule
+    move (uppercase(lsModule)) to lsModule
+//  move (replace("LWS",lsModule,"")) to lsModule
+//  move ("wobs"+lowercase(lsModule)) to lsModule
+    move (trim(left(lsModule,8))+".obs") to wObsFileName
+
+    if (SEQ_FileExists(wObsFileName)=SEQIT_FILE) begin
+      get SEQ_FindFileAlongDFPath wObsFileName to lsPath
+      if lsPath eq "" get SEQ_EraseFile wObsFileName to wObsHasNotRunYet
+      else get SEQ_EraseFile (SEQ_ComposeAbsoluteFileName(lsPath,wObsFileName)) to wObsHasNotRunYet
+    end
+    send SEQ_AppendLineClose wObsFileName "************************************"
+  end
+  move 1 to wObsHasNotRunYet
+  for iArg from 1 to num_arguments
+    MoveStr iArg& to line# // tricky way to parse passed arguments
+    if iArg eq 1 send SEQ_AppendLineClose wObsFileName (sSysTime()+" | "+line#)
+    else         send SEQ_AppendLineClose wObsFileName ("        "+" | "+line#)
+    move (msg#+line#) to msg#
+    if iArg ne num_arguments move (msg#+character(10)) to msg#
+  loop
+  send SEQ_AppendLineClose wObsFileName "------------------------------------"
+  ifnot wObsQuietMode begin
+    move (HowManyItems(msg#,character(10))) to max#
+    send obs msg#
+  end
+end_procedure
+
+procedure set wobs_quiet_mode integer liState
+  move liState to wObsQuietMode
+end_procedure

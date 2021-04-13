@@ -1,0 +1,893 @@
+// Use GridUtil.utl // Grid and List utilities (not for dbGrid's or Table's)
+
+//> This package provides a number of functions working on objects of
+//> these classes
+//>
+//>       Grid (VDF)
+//>       List (DF)
+//>
+//> And not: dbGrid (VDF), List (VDF), dbList (VDF) or Table (DF)
+//>
+//> The Grid of VDF and the List of DF are so much alike that it makes
+//> sence to give them a common interface via this package.
+//>
+//> For the rest of this package (except the first sentence of the next
+//> paragraph) VDF Grid's and DF List's will be referred to as grids.
+//>
+//> Rather than having these functions implemented in a subclass of the
+//> Grid- or List classes I have made global functions and procedures
+//> that all takes the object ID of the Grid as the first parameter.
+//>
+//> You may therefore use the functions of this package regardless of
+//> the class hierarchy you are using.
+//>
+//> To sort the contents of a grid by the contents of column liColumn use:
+//>
+//>    procedure Grid_SortByColumn global integer lhGrid integer liColumn
+//>
+//>
+//> The set the entry_state of all items in a grid in one go use:
+//>
+//>    procedure Grid_SetEntryState global integer lhObj integer liState
+//>
+//>
+//> To figure out the number of the first item in the current row use:
+//>
+//>    function Grid_BaseItem global integer lhObj returns integer
+//>
+//>
+//> To figure out the current column use:
+//>
+//>    function Grid_CurrentColumn global integer lhObj returns integer
+//>
+//>
+//> And finally, to figure out the number of columns used:
+//>
+//>    function Grid_Columns global integer lhObj returns integer
+//>
+//>
+//> Added much later:
+//>
+//>
+//> Use this to switch the contents of two rows (including aux_value, color
+//> entry_state and what have you):
+//>
+//>    procedure Grid_SwapRows global integer lhObj integer liRow1 ;
+//>                                                        integer liRow2
+//>
+//> Most often, when swapping rows you'd really like to swap the current row
+//> up or down:
+//>
+//>    procedure Grid_SwapCurrentRowUp global integer lhGrid
+//>    procedure Grid_SwapCurrentRowDown global integer lhGrid
+//>
+//>    Use like this (from within a Grid object):
+//>
+//>      procedure MoveItemUp
+//>        send Grid_SwapCurrentRowUp self
+//>      end_procedure
+//>      procedure MoveItemDown
+//>        send Grid_SwapCurrentRowDown self
+//>      end_procedure
+//>      on_key KEY_CTRL+KEY_UP_ARROW   send MoveItemUp
+//>      on_key KEY_CTRL+KEY_DOWN_ARROW send MoveItemDown
+//>
+//> In some cases you may want to swap the current row to the top or to the
+//> bottom of the grid. Use:
+//>
+//>    procedure Grid_SwapCurrentRowTop global integer lhGrid
+//>    procedure Grid_SwapCurrentRowBottom global integer lhGrid
+//>
+//>
+//> Delete a row:
+//>
+//>   procedure Grid_DeleteRow global integer lhObj integer liRow
+//>
+//>
+//> Delete current row:
+//>
+//>   procedure Grid_DeleteCurrentRow global integer lhObj
+//>
+//>
+//> If the first column of the grid is a checkbox column you may use these
+//> methods:
+//>
+//>          Select all rows:
+//>
+//>             procedure Grid_RowSelectAll global integer lhGrid
+//>
+//>
+//>          Deselect all rows:
+//>
+//>             procedure Grid_RowDeselectAll global integer lhGrid
+//>
+//>
+//>          Invert row selection:
+//>
+//>             procedure Grid_RowSelectInvert global integer lhGrid
+//>
+//>
+//>          Call function liGet for each row in lhGrid to set the select
+//>          or deselect each row. The liGet function ID will receive two
+//>          parameter (Row number and number of the base item of that row)
+//>          and should return an integer value:
+//>
+//>             procedure Grid_RowSelectCostum global integer lhGrid ;
+//>                                                           integer liGet
+//>
+//>
+//>          Use this to call procedure liMsg in lhGrid for each selected
+//>          row. The procedure will receive two parameters (row number and
+//>          number of the base item of that row):
+//>
+//>             procedure Grid_RowCallBackSelected global integer lhGrid ;
+//>                                                             integer liMsg
+//>
+//>
+//> To write the contents of the Grid to a sequential channel use
+//>
+//>    procedure Grid_WriteToFile global integer lhGrid integer liChannel ;
+//>                                                         integer liFormat
+//>
+//> where liFormat may be GD_FORMAT (Nicely formatted into colums), GD_COMMA
+//> (each line containing a row with comma separated items) or GD_TAB (same
+//> as the former, but separated by a TAB character).
+//>
+//>
+//> In order to dump the grid data into an editor use
+//>
+//>    procedure Grid_DoWriteToFile global integer lhGrid
+//>
+//> This will create a file called 'temp.txt' and launch an editor on it
+//> (NotePad, Edit or vi).
+//>
+//>
+//> This is one of my best packages!
+//>
+//> =========================================================================
+//
+//  Update: Wed  07-11-2001 - Changed procedures Grid_RowSelectAll,
+//                            Grid_RowDeselectAll and Grid_RowSelectInvert
+//                            to avoid changing the select_state of a
+//                            shadowed item.
+//          Tue  25-12-2001 - Now also applies form_datatype it compiled
+//                            with VDF
+//          Wed  18-04-2002 - desktop_section problem corrected
+//          Mon  12-08-2002 - Function Grid_ItemRow added
+//          Thu  16-06-2003 - Added optional parameter to Grid_RowCallBackSelected
+//          Thu  01-07-2003 - Added functions Grid_AppendRow, Grid_InsertRow
+//                            and Grid_InsertCurrentRow
+//          Fri  21-10-2005 - Added procedure Grid_SetRowColor and Grid_AddRowToGrid
+//
+//    set Header_Visible_State to DFTRUE|DFFALSE
+//
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Strings.nui  // String manipulation for VDF
+Use Files.nui    // Utilities for handling file related stuff (No User Interface)
+
+desktop_section // This makes sure the object is located on the desktop
+  object oGridMoveSelectedListItems is an cArray
+  end_object
+end_desktop_section
+
+//> Procedure Grid_CopySelectedListItems is meant for List objects (AHA! This
+//> is the only procedure that deals with the VDF list class)
+procedure Grid_CopySelectedListItems global integer lhSourceGrid integer lhTargetGrid integer lbAllItems integer lbDeleteFromSource
+  integer liMax liItem liSelect lhObj liDeleteItem
+  string lsValue
+  move (oGridMoveSelectedListItems(self)) to lhObj
+  get item_count of lhSourceGrid to liMax
+  for liItem from 0 to (liMax-1) // Copy selected items
+    ifnot lbAllItems get select_state of lhSourceGrid item liItem to liSelect
+    if (liSelect or lbAllItems) begin
+      get value of lhSourceGrid item liItem to lsValue
+      send add_item to lhTargetGrid msg_none lsValue
+      set value of lhObj item (item_count(lhObj)) to liItem
+    end
+  loop
+  if lbAllItems send delete_data to lhSourceGrid
+  else begin
+    get item_count of lhObj to liMax
+    for_ex liItem from (liMax-1) down_to 0 // Remove selected items
+      get value of lhObj item liItem to liDeleteItem
+      send delete_item to lhSourceGrid liDeleteItem
+    loop
+  end
+  send delete_data to lhObj
+  send sort_items to lhSourceGrid
+  send sort_items to lhTargetGrid
+  set dynamic_update_state of lhSourceGrid to DFTRUE
+  set dynamic_update_state of lhTargetGrid to DFTRUE
+end_procedure
+
+//> Set Entry_State for all items in a Grid (that are not checkboxes)
+procedure Grid_SetEntryState global integer lhObj integer liState
+  integer liItem liMax
+  get item_count of lhObj to liMax
+  for liItem from 0 to (liMax-1)
+    ifnot (checkbox_item_state(lhObj,liItem)) set entry_state of lhObj item liItem to liState
+  loop
+end_procedure
+
+//> Function Grid_Columns takes the object ID of a Grid or List
+//> object and returns the number of columns in that object.
+function Grid_Columns global integer lhObj returns integer
+  integer liMs
+  get line_size of lhObj to liMs
+  function_return liMs
+end_function
+
+function Grid_CurrentColumn global integer lhObj returns integer
+  integer liColumns liCurrentItem liBase
+  get Grid_Columns lhObj to liColumns
+  get current_item of lhObj to liCurrentItem
+  move ((liCurrentItem/liColumns)*liColumns) to liBase
+  function_return (liCurrentItem-liBase)
+end_function
+
+function Grid_BaseItem global integer lhObj returns integer
+  integer liColumns liCurrentItem
+  get Grid_Columns lhObj to liColumns
+  get current_item of lhObj to liCurrentItem
+  function_return ((liCurrentItem/liColumns)*liColumns)
+end_function
+
+function Grid_ItemColumn global integer lhObj integer liItem returns integer
+  integer liColumns
+  get Grid_Columns lhObj to liColumns
+  if liItem eq -99 get current_item of lhObj to liItem
+  function_return (mod(liItem,liColumns))
+end_function
+
+function Grid_ItemRow global integer lhObj integer liItem returns integer
+  integer liColumns
+  get Grid_Columns lhObj to liColumns
+  if liItem eq -99 get current_item of lhObj to liItem
+  function_return (liItem/liColumns)
+end_function
+
+function Grid_ItemBaseItem global integer lhObj integer liItem returns integer
+  integer liColumns
+  if liItem eq -99 get current_item of lhObj to liItem
+  get Grid_Columns lhObj to liColumns
+  function_return ((liItem/liColumns)*liColumns)
+end_function
+
+//> What is the number of the base item of row liRow
+function Grid_RowBaseItem global integer lhObj integer liRow returns integer
+  integer liColumns
+  get Grid_Columns lhObj to liColumns
+  function_return (liRow*liColumns)
+end_function
+
+//> Return the number of the row that includes the current_item
+function Grid_CurrentRow global integer lhObj returns integer
+  integer liCurrentItem
+  get current_item of lhObj to liCurrentItem
+  function_return (liCurrentItem/Grid_Columns(lhObj))
+end_function
+
+//> Return the number of rows currently in the Grid
+function Grid_RowCount global integer lhObj returns integer
+  integer liColumns
+  get Grid_Columns lhObj to liColumns
+  function_return (item_count(lhObj)/liColumns)
+end_function
+
+procedure Grid_SwapRows global integer lhObj integer liRow1 integer liRow2
+  integer liBase1 liBase2 liItem liMax
+  string lsValue
+  get Grid_RowBaseItem lhObj liRow1 to liBase1
+  get Grid_RowBaseItem lhObj liRow2 to liBase2
+  get Grid_Columns lhObj to liMax
+  for liItem from 0 to (liMax-1)
+    // value
+    get value of lhObj item (liBase1+liItem) to lsValue
+    set value of lhObj item (liBase1+liItem) to (value(lhObj,liBase2+liItem))
+    set value of lhObj item (liBase2+liItem) to lsValue
+    // entry_state
+    get entry_state of lhObj item (liBase1+liItem) to lsValue
+    set entry_state of lhObj item (liBase1+liItem) to (entry_state(lhObj,liBase2+liItem))
+    set entry_state of lhObj item (liBase2+liItem) to lsValue
+    // color
+    get itemcolor of lhObj item (liBase1+liItem) to lsValue
+    set itemcolor of lhObj item (liBase1+liItem) to (itemcolor(lhObj,liBase2+liItem))
+    set itemcolor of lhObj item (liBase2+liItem) to lsValue
+    // checkbox_item_state
+    get checkbox_item_state of lhObj item (liBase1+liItem) to lsValue
+    set checkbox_item_state of lhObj item (liBase1+liItem) to (checkbox_item_state(lhObj,liBase2+liItem))
+    set checkbox_item_state of lhObj item (liBase2+liItem) to lsValue
+    // aux_value
+    get aux_value of lhObj item (liBase1+liItem) to lsValue
+    set aux_value of lhObj item (liBase1+liItem) to (aux_value(lhObj,liBase2+liItem))
+    set aux_value of lhObj item (liBase2+liItem) to lsValue
+    // select_state
+    get select_state of lhObj item (liBase1+liItem) to lsValue
+    set select_state of lhObj item (liBase1+liItem) to (select_state(lhObj,liBase2+liItem))
+    set select_state of lhObj item (liBase2+liItem) to lsValue
+    // What about shadow_state (and item_shadow_state)?
+  loop
+end_procedure
+
+function Grid_AppendRow global integer lhObj returns integer
+  integer liCount liMax liRow
+  set dynamic_update_state of lhObj to DFFALSE
+  get Grid_RowCount lhObj to liRow
+  get Grid_Columns lhObj to liMax
+  decrement liMax
+  for liCount from 0 to liMax
+    send add_item to lhObj MSG_NONE ""
+  loop
+  set dynamic_update_state of lhObj to DFTRUE
+  function_return liRow
+end_function
+
+function Grid_InsertRow global integer lhObj integer liRow returns integer
+  integer liCount liMax liItem
+  get Grid_RowBaseItem lhObj liRow to liItem
+  set dynamic_update_state of lhObj to DFFALSE
+  get Grid_Columns lhObj to liMax
+  decrement liMax
+  for liCount from 0 to liMax
+    send insert_item to lhObj MSG_NONE "" liItem
+  loop
+  set dynamic_update_state of lhObj to DFTRUE
+  function_return liRow
+end_function
+
+function Grid_InsertCurrentRow global integer lhObj returns integer
+  integer liRow
+  get Grid_InsertRow lhObj (Grid_CurrentRow(lhObj)) to liRow
+  function_return liRow
+end_function
+
+procedure Grid_DeleteRow global integer lhObj integer liRow
+  integer liBase liCount liMax
+  if (item_count(lhObj)) begin
+    set dynamic_update_state of lhObj to DFFALSE
+    get Grid_RowBaseItem lhObj liRow to liBase
+    get Grid_Columns lhObj to liMax
+    decrement liMax
+    for liCount from 0 to liMax
+      send delete_item to lhObj liBase
+    loop
+    set dynamic_update_state of lhObj to DFTRUE
+  end
+end_procedure
+procedure Grid_DeleteCurrentRow global integer lhObj
+  send Grid_DeleteRow lhObj (Grid_CurrentRow(lhObj))
+end_procedure
+
+procedure Grid_SwapCurrentRowUp global integer lhObj
+  integer liCurrentRow liCurrentItem
+  get Grid_CurrentRow lhObj to liCurrentRow
+  if liCurrentRow gt 0 begin
+    get Current_Item of lhObj to liCurrentItem
+    send Grid_SwapRows lhObj liCurrentRow (liCurrentRow-1)
+    set Current_Item of lhObj to (liCurrentItem-Grid_Columns(lhObj))
+  end
+end_procedure
+procedure Grid_SwapCurrentRowTop global integer lhObj
+  integer liCurrentRow liCurrentItem
+  repeat
+    get Grid_CurrentRow lhObj to liCurrentRow
+    if liCurrentRow gt 0 send Grid_SwapCurrentRowUp lhObj
+  until (liCurrentRow=0)
+end_procedure
+procedure Grid_SwapCurrentRowDown global integer lhObj
+  integer liCurrentRow liCurrentItem
+  get Grid_CurrentRow lhObj to liCurrentRow
+  if liCurrentRow lt (Grid_RowCount(lhObj)-1) begin
+    get Current_Item of lhObj to liCurrentItem
+    send Grid_SwapRows lhObj liCurrentRow (liCurrentRow+1)
+    set Current_Item of lhObj to (liCurrentItem+Grid_Columns(lhObj))
+  end
+end_procedure
+procedure Grid_SwapCurrentRowBottom global integer lhObj
+  integer liCurrentRow liCurrentItem
+  repeat
+    get Grid_CurrentRow lhObj to liCurrentRow
+    if liCurrentRow lt (Grid_RowCount(lhObj)-1) send Grid_SwapCurrentRowDown lhObj
+  until (liCurrentRow=(Grid_RowCount(lhObj)-1))
+end_procedure
+
+Use fieldinf.pkg     // Global field info objects and abstract field types
+desktop_section
+  object oGridPrepare is a cArray
+    property integer piNextPrevious 1
+    item_property_list
+      item_property string  psHeaderLabel.i
+      item_property integer piAbstractOrFile.i
+      item_property integer piField.i
+    end_item_property_list
+    procedure add_column string lsLabel integer liAbstract integer liField
+      integer liRow
+      get row_count to liRow
+      set psHeaderLabel.i liRow to lsLabel
+      set piAbstractOrFile.i liRow to liAbstract
+      set piField.i liRow to liField
+    end_procedure
+    procedure reset
+      send delete_data
+      set piNextPrevious to 1
+    end_procedure
+    procedure apply_settings integer lhObj integer lbDoColor
+      integer liRow liMax
+      get row_count to liMax
+      set line_width of lhObj to liMax 0
+      decrement liMax
+      for liRow from 0 to liMax
+        set header_label of lhObj liRow to (psHeaderLabel.i(self,liRow))
+        if (piField.i(self,liRow)) eq -1 begin // Then it's an Abstract
+          set form_margin of lhObj liRow to (integer_value.ii(form_margin_array#,0,piAbstractOrFile.i(self,liRow)))
+          set form_datatype of lhObj liRow to (integer_value.ii(form_datatype_array#,0,piAbstractOrFile.i(self,liRow)))
+        end
+        else begin // It's a file.field
+          set form_margin of lhObj liRow to (gl_effective_form_margin(piAbstractOrFile.i(self,liRow),piField.i(self,liRow)))
+          set form_datatype of lhObj liRow to (gl_effective_form_datatype(piAbstractOrFile.i(self,liRow),piField.i(self,liRow)))
+        end
+      loop
+      set select_mode of lhObj to no_select
+      if lbDoColor begin
+        set highlight_row_state of lhObj to DFTRUE
+        set CurrentCellColor     of lhObj to clHighlight
+        set CurrentCellTextColor of lhObj to clHighlightText
+        set CurrentRowColor      of lhObj to clHighlight
+        set CurrentRowTextColor  of lhObj to clHighlightText
+      end
+      if (piNextPrevious(self)) begin
+        move self to liMax // Overload
+        move lhObj to self
+        on_key knext_item send switch
+        on_key kprevious_item send switch_back
+        move liMax to self
+      end
+    end_procedure
+  end_object // oGridPrepare
+  procedure GridPrepare_Reset global
+    send reset to (oGridPrepare(self))
+  end_procedure
+  procedure GridPrepare_AddCheckBoxColumn global string lsHeader
+    string lsTmp
+    if num_arguments gt 0 move lsHeader to lsTmp
+    else move "" to lsTmp
+    send add_column to (oGridPrepare(self)) lsTmp AFT_ASCII3 -1
+  end_procedure
+  procedure GridPrepare_AddColumn global string lsLabel integer liAbstract
+    send add_column to (oGridPrepare(self)) lsLabel liAbstract -1
+  end_procedure
+  procedure GridPrepare_AddColumnFileField global string lsLabel integer liFile integer liField
+    send add_column to (oGridPrepare(self)) lsLabel liFile liField
+  end_procedure
+  procedure GridPrepare_Apply global integer lhObj integer lbDoColor
+    integer liTemp
+    if num_arguments gt 1 move lbDoColor to liTemp
+    else move 1 to liTemp
+    send apply_settings to (oGridPrepare(self)) lhObj liTemp
+    send GridPrepare_Reset
+  end_procedure
+end_desktop_section
+
+desktop_section
+  // Here is a temporary array used for storing different values while
+  // a grid is being sorted.
+  object oSortGrid_Data is a cArray
+    property integer piCurrentGridID 0 // Not used
+    property integer piCurrentRow    0
+    property integer piCurrentColumn 0
+    object oSortedData is a cArray
+    end_object
+    object oAuxValues is a cArray
+    end_object
+    object oEntryStates is a cArray
+    end_object
+    object oSelectStates is a cArray
+    end_object
+    object oItemColors is a cArray
+    end_object
+    object oCheckboxItemStates is a cArray
+    end_object
+    // Get data out of the grid to this structure
+    procedure reset
+      send delete_data
+      send delete_data to (oAuxValues(self))
+      send delete_data to (oSortedData(self))
+      send delete_data to (oEntryStates(self))
+      send delete_data to (oSelectStates(self))
+      send delete_data to (oCheckboxItemStates(self))
+    //send delete_data to (oMessages(self))
+      send delete_data to (oItemColors(self))
+      set piCurrentGridID to 0
+      set piCurrentRow to 0
+      set piCurrentColumn to 0
+    end_procedure
+    // Get data from grid
+    procedure load_grid_data integer lhGrid
+      integer liMax liItem lhAuxValues lhEntryStates liCurrentItem liColumns
+      integer lhSelectStates lhCheckboxItemStates lhItemColors
+      move (oAuxValues(self)) to lhAuxValues
+      move (oEntryStates(self)) to lhEntryStates
+      move (oSelectStates(self)) to lhSelectStates
+      move (oCheckboxItemStates(self)) to lhCheckboxItemStates
+      move (oItemColors(self)) to lhItemColors
+      send delete_data
+      send delete_data to lhAuxValues
+      send delete_data to lhEntryStates
+      send delete_data to lhSelectStates
+      send delete_data to lhCheckboxItemStates
+      send delete_data to lhItemColors
+      set piCurrentGridID to lhGrid
+      get item_count of lhGrid to liMax
+      for liItem from 0 to (liMax-1)
+        set value item liItem to (value(lhGrid,liItem))
+        set value of lhAuxValues item liItem to (aux_value(lhGrid,liItem))
+        set value of lhEntryStates item liItem to (entry_state(lhGrid,liItem))
+        set value of lhSelectStates item liItem to (select_state(lhGrid,liItem))
+        set value of lhCheckboxItemStates item liItem to (checkbox_item_state(lhGrid,liItem))
+        set value of lhItemColors item liItem to (ItemColor(lhGrid,liItem))
+      loop
+      get current_item of lhGrid to liCurrentItem
+      get Grid_Columns lhGrid to liColumns
+      set piCurrentRow    to (liCurrentItem/liColumns)
+      set piCurrentColumn to (liCurrentItem-(liColumns*piCurrentRow(self)))
+    end_procedure
+
+    register_function iSpecialSortValueOnColumn.i integer liColumn returns integer
+    register_function sSortValue.ii integer liColumn integer liItem returns string
+    procedure sort_data integer lhGrid integer liColumn integer liDir
+      integer lhSortArr liRow liMax liColumns liItem liState lbCustom
+      string lsValue
+      move (oSortedData(self)) to lhSortArr
+      send delete_data to lhSortArr
+      get Grid_Columns lhGrid to liColumns
+      get item_count of lhGrid to liMax
+      get delegation_mode of lhGrid to liState
+      set delegation_mode of lhGrid to NO_DELEGATE_OR_ERROR
+      get iSpecialSortValueOnColumn.i of lhGrid liColumn to lbCustom
+      set delegation_mode of lhGrid to liState
+      move (liMax/liColumns) to liMax // Number of rows
+      for liRow from 0 to (liMax-1)
+        move (liRow*liColumns+liColumn) to liItem
+        if lbCustom get sSortValue.ii of lhGrid liColumn liItem to lsValue
+        else get value of lhGrid item liItem to lsValue
+        move (lsValue+IntToStrR(liRow,6)) to lsValue
+        set value of lhSortArr item liRow to lsValue
+      loop
+      send sort_items to lhSortArr liDir //ASCENDING
+    end_procedure
+    procedure fill_grid integer lhGrid
+      integer lhSortArr liRow liMax liItem liColumns liItmMin liItmMax liCurrentRow
+      integer grid_liRow
+      integer lhEntryStates lhAuxValues grid_liItem
+      integer lhSelectStates lhCheckboxItemStates lhItemColors
+      move (oSortedData(self)) to lhSortArr
+      move (oAuxValues(self)) to lhAuxValues
+      move (oEntryStates(self)) to lhEntryStates
+      move (oSelectStates(self)) to lhSelectStates
+      move (oCheckboxItemStates(self)) to lhCheckboxItemStates
+      move (oItemColors(self)) to lhItemColors
+      send delete_data to lhGrid
+      get Grid_Columns lhGrid to liColumns
+      get item_count of lhSortArr to liMax
+      get piCurrentRow to liCurrentRow
+      move 0 to grid_liItem
+      for liRow from 0 to (liMax-1)
+        move (right(value(lhSortArr,liRow),6)) to grid_liRow
+        if grid_liRow eq liCurrentRow set piCurrentRow to liRow
+        move (grid_liRow*liColumns) to liItmMin
+        move (liItmMin+liColumns-1) to liItmMax
+        for liItem from liItmMin to liItmMax
+          send add_item to lhGrid msg_none (value(self,liItem))
+          set checkbox_item_state of lhGrid item grid_liItem to (value(lhCheckboxItemStates,liItem))
+          set select_state        of lhGrid item grid_liItem to (value(lhSelectStates,liItem))
+          set aux_value           of lhGrid item grid_liItem to (value(lhAuxValues,liItem))
+          set entry_state         of lhGrid item grid_liItem to (value(lhEntryStates,liItem))
+          set itemcolor          of lhGrid item grid_liItem to (value(lhItemColors,liItem))
+          increment grid_liItem
+        loop
+      loop
+    end_procedure
+    procedure Sort_Grid integer lhGrid integer liColumn integer liDir
+      integer liCurrentRow liCurrentColumn liColumns
+      send cursor_wait to (cursor_control(self))
+      set dynamic_update_state of lhGrid to DFFALSE
+      send reset
+      send load_grid_data lhGrid
+      send sort_data lhGrid liColumn liDir
+      send fill_grid lhGrid
+      set dynamic_update_state of lhGrid to DFTRUE
+      get piCurrentRow to liCurrentRow
+      get piCurrentColumn to liCurrentColumn
+      get Grid_Columns lhGrid to liColumns
+      set current_item of lhGrid to (liColumns*liCurrentRow+liCurrentColumn)
+      send reset // Clean it up
+      send cursor_ready to (cursor_control(self))
+    end_procedure
+  end_object // oSortGrid_Data
+end_desktop_section
+
+//> Sort grid ascending by column liColumn. Note that unless special
+//> sort value functions are set up all columns are sorted by their
+//> ASCII value (not what the user expects if the column contains numeric
+//> or date data).
+procedure Grid_SortByColumn global integer lhGrid integer liColumn
+  send Sort_Grid to (oSortGrid_Data(self)) lhGrid liColumn ASCENDING
+end_procedure
+
+//> Sort grid descending by column liColumn. Note that unless special
+//> sort value functions are set up all columns are sorted by their
+//> ASCII value (not what the user expects if the column contains numeric
+//> or date data).
+procedure Grid_SortByColumn_Descending global integer lhGrid integer liColumn
+  send Sort_Grid to (oSortGrid_Data(self)) lhGrid liColumn DESCENDING
+end_procedure
+
+procedure Grid_AddCheckBoxItem global integer lhGrid integer liState
+  integer liItm
+  get item_count of lhGrid to liItm
+  send add_item to lhGrid msg_none ""
+  set checkbox_item_state of lhGrid item liItm to DFTRUE
+  set select_state of lhGrid item liItm to liState
+end_procedure
+procedure Grid_RowMakeSelectable global integer lhGrid
+end_procedure
+procedure Grid_RowSelectAll global integer lhGrid
+  integer liRow liMax liBase
+  get Grid_RowCount lhGrid to liMax
+  decrement liMax
+  for liRow from 0 to liMax
+    get Grid_RowBaseItem lhGrid liRow to liBase
+    ifnot (item_shadow_state(lhGrid,liBase)) set select_state of lhGrid item liBase to DFTRUE
+  loop
+end_procedure
+procedure Grid_RowDeselectAll global integer lhGrid
+  integer liRow liMax liBase
+  get Grid_RowCount lhGrid to liMax
+  decrement liMax
+  for liRow from 0 to liMax
+    get Grid_RowBaseItem lhGrid liRow to liBase
+    ifnot (item_shadow_state(lhGrid,liBase)) set select_state of lhGrid item liBase to DFFALSE
+  loop
+end_procedure
+procedure Grid_RowSelectInvert global integer lhGrid
+  integer liRow liMax liSelect liBase
+  get Grid_RowCount lhGrid to liMax
+  decrement liMax
+  for liRow from 0 to liMax
+    get Grid_RowBaseItem lhGrid liRow to liBase
+    get select_state of lhGrid item liBase to liSelect
+    ifnot (item_shadow_state(lhGrid,liBase)) set select_state of lhGrid item liBase to (not(liSelect))
+  loop
+end_procedure
+procedure Grid_RowSelectCostum global integer lhGrid integer liGet
+  integer liRow liMax liSelect liBase
+  get Grid_RowCount lhGrid to liMax
+  decrement liMax
+  for liRow from 0 to liMax
+    move (Grid_RowBaseItem(lhGrid,liRow)) to liBase
+    get liGet of lhGrid liRow liBase to liSelect
+    set select_state of lhGrid item liBase to liSelect
+  loop
+end_procedure
+procedure Grid_RowCallBackSelected global integer lhGrid integer liMsg integer lhObj
+  integer liRow liMax liBase liSelect lhTmpObj
+  if (num_arguments>2) move lhObj to lhTmpObj
+  else move lhGrid to lhTmpObj
+  get Grid_RowCount lhGrid to liMax
+  decrement liMax
+  for liRow from 0 to liMax
+    move (Grid_RowBaseItem(lhGrid,liRow)) to liBase
+    get select_state of lhGrid item liBase to liSelect
+    if liSelect send liMsg to lhTmpObj liRow liBase
+  loop
+end_procedure
+
+procedure Grid_RowCallBackAll global integer lhGrid integer liMsg integer lhObj
+  integer liRow liMax liBase lhTmpObj
+  if (num_arguments>2) move lhObj to lhTmpObj
+  else move lhGrid to lhTmpObj
+  get Grid_RowCount lhGrid to liMax
+  decrement liMax
+  for liRow from 0 to liMax
+    move (Grid_RowBaseItem(lhGrid,liRow)) to liBase
+    send liMsg to lhTmpObj liRow liBase
+  loop
+end_procedure
+
+//> Returns number of selected rows
+function Grid_SelectedRows global integer lhGrid returns integer
+  integer liRow liMax liBase liSelect liRval
+  move 0 to liRval
+  get Grid_RowCount lhGrid to liMax
+  decrement liMax
+  for liRow from 0 to liMax
+    move (Grid_RowBaseItem(lhGrid,liRow)) to liBase
+    get select_state of lhGrid item liBase to liSelect
+    if liSelect increment liRval
+  loop
+  function_return liRval
+end_function
+
+procedure Set Grid_CurrentRow global integer lhGrid integer liRow
+  integer liBase
+  get Grid_RowBaseItem lhGrid liRow to liBase
+  set current_item to liBase
+end_procedure
+
+enumeration_list
+  define GD_FORMAT
+  define GD_COMMA
+  define GD_TAB
+end_enumeration_list
+
+desktop_section
+  object Grid_WriteToFileColumnWidthArray is a cArray
+    property integer phCurrentGrid ""
+    item_property_list
+      item_property integer piWidth.i
+      item_property integer piRightAlign.i
+    end_item_property_list
+    procedure DoReadGrid integer lhGrid
+      integer liRows liColumns liRow liColumn liWidth liDecSep
+      string lsValue
+      get_attribute DF_DECIMAL_SEPARATOR to liDecSep
+      send delete_data
+      get Grid_Columns lhGrid to liColumns
+      get Grid_RowCount lhGrid to liRows
+      for liColumn from 0 to (liColumns-1)
+        set piRightAlign.i liColumn to DFTRUE
+      loop
+      for liRow from 0 to (liRows-1)
+        for liColumn from 0 to (liColumns-1)
+          if (checkbox_item_state(lhGrid,liRow*liColumns+liColumn)) move "XXX" to lsValue
+          else get value of lhGrid item (liRow*liColumns+liColumn) to lsValue
+          move (rtrim(lsValue)) to lsValue
+          move (length(lsValue)) to liWidth
+          if (liWidth>integer(piWidth.i(self,liColumn))) set piWidth.i liColumn to liWidth
+          ifnot (StringIsNumber(lsValue,liDecSep)) set piRightAlign.i liColumn to DFFALSE
+        loop
+      loop
+      set phCurrentGrid to liWidth
+    end_procedure
+  end_object
+end_desktop_section
+
+function Grid_DataWidth global integer lhGrid integer liColumn returns integer
+  function_return (piWidth.i(Grid_WriteToFileColumnWidthArray(self),liColumn))
+end_function
+
+procedure Grid_DoReadDataWidth global integer lhGrid
+  send DoReadGrid to (Grid_WriteToFileColumnWidthArray(self)) lhGrid
+end_procedure
+
+function Grid_WriteToFile_Help global integer liFormat string lsValue integer liWidth integer liRightAlign returns string
+  if (liFormat=GD_FORMAT) begin
+    if (length(lsValue)>liWidth) move (left(lsValue,liWidth)) to lsValue
+    if liRightAlign move (RightShift(lsValue,liWidth)) to lsValue
+    else move (pad(lsValue,liWidth)) to lsValue
+  end
+  if (liFormat=GD_COMMA) begin
+    if "," in lsValue begin
+      move (replaces('"',lsValue,"'")) to lsValue
+      move ('"'+lsValue+'"') to lsValue
+    end
+  end
+  function_return lsValue
+end_function
+
+// This procedure will write the entire contents of the Grid passed as
+// object handle object to a
+// sequential
+procedure Grid_WriteToFile global integer lhGrid integer liChannel integer liFormat
+  integer liRows liColumns liRow liColumn liWidth liRightAlign
+  string lsValue
+  get Grid_Columns lhGrid to liColumns
+  get Grid_RowCount lhGrid to liRows
+  send Grid_DoReadDataWidth lhGrid
+  for liColumn from 0 to (liColumns-1)
+    get header_label of lhGrid liColumn to lsValue
+    get Grid_DataWidth lhGrid liColumn to liWidth
+    get piRightAlign.i of (Grid_WriteToFileColumnWidthArray(self)) liColumn to liRightAlign
+    get Grid_WriteToFile_Help liFormat lsValue liWidth liRightAlign to lsValue
+    write channel liChannel (ToAnsi(lsValue))
+    if liColumn ne (liColumns-1) begin
+      if (liFormat=GD_FORMAT) write " "
+      if (liFormat=GD_COMMA ) write ","
+      if (liFormat=GD_TAB   ) write (character(8))
+    end
+  loop
+  writeln channel liChannel ""
+  for liRow from 0 to (liRows-1)
+    for liColumn from 0 to (liColumns-1)
+      if (checkbox_item_state(lhGrid,liRow*liColumns+liColumn)) get select_state of lhGrid item (liRow*liColumns+liColumn) to lsValue
+      else get value of lhGrid item (liRow*liColumns+liColumn) to lsValue
+      get Grid_DataWidth lhGrid liColumn to liWidth
+      get piRightAlign.i of (Grid_WriteToFileColumnWidthArray(self)) liColumn to liRightAlign
+      get Grid_WriteToFile_Help liFormat lsValue liWidth liRightAlign to lsValue
+      write channel liChannel (ToAnsi(lsValue))
+      if liColumn ne (liColumns-1) begin
+        if (liFormat=GD_FORMAT) write " "
+        if (liFormat=GD_COMMA ) write ","
+        if (liFormat=GD_TAB   ) write (character(8))
+      end
+    loop
+    writeln channel liChannel ""
+  loop
+end_procedure
+
+// The Grid_StateValue was developed in order to be able to check if a Grid (not a dbGrid) had
+// been changed by the user (by comparing the Grid
+function Grid_StateValue global integer lhGrid returns string
+  integer liColumns liRows liColumn liRow
+  string lsState lsValue
+  get Grid_Columns lhGrid to liColumns
+  get Grid_RowCount lhGrid to liRows
+  for liRow from 0 to (liRows-1)
+    for liColumn from 0 to (liColumns-1)
+
+      if (checkbox_item_state(lhGrid,liRow*liColumns+liColumn)) get select_state of lhGrid item (liRow*liColumns+liColumn) to lsValue
+      else get value of lhGrid item (liRow*liColumns+liColumn) to lsValue
+      Move (lsState+"|"+lsValue) to lsState
+    loop
+  loop
+  function_return lsState
+end_function
+
+// procedure row_change integer liRowFrom integer liRowTo
+// end_procedure
+// procedure item_change integer liItm1 integer liItm2 returns integer
+//   integer liRval liColumns
+//   get Grid_Columns self to liColumns
+//   forward get msg_item_change liItm1 liItm2 to liRval
+//   if (liItm1/liColumns) ne (liItm2/liColumns) send row_change (liItm1/liColumns) (liItm2/liColumns)
+//   procedure_return liRval
+// end_procedure
+
+// procedure select_toggling integer liItem integer lbState
+//   integer liCurrentItem liColumns
+//   get Grid_Columns self to liColumns
+//   get current_item to liCurrentItem
+//   move ((liCurrentItem/liColumns)*liColumns) to liCurrentItem // Redirect to first column
+//   forward send select_toggling liCurrentItem lbState
+// end_procedure
+
+procedure Grid_DoWriteToFile global integer lhGrid
+  integer liChannel
+  string lsTempFileName
+  get SEQ_FirstDirInDfPath to lsTempFileName
+  get SEQ_ComposeAbsoluteFileName lsTempFileName "temp.txt" to lsTempFileName
+
+  get SEQ_DirectOutput lsTempFileName to liChannel
+  if liChannel ge 0 begin
+    send Grid_WriteToFile lhGrid liChannel GD_FORMAT
+    send SEQ_CloseOutput liChannel
+    runprogram BACKGROUND ("notepad "+lsTempFileName)
+  end
+end_procedure
+
+procedure Grid_SetRowColor global integer lhGrid integer liRow integer liColor
+  integer liBase liMax liItem
+  get Grid_RowBaseItem lhGrid liRow to liBase
+  get Grid_Columns lhGrid to liMax
+  for liItem from 0 to (liMax-1)
+    set itemcolor of lhGrid item (liBase+liItem) to liColor
+  loop
+end_procedure
+
+procedure Grid_AddRowToGrid global integer lhGrid integer liRow integer lhTargetGrid
+  integer liBase liMax liItem liTargetBase
+  string lsValue
+  get Grid_RowBaseItem lhGrid liRow to liBase
+  get Grid_Columns lhGrid to liMax
+  get item_count of lhTargetGrid to liTargetBase
+  for liItem from 0 to (liMax-1)
+    get value of lhGrid item (liBase+liItem) to lsValue
+    send add_item to lhTargetGrid MSG_NONE lsValue
+    set entry_state         of lhTargetGrid item (liTargetBase+liItem) to (entry_state(lhGrid,liBase+liItem))
+    set checkbox_item_state of lhTargetGrid item (liTargetBase+liItem) to (checkbox_item_state(lhGrid,liBase+liItem))
+    set aux_value           of lhTargetGrid item (liTargetBase+liItem) to (aux_value(lhGrid,liBase+liItem))
+    set select_state        of lhTargetGrid item (liTargetBase+liItem) to (select_state(lhGrid,liBase+liItem))
+    set itemcolor           of lhTargetGrid item (liTargetBase+liItem) to (itemcolor(lhGrid,liBase+liItem))
+  loop
+end_procedure
+

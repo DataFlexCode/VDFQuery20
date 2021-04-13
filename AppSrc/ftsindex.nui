@@ -1,0 +1,575 @@
+// Use FTSIndex.nui  // cFTS_System and cFTS_Indexer classes
+
+Use FTSWrdSp.nui // cFTS_WordSplitter class (to be used internally by cFreeText_Indexer and cFTS_Searcher classes)
+
+Use Dates.nui    // Date routines (No User Interface)
+Use LogFile.nui  // Class for handling a log file (No User Interface)
+Use ItemProp.nui // ITEM_PROPERTY command for use within arrays
+Use Language     // Set default languange if not set by compiler command line
+
+Use FTSData.nui // cFTS_TableAccess class.
+
+register_object oResultAttacher
+
+number  ft_searcher@stop_time
+integer ft_searcher@max_time
+
+enumeration_list
+  define FTIS_NO_ERROR          // No error
+  define FTIS_MISSING_VALUE     // No search value was specified
+  define FTIS_NO_POSITIVE       // No positive search values
+  define FTIS_TOO_MANY          // Too many hits on least probable segment
+  define FTIS_RESULTSETNOTFOUND // Result set could not be found (Sequential file not found)
+  define FTIS_SEARCH_TIMEOUT    // The search broke the time limit
+  define FTIS_NO_ITEMS_FOUND    //
+  define FTIS_MAX               // This is just a marker that may ne used to offset new user errors
+end_enumeration_list
+
+#IF LNG_DEFAULT=LNG_DANISH
+  function FT_ErrorText global integer liError returns string
+    if (liError=FTIS_NO_ERROR)          function_return "Ingen fejl"
+    if (liError=FTIS_MISSING_VALUE)     function_return "S›gev‘rdi ikke specificeret"
+    if (liError=FTIS_NO_POSITIVE)       function_return "Manglende positiv s›gev‘rdi"
+    if (liError=FTIS_TOO_MANY)          function_return "For mange hits p† mindst sandsynlige segment"
+    if (liError=FTIS_RESULTSETNOTFOUND) function_return "Resultats‘ttet kan ikke findes"
+    if (liError=FTIS_NO_ITEMS_FOUND)    function_return "S›gningen gav ikke noget resultat"
+    if (liError=FTIS_SEARCH_TIMEOUT)    function_return ("Maksimal s›getid overskredet ("+string(ft_searcher@max_time)+" sekunder)")
+    function_return "Ukendt FTS fejl"
+  end_function
+#ELSE
+  function FT_ErrorText global integer liError returns string
+    if (liError=FTIS_NO_ERROR)          function_return "No error"
+    if (liError=FTIS_MISSING_VALUE)     function_return "No search value was specified"
+    if (liError=FTIS_NO_POSITIVE)       function_return "No positive search values"
+    if (liError=FTIS_TOO_MANY)          function_return "Too many hits on least probable segment"
+    if (liError=FTIS_RESULTSETNOTFOUND) function_return "Result set could not be found"
+    if (liError=FTIS_NO_ITEMS_FOUND)    function_return "The search failed to find anything"
+    if (liError=FTIS_SEARCH_TIMEOUT)    function_return ("Max search time exceeded ("+string(ft_searcher@max_time)+" seconds)")
+    function_return "Unknown FTS error"
+  end_function
+#ENDIF
+
+desktop_section
+  object oFTS_SystemList is a cArray
+    item_property_list
+      item_property integer phFTS_System.i
+    end_item_property_list
+    procedure add_fts_system integer lhFTS
+      integer liRow
+      get row_count to liRow
+      set phFTS_System.i  liRow to lhFTS
+    end_procedure
+  end_object
+end_desktop_section
+
+class cFTS_System is a cArray
+  procedure construct_object integer liImg
+    forward send construct_object liImg
+
+    property integer phWordsplitterObject   // Splits articles into words
+    property integer phTableAccessObject    // Takes care of opening the house keeping tables
+    property integer phIndexerObject        // Stores the articles as prepared by the word splitter object
+    property integer phSearcherObject       // Searches the DB according to a search string
+    property integer phResultBrowserObject  // Eases the pain of browsing through the result set
+
+    property integer phAllowFastViewToRebuild true
+
+    // --- For test purposes ---
+    property integer piMainFile
+    object oIndexedFields is a cArray
+    end_object
+    // -------------------------
+  end_procedure
+
+  procedure end_construct_object
+    integer lhSelf
+    move self to lhSelf
+    forward send end_construct_object
+    send add_fts_system of oFTS_SystemList lhSelf
+  end_procedure
+
+  procedure DoCreateSearch integer liUser string lsSearchString date ldFrom date ldTo integer liOrderby
+    send DoCreateSearch of (phSearcherObject(self)) liUser lsSearchString ldFrom ldTo liOrderby
+  end_procedure
+
+  procedure Delete_Article
+    integer liFile liRecnum
+    string lsError lsName
+    get piMainFile to liFile
+    if liFile begin
+      get_field_value liFile 0 to liRecnum
+      if liRecnum send DoDeleteArticle of (phIndexerObject(self))
+    end
+    else begin
+      move "Procedure Delete_Article has not been specified (object: #)" to lsError
+      get name of self to lsName
+      move (replace("#",lsError,lsName)) to lsError
+      error 401 lsError
+    end
+  end_procedure
+  procedure Save_Article
+    integer liFile liField lhArray liItem liMax liRecnum
+    string lsFieldValue lsArticleText
+    string lsError lsName
+    get piMainFile to liFile
+    if liFile begin
+      get_field_value liFile 0 to liRecnum
+      if liRecnum begin
+        send Delete_Article // First remove the existing
+        move (oIndexedFields(self)) to lhArray
+        get item_count of lhArray to liMax
+        decrement liMax
+        for liItem from 0 to liMax
+          get value of lhArray liItem to liField
+          get_field_value liFile liField to lsFieldValue
+          if (lsFieldValue<>"") begin
+            if (liItem>0) move (lsArticleText+character(10)) to lsArticleText
+            move (lsArticleText+lsFieldValue) to lsArticleText
+          end
+        loop
+        if liRecnum send DoAddArticle of (phIndexerObject(self)) liRecnum lsArticleText 0 "" 0
+      end
+    end
+    else begin
+      move "Procedure Save_Article has not been specified (object: #)" to lsError
+      get name of self to lsName
+      move (replace("#",lsError,lsName)) to lsError
+      error 402 lsError
+    end
+  end_procedure
+  procedure DoRebuildFtsIndex
+    integer lbOK lbFound liFile lhIndexer
+    string lsError lsName
+    get piMainFile to liFile
+    if liFile begin
+      get DoZerofileAllTables of (phTableAccessObject(self)) to lbOK // Zero file the lot (single user only!)
+      if lbOK begin
+        get phIndexerObject to lhIndexer
+        send DoDisableIndices of lhIndexer // Turn of indices on phrases table
+        send DoBeginUpdate of lhIndexer // Can't remember what
+
+        clear liFile
+        repeat
+          vfind liFile 0 gt
+          move (found) to lbFound
+          if lbFound begin
+            send save_article
+            //showln Song.id
+          end
+        until (not(lbFound))
+
+        send DoEndUpdate of lhIndexer // This one does nothing
+        showln "Reindexing..."
+        send DoEnableIndices of lhIndexer // And this one turns the indices back on
+        showln "Done!"
+      end
+    end
+    else begin
+      move "Procedure DoRebuildFtsIndex has not been specified (object: #)" to lsError
+      get name of self to lsName
+      move (replace("#",lsError,lsName)) to lsError
+      error 403 lsError
+    end
+  end_procedure
+//procedure DoDisplayStatistics
+//  integer lhLogFile liWords
+//  number lnStart lnStop
+//  move (oLogFile(self)) to lhLogFile
+//  send AppendOutput to lhLogFile
+//  send DoWriteTimeEntry to lhLogFile
+//  get !$.pnStopWatchStop to lnStop
+//  get !$.pnStopWatchStart to lnStart
+//  get !$.piWordUpdates to liWords
+//  send WriteLn to lhLogFile ("Execution time: "+TS_ConvertToString(lnStop-lnStart))
+//  send WriteLn to lhLogFile ("Updates to word table: "+string(liWords))
+//  send WriteLn to lhLogFile ("Words per second: "+string(liWords/(lnStop-lnStart)))
+//  send CloseOutput to lhLogFile
+//end_procedure
+end_class // cFTS_System
+
+class cFTS_ResultBrowser is a cArray
+  procedure construct_object
+    forward send construct_object
+    property integer piError
+    property string  psError
+    property integer piResultCount
+    property string  psSearchTime
+    property integer piMaxPage  // This one is set by the bReadResultPage function to indicate the maximum number of pages
+
+    property integer piArticlesPerPage 10
+    property string  psResultsXtoYofZ  ""
+  end_procedure
+
+  procedure reset
+    send delete_data
+    set piError          to 0
+    set psError          to ""
+    set piResultCount    to 0
+    set psResultsXtoYofZ to ""
+    set psSearchTime     to ""
+    set piMaxPage        to 0
+  end_procedure
+
+  procedure UpdateSearchTime
+    integer liFile liExecTime
+    get piFile.i of (phTableAccessObject(self)) FTSTABLE_SEARCH to liFile
+    get_field_value liFile 7 to liExecTime // EXECUTION_TIME
+#IF LNG_DEFAULT=LNG_DANISH
+    set psSearchTime to (NumToStr(liExecTime/1000.0,3)+" sekunder")
+#ELSE
+    set psSearchTime to (NumToStr(liExecTime/1000.0,3)+" seconds")
+#ENDIF
+  end_procedure
+
+  // This function should be called with an active FTSearch records
+  function bReadResultPage integer liPage returns integer // First page is page 0
+     integer liChannel liResultCount liError liLine liArticlesPerPage liSkipCount liArticle
+     integer lbSeqEof lhResultAttacher
+     string lsError lsValue lsFileName
+     send reset
+
+     move (oResultAttacher(phSearcherObject(self))) to lhResultAttacher
+
+     get CurrentRecordAbsoluteFileName of lhResultAttacher to lsFileName
+     get SEQ_DirectInput lsFileName to liChannel
+     if (liChannel>-1) begin
+       readln channel liChannel liError
+       set piError to liError
+       if liError begin
+         readln lsError
+         set psError to lsError
+       end
+       else begin
+         readln liResultCount
+         set piResultCount to liResultCount
+
+         get piArticlesPerPage to liArticlesPerPage
+
+         move (liPage*liArticlesPerPage) to liSkipCount
+         for liLine from 1 to liSkipCount
+           readln liArticle
+         loop
+
+         move 0 to liLine
+         repeat
+           readln liArticle
+           move (seqeof) to lbSeqEof
+           ifnot lbSeqEof begin
+             set value item liLine to liArticle
+             increment liLine
+           end
+         until (lbSeqEof<>0 or liLine>=liArticlesPerPage)
+
+#IF LNG_DEFAULT=LNG_DANISH
+         move "Resultat # til # ud af #" to lsValue
+#ELSE
+         move "Results # to # out of #" to lsValue
+#ENDIF
+         move (replace("#",lsValue,liPage*liArticlesPerPage+1)) to lsValue
+         move (replace("#",lsValue,liPage+1*liArticlesPerPage min liResultCount)) to lsValue
+         move (replace("#",lsValue,liResultCount)) to lsValue
+         set psResultsXtoYofZ to lsValue
+         send UpdateSearchTime
+         set piMaxPage to (liResultCount+liArticlesPerPage-1/liArticlesPerPage)
+       end
+       send SEQ_CloseInput liChannel
+       function_return (not(liError))
+     end
+     set piError to FTIS_RESULTSETNOTFOUND
+     set psError to (FT_ErrorText(FTIS_RESULTSETNOTFOUND))
+     function_return 0
+  end_function
+
+  // This function should be called with an active FTSearch records
+  function bReadResultAll returns integer
+     integer liChannel liResultCount liError liLine liArticle
+     integer lhResultAttacher
+     string lsError lsValue lsFileName
+     send reset
+
+     move (oResultAttacher(phSearcherObject(self))) to lhResultAttacher
+
+     get CurrentRecordAbsoluteFileName of lhResultAttacher to lsFileName
+
+     get SEQ_DirectInput lsFileName to liChannel
+     if (liChannel>-1) begin
+       readln channel liChannel liError
+       set piError to liError
+       if liError begin
+         readln lsError
+         set psError to lsError
+       end
+       else begin
+         readln liResultCount
+         set piResultCount to liResultCount
+         decrement liResultCount
+         for liLine from 0 to liResultCount
+           readln liArticle
+           ifnot (SeqEof) set value item liLine to liArticle
+         loop
+
+         move "# articles in set" to lsValue
+         move (replace("#",lsValue,liResultCount+1)) to lsValue
+         set psResultsXtoYofZ to lsValue
+         send UpdateSearchTime
+       end
+       send SEQ_CloseInput liChannel
+       function_return (not(liError))
+     end
+     set piError to FTIS_RESULTSETNOTFOUND
+     set psError to (FT_ErrorText(FTIS_RESULTSETNOTFOUND))
+     function_return 0
+  end_function
+  procedure end_construct_object
+    integer lhSelf
+    forward send end_construct_object
+    move self to lhSelf
+    set phResultBrowserObject to lhSelf // This is resolved in the encapsulating cFTS_System object
+  end_procedure
+end_class // cFTS_ResultBrowser
+
+
+class cFTS_Indexer is a cArray
+  // This class frequently accesses a property of name phTableAccessObject. This
+  // is not defined in this class but should be defined in the encapsulating
+  // object (a cFTS_System object). The same is true for the phWordsplitterObject
+  // property.
+  procedure construct_object integer liImg
+    forward send construct_object liImg
+    property number  pnNextAvailableWordId private 0
+    property integer piIndexEnableState    private DFTRUE
+    property integer pbUpdating            private DFFALSE
+    object oLogFile is a cLogFile
+      set psFileName to "FreeText.log"
+      set psPurpose  to "Free text indexer efficiency"
+    end_object
+  end_procedure
+
+  procedure DoDisableIndices
+    integer liFile lhFile lbEmbedded
+    string lsDriver
+    set !$.piIndexEnableState to DFFALSE
+
+    get piFile.i of (phTableAccessObject(self)) FTSTABLE_ARTPHR to lhFile
+    get piFile.i of (phTableAccessObject(self)) FTSTABLE_ARTPHR to liFile
+
+    // to make DBMS's other than the embedded happy (Dan Walsh)
+    get_attribute DF_FILE_DRIVER of liFile to lsDriver
+    move (uppercase(lsDriver) = "DATAFLEX") to lbEmbedded
+    if (not(lbEmbedded)) procedure_return
+
+    structure_start lhFile
+      set_attribute DF_INDEX_TYPE of liFile 1 to DF_INDEX_TYPE_BATCH
+      set_attribute DF_INDEX_TYPE of liFile 2 to DF_INDEX_TYPE_BATCH
+    structure_end lhFile DF_STRUCTEND_OPT_NONE "."
+    close liFile
+    open liFile index.2
+  end_procedure
+
+  procedure DoMaxSortBuffer
+    integer liGrb iNull
+    string sNull
+    call_driver iNull "DATAFLEX" function FLEX_SET_MAX_SORT_BUFFER callback iNull passing sNull iNull 65536 result liGrb
+  end_procedure
+
+  procedure DoEnableIndices
+    integer liFile lhFile lbEmbedded
+    string lsDriver
+
+    get piFile.i of (phTableAccessObject(self)) FTSTABLE_ARTPHR to lhFile
+    get piFile.i of (phTableAccessObject(self)) FTSTABLE_ARTPHR to liFile
+
+    send DoMaxSortBuffer
+    set !$.piIndexEnableState to DFTRUE
+
+    // to make DBMS's other than the embedded happy
+    get_attribute DF_FILE_DRIVER of liFile to lsDriver
+    move (uppercase(lsDriver) = "DATAFLEX") to lbEmbedded
+    if (not(lbEmbedded)) procedure_return
+
+    structure_start lhFile
+      set_attribute DF_INDEX_TYPE of liFile 1 to DF_INDEX_TYPE_ONLINE
+      set_attribute DF_INDEX_TYPE of liFile 2 to DF_INDEX_TYPE_ONLINE
+    structure_end lhFile DF_STRUCTEND_OPT_NONE "."
+    close liFile
+    open liFile index.2
+  end_procedure
+
+  // Use these two messages to begin/end an update of the search
+  // database
+  procedure DoBeginUpdate
+    integer liWord liFileWord lbFound
+    number lnValue
+    set !$.pbUpdating to true
+    get piFile.i of (phTableAccessObject(self)) FTSTABLE_WORD to liFileWord
+
+    clear liFileWord                                       // clear FTWORD
+    set_field_value liFileWord 1 to 999999                 // move 999999 to FTWORD.WORD_ID
+    vfind liFileWord 1 LT                                  // find lt FTWORD by index.1 // Find last
+    move (found) to lbFound
+    get_field_value liFileWord 1 to lnValue                //
+    if lbFound set !$.pnNextAvailableWordId to (lnValue+1) // if (found) set !$.pnNextAvailableWordId to (FTWORD.WORD_ID+1)
+    else set !$.pnNextAvailableWordId to 1                 // else set !$.pnNextAvailableWordId to 1
+  end_procedure
+
+  procedure DoEndUpdate
+    set !$.pbUpdating to false
+    //unlock
+  end_procedure
+
+            // Use these two messages to decrement/increment the occurance of a
+            // word.
+            procedure DoDecrementWord integer liWordID
+              integer liFileWord liFreq
+              get piFile.i of (phTableAccessObject(self)) FTSTABLE_WORD to liFileWord
+              clear liFileWord                             // clear FTWORD
+              set_field_value liFileWord 1 to liWordID     // move liWordID to FTWORD.WORD_ID
+              vfind liFileWord 1 EQ                        // find eq FTWORD by index.1
+              if (found) begin                             // if (found) begin
+                get_field_value liFileWord 3 to liFreq
+                set_field_value liFileWord 3 to (liFreq-1) //   move (FTWORD.FREQUENCY-1) to FTWORD.FREQUENCY
+                saverecord liFileWord                      //   saverecord FTWORD
+              end                                          // end
+            end_procedure
+            function DoIncrementWord string lsWord returns number
+              integer liFileWord liFreq liWordID
+              get piFile.i of (phTableAccessObject(self)) FTSTABLE_WORD to liFileWord
+              clear liFileWord                               // clear FTWORD
+              set_field_value liFileWord 2 to lsWord         // move lsWord to FTWORD.WORD
+              vfind liFileWord 2 EQ                          // find eq FTWORD by index.2
+              ifnot (found) begin                            // ifnot (found) begin
+                get !$.pnNextAvailableWordId to liWordID     //
+                set_field_value liFileWord 1 to liWordID     //   get !$.pnNextAvailableWordId to FTWORD.WORD_ID
+                set !$.pnNextAvailableWordId to (liWordID+1) //   set !$.pnNextAvailableWordId to (FTWORD.WORD_ID+1)
+              end                                            // end
+              get_field_value liFileWord 3 to liFreq         // move (FTWORD.FREQUENCY+1) to FTWORD.FREQUENCY
+              set_field_value liFileWord 3 to (liFreq+1)     //
+              saverecord liFileWord                          // saverecord FTWORD
+              get_field_value liFileWord 1 to liWordID       //
+              function_return liWordID                       // function_return FTWORD.WORD_ID
+            end_function
+
+  procedure DoDeleteArticle number lnArticleID
+    integer liWordCount liFile lbFound
+    number lnTest
+    move 0 to liWordCount
+    lock
+
+      // First delete article
+      get piFile.i of (phTableAccessObject(self)) FTSTABLE_ARTICL to liFile
+      clear liFile
+      set_field_value liFile 1 to lnArticleId
+      vfind liFile 1 EQ // find eq FTArticl by index.1
+      [found] delete liFile
+
+      // Then delete all phrases:
+      get piFile.i of (phTableAccessObject(self)) FTSTABLE_ARTPHR to liFile
+      clear liFile
+      set_field_value liFile 1 to lnArticleId
+      repeat
+        vfind liFile 1 GT
+        move (found) to lbFound
+        if lbFound begin
+          get_field_value liFile 1 to lnTest // Article_Id
+          move (lnTest=lnArticleId) to lbFound
+        end
+        if lbFound begin
+          get_field_value liFile 2 to lnTest // Word_Id
+          send DoDecrementWord lnTest //FTArtPhr.WORD_ID
+          increment liWordCount
+          delete liFile
+        end
+      until (not(found))
+
+      // And finally, all the words:
+      get piFile.i of (phTableAccessObject(self)) FTSTABLE_ARTWRD to liFile
+      clear liFile
+      set_field_value liFile 1 to lnArticleId
+      repeat
+        vfind liFile 1 GT
+        move (found) to lbFound
+        if lbFound begin
+          get_field_value liFile 1 to lnTest // Article_Id
+          move (lnTest=lnArticleId) to lbFound
+        end
+        if lbFound delete liFile
+      until (not(found))
+    unlock
+  end_procedure
+
+  procedure DoAddArticle number lnArticleID string lsText date ldDate string lsTime integer liHits
+    integer lhWordSplitter liMax liRow liType liPhraseLength liArtPhrFile liArtWrdFile
+    integer lbAlreadyUpdating liArticlFile
+    get phWordsplitterObject to lhWordSplitter
+    send DoReset to lhWordSplitter
+    send DoAddText to lhWordSplitter lsText
+    get row_count of lhWordSplitter to liMax
+    decrement liMax
+    lock
+
+      get !$.pbUpdating to lbAlreadyUpdating
+      ifnot lbAlreadyUpdating send DoBeginUpdate // Send DoBeginUpdate automatically if not part of a bigger update
+
+      if lnArticleID le 0 error 843 "Article ID must be positive"
+      // First we assign word ID's to the words in the article
+      for liRow from 0 to liMax
+        set piWordId.i of lhWordSplitter liRow to (DoIncrementWord(self,psWord.i(lhWordSplitter,liRow)))
+      loop
+
+      get piFile.i of (phTableAccessObject(self)) FTSTABLE_ARTPHR to liArtPhrFile
+      get piPhraseLength of (phTableAccessObject(self)) to liPhraseLength
+
+      get piFile.i of (phTableAccessObject(self)) FTSTABLE_ARTWRD to liArtWrdFile
+
+      for liRow from 0 to liMax
+        If (liRow<liMax) Begin // We don't need the last word of the article to be saved as a phrase by itself (Dan Walsh)
+          clear liArtPhrFile   //    clear FTArtPhr
+          set_field_value liArtPhrFile 1 to lnArticleId  // move lnArticleID to FTArtPhr.ARTICLE_ID
+          set_field_value liArtPhrFile 2 to (piWordId.i(lhWordSplitter,liRow)) // move (piWordId.i(lhWordSplitter,liRow)) to FTArtPhr.WORD_ID
+          if liRow le  liMax    set_field_value liArtPhrFile 3 to (piWordId.i(lhWordSplitter,liRow+1)) //if liRow le  liMax    move (piWordId.i(lhWordSplitter,liRow+1)) to FTArtPhr.WORD_ID_S1
+          if liRow le (liMax-1) set_field_value liArtPhrFile 4 to (piWordId.i(lhWordSplitter,liRow+2)) //if liRow le (liMax-1) move (piWordId.i(lhWordSplitter,liRow+2)) to FTArtPhr.WORD_ID_S2
+          if liRow le (liMax-2) set_field_value liArtPhrFile 5 to (piWordId.i(lhWordSplitter,liRow+3)) //if liRow le (liMax-2) move (piWordId.i(lhWordSplitter,liRow+3)) to FTArtPhr.WORD_ID_S3
+          if liRow le (liMax-3) set_field_value liArtPhrFile 6 to (piWordId.i(lhWordSplitter,liRow+4)) //if liRow le (liMax-3) move (piWordId.i(lhWordSplitter,liRow+4)) to FTArtPhr.WORD_ID_S4
+          if liRow le (liMax-4) set_field_value liArtPhrFile 7 to (piWordId.i(lhWordSplitter,liRow+5)) //if liRow le (liMax-4) move (piWordId.i(lhWordSplitter,liRow+5)) to FTArtPhr.WORD_ID_S5
+
+          if liPhraseLength ge  7 if liRow le (liMax- 5) set_field_value liArtPhrFile  8 to (piWordId.i(lhWordSplitter,liRow+ 6))
+          if liPhraseLength ge  8 if liRow le (liMax- 6) set_field_value liArtPhrFile  9 to (piWordId.i(lhWordSplitter,liRow+ 7))
+          if liPhraseLength ge  9 if liRow le (liMax- 7) set_field_value liArtPhrFile 10 to (piWordId.i(lhWordSplitter,liRow+ 8))
+          if liPhraseLength ge 10 if liRow le (liMax- 8) set_field_value liArtPhrFile 11 to (piWordId.i(lhWordSplitter,liRow+ 9))
+          if liPhraseLength ge 11 if liRow le (liMax- 9) set_field_value liArtPhrFile 12 to (piWordId.i(lhWordSplitter,liRow+10))
+          if liPhraseLength ge 12 if liRow le (liMax-10) set_field_value liArtPhrFile 13 to (piWordId.i(lhWordSplitter,liRow+11))
+          if liPhraseLength ge 13 if liRow le (liMax-11) set_field_value liArtPhrFile 14 to (piWordId.i(lhWordSplitter,liRow+12))
+          if liPhraseLength ge 14 if liRow le (liMax-12) set_field_value liArtPhrFile 15 to (piWordId.i(lhWordSplitter,liRow+13))
+
+          saverecord liArtPhrFile
+        End
+
+        clear liArtWrdFile // clear FTArtWrd
+        set_field_value liArtWrdFile 1 to lnArticleId // move lnArticleID to FTArtWrd.ARTICLE_ID
+        set_field_value liArtWrdFile 2 to (piWordId.i(lhWordSplitter,liRow)) // move (piWordId.i(lhWordSplitter,liRow)) to FTArtWrd.WORD_ID
+        vfind liArtWrdFile 1 EQ // find eq FTArtWrd by index.1
+        ifnot (found) saverecord liArtWrdFile // ifnot (found) saverecord FTArtWrd
+      loop
+
+      // Finally save the article:
+      get piFile.i of (phTableAccessObject(self)) FTSTABLE_ARTICL to liArticlFile
+      clear liArticlFile
+      set_field_value liArticlFile 1 to lnArticleId   // ARTICLE_ID
+      set_field_value liArticlFile 2 to ldDate        // DATE
+      set_field_value liArticlFile 3 to lsTime        // TIME
+      set_field_value liArticlFile 4 to liHits        // HIT_COUNT
+      set_field_value liArticlFile 6 to (dSysDate())  // INDEXED_DATE
+      set_field_value liArticlFile 7 to (sSysTime())  // INDEXED_TIME
+      saverecord liArticlFile
+
+      ifnot lbAlreadyUpdating send DoEndUpdate
+    unlock
+  end_procedure
+  procedure end_construct_object
+    integer lhSelf
+    forward send end_construct_object
+    move self to lhSelf
+    set phIndexerObject to lhSelf // This is resolved in the encapsulating cFTS_System object
+  end_procedure
+end_class // cFTS_Indexer
+

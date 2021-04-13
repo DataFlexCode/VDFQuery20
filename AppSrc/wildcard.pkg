@@ -1,0 +1,189 @@
+Use WildCard.nui // vdfq_WildCardMatch function
+Use GridUtil.utl // Grid and List utilities (not for dbGrid's or Table's)
+Use Masks_DF.nui // DataFlex related file masks
+Use Spec0011.utl // Floating menues on the fly
+
+Use aps.pkg// Auto Positioning and Sizing classes for VDF
+class cSetOfMasksList is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer phSetOfMasksObject 0
+    send GridPrepare_AddColumn "Masks" AFT_ASCII20
+    send GridPrepare_AddColumn ""      AFT_ASCII30
+    send GridPrepare_Apply self
+    set gridline_mode to GRID_VISIBLE_NONE
+    set Header_Visible_State to DFFALSE
+    set highlight_row_state to DFTRUE
+    on_key KNEXT_ITEM              send switch
+    on_key KPREVIOUS_ITEM          send switch_back
+    on_key KEY_CTRL+KEY_W          send DoWriteToFile
+    on_key KEY_CTRL+KEY_UP_ARROW   send MoveItemUp
+    on_key KEY_CTRL+KEY_DOWN_ARROW send MoveItemDown
+    on_key KDELETE_RECORD          send DoRemoveOne
+    object oTempSetOfMasks is a cSetOfMasks
+    end_object
+  end_procedure
+
+  procedure MoveItemUp
+    send Grid_SwapCurrentRowUp self
+  end_procedure
+  procedure MoveItemDown
+    send Grid_SwapCurrentRowDown self
+  end_procedure
+
+  procedure fill_list
+    integer liMax liRow lhSetOfMasksObject
+    get phSetOfMasksObject to lhSetOfMasksObject
+    send delete_data
+    set dynamic_update_state to DFFALSE
+    get row_count of lhSetOfMasksObject to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      send add_item msg_none (psMask.i(lhSetOfMasksObject,liRow))
+      send add_item msg_none (psDecription.i(lhSetOfMasksObject,liRow))
+    loop
+    set dynamic_update_state to DFTRUE
+  end_procedure
+
+  procedure Update_SetOfMasksObject
+    integer liMax liRow lhSetOfMasksObject
+    get phSetOfMasksObject to lhSetOfMasksObject
+    send DoReset to lhSetOfMasksObject
+    get Grid_RowCount self to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      send DoAddMask to lhSetOfMasksObject (value(self,Grid_RowBaseItem(self,liRow))) (value(self,Grid_RowBaseItem(self,liRow)+1))
+    loop
+  end_procedure
+
+  procedure AddMask string lsMask string lsDescription
+    send add_item msg_none lsMask
+    send add_item msg_none lsDescription
+  end_procedure
+
+  procedure DoAddOne
+  end_procedure
+  procedure DoDFSource
+    send DoCallBack to (oSetOfMasks_DFSource (self)) msg_AddMask self
+  end_procedure
+  procedure DoDFData
+    send DoCallBack to (oSetOfMasks_DFData   (self)) msg_AddMask self
+  end_procedure
+  procedure DoDFRuntime
+    send DoCallBack to (oSetOfMasks_DFRuntime(self)) msg_AddMask self
+  end_procedure
+  procedure DoDFAll
+    send DoCallBack to (oSetOfMasks_DFAll(self)) msg_AddMask self
+  end_procedure
+  procedure DoCommandFiles
+    send DoCallBack to (oSetOfMasks_CommandFiles(self)) msg_AddMask self
+  end_procedure
+  procedure DoIIS
+    send DoCallBack to (oSetOfMasks_IIS(self)) msg_AddMask self
+  end_procedure
+  procedure DoReset
+    send delete_data
+  end_procedure
+  procedure DoRemoveOne
+    send Grid_DeleteCurrentRow self
+  end_procedure
+
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+end_class // cSetOfMasksList
+
+desktop_section
+ Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+ Use Buttons.utl  // Button texts
+ object oEditSetOfMasksPanel is a aps.ModalPanel label ""
+   set locate_mode to CENTER_ON_SCREEN
+   on_key ksave_record send close_panel_ok
+   on_key kcancel send close_panel
+   property integer piResult 0
+   object oLst is a cSetOfMasksList
+   end_object
+
+   procedure DoAddOne
+     send DoAddOne to (oLst(self))
+   end_procedure
+   procedure DoDFSource
+     send DoDFSource to (oLst(self))
+   end_procedure
+   procedure DoDFData
+     send DoDFData to (oLst(self))
+   end_procedure
+   procedure DoDFRuntime
+     send DoDFRuntime to (oLst(self))
+   end_procedure
+   procedure DoDFAll
+     send DoDFAll to (oLst(self))
+   end_procedure
+   procedure DoReset
+     send DoReset to (oLst(self))
+   end_procedure
+   procedure DoCommandFiles
+     send DoCommandFiles to (oLst(self))
+   end_procedure
+   procedure DoIIS
+     send DoIIS to (oLst(self))
+   end_procedure
+   procedure DoRemoveOne
+     send DoRemoveOne to (oLst(self))
+   end_procedure
+
+   object oBtn1 is a aps.Multi_Button
+     on_item t.btn.ok send close_panel_ok
+   end_object
+   object oBtn2 is a aps.Multi_Button
+     procedure PopupFM
+       send FLOATMENU_PrepareAddItem msg_DoAddOne       "One mask"
+       send FLOATMENU_PrepareAddItem msg_none           ""
+       send FLOATMENU_PrepareAddItem msg_DoDFSource     "DF source code"
+       send FLOATMENU_PrepareAddItem msg_DoDFData       "DF data files"
+       send FLOATMENU_PrepareAddItem msg_DoDFRuntime    "DF runtime files"
+       send FLOATMENU_PrepareAddItem msg_DoDFAll        "All DF files"
+       send FLOATMENU_PrepareAddItem msg_DoCommandFiles "Command files"
+       send FLOATMENU_PrepareAddItem msg_DoIIS          "IIS files"
+       send FLOATMENU_PrepareAddItem msg_none           ""
+       send FLOATMENU_PrepareAddItem msg_DoReset        "Reset list"
+       send FLOATMENU_PrepareAddItem msg_DoRemoveOne    "Remove mask"
+       send popup to (FLOATMENU_Apply(self))
+     end_procedure
+     on_item "Add mask" send PopupFM
+   end_object
+   object oBtn3 is a aps.Multi_Button
+     on_item "Reset list" send DoReset
+   end_object
+   object oBtn4 is a aps.Multi_Button
+     on_item t.btn.cancel send close_panel
+   end_object
+   send aps_locate_multi_buttons
+   procedure close_panel_ok
+     set piResult to 1
+     send close_panel
+   end_procedure
+   set Border_Style to BORDER_THICK   // Make panel resizeable
+   procedure aps_onResize integer delta_rw# integer delta_cl#
+     send aps_resize (oLst(self)) delta_rw# 0 // delta_cl#
+     send aps_register_multi_button (oBtn1(self))
+     send aps_register_multi_button (oBtn2(self))
+     send aps_register_multi_button (oBtn3(self))
+     send aps_register_multi_button (oBtn4(self))
+     send aps_locate_multi_buttons
+     send aps_auto_size_container
+   end_procedure
+   procedure popup.i integer lhSetOfMasksObject
+     set phSetOfMasksObject of (oLst(self)) to lhSetOfMasksObject
+     set piResult to 0
+     set label to (psName(lhSetOfMasksObject))
+     send fill_list to (oLst(self))
+     forward send popup
+     if (piResult(self)) send Update_SetOfMasksObject to (oLst(self))
+   end_procedure
+ end_object // oEditSetOfMasksPanel
+end_desktop_section
+
+procedure DoEditSetOfMasks global integer lhSetOfMasksObject
+  send popup.i to (oEditSetOfMasksPanel(self)) lhSetOfMasksObject
+end_procedure

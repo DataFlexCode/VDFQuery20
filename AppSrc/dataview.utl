@@ -1,0 +1,634 @@
+// NOTE!! THIS PACKAGE IS - ALTHOUGH WELL FUNCTIONING - OUT OF FASHION!
+//
+//    THE INTENTIONS OF IT HAS NOW BEEN SUPER IMPLEMENTED IN FDX.NUI
+//
+//
+// **********************************************************************
+// Use DataView.utl // Classes for analyzing index definitions
+//
+// by Sture Andersen
+//
+// Create: Sat  10-05-1997 - Extracted from AutoPrmt.pkg and re-organized.
+// Update: Sun  18-05-1997 - Function idx_next_index_ms_segments added
+//         Sat  20-12-1997 - Functions idx_is_field_present_index,
+//                           idx_segment and idx_max_segment added.
+//         Thu  05-02-1998 - Object oMoreInfo added to cIndexAnalyzer class.
+//         Wed  10-11-1999 - Error fixed in idx_Segment_Directions and
+//                           idx_Segment_Cases
+//
+//  The purpose of this package is to loosen the connection between the tools
+//  and the "physical" table definition. Instead of using the get_attribute
+//  command for retrieving structure information, you query this class, in
+//  order to be able to change the view of the database.
+//
+// ***********************************************************************
+//
+// Contents:   (1)  db_structure_layer_mixin class.
+//             (2)  cIndexAnalyzer class.
+
+// (1)
+// The class db_structure_layer_mixin is a mixin that supports changing
+// the way that the get_attribute command sees the world.
+//
+// The idea is that every time the target class would normally use the
+// get_attribute command, it instead uses the functions in this class,
+// which will allow for delegation of the question.
+//
+// If property delegate_object is 0 the get_attribute command is used.
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+// The format of the commands below is the following:
+//   command <attr_name> <df_attrname> <type>
+#COMMAND DBSTRUCT.INDEX_ATTR
+ function !1 integer file# integer idx# returns !3
+   !3 rval#
+   if (DBMS_Server(self)) get !1 of (DBMS_Server(self)) file# idx# to rval#
+   else get_attribute !2 of file# idx# to rval#
+   function_return rval#
+ end_function
+#ENDCOMMAND
+#COMMAND DBSTRUCT.IDXSEG_ATTR
+ function !1 integer file# integer idx# integer segment# returns !3
+   !3 rval#
+   if (DBMS_Server(self)) get !1 of (DBMS_Server(self)) file# idx# segment# to rval#
+   else get_attribute !2 of file# idx# segment# to rval#
+   function_return rval#
+ end_function
+#ENDCOMMAND
+#COMMAND DBSTRUCT.FILE_ATTR
+ function !1 integer file# returns !3
+   !3 rval#
+   if (DBMS_Server(self)) get !1 of (DBMS_Server(self)) file# to rval#
+   else get_attribute !2 of file# to rval#
+   function_return rval#
+ end_function
+#ENDCOMMAND
+#COMMAND DBSTRUCT.FIELD_ATTR
+ function !1 integer file# integer field# returns !3
+   !3 rval#
+//   send obs (string(file#)+","+string(field#)+","+string(!a))
+   if (DBMS_Server(self)) get !1 of (DBMS_Server(self)) file# field# to rval#
+   else get_attribute !2 of file# field# to rval#
+   function_return rval#
+ end_function
+#ENDCOMMAND
+
+Class db_structure_layer_mixin is a cObject
+  procedure define_db_structure_layer_mixin
+    property integer DBMS_Server 0 // If false get_attribute will be used
+  end_procedure
+
+  DBSTRUCT.INDEX_ATTR  attr_index_number_segments   DF_INDEX_NUMBER_SEGMENTS   integer
+  DBSTRUCT.IDXSEG_ATTR attr_index_segment_field     DF_INDEX_SEGMENT_FIELD     integer
+  DBSTRUCT.FILE_ATTR   attr_file_number_fields      DF_FILE_NUMBER_FIELDS      integer
+  DBSTRUCT.FILE_ATTR   attr_file_max_records        DF_FILE_MAX_RECORDS        integer
+  DBSTRUCT.FILE_ATTR   attr_file_records_used       DF_FILE_RECORDS_USED       integer
+  DBSTRUCT.FILE_ATTR   attr_file_type               DF_FILE_TYPE               integer
+  DBSTRUCT.FILE_ATTR   attr_file_multiuser          DF_FILE_MULTIUSER          integer
+  DBSTRUCT.FILE_ATTR   attr_file_reuse_deleted      DF_FILE_REUSE_DELETED      integer
+  DBSTRUCT.FILE_ATTR   attr_file_compression        DF_FILE_COMPRESSION        integer
+  DBSTRUCT.FILE_ATTR   attr_file_number_fields      DF_FILE_NUMBER_FIELDS      integer
+  DBSTRUCT.FILE_ATTR   attr_file_transaction        DF_FILE_TRANSACTION        integer
+  DBSTRUCT.FILE_ATTR   attr_file_record_length      DF_FILE_RECORD_LENGTH      integer
+  DBSTRUCT.FILE_ATTR   attr_file_integrity_check    DF_FILE_INTEGRITY_CHECK    integer
+  DBSTRUCT.FILE_ATTR   attr_file_is_system_file     DF_FILE_IS_SYSTEM_FILE     integer
+  DBSTRUCT.FILE_ATTR   attr_file_lock_type          DF_FILE_LOCK_TYPE          integer
+  DBSTRUCT.FILE_ATTR   attr_file_record_length_used DF_FILE_RECORD_LENGTH_USED integer
+  DBSTRUCT.FILE_ATTR   attr_file_record_identity    DF_FILE_RECORD_IDENTITY    integer
+  DBSTRUCT.FILE_ATTR   attr_file_revision           DF_FILE_REVISION           string
+  DBSTRUCT.FILE_ATTR   attr_file_logical_name       DF_FILE_LOGICAL_NAME       string
+  DBSTRUCT.FILE_ATTR   attr_file_root_name          DF_FILE_ROOT_NAME          string
+  DBSTRUCT.FILE_ATTR   attr_file_display_name       DF_FILE_DISPLAY_NAME       string
+  DBSTRUCT.FILE_ATTR   attr_file_physical_name      DF_FILE_PHYSICAL_NAME      string
+  DBSTRUCT.FILE_ATTR   attr_file_next_used          DF_FILE_NEXT_USED          integer
+  DBSTRUCT.FIELD_ATTR  attr_field_type              DF_FIELD_TYPE              integer
+  DBSTRUCT.FIELD_ATTR  attr_field_length            DF_FIELD_LENGTH            integer
+  DBSTRUCT.FIELD_ATTR  attr_field_native_length     DF_FIELD_NATIVE_LENGTH     integer
+  function attr_field_overlap integer file# integer fld1# integer fld2# returns integer
+    integer rval#
+    if (DBMS_Server(self)) get attr_field_overlap of (DBMS_Server(self)) file# fld1# fld2# to rval#
+    else get_attribute DF_FIELD_OVERLAP of file# fld1# fld2# to rval#
+    function_return rval#
+  end_function
+
+  DBSTRUCT.FIELD_ATTR  attr_field_index             DF_FIELD_INDEX             integer
+  DBSTRUCT.FIELD_ATTR  attr_field_name              DF_FIELD_NAME              string
+  function attr_field_name integer file# integer field# returns string
+    string rval#
+//   send obs (string(file#)+","+string(field#)+","+string(!a))
+    if (DBMS_Server(self)) get attr_field_name of (DBMS_Server(self)) file# field# to rval#
+    else get_attribute DF_FIELD_NAME of file# field# to rval#
+    if (rval#="" and field#=0) move "RECNUM" to rval#
+    function_return rval#
+  end_function
+  DBSTRUCT.FIELD_ATTR  attr_field_precision         DF_FIELD_PRECISION         integer
+  DBSTRUCT.FIELD_ATTR  attr_field_related_file      DF_FIELD_RELATED_FILE      integer
+  DBSTRUCT.FIELD_ATTR  attr_field_related_field     DF_FIELD_RELATED_FIELD     integer
+  DBSTRUCT.FIELD_ATTR  attr_field_offset            DF_FIELD_OFFSET            integer
+end_class
+
+class cIndexAnalyzerMoreInfo is an array
+  // pIndex_Key_Length
+  // pIndex_Levels
+  // pIndex_Segment_Case
+  // pIndex_Segment_Direction
+  procedure set pIndex_Key_Length integer index# integer value#
+    set value item (index#*40+37) to value#
+  end_procedure
+  function pIndex_Key_Length integer index# returns integer
+    function_return (value(self,index#*40+37))
+  end_function
+  procedure set pIndex_Levels integer index# integer value#
+    set value item (index#*40+38) to value#
+  end_procedure
+  function pIndex_Levels integer index# returns integer
+    function_return (value(self,index#*40+38))
+  end_function
+  procedure set pIndex_Type integer index# integer value#
+    set value item (index#*40+39) to value#
+  end_procedure
+  function pIndex_Type integer index# returns integer
+    function_return (value(self,index#*40+39))
+  end_function
+  procedure set pIndex_Segment_Case integer index# integer seg# integer value#
+    set value item (index#*40+seg#) to value#
+  end_procedure
+  function pIndex_Segment_Case integer index# integer segment# returns integer
+    function_return (value(self,index#*40+segment#))
+  end_function
+  procedure set pIndex_Segment_Direction integer index# integer seg# integer value#
+    set value item (index#*40+20+seg#) to value#
+  end_procedure
+  function pIndex_Segment_Direction integer index# integer segment# returns integer
+    function_return (value(self,index#*40+20+segment#))
+  end_function
+end_class
+
+// (2)
+// The index_analyzer class was made to put all stuff, that specifically
+// analyses indices in one place:
+class cIndexAnalyzer is an array
+  Procedure Construct_Object
+    Forward Send Construct_Object
+    Property Integer pMainFile             0
+    Property Integer p_min_len_descr_field 15
+    Send define_db_structure_layer_mixin
+    Object oMoreInfo is an cIndexAnalyzerMoreInfo
+    End_Object
+  End_Procedure
+  Import_Class_Protocol db_structure_layer_mixin
+
+  Procedure seq_write integer ch# // Dump contents through sequential channel
+    integer itm# max# obj#
+    writeln channel ch# (pMainFile(self))
+    writeln (p_min_len_descr_field(self))
+    get item_count to max#
+    writeln max#
+    for itm# from 0 to (max#-1)
+      writeln (value(self,itm#))
+    loop
+    move (oMoreInfo(self)) to obj#
+    get item_count of obj# to max#
+    writeln max#
+    for itm# from 0 to (max#-1)
+      writeln (value(obj#,itm#))
+    loop
+  end_procedure
+
+  procedure seq_read integer ch# // Read contents from sequential channel
+    integer itm# max# obj#
+    string tmp#
+    send reset
+    readln channel ch# tmp#
+    set pMainFile to tmp#
+    readln channel ch# tmp#
+    set p_min_len_descr_field to tmp#
+    readln max#
+    for itm# from 0 to (max#-1)
+      readln tmp#
+      set value item itm# to tmp#
+    loop
+    move (oMoreInfo(self)) to obj#
+    readln max#
+    for itm# from 0 to (max#-1)
+      readln tmp#
+      set value of obj# item itm# to tmp#
+    loop
+  end_procedure
+
+  Procedure reset
+    send delete_data
+    send delete_data to (oMoreInfo(self))
+  End_Procedure
+
+  // The procedure reads the index definitions into the array
+  procedure read_file_definition integer file#  // This one reads the index
+    integer idx# segment# max# fld#       // definitions into the
+    integer oMoreInfo# attr#              // array.
+    string str#
+    if (file#<>pMainFile(self)) begin
+      send reset
+      move (oMoreInfo(self)) to oMoreInfo#
+      for idx# from 1 to 15
+        move "" to str#
+        get_attribute DF_INDEX_NUMBER_SEGMENTS of file# idx# to max#
+        if max# begin
+          get_attribute DF_INDEX_KEY_LENGTH of file# idx# to attr#
+          set pIndex_Key_Length of oMoreInfo# idx# to attr#
+          get_attribute DF_INDEX_LEVELS of file# idx# to attr#
+          set pIndex_Levels of oMoreInfo# idx# to attr#
+          get_attribute DF_INDEX_TYPE of file# idx# to attr#
+          set pIndex_Type of oMoreInfo# idx# to attr#
+
+          for segment# from 1 to max#
+            get_attribute DF_INDEX_SEGMENT_FIELD of file# idx# segment# to fld#
+            move (str#+pad(string(fld#),4)) to str#
+            get_attribute DF_INDEX_SEGMENT_CASE of file# idx# segment# to attr#
+            set pIndex_Segment_Case of oMoreInfo# idx# segment# to attr#
+            get_attribute DF_INDEX_SEGMENT_DIRECTION of file# idx# segment# to attr#
+            set pIndex_Segment_Direction of oMoreInfo# idx# segment# to attr#
+          loop
+        end
+        set value item idx# to str#
+      loop
+      set pMainFile to file#
+    end
+  end_procedure
+
+  function idx_Key_Length integer idx# returns integer
+    function_return (pIndex_Key_Length(oMoreInfo(self),idx#))
+  end_function
+  function idx_Levels integer idx# returns integer
+    function_return (pIndex_Levels(oMoreInfo(self),idx#))
+  end_function
+  function idx_Type integer idx# returns integer
+    function_return (pIndex_Type(oMoreInfo(self),idx#))
+  end_function
+  function idx_Segment_Case integer idx# integer seg# returns integer
+    function_return (pIndex_Segment_Case(oMoreInfo(self),idx#,seg#))
+  end_function
+  function idx_Segment_Direction integer idx# integer seg# returns integer
+    function_return (pIndex_Segment_Direction(oMoreInfo(self),idx#,seg#))
+  end_function
+
+  function idx_Segment_Cases integer idx# returns string
+    integer seg# max#
+    string rval#
+    get idx_max_segment idx# to max#
+    move "" to rval#
+    for seg# from 1 to max#
+      move (rval#+pad(string(idx_Segment_Case(self,idx#,seg#)),4)) to rval#
+    loop
+    function_return rval#
+  end_function
+  function idx_Segment_Directions integer idx# returns string
+    integer seg# max#
+    string rval#
+    get idx_max_segment idx# to max#
+    move "" to rval#
+    for seg# from 1 to max#
+      move (rval#+pad(string(idx_Segment_Direction(self,idx#,seg#)),4)) to rval#
+    loop
+    function_return rval#
+  end_function
+
+  function idx_exists integer idx# returns integer
+    function_return (length(value(self,idx#)))
+  end_function
+
+  function idx_segment integer idx# integer segment# returns integer
+    function_return (integer(mid(value(self,idx#),4,segment#-1*4+1)))
+  end_function
+
+  function idx_max_segment integer idx# returns integer
+    function_return (length(value(self,idx#))/4)
+  end_function
+
+  function field_translate_overlap integer fld# returns string
+    integer type# max# field# overlaps# file#
+    string rval#
+    get pMainFile to file#
+    get attr_field_type file# fld# to type#
+    if type# eq DF_OVERLAP begin
+      move "" to rval#
+      get attr_file_number_fields file# to max#
+      for field# from 1 to max#
+        if field# ne fld# begin
+          get attr_field_type file# field# to type#
+          if type# ne DF_OVERLAP begin
+            get attr_field_overlap file# fld# field# to overlaps#
+            if overlaps# move (rval#+pad(string(field#),4)) to rval#
+          end
+        end
+      loop
+    end
+    else move (pad(string(fld#),4)) to rval#
+    function_return rval#
+  end_function
+
+  function field_translate_overlaps string str# returns string
+    integer fld# max# segment#
+    string rval#
+    move "" to rval#
+    move (length(str#)/4) to max#
+    for segment# from 0 to (max#-1)
+      move (mid(str#,4,segment#*4+1)) to fld#
+      move (rval#+field_translate_overlap(self,fld#)) to rval#
+    loop
+    function_return rval#
+  end_function
+
+  procedure idx_translate_overlaps_all
+    integer idx#
+    for idx# from idx# to 15
+      if (idx_exists(self,idx#)) ;
+        set value item idx# to (field_translate_overlaps(self,value(self,idx#)))
+    loop
+  end_procedure
+
+  function idx_is_unique integer idx# returns integer // Is index unique?
+    string str#
+    get value item idx# to str#
+    function_return (length(str#) and integer(right(str#,4)))
+  end_function
+
+  function idx_next_index integer idx# returns integer
+    for idx# from (idx#+1) to 15
+      if (idx_exists(self,idx#)) function_return idx#
+    loop
+  end_function
+
+  function idx_next_unique_index integer idx# returns integer
+    for idx# from (idx#+1) to 15
+      if (idx_exists(self,idx#) and idx_is_unique(self,idx#)) function_return idx#
+    loop
+  end_function
+
+  function idx_next_nonunique_index integer idx# returns integer
+    for idx# from (idx#+1) to 15
+      if (idx_exists(self,idx#) and not(idx_is_unique(self,idx#))) function_return idx#
+    loop
+  end_function
+
+  function idx_is_field_present_index integer idx# integer fld# returns integer
+    integer segment# max#
+    string str#
+    get value item idx# to str#
+    move (length(str#)/4) to max#
+    for segment# from 0 to (max#-1)
+      if fld# eq (integer(mid(str#,4,segment#*4+1))) function_return (segment#+1)
+    loop
+  end_function
+
+  function idx_best_index returns integer
+    integer idx#
+    get idx_next_unique_index 0 to idx#
+    ifnot idx# get idx_next_nonunique_index 0 to idx#
+    function_return idx#
+  end_function
+
+  function idx_next_description_index integer idx# returns integer
+    integer type# len# fld# file#
+    string str#
+    get pMainFile to file#
+    for idx# from (idx#+1) to 15
+      get value item idx# to str#
+      if (length(str#)) begin
+        move (left(str#,4)) to fld#
+        get attr_field_type file# fld# to type#
+        if type# eq df_overlap begin // Translate if overlap
+          get field_translate_overlap fld# to str#
+          move (left(str#,4)) to fld#
+          get attr_field_type file# fld# to type#
+        end
+        if type# eq df_ascii begin // Examine the first segment
+          get attr_field_length file# fld# to len#
+          if len# ge (p_min_len_descr_field(self)) function_return idx#
+        end
+      end
+    loop
+  end_function
+
+  function idx_next_field_not_index integer fld# returns integer
+    integer max# idx# file# type#
+    get pMainFile to file#
+    get attr_file_number_fields file# to max#
+    for fld# from (fld#+1) to max#
+      get attr_field_index file# fld# to idx#
+      ifnot idx# begin
+        get attr_field_type file# fld# to type#
+        if (type#<>df_overlap and type#<>df_text and type#<>df_binary) function_return fld#
+      end
+    loop
+  end_function
+
+  function idx_next_description_field_not_index integer fld# returns integer
+    integer max# idx# type# len# min_len# file#
+    get pMainFile to file#
+    get attr_file_number_fields file# to max#
+    get p_min_len_descr_field to min_len#
+    for fld# from (fld#+1) to max#
+      get attr_field_type file# fld# to type#
+      if type# eq df_ascii begin
+        get attr_field_length file# fld# to len#
+        if (len#>=min_len#) begin
+          get attr_field_index file# fld# to idx#
+          ifnot idx# function_return fld#
+        end
+      end
+    loop
+    function_return 0
+  end_function
+
+  function idx_raw_definition integer idx# returns string
+    function_return (value(self,idx#))
+  end_function
+
+  function idx_definition integer idx# returns string
+    string rval#
+    if idx# begin
+      get idx_raw_definition idx# to rval#
+      get field_translate_overlaps rval# to rval#
+    end
+    else move "0   " to rval#
+    function_return rval#
+  end_function
+
+  // This function returns the next index that has the fields listed in
+  // parameter fields# as its most significant segments regardless the
+  // order:
+  function idx_next_index_ms_segments integer idx# string fields# returns integer
+    integer segment# max# len# ok#
+    string ms_fields#
+    get field_translate_overlaps fields# to fields#
+    move (length(fields#)) to len#
+    move (len#/4) to max#
+    for idx# from (idx#+1) to 15
+      if (idx_exists(self,idx#)) begin
+        move (left(idx_definition(self,idx#),len#)) to ms_fields#
+        move 1 to ok#
+        for segment# from 0 to (max#-1)
+          ifnot (mid(fields#,4,segment#*4+1)) in ms_fields# move 0 to ok#
+        loop
+        if ok# function_return idx#
+      end
+    loop
+  end_function
+
+  // This function returns the next index that has the fields listed in
+  // parameter fields# as its most significant segments in the same order
+  // (fixed order):
+  function idx_next_index_ms_segments_fo integer idx# string fields# returns integer
+    integer len#
+    string ms_fields#
+    get field_translate_overlaps fields# to fields#
+    move (length(fields#)) to len#
+    move (fields#+"*") to fields#
+    for idx# from (idx#+1) to 15
+      if (idx_exists(self,idx#)) begin
+        move (left(idx_definition(self,idx#),len#)) to ms_fields#
+        if fields# match ms_fields# function_return idx#
+      end
+    loop
+  end_function
+
+  function field_remove_doubles string str# returns string
+    integer max# segment#
+    string rval# fld#
+    move "" to rval#
+    move (length(str#)/4) to max#
+    for segment# from 0 to (max#-1)
+      move (mid(str#,4,segment#*4+1)) to fld#
+      ifnot fld# in rval# move (rval#+fld#) to rval#
+    loop
+    function_return rval#
+  end_function
+
+  function field_remove_recnum string str# returns string
+    integer max# segment# file# fld#
+    string rval#
+    get pMainFile to file#
+    move "" to rval#
+    move (length(str#)/4) to max#
+    for segment# from 0 to (max#-1)
+      move (mid(str#,4,segment#*4+1)) to fld#
+      if fld# move (rval#+pad(string(fld#),4)) to rval#
+    loop
+    function_return rval#
+  end_function
+
+  function insert_file_reference string str# returns string
+    integer fld# max# segment# file#
+    string rval#
+    get pMainFile to file#
+    move "" to rval#
+    move (length(str#)/4) to max#
+    for segment# from 0 to (max#-1)
+      move (mid(str#,4,segment#*4+1)) to fld#
+      move (rval#+pad(string(file#),4)+pad(string(fld#),4)) to rval#
+    loop
+    function_return rval#
+  end_function
+
+  function idx_field_names integer idx# integer ovl# integer remove_rec# returns string
+    string str# rval# fname#
+    integer file# fld# segment# max#
+    get pMainFile to file#
+    get value item idx# to str#
+    if str# ne "" begin
+      if remove_rec# get field_remove_recnum str#      to str#
+      if ovl#        get field_translate_overlaps str# to str#
+      move (length(str#)/4) to max#
+      for segment# from 0 to (max#-1)
+        if segment# ne 0 move (rval#+", ") to rval#
+        move (mid(str#,4,segment#*4+1)) to fld#
+        //get_attribute DF_FIELD_NAME of file# fld# to fname#
+        get attr_field_name file# fld# to fname#
+        move (lowercase(fname#)) to fname#
+        move (overstrike(uppercase(left(fname#,1)),fname#,1)) to fname#
+        move (rval#+fname#) to rval#
+      loop
+    end
+    else move "" to rval#
+    function_return rval#
+  end_function
+
+  function idx_field_value integer idx# integer ovl# integer remove_rec# returns string
+    string str# rval# fval#
+    integer file# fld# segment# max#
+    get pMainFile to file#
+    if idx# get value item idx# to str#
+    else begin // If idx# is 0 we un-conditionally return the recnum
+      get_field_value file# fld# to fval#
+      function_return fval#
+    end
+    if str# ne "" begin
+      if remove_rec# get field_remove_recnum str#      to str#
+      if ovl#        get field_translate_overlaps str# to str#
+      move (length(str#)/4) to max#
+      for segment# from 0 to (max#-1)
+        if segment# ne 0 move (rval#+", ") to rval#
+        move (mid(str#,4,segment#*4+1)) to fld#
+        get_field_value file# fld# to fval#
+        trim fval# to fval#
+        move (rval#+fval#) to rval#
+      loop
+    end
+    else move "" to rval#
+    function_return rval#
+  end_function
+
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+  // The function prompt_list_fields returns a bid for which fields
+  // a prompt list should include.
+  function prompt_list_fields integer file# returns string
+    integer best_idx# descr_idx# descr_fld# second_best_idx#
+    string rval#
+
+    send read_file_definition file#
+
+    get idx_best_index to best_idx# //
+
+    get idx_next_description_index 0 to descr_idx#
+    if descr_idx# begin
+      if descr_idx# eq best_idx# ;
+         get idx_next_description_index descr_idx# to descr_idx#
+    end
+
+    ifnot descr_idx# begin
+      get idx_next_description_field_not_index 0 to descr_fld#
+      ifnot descr_idx# get idx_next_field_not_index 0 to descr_fld#
+    end
+
+    get idx_next_index 0 to second_best_idx#
+    if second_best_idx# begin
+      repeat
+        if (second_best_idx#=best_idx# or second_best_idx#=descr_idx#) begin
+          get idx_next_index second_best_idx# to second_best_idx#
+        end
+      until (not(second_best_idx#) or (second_best_idx#<>best_idx# and second_best_idx#<>descr_idx#))
+    end
+
+    if best_idx# move (idx_definition(self,best_idx#)) to rval#
+    else move "0   " to rval#
+
+    if descr_idx# move (rval#+idx_definition(self,descr_idx#)) to rval#
+    if descr_fld# move (rval#+pad(string(descr_fld#),4)) to rval#
+
+    if second_best_idx# move (rval#+idx_definition(self,second_best_idx#)) to rval#
+
+    get field_remove_doubles rval# to rval#
+    if best_idx# get field_remove_recnum rval# to rval#
+    get insert_file_reference rval# to rval#
+    function_return rval#
+  end_function
+end_class // cIndexAnalyzer
+
+integer oIndexAnalyzer#
+object oIndexAnalyzer is a cIndexAnalyzer
+  move self to oIndexAnalyzer#
+end_object

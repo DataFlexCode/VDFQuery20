@@ -1,0 +1,550 @@
+// Use FvVwDefn.pkg // FastView, View definition cls (cFastView_ViewDefinition)
+
+Use Files.utl    // Utilities for handling file related stuff
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use FvHomDir.pkg // Dialogs for saving and opening FastViews
+Use Version.nui
+
+desktop_section
+object oFastViewDefArray is a cArray
+  item_property_list
+    item_property integer phDefinition.i
+  end_item_property_list
+  procedure AddDef integer lhDef
+    set phDefinition.i (row_count(self)) to lhDef
+  end_procedure
+end_object // oFastViewDefArray
+object oFastViewArray is a cArray
+  item_property_list
+    item_property integer phView.i
+  end_item_property_list
+  procedure AddView integer lhView
+    set phView.i (row_count(self)) to lhView
+  end_procedure
+end_object // oFastViewArray
+end_desktop_section
+
+enumeration_list
+  define VT_SIMPLE
+  define VT_GRID
+  define VT_HEADER_DETAIL
+end_enumeration_list
+
+class cFastView_Fields is a cArray
+  procedure construct_object
+    forward send construct_object
+    property integer pbChildFieldsState DFFALSE
+    property integer pbSideCarFieldsState DFFALSE
+  end_procedure
+  item_property_list
+    item_property integer piClass.i             // Create an object of this class
+    item_property integer piDDOFile.i           // Use this server (not used)
+    item_property integer piFile.i              // Files separated by space
+    item_property integer piField.i             // Fields separated by space
+    item_property string  psLabel.i             // Custom label
+    item_property integer pbNoLabel.i           // Disable label
+    item_property integer piSnap.i              // Snap it like this
+    item_property integer piLastObjectRow.i     //   relative to this
+    item_property integer piSizeX.i
+    item_property integer piSizeY.i
+    item_property integer piExtraIntWidth.i     // Sizing information
+    item_property integer piExtraExtWidth.i     // Sizing information
+    item_property integer pbForceNoenter.i      // Make item noenter
+    item_property string  pbCapslock.i          // Capslock this field
+    item_property string  pbDefaultSL.i         // Prompt button for DefaultPromptList
+    item_property string  phObjectID.i          // Object ID's after creation
+
+    item_property string  piTmpViewRow.i        // Temporary for applying
+    item_property string  piTmpViewAnchor.i     // anchoring stuff.
+
+    item_property string  pbNotUsed06.i
+    item_property string  pbNotUsed07.i
+    item_property string  pbNotUsed08.i
+    item_property string  pbNotUsed09.i
+    item_property string  pbNotUsed10.i
+    // Not used:
+    item_property integer phDEO_List.i          // If container, call this list
+  end_item_property_list_extended cFastView_Fields
+
+  // The function returns DFTRUE if an object has been set to adopt to
+  // vertical size changes.
+  // It only makes sense to call this function if not grid.
+  function iDoAnchors integer lbAllowVertical returns integer
+    integer liLine liMaxLine liMax liRow liClass liSnap liVerticalEaterRow
+    integer liHorizontalEaterRow liBestBidRow liBestBidLength liLength
+    integer lhObject liAnyHorizontalEaterRow
+
+    move -1 to liAnyHorizontalEaterRow
+
+    get row_count to liMax
+    decrement liMax
+
+    // First we figure out which objects are on which 'lines'
+    move 0 to liLine
+    for liRow from 0 to liMax
+      get piSnap.i liRow to liSnap
+      if (liRow>0) begin
+        if (liSnap=SL_DOWN) increment liLine
+        if (liSnap=0)       increment liLine
+      end
+      set piTmpViewRow.i liRow to liLine
+    loop
+    move liLine to liMaxLine
+
+    // If lbAllowVertical we then look for an dbEdit (the last)
+    move -1 to liVerticalEaterRow
+    if lbAllowVertical begin
+      for liRow from 0 to liMax
+        get piClass.i liRow to liClass
+        if (liClass=class.dbEdit) move liRow to liVerticalEaterRow
+      loop
+//      if (liVerticalEaterRow>=0) set piTmpViewAnchor.i liVerticalEaterRow to anAll
+    end
+
+    // Now we calculate the anchors one View-line at a time
+    for liLine from 0 to liMaxLine // 'View lines'
+
+      //First find the object that qualifies for being horizontal eater
+      move -1 to liHorizontalEaterRow
+      move -1 to liBestBidRow
+      move -1 to liBestBidLength
+
+      for liRow from 0 to liMax
+        if (liLine=piTmpViewRow.i(self,liRow)) begin // Only if it's the view row we are currently handling
+          get phObjectID.i liRow to lhObject
+          get piClass.i liRow to liClass
+          get size of lhObject to liLength
+          move (low(liLength)) to liLength
+          if (liClass=class.dbEdit) move (liLength*1000) to liLength // If edit we overdo the size
+          if (liLength>=liBestBidLength) begin
+            move liLength to liBestBidLength
+            move liRow to liBestBidRow
+          end
+        end
+      loop
+
+      // Did we find one worthy?
+      if (liBestBidRow>=0 and liBestBidLength>100) move liBestBidRow to liHorizontalEaterRow
+      if (liHorizontalEaterRow<>-1) move liHorizontalEaterRow to liAnyHorizontalEaterRow
+
+      // Assign anchor values:
+      //
+      //  Before liVerticalEaterRow
+      //    Before liHorizontalEaterRow   Left Top
+      //    On     liHorizontalEaterRow   Left Top Right
+      //    After  liHorizontalEaterRow   Top Right
+      //  On liVerticalEaterRow           Left Top Right Bottom (All)
+      //  After liVerticalEaterRow
+      //    Before liHorizontalEaterRow   Left Bottom
+      //    On     liHorizontalEaterRow   Left Bottom Right
+      //    After  liHorizontalEaterRow   Bottom Right
+      //
+      // If there is no Vertial eater row, all objects should be considered 'Before'
+      if (liVerticalEaterRow=-1) move 1000000 to liVerticalEaterRow
+      // If there is no Horizontal eater row, all objects should be considered 'Before'
+      if (liHorizontalEaterRow=-1) move 1000000 to liHorizontalEaterRow
+
+
+      for liRow from 0 to liMax
+        // If there is no Vertial eater row, all objects should be considered 'Before'
+        // If there is no Horizontal eater row, all objects should be considered 'Before'
+        if (liLine=piTmpViewRow.i(self,liRow)) begin // Only if it's the view row we are currently handling
+
+          if (liRow<liVerticalEaterRow) begin
+            if (liRow<liHorizontalEaterRow) set piTmpViewAnchor.i liRow to (anLeft+anTop)
+            if (liRow=liHorizontalEaterRow) set piTmpViewAnchor.i liRow to (anLeft+anTop+anRight)
+            if (liRow>liHorizontalEaterRow) set piTmpViewAnchor.i liRow to (anTop+anRight)
+          end
+          if (liRow=liVerticalEaterRow) set piTmpViewAnchor.i liRow to anAll
+          if (liRow>liVerticalEaterRow) begin
+            if (liRow<liHorizontalEaterRow) set piTmpViewAnchor.i liRow to (anLeft+anBottom)
+            if (liRow=liHorizontalEaterRow) set piTmpViewAnchor.i liRow to (anLeft+anBottom+anRight)
+            if (liRow>liHorizontalEaterRow) set piTmpViewAnchor.i liRow to (anBottom+anRight)
+          end
+        end
+      loop
+      if (liVerticalEaterRow=1000000) move -1 to liVerticalEaterRow // Clean up
+    loop
+
+    // Finally, assign the anchors to the objects:
+    for liRow from 0 to liMax
+      get phObjectID.i liRow to lhObject
+      set peAnchors of lhObject to (piTmpViewAnchor.i(self,liRow))
+    loop
+
+    move (liVerticalEaterRow<>-1) to liVerticalEaterRow
+    move (liAnyHorizontalEaterRow<>-1) to liAnyHorizontalEaterRow
+    function_return (liVerticalEaterRow*65536+liAnyHorizontalEaterRow)
+  end_function
+
+  function piFileField.i integer liRow returns integer
+    function_return (piFile.i(self,liRow)*65536+piField.i(self,liRow))
+  end_function
+  procedure set piFileField.i integer liRow integer liFileField
+    set piFile.i liRow to (liFileField/65536)
+    set piField.i liRow to (mod(liFileField,65536))
+  end_procedure
+  function sWarningQuestion.iiii integer liFile integer liField integer liRelFile integer liRelField returns string
+    string lsRval lsName lsRelName
+    move "You have selected to add field #/nthat relates to parent field #./nIt really would be better to use the parent field./nDo you want to use the parent field instead?" to lsRval
+    get FDX_FieldName ghFDX liFile liField DFTRUE to lsName
+    get FDX_FieldName ghFDX liRelFile liRelField DFTRUE to lsRelName
+    move (replace("#",lsRval,lsName)) to lsRval
+    move (replace("#",lsRval,lsRelName)) to lsRval
+    move (replaces("/n",lsRval,character(10))) to lsRval
+    function_return lsRval
+  end_function
+
+  function iPreferredClass integer liFile integer liField returns integer
+    string lsClass
+    get FastView_DDProbe liFile liField DDP_CLASS to lsClass
+    if (lsClass<>"") begin
+      if (lsClass="dbComboForm") function_return class.dbComboForm
+      if (lsClass="dbSpinForm") function_return class.dbSpinForm
+      if (lsClass="dbCheckBox") function_return class.dbCheckBox
+    end
+    function_return -1
+  end_function
+
+  procedure add_field_no_bullshit integer liFile integer liField ;
+                                  integer liClass integer liSnap ;
+                                  integer lbNoLabel
+    integer liRow liRelFile liRelField liTmp
+    string lsQuestion
+    get FDX_AttrValue_FIELD ghFDX DF_FIELD_RELATED_FILE liFile liField to liRelFile
+    if liRelFile begin
+      get FDX_AttrValue_FIELD ghFDX DF_FIELD_RELATED_FIELD liFile liField to liRelField
+      get sWarningQuestion.iiii liFile liField liRelFile liRelField to lsQuestion
+      if (MB_Verify(lsQuestion,DFTRUE)) begin
+        move liRelFile to liFile
+        move liRelField to liField
+      end
+    end
+    get iPreferredClass liFile liField to liTmp
+    if (liTmp<>-1) move liTmp to liClass
+    get row_count to liRow
+    set piFile.i    liRow to liFile
+    set piField.i   liRow to liField
+    set piClass.i   liRow to liClass
+    set pbNoLabel.i liRow to lbNoLabel
+    set piSnap.i    liRow to liSnap
+    if (liClass=class.dbEdit) begin
+      set piSizeX.i liRow to 50
+      set piSizeY.i liRow to 200
+    end
+  end_procedure
+
+  function iEffectiveIsGrid returns integer
+    integer liViewType
+    if (pbSideCarFieldsState(self)) function_return DFFALSE
+    else begin
+      get piViewType to liViewType
+
+      if (pbChildFieldsState(self)) begin
+        if (liViewType=VT_SIMPLE)        function_return DFFALSE // N/A really
+        if (liViewType=VT_GRID)          function_return DFFALSE // N/A really
+        if (liViewType=VT_HEADER_DETAIL) function_return DFTRUE
+      end
+      else begin
+        if (liViewType=VT_SIMPLE)        function_return DFFALSE
+        if (liViewType=VT_GRID)          function_return DFTRUE
+        if (liViewType=VT_HEADER_DETAIL) function_return DFFALSE
+      end
+    end
+    function_return DFFALSE // Never exits here anyway!
+  end_function
+
+  function iEffectiveFile returns integer
+    integer liFile liViewType
+    get piViewType to liViewType
+    if (pbSideCarFieldsState(self)) begin
+      if (liViewType=VT_SIMPLE)        function_return 0
+      if (liViewType=VT_GRID)          get piMainFile to liFile
+      if (liViewType=VT_HEADER_DETAIL) get piChildFile to liFile
+    end
+    else begin
+      if (pbChildFieldsState(self)) begin
+        if (liViewType=VT_HEADER_DETAIL) get piChildFile to liFile
+        else function_return 0
+      end
+      else get piMainFile to liFile
+    end
+    function_return liFile
+  end_function
+
+  procedure add_field integer liFile integer liField
+    integer liType liSegment liLen liClass liRelFile liRelField
+    string lsType lsName lsFields lsQuestion
+    get FDX_AttrValue_FIELD ghFDX DF_FIELD_TYPE liFile liField to liType
+
+    get FDX_AttrValue_FIELD ghFDX DF_FIELD_RELATED_FILE  liFile liField to liRelFile
+    if liRelFile begin
+      get FDX_AttrValue_FIELD ghFDX DF_FIELD_RELATED_FIELD liFile liField to liRelField
+      get sWarningQuestion.iiii liFile liField liRelFile liRelField to lsQuestion
+      if (MB_Verify(lsQuestion,DFTRUE)) begin
+        move liRelFile to liFile
+        move liRelField to liField
+      end
+    end
+    if (liType<>DF_BINARY and (not(iEffectiveIsGrid(self)) or liType<>DF_TEXT)) begin
+      if (liType<>DF_OVERLAP) begin
+        if (liType=DF_TEXT)  move class.dbEdit to liClass
+        else                 move class.dbForm to liClass
+        send add_field_no_bullshit liFile liField liClass 0 DFFALSE
+      end
+      else begin
+        // If an overlap field was selected, we add all the fields in it:
+        get FDX_FieldsInOverlap ghFDX liFile liField to lsFields
+        move (length(lsFields)+3/4) to liLen
+        for liSegment from 1 to liLen
+          move (mid(lsFields,4,liSegment-1*4+1)) to liField
+
+          move class.dbForm to liClass
+          if (liSegment=1) send add_field_no_bullshit liFile liField liClass 0 DFFALSE
+          else send add_field_no_bullshit liFile liField liClass SL_RIGHT DFTRUE
+        loop
+      end
+    end
+    else begin
+      get FDX_AttrValue_FIELD ghFDX DF_FIELD_NAME liFile liField to lsName
+      if (liType=DF_TEXT) move "is of type TEXT (not allowed in grid)" to lsType
+      if (liType=DF_BINARY) move "is of type BINARY" to lsType
+      send obs "Illegal field type!" lsName lsType
+    end
+  end_procedure
+end_class // cFastView_Fields
+
+class cFastView_ViewDefinition is a cArray
+  procedure construct_object
+    integer lhSelf
+    forward send construct_object
+    property string  psViewTitle    ""
+    property string  psDiskFileName ""
+    property integer piViewType     VT_SIMPLE
+    property integer pbUseGenericDD DFTRUE
+    property integer piMainFile     0
+    property integer piChildFile    0
+    property string  psAuthor       ""
+    property string  psPurpose      ""
+    property string  psNotUsed1     ""
+    property string  psNotUsed2     ""
+    property string  psNotUsed3     ""
+    object oMainFileFields is a cFastView_Fields
+    end_object
+    object oChildFileFields is a cFastView_Fields
+      set pbChildFieldsState to DFTRUE
+    end_object
+    object oGridSideCarFields is a cFastView_Fields
+      set pbSideCarFieldsState to DFTRUE
+    end_object
+    object oNotUsedArray1 is a cArray
+    end_object
+    object oNotUsedArray2 is a cArray
+    end_object
+    object oNotUsedArray3 is a cArray
+    end_object
+    move self to lhSelf
+    send AddDef to (oFastViewDefArray(self)) lhSelf
+  end_procedure
+  procedure DoCopyFromOtherDefObject integer lhSourceDef
+    send reset
+    set psViewTitle    to (psViewTitle(lhSourceDef))
+    set psDiskFileName to (psDiskFileName(lhSourceDef))
+    set piViewType     to (piViewType(lhSourceDef))
+    set pbUseGenericDD to (pbUseGenericDD(lhSourceDef))
+    set piMainFile     to (piMainFile(lhSourceDef))
+    set piChildFile    to (piChildFile(lhSourceDef))
+    set psAuthor       to (psAuthor(lhSourceDef))
+    set psPurpose      to (psPurpose(lhSourceDef))
+    set psNotUsed1     to (psNotUsed1(lhSourceDef))
+    set psNotUsed2     to (psNotUsed2(lhSourceDef))
+    set psNotUsed3     to (psNotUsed3(lhSourceDef))
+    send Clone_Array (oMainFileFields(lhSourceDef)) (oMainFileFields(self))
+    send Clone_Array (oChildFileFields(lhSourceDef)) (oChildFileFields(self))
+    send Clone_Array (oGridSideCarFields(lhSourceDef)) (oGridSideCarFields(self))
+    send Clone_Array (oNotUsedArray1(lhSourceDef)) (oNotUsedArray1(self))
+    send Clone_Array (oNotUsedArray2(lhSourceDef)) (oNotUsedArray2(self))
+    send Clone_Array (oNotUsedArray3(lhSourceDef)) (oNotUsedArray3(self))
+  end_procedure
+  procedure SEQ_Read_FileName string lsFileName
+    integer liChannel
+    string lsVersion
+    get SEQ_DirectInput lsFileName to liChannel
+    if (liChannel>=0) begin
+      send reset
+      readln channel liChannel lsVersion
+      set psViewTitle    to (SEQ_ReadLn(liChannel))
+      set piViewType     to (SEQ_ReadLn(liChannel))
+      set pbUseGenericDD to (SEQ_ReadLn(liChannel))
+      set piMainFile     to (SEQ_ReadLn(liChannel))
+      set piChildFile    to (SEQ_ReadLn(liChannel))
+      set psAuthor       to (SEQ_ReadLn(liChannel))
+      set psPurpose      to (SEQ_ReadLn(liChannel))
+      set psNotUsed1     to (SEQ_ReadLn(liChannel))
+      set psNotUsed2     to (SEQ_ReadLn(liChannel))
+      set psNotUsed3     to (SEQ_ReadLn(liChannel))
+      send SEQ_ReadArrayItems liChannel (oMainFileFields(self))
+      send SEQ_ReadArrayItems liChannel (oChildFileFields(self))
+      send SEQ_ReadArrayItems liChannel (oGridSideCarFields(self))
+      send SEQ_ReadArrayItems liChannel (oNotUsedArray1(self))
+      send SEQ_ReadArrayItems liChannel (oNotUsedArray2(self))
+      send SEQ_ReadArrayItems liChannel (oNotUsedArray3(self))
+      send SEQ_CloseInput liChannel
+      set psDiskFileName to lsFileName
+    end
+  end_procedure
+  procedure DoOpenDefinition
+    string lsFileName
+    get FastView_SelectViewDefinition to lsFileName
+//  get SEQ_SelectFileStartDir "Open fast-view definition" "Fast-view definition|*.fvw" "." to lsFileName
+    if (lsFileName<>"") send SEQ_Read_FileName lsFileName
+  end_procedure
+
+            procedure FastView_DefinitionsOnDiskChanged
+            end_procedure
+  procedure SEQ_Write_FileName string lsFileName
+    integer liChannel
+    get SEQ_DirectOutput lsFileName to liChannel
+    if (liChannel>=0) begin
+      writeln channel liChannel "FastView 1.0 - View definition"
+      writeln (psViewTitle(self))
+      writeln (piViewType(self))
+      writeln (pbUseGenericDD(self))
+      writeln (piMainFile(self))
+      writeln (piChildFile(self))
+      writeln (psAuthor(self))
+      writeln (psPurpose(self))
+      writeln (psNotUsed1(self))
+      writeln (psNotUsed2(self))
+      writeln (psNotUsed3(self))
+      send SEQ_WriteArrayItems liChannel (oMainFileFields(self))
+      send SEQ_WriteArrayItems liChannel (oChildFileFields(self))
+      send SEQ_WriteArrayItems liChannel (oGridSideCarFields(self))
+      send SEQ_WriteArrayItems liChannel (oNotUsedArray1(self))
+      send SEQ_WriteArrayItems liChannel (oNotUsedArray2(self))
+      send SEQ_WriteArrayItems liChannel (oNotUsedArray3(self))
+      send SEQ_CloseOutput liChannel
+      set psDiskFileName to lsFileName
+      broadcast recursive send FastView_DefinitionsOnDiskChanged to desktop
+    end
+  end_procedure
+  function sDefaultViewFileName returns string
+    integer liViewType liFile
+    string lsFileName lsMainFile lsChildFile
+    get piViewType to liViewType
+
+    get piMainFile to liFile
+    get_attribute DF_FILE_LOGICAL_NAME of liFile to lsMainFile
+
+    get piChildFile to liFile
+    if liFile get_attribute DF_FILE_LOGICAL_NAME of liFile to lsChildFile
+
+    if (liViewType=VT_SIMPLE) move lsMainFile to lsFileName
+    if (liViewType=VT_GRID)   move (lsMainFile+"_grid") to lsFileName
+    if (liViewType=VT_HEADER_DETAIL) move (lsMainFile+"_"+lsChildFile+"_hd") to lsFileName
+    function_return (lowercase(lsFileName))
+  end_function
+  procedure DoSaveDefinitionAs
+    string lsFileName lsDiskFileName
+    get psDiskFileName to lsDiskFileName
+    if (lsDiskFileName="") begin
+      get sDefaultViewFileName to lsDiskFileName
+
+    end
+    get FastView_SelectDiskFileName "Save FastView definition" lsDiskFileName "fvw" to lsFileName
+    if (lsFileName<>"") send SEQ_Write_FileName lsFileName
+  end_procedure
+  procedure DoSaveDefinition
+    string lsFileName
+    get psDiskFileName to lsFileName
+    if (lsFileName<>"") send SEQ_Write_FileName lsFileName
+    else send DoSaveDefinitionAs
+  end_procedure
+  procedure reset
+    set psViewTitle    to ""
+    set piViewType     to VT_SIMPLE
+    set pbUseGenericDD to DFTRUE
+    set piMainFile     to 0
+    set piChildFile    to 0
+    set psAuthor       to ""
+    set psPurpose      to ""
+    set psNotUsed1     to ""
+    set psNotUsed2     to ""
+    set psNotUsed3     to ""
+    send delete_data to (oMainFileFields(self))
+    send delete_data to (oChildFileFields(self))
+    send delete_data to (oGridSideCarFields(self))
+    send delete_data to (oNotUsedArray1(self))
+    send delete_data to (oNotUsedArray2(self))
+    send delete_data to (oNotUsedArray3(self))
+  end_procedure
+  register_object oFastViewCreator
+  function iCreateView returns integer
+    integer lhSelf lhVw lhDynamo
+    move self to lhSelf
+    if (piMainFile(lhSelf)) begin
+      move (oFastViewCreator(self)) to lhDynamo
+//      get iCreateFastView of lhDynamo lhSelf to lhVw
+      get iFastViewCreatePanel lhSelf to lhVw
+      send AddView to (oFastViewArray(self)) lhVw
+    end
+    else move 0 to lhVw
+    function_return lhVw
+  end_function
+  function iPopupPanel returns integer
+    integer lhVw
+    get iCreateView to lhVw
+    if lhVw send popup to lhVw
+    function_return lhVw
+  end_function
+  procedure PopupPanel
+    integer lhVw
+    get iPopupPanel to lhVw
+  end_procedure
+  procedure DoReload integer lhVw
+    integer liLocation
+    string lsFileName
+    get psDiskFileName to lsFileName
+    if (lsFileName<>"") begin
+      get location of lhVw to liLocation
+      send close_panel to lhVw
+      send SEQ_Read_FileName lsFileName
+      get iCreateView to lhVw
+      set location of lhVw to (hi(liLocation)) (low(liLocation))
+      send popup to lhVw
+    end
+    else send obs "This definition can not reload because it has never been saved."
+  end_procedure
+end_class // cFastView_ViewDefinition
+
+class cFastView_LuckyViewDefinition is a cFastView_ViewDefinition
+  procedure construct_object
+    integer lhSelf
+    forward send construct_object
+  end_procedure
+  procedure I_Feel_Lucky_Select_Fields integer liFile integer liDontSelectFromThisFile
+  end_procedure
+  procedure I_Feel_Lucky integer liViewType integer liMainFile integer liChildFile
+    set piViewType     to liViewType
+    set pbUseGenericDD to DFTRUE
+    set piMainFile     to liMainFile
+    set piChildFile    to liChildFile
+
+    if (liViewType=VT_SIMPLE) begin
+    end
+    if (liViewType=VT_GRID) begin
+    end
+    if (liViewType=VT_HEADER_DETAIL) begin
+    end
+
+  end_procedure
+end_class // cFastView_LuckyViewDefinition
+
+function FastView_CreateViewDefinition global returns integer
+  integer lhDef
+  object oFastView_ViewDefinition is a cFastView_LuckyViewDefinition
+    move self to lhDef
+    send reset
+  end_object
+  function_return lhDef
+end_function

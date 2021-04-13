@@ -1,0 +1,53 @@
+// use Spelling.nui //
+use base.nui
+
+desktop_section
+  object oSpellingDistance is a cArray
+    // Function taken from http://dk.php.net/manual/en/function.similar-text.php
+    function LongestCommonSequence string lsWord1 string lsWord2 returns integer
+      integer liLen1 liLen2
+      integer liPos1 liPos2
+      integer liMaxLen
+      move (length(lsWord1)) to liLen1
+      move (length(lsWord2)) to liLen2
+      move (liLen1 max liLen2) to liMaxLen
+      send delete_data
+      for liPos1 from 1 to liLen1
+        for liPos2 from 1 to liLen2
+          if (mid(lsWord1,1,liPos1)=mid(lsWord2,1,liPos2)) begin
+            set value (liPos1*liMaxLen+liPos2) to (integer(value(self,liPos1-1*liMaxLen+liPos2-1))+1)
+          end
+          else if (integer(value(self,liPos1-1*liMaxLen+liPos2))>=integer(value(self,liPos1*liMaxLen+liPos2-1))) begin
+            set value (liPos1*liMaxLen+liPos2) to (value(self,liPos1-1*liMaxLen+liPos2))
+          end
+          else begin
+            set value (liPos1*liMaxLen+liPos2) to (value(self,liPos1*liMaxLen+liPos2-1))
+          end
+        loop
+      loop
+      function_return (value(self,liLen1*liMaxLen+liLen2))
+    end_function
+    function SpellingDistancePct string lsWord1 string lsWord2 returns number
+      integer liLCS
+      number lnLen
+      get LongestCommonSequence lsWord1 lsWord2 to liLCS
+      move (length(lsWord1)+Length(lsWord2)/2.0) to lnLen
+      function_return (100.0-(liLcs/lnLen*100.0))
+    end_function
+    // Returns the number of faulty keystrokes needed for lsWord1 to accidentally become lsWord2
+    function SpellingDistance string lsWord1 string lsWord2 returns integer
+      integer liLCS liLen1 liLen2 liMaxLen
+      move (length(lsWord1)) to liLen1
+      move (length(lsWord2)) to liLen2
+      move (liLen1 max liLen2) to liMaxLen
+      get LongestCommonSequence lsWord1 lsWord2 to liLCS
+      function_return (liMaxLen-liLCS)
+    end_function
+  end_object // oSpellingDistance
+end_desktop_section
+
+function Spelling_Distance global string lsWord1 string lsWord2 returns integer
+  integer liDistance
+  get SpellingDistance of oSpellingDistance lsWord1 lsWord2 to liDistance
+  function_return liDistance
+end_function

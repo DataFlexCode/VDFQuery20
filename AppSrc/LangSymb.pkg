@@ -1,0 +1,25 @@
+// Use LangSymb.pkg // Language symbols
+//
+// !! When adding a new language to be supported
+// functions LanguageIdToStr and LanguageIdToInt
+// in LanguageDictionary.pkg must be updated also
+
+Define LNG_ENGLISH     for  0 //"en"
+Define LNG_DANISH      for  1 //"da"
+Define LNG_SWEDISH     for  2 //"sv"
+Define LNG_NORWEGIAN   for  3 //"no"
+Define LNG_NORWEGIAN2  for  4 //"nn"
+Define LNG_DUTCH       for  5 //"nl"
+Define LNG_GERMAN      for  6 //"de"
+Define LNG_SPANISH     for  7 //"es"
+Define LNG_FRENCH      for  8 //"fr"
+Define LNG_ITALIAN     for  9 //"it"
+Define LNG_PORTUGUESE  for 10 //"pt"
+Define LNG_PAPIAMENTU  for 11 //"pap"
+Define LNG_RUSSIAN     for 12 //"ru"
+Define LNG_POLISH      for 13 //"pl"
+Define LNG_CZECH       for 14 //"cs"
+Define LNG_HUNGARIAN   for 15 //"hu"
+Define LNG_FINNISH     for 16 //"fi"
+Define LNG_MAX         for 17 // Points one higher than the highest language
+

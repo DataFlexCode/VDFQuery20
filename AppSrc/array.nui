@@ -1,0 +1,329 @@
+// Use Array.nui    // Item_Property command (No User Interface)
+
+//> pkgdoc.begin
+//> This package defines three commands ITEM_PROPERTY_LIST, ITEM_PROPERTY
+//> and END_ITEM_PROPERTY_LIST. They should be used like this:
+//>
+//> <code>
+//> object oTest is an Array
+//>   item_property_list
+//>     item_property string  pItem_Label
+//>     item_property integer pItem_Type
+//>     item_property string  pItem_Default
+//>   end_item_property_list // IF IN CLASS REPEAT CLASS NAME HERE!
+//> end_object
+//> </code>
+//>
+//> You will now be able to write code like:
+//>
+//> <code>
+//> set pItem_Label   item 2 to "Amazing"
+//> get pItem_Default item 0 to sVar
+//> </code>
+//>
+//> Note that you do not need to sub-class the array in order to do this.
+//> The ITEM_PROPERTY command structure simply defines a number of messages
+//> that lets you set the values of the array using your own names.
+//>
+//> In a normal array you may get the number of items by using the Item_Count
+//> function. Of course you may still do that, but you would more likely
+//> want to retrieve the number of 'rows' currently in the array. For this
+//> purpose the END_ITEM_PROPERTY_LIST command defines a function called
+//> Row_Count.
+//>
+//> In an empty array the Row_Count function returns 0 (surprise). Having
+//> set just one of the values of the 1'st row (row number 0) the Row_Count
+//> function will return 1.
+//>
+//> If you want to define item_properties as part of a class definition
+//> you should NOT define them inside procedure construct_object as you
+//> would with normal properties. Instead it looks like this:
+//>
+//> <code>
+//> class cTest is an Array
+//>   item_property_list
+//>     item_property string  pItem_Label
+//>     item_property integer pItem_Type
+//>     item_property string  pItem_Default
+//>   end_item_property_list cTest // NOTE: Class name as parameter!
+//> end_class
+//> </code>
+//> pkgdoc.end
+
+use ui
+
+Enumeration_List // Symbols used internally by the item_property command
+  define ITMP_INTEGER
+  define ITMP_STRING
+  define ITMP_REAL
+  define ITMP_NUMBER
+  define ITMP_DATE
+  define ITMP_ARRAY
+End_Enumeration_List
+
+#COMMAND ITEM_PROPERTY_LIST .
+ #PUSH !m   // Used for signalling whether to create insert_row and swap_rows procedures
+ #PUSH !p   //
+ #PUSH !g   // Number of items per row (increments during define)
+ #SET G$ 0  //
+ #PUSH !i   // Number of items per row (set at definition end)
+ #PUSH !l   // Used for pushing and pop'ing data types
+ #PUSH !e   //
+ #PUSH !f   //
+ #SPUSH !$  // Property names
+ #SET P$ !a // Copy current line number to P. Used for generating unique labels
+// function header_label integer liColumn returns string // ny
+#ENDCOMMAND
+
+#COMMAND END_DEFINE_ARRAY_FIELDS$CREATE_SWAP_ROW
+ #IF (!f<!g)   // When this macro is called integers row1# and row2# are first items
+  get value item liRow1 to lsString1
+  get value item liRow2 to lsString2
+  set value item liRow1 to lsString2
+  set value item liRow2 to lsString1
+  increment liRow1
+  increment liRow2
+  #SET F$ !F
+  END_DEFINE_ARRAY_FIELDS$CREATE_SWAP_ROW
+ #ENDIF
+#ENDCOMMAND
+
+#COMMAND END_DEFINE_ARRAY_FIELDS$CREATE_DELETE_ROWS
+ #IF (!i<!g)
+  #IF (IP$!p$!i=ITMP_ARRAY)
+   get value item (liBase+!i) to lhObj
+   if (lhObj<>0) begin
+     send delete_data_recursive of lhObj
+     send destroy of lhObj
+     //showln "Eliminating: " lhObj
+   end
+  #ENDIF
+  #SET I$ !I
+  END_DEFINE_ARRAY_FIELDS$CREATE_DELETE_ROWS
+ #ENDIF
+#ENDCOMMAND
+
+
+#COMMAND END_ITEM_PROPERTY_LIST_HELP
+//   function_return ""
+// end_function // ny (header_label)
+ #IF (!b & 2)              // obj_flag == in_class?
+  #IF !0 // Are there any parameters?
+   #IFDEF U_!1
+   #ELSE
+    #ERROR 666 Illegal class name in END_ITEM_PROPERTY_LIST command
+   #ENDIF
+  #ELSE
+   #ERROR 666 Missing class name in END_ITEM_PROPERTY_LIST command
+  #ENDIF
+  #SET $$ !1
+ #ELSE
+  #CHECK !1 . // If object: No parameters
+ #ENDIF
+ function row_count returns integer
+   function_return (!g -1+item_count(self)/!g)
+ end_function
+ function items_per_row returns integer // Don't use this. Use column count instead
+   function_return !g
+ end_function
+ function column_count returns integer
+   function_return !g
+ end_function
+ procedure delete_row integer liRow
+   integer liBase liItem
+   move (liRow* !g) to liBase
+   for liItem from 1 to !g
+     send delete_item liBase
+   loop
+ end_procedure
+ procedure delete_data_recursive
+   integer liBase liRow liMax lhObj
+   get row_count to liMax
+   decrement liMax
+   for liRow from 0 to liMax
+     move (liRow* !g) to liBase
+     #PUSH !i
+     #SET I$ 0
+     END_DEFINE_ARRAY_FIELDS$CREATE_DELETE_ROWS
+     #POP I$
+   loop
+   send delete_data
+ end_procedure
+ #SET I$ !g // Copy number of items per row to I$
+ function item_property_type integer liColumn returns integer
+  END_DEFINE_ARRAY_FIELDS$HELP2
+ end_function
+ #SET G$ !i // Copy number of items per row to I$
+ #IF !m>0
+  procedure swap_rows integer liRow1 integer liRow2
+    string lsString1 lsString2
+    move (liRow1*!g) to liRow1 // Convert to first item in row
+    move (liRow2*!g) to liRow2 // Convert to first item in row
+    #SET F$ 0
+    END_DEFINE_ARRAY_FIELDS$CREATE_SWAP_ROW
+  end_procedure
+  procedure insert_row integer liRow
+    integer liItem liMax
+    get row_count to liMax
+    decrement liMax
+    for liItem from liRow to liMax
+      send swap_rows (liMax+liRow-liItem) (liMax+liRow-liItem+1)
+    loop
+    for liItem from (liRow*!g) to (liRow+1*!g-1) // Reset the new row
+      set value item liItem to ""
+    loop
+  end_procedure
+ #ENDIF
+ #SET I$ !g // Copy number of items per row to I$
+ END_DEFINE_ARRAY_FIELDS$HELP !1
+ #SPOP
+ #POP F$
+ #POP E$
+ #POP L$
+ #POP I$
+ #POP G$
+ #POP P$
+ #POP M$
+#ENDCOMMAND // END_ITEM_PROPERTY_LIST_HELP
+
+#COMMAND END_ITEM_PROPERTY_LIST
+ #SET M$ 0
+ END_ITEM_PROPERTY_LIST_HELP !1
+#ENDCOMMAND // END_ITEM_PROPERTY_LIST
+
+#COMMAND END_ITEM_PROPERTY_LIST_EXTENDED
+ #SET M$ 1 // Signals the creation of insert_row and swap_rows procedures
+ END_ITEM_PROPERTY_LIST_HELP !1
+#ENDCOMMAND // END_ITEM_PROPERTY_LIST_EXTENDED
+
+#COMMAND ITEM_PROPERTY$HELP // Handle XML tags, subnodes, column headers asf. (cItemPropertyArray class required)
+ #IF !0 // Are there any parameters?
+  #IFSAME !1 XML_TAG
+   send add_column_xml_tag !g !2
+   ITEM_PROPERTY$HELP !3 !4 !5 !6 !7 !8 !9
+  #ELSE
+   #IFSAME !1 XML_SUBNODE_ARRAY
+    send add_column_xml_subnode_array !g
+    ITEM_PROPERTY$HELP !2 !3 !4 !5 !6 !7 !8 !9
+   #ELSE
+    #IFSAME !1 COLUMN_HEADER
+     ITEM_PROPERTY$HELP !3 !4 !5 !6 !7 !8 !9
+    #ELSE
+     #IFSAME !1 COLUMN_DISPLAY
+      send add_grid_display !g !2
+      ITEM_PROPERTY$HELP !3 !4 !5 !6 !7 !8 !9
+     #ELSE
+      #IFSAME !1 COLUMN_LENGTH
+       send add_grid_length !g !2
+       ITEM_PROPERTY$HELP !3 !4 !5 !6 !7 !8 !9
+      #ELSE
+       #IFSAME !1 COLUMN_DECIMALS
+        send add_grid_decimals !g !2
+        ITEM_PROPERTY$HELP !3 !4 !5 !6 !7 !8 !9
+       #ELSE
+        #ERROR 666 Illegal argument in ITEM_PROPERTY command (!1)
+       #ENDIF
+      #ENDIF
+     #ENDIF
+    #ENDIF
+   #ENDIF
+  #ENDIF
+ #ENDIF
+#ENDCOMMAND
+
+#COMMAND ITEM_PROPERTY R R . // Type, Name
+ #SET $$ !2
+// if (liColumn=!g) function_return "!$"  // ny
+ #SPUSH !$ // Push property name
+ #SET L$ -1
+ #IFSAME !1 INTEGER
+  #SET L$ ITMP_INTEGER
+ #ENDIF
+ #IFSAME !1 STRING
+  #SET L$ ITMP_STRING
+ #ENDIF
+ #IFSAME !1 NUMBER
+  #SET L$ ITMP_NUMBER
+ #ENDIF
+ #IFSAME !1 DATE
+  #SET L$ ITMP_DATE
+ #ENDIF
+ #IFSAME !1 REAL
+  #SET L$ ITMP_REAL
+ #ENDIF
+ #IFSAME !1 ARRAY
+  #SET L$ ITMP_ARRAY
+ #ENDIF
+ #IF (!l=-1)
+  #ERROR 666 "Invalid data type in ITEM_PROPERTY command (!1)"
+ #ENDIF
+ #PUSH !l // Push data type
+ #REPLACE IP$!p$!g !l
+ ITEM_PROPERTY$HELP !3 !4 !5 !6 !7 !8 !9
+ #SET G$ !G // Increment number of items per row
+#ENDCOMMAND
+
+#COMMAND DEFINE_ITEM_PROPERTY$HELP // Name, Type, Items per row, OffSet, Class name
+ #SET $$ !5
+ function !1 integer liRow returns !2
+   function_return (value(self,liRow*!3+!4))
+ end_function
+ procedure set !1 integer liRow !2 lxValue
+   set value item (liRow*!3+!4) to lxValue
+ end_procedure
+#ENDCOMMAND
+
+#COMMAND END_DEFINE_ARRAY_FIELDS$HELP2
+ #IF !g
+  #SET G$ (!g - 1)
+  if liColumn eq !g function_return IP$!p$!g
+  END_DEFINE_ARRAY_FIELDS$HELP2
+ #ENDIF
+#ENDCOMMAND
+
+#COMMAND END_DEFINE_ARRAY_FIELDS$HELP
+ #IF !g
+  #SPOP
+  #POP L$
+  #SET G$ (!g - 1)
+  #IF (!l = ITMP_INTEGER)
+   DEFINE_ITEM_PROPERTY$HELP !$ INTEGER !i !g !1
+  #ENDIF
+  #IF (!l = ITMP_STRING)
+   DEFINE_ITEM_PROPERTY$HELP !$ STRING !i !g !1
+  #ENDIF
+  #IF (!l = ITMP_REAL)
+   DEFINE_ITEM_PROPERTY$HELP !$ REAL !i !g !1
+  #ENDIF
+  #IF (!l = ITMP_NUMBER)
+   DEFINE_ITEM_PROPERTY$HELP !$ NUMBER !i !g !1
+  #ENDIF
+  #IF (!l = ITMP_DATE)
+   DEFINE_ITEM_PROPERTY$HELP !$ DATE !i !g !1
+  #ENDIF
+  #IF (!l = ITMP_ARRAY)
+   DEFINE_ITEM_PROPERTY$HELP !$ INTEGER !i !g !1
+  #ENDIF
+  END_DEFINE_ARRAY_FIELDS$HELP !1
+ #ENDIF
+#ENDCOMMAND
+
+#COMMAND ITEM_PROPERTY_REDIR R R "TO" R .
+  procedure set !2 integer liRow !1 lxValue
+    set !2 of !4 liRow to lxValue
+  end_procedure
+  function !2 integer liRow returns !1
+    function_return (!2(!4,liRow))
+  end_function
+#ENDCOMMAND
+
+procedure Clone_Array global integer lhSrc integer lhTarget
+  integer liItem liMax
+  move (item_count(lhSrc)) to liMax
+  send delete_data to lhTarget
+  for liItem from 0 to (liMax-1)
+    set value of lhTarget item liItem to (value(lhSrc,liItem))
+  loop
+end_procedure
+
+//

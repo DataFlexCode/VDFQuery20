@@ -1,0 +1,223 @@
+// Use ODBC.utl       
+#HEADER
+use aps.pkg
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use MsgBox.utl
+use gridutil.utl
+Use Language.pkg    // Set default languange if not set by compiler command line
+Use Seq_Chnl.pkg    // Defines global sequential device management operations (DAW)
+use buttons.utl
+use dbms.utl
+use files.utl
+Use FDX.nui
+use FDX2.utl
+#ENDHEADER
+Use Login.utl    // DBMS_GetDriverLogin function
+
+integer IntDummy
+Use odbc_drv.pkg
+
+class cODBC_DataSources is a cArray
+  procedure AddSource integer liNumber string lsName
+    set value item liNumber to lsName
+  end_procedure
+  procedure FillArray
+    integer liMax liNumber
+    string lsName
+    send delete_data
+    ODBCEnumerateDataSources liMax
+    for liNumber from 1 to liMax
+      ODBCDSNName liNumber to lsName
+      send AddSource liNumber lsName
+    loop
+  end_procedure
+end_class // cODBC_DataSources
+
+class cODBC_Tables is a cArray
+  item_property_list
+    item_property string psTableName.i
+    item_property string psSchemaName.i
+  end_item_property_list cODBC_Tables
+  procedure AddTable integer liNumber string lsTableName string lsSchemaName
+    set psTableName.i  liNumber to lsTableName
+    set psSchemaName.i liNumber to lsSchemaName
+  end_procedure
+  procedure FillArray string lsDSNName
+    integer liMax liNumber
+    string lsTableName lsSchemaName
+    send delete_data
+    ODBCEnumerateTables lsDSNName to liMax
+    for liNumber from 1 to liMax
+      ODBCTableName liNumber to lsTableName
+//      ODBCSchemaName liNumber to lsSchemaName
+      send AddTable liNumber lsTableName lsSchemaName
+    loop
+  end_procedure
+end_class // cODBC_Tables
+
+class cODBC_Fields is a cArray
+  procedure AddField integer liNumber string lsName
+    set value item liNumber to lsName
+  end_procedure
+  procedure FillArray string lsDSNName string lsTableName
+    integer liMax liNumber
+    string lsName
+    send delete_data
+    ODBCEnumerateFields lsDSNName lsTableName to liMax
+    for liNumber from 1 to liMax
+      ODBCTableName liNumber to lsName
+      send AddField liNumber lsName
+    loop
+  end_procedure
+end_class // cODBC_Fields
+
+function ODBC_StartAdministrator global returns integer
+  integer liWndHandle
+  get Window_Handle to liWndHandle
+  ODBCAdministrator liWndHandle
+  function_return 1
+end_function
+
+function ODBC_OpenAs global integer liFile integer liMode string lsDataSource string lsTableName returns integer
+  string lsIntFileName
+  move ("temp"+string(liFile)+".INT") to lsIntFileName
+  direct_output channel 1 lsIntFileName
+  writeln channel 1 "DRIVER_NAME ODBC_DRV"
+  writeln "SERVER_NAME DSN=" lsDataSource
+  writeln "DATABASE_NAME " lsTableName
+  writeln "PRIMARY_INDEX 1"
+  writeln "INDEX_NUMBER 1"
+  writeln "INDEX_NUMBER_SEGMENTS 1"
+  writeln "INDEX_SEGMENT_FIELD 1"
+//  writeln "SCHEMA_NAME DBA"
+  close_output channel 1
+  close liFile
+  open lsIntFileName as liFile
+  function_return 1
+end_function
+
+procedure ODBC_Login global
+  integer rval# driver#
+  string server# user# pw#
+  get DBMS_GetDriverLogin 0 to rval#
+  if rval# begin
+    get DBMS_GetDriverLoginDriverID to driver#
+    get DBMS_GetDriverLoginServer   to server#
+    get DBMS_GetDriverLoginUserID   to user#
+    get DBMS_GetDriverLoginPassWord to pw#
+    login server# user# pw# (DBMS_TypeToDriverName(driver#))
+  end
+end_procedure
+
+
+use gridutil.utl
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+Use Buttons.utl  // Button texts
+
+object oODBC_DataSources is a cODBC_DataSources
+end_object
+object oODBC_Tables is a cODBC_Tables
+end_object
+
+object oODBCTableSelector is a aps.ModalPanel label "ODBC table selector"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult public 0
+
+  object oDataSourceSelector is a aps.ComboFormAux
+    set form_margin item 0 to 40
+    set entry_state item 0 to DFFALSE
+    procedure fill_list
+      integer lhObj liMax liItem
+      move (oODBC_DataSources(self)) to lhObj
+      send Combo_Delete_Data
+      get item_count of lhObj to liMax
+      decrement liMax
+      for liItem from 1 to liMax
+        send combo_add_item (value(lhObj,liItem)) liItem
+      loop
+    end_procedure
+    procedure OnChange
+      send DoUpdateTables
+    end_procedure
+  end_object // oDataSourceSelector
+  send aps_goto_max_row
+
+  object oTables is a aps.Grid
+    send GridPrepare_AddColumn "Table name" AFT_ASCII40
+    send GridPrepare_Apply self
+    procedure fill_list
+      integer lhObj liMax liItem
+      set dynamic_update_state to DFFALSE
+      move (oODBC_Tables(self)) to lhObj
+      send Delete_Data
+      get row_count of lhObj to liMax
+      decrement liMax
+      for liItem from 1 to liMax
+        send add_item MSG_NONE (psTableName.i(lhObj,liItem))
+      loop
+      set dynamic_update_state to DFTRUE
+      send Grid_SetEntryState self DFFALSE
+    end_procedure
+  end_object
+
+  procedure DoUpdateTables
+    string lsDSNName
+    get value of (oDataSourceSelector(self)) item 0 to lsDSNName
+    if (lsDSNName<>"") begin
+      send FillArray to (oODBC_Tables(self)) lsDSNName
+      send fill_list to (oTables(self))
+    end
+    else send delete_data to (oTables(self))
+  end_procedure
+
+  procedure DoOpen
+    integer liRval
+    string lsDataSource lsTableName
+    get value of (oDataSourceSelector(self)) item 0 to lsDataSource
+    get value of (oTables(self)) item CURRENT to lsTableName
+    send obs lsDataSource lsTableName
+    get ODBC_OpenAs 37 DF_SHARE lsDataSource lsTableName to liRval
+    send FDX_ModalDisplayFileAttributes 0 37
+  end_procedure
+  on_key KEY_CTRL+KEY_O send DoOpen
+
+  object oBtn1 is a aps.Multi_Button
+    on_item "Login" send ODBC_Login
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item "Open" send DoOpen
+  end_object
+  object oBtn3 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    set piResult to 1
+    send close_panel
+  end_procedure
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oTables(self)) delta_rw# 0 // delta_cl#
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_register_multi_button (oBtn3(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+  procedure popup
+    integer liGarbage
+    set piResult to 0
+//    get ODBC_StartAdministrator to liGarbage
+    send FillArray to (oODBC_DataSources(self))
+    send fill_list to (oDataSourceSelector(self))
+    forward send popup
+    if (piResult(self)) begin
+    end
+  end_procedure
+end_object // oODBCTableSelector
+
+//send popup to (oODBCTableSelector(self))

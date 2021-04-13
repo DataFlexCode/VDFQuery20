@@ -1,0 +1,847 @@
+// Use FdxCompa.nui // Class for comparing table definitions
+
+Use Compare.nui  // Abstract class for comparing item based information
+Use Fdx_Attr.nui // FDX compatible attribute functions
+Use StrucPgm.nui // Class for storing a sequence of restructure instructions
+
+enumeration_list // Field compare results
+  define FIELDSTHESAME_YES
+  define FIELDSTHESAME_NO
+  define FIELDSTHESAME_MAYBE
+end_enumeration_list
+
+register_function piFDX1  returns integer
+register_function piFile1 returns integer
+register_function piFDX2  returns integer
+register_function piFile2 returns integer
+
+// FIELD COMPARING
+
+//> An object of this class is used to dictate which fields are identical
+//> prior to a compare operation. It should be understood as: This field
+//> in file1 is the same as this field in file2.
+//>
+//> There is however not currently an interface for doing so.
+class cFdxTheseFieldsAreTheSame is a cArray // Private class
+  item_property_list
+    item_property integer piField1.i
+    item_property integer piField2.i
+  end_item_property_list cFdxTheseFieldsAreTheSame
+  function iSameField.ii integer Field1# integer Field2# returns integer
+    integer row# max#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      if (piField1.i(self,row#)=Field1# and piField2.i(self,row#)=Field2#) ;
+                 function_return FIELDSTHESAME_YES
+      else if (piField1.i(self,row#)=Field1# or piField2.i(self,row#)=Field2#) ;
+                 function_return FIELDSTHESAME_NO
+    loop
+    function_return FIELDSTHESAME_MAYBE
+  end_function
+  procedure add_field_match integer field1# integer field2#
+    integer row#
+    get row_count to row#
+    set piField1.i row# to field1#
+    set piField2.i row# to field2#
+  end_procedure
+end_class // cFdxTheseFieldsAreTheSame
+
+// And here's one like the above, except this one is used to
+// dictate that two fields are NOT the same
+
+class cFdxTheseFieldsAreNotTheSame is a cArray // Private class
+  item_property_list
+    item_property integer piField1.i
+    item_property integer piField2.i
+  end_item_property_list cFdxTheseFieldsAreNotTheSame
+  function iSameField.ii integer Field1# integer Field2# returns integer
+    integer row# max#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      if (piField1.i(self,row#)=Field1# and piField2.i(self,row#)=Field2#) ;
+                 function_return FIELDSTHESAME_NO
+    loop
+    function_return FIELDSTHESAME_MAYBE
+  end_function
+  procedure add_field_not_match integer field1# integer field2#
+    integer row#
+    get row_count to row#
+    set piField1.i row# to field1#
+    set piField2.i row# to field2#
+  end_procedure
+end_class // cFdxTheseFieldsAreNotTheSame
+
+//> An object of class cFdxTheseNamesAreTheSame is used to inform
+//> the compare operation that these field names are in fact identical.
+//> For example you may have named a product number field PRODUCT in
+//> some tables and PRODUCT_CODE in others.
+class cFdxTheseNamesAreTheSame is a cArray // Private class
+  item_property_list
+    item_property string psName1.i
+    item_property string psName2.i
+  end_item_property_list cFdxTheseNamesAreTheSame
+  function iSameName.ss string Name1# string Name2# returns integer
+    integer row# max#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      if (psName1.i(self,row#)=Name1# and psName2.i(self,row#)=Name2#) function_return FIELDSTHESAME_YES
+    loop
+    function_return FIELDSTHESAME_MAYBE
+  end_function
+  procedure add_name_match string Name1# string Name2#
+    integer row#
+    get row_count to row#
+    set psName1.i row# to Name1#
+    set psName2.i row# to Name1#
+  end_procedure
+  procedure DoReadFDNFile string lsFileName
+    integer liRow liChannel lbEof
+    string lsName1 lsName2
+    send delete_data
+    get SEQ_DirectInput lsFileName to liChannel
+    if (liChannel>=0) begin
+      repeat
+        readln channel liChannel lsName1
+        readln lsName2
+        move (seqeof) to lbEof
+        ifnot lbEof begin
+          get row_count to liRow
+          set psName1.i liRow to lsName1
+          set psName2.i liRow to lsName2
+        end
+      until lbEof
+      send SEQ_CloseInput liChannel
+    end
+  end_procedure
+end_class // cFdxTheseNamesAreTheSame
+
+class cFdxFieldMap is a cArray
+  item_property_list
+    item_property integer piField1.i
+    item_property integer piField2.i
+  end_item_property_list cFdxFieldMap
+  procedure reset
+    send delete_data
+  end_procedure
+  procedure add_field_map integer field1# integer field2#
+    integer row#
+    get row_count to row#
+    set piField1.i row# to field1#
+    set piField2.i row# to field2#
+  end_procedure
+end_class // cFdxFieldMap
+
+class cFdxFieldAttrCompare is a cItemBasedCompare
+  procedure construct_object integer img#
+    forward send construct_object img#
+    set piSyncLimit to 0 // 0 means no limit
+    set piStrategy  to COMPARE_ORDERED
+    object oFdxTheseFieldsAreTheSame is a cFdxTheseFieldsAreTheSame 
+    end_object
+    object oFdxTheseFieldsAreNotTheSame is a cFdxTheseFieldsAreNotTheSame 
+    end_object
+    object oFdxTheseNamesAreTheSame is a cFdxTheseNamesAreTheSame 
+    end_object
+    object oFdxFieldMap is a cFdxFieldMap 
+      // After a comparison (procedure run) this object will contain
+      // information about which fields were matched. A zero value
+      // means that the field wasn't matched (which in turn means
+      // that it should be inserted or deleted depending on which
+      // side the zero occurs).
+    end_object
+  end_procedure
+
+  procedure add_instruction integer type# integer attr# integer field# string name# string value#
+    integer row#
+    set piInstrType.i row# to type#
+    set piAttr.i      row# to attr#
+    set piField.i     row# to field#
+    set psFieldName.i row# to name#
+    set psValue.i     row# to value#
+  end_procedure
+
+  function iCompareItems.ii integer field1# integer field2# returns integer
+    integer rval#
+    string name1# name2#
+    // First ask the explicit field pairing object:
+    get iSameField.ii of (oFdxTheseFieldsAreTheSame(self)) field1# field2# to rval#
+    if rval# eq FIELDSTHESAME_MAYBE begin
+      // Then ask the explicit field dispairing object:
+      get iSameField.ii of (oFdxTheseFieldsAreNotTheSame(self)) field1# field2# to rval#
+      if rval# eq FIELDSTHESAME_MAYBE begin
+        // If no definate answers, we have to try and figure it out:
+        get FDX_AttrValue_FIELD (piFDX1(self)) DF_FIELD_NAME (piFile1(self)) field1# to name1#
+        get FDX_AttrValue_FIELD (piFDX2(self)) DF_FIELD_NAME (piFile2(self)) field2# to name2#
+        // Then ask the implicit field pairing object:
+        get iSameName.ss of (oFdxTheseNamesAreTheSame(self)) name1# name2# to rval#
+        if rval# eq FIELDSTHESAME_MAYBE begin
+          // As a last resort we ask if the field names are identical
+          if (Uppercase(name1#)=Uppercase(name2#)) move FIELDSTHESAME_YES to rval#
+        end
+      end
+    end
+    function_return (rval#=FIELDSTHESAME_YES)
+  end_function
+
+  function iIsChangedField.iii integer attr# integer field1# integer field2# returns integer
+    function_return (FDX_AttrValue_FIELD(piFDX1(self),attr#,piFile1(self),field1#)<>FDX_AttrValue_FIELD(piFDX2(self),attr#,piFile2(self),field2#))
+  end_function
+
+  // This is sent when items are found to be identical
+  procedure items_matched integer field1# integer field2#
+    integer type# file1#
+    string name#
+    move (FDX_AttrValue_FIELD(piFDX1(self),DF_FIELD_NAME,piFile1(self),field1#)) to name#
+    move (FDX_AttrValue_FIELD(piFDX2(self),DF_FIELD_TYPE,piFile2(self),field2#)) to type#
+    if (iIsChangedField.iii(self,DF_FIELD_TYPE         ,field1#,field2#)) begin
+      send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_TYPE          field1# name# (FDX_AttrValue_FIELD(piFDX2(self),DF_FIELD_TYPE         ,piFile2(self),field2#))
+      send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_LENGTH        field1# name# (FDX_AttrValue_FIELD(piFDX2(self),DF_FIELD_LENGTH       ,piFile2(self),field2#))
+    end
+    if type# ne DF_DATE begin // Only interfere with field length if not a DATE field
+      if (iIsChangedField.iii(self,DF_FIELD_LENGTH       ,field1#,field2#)) begin
+        send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_LENGTH        field1# name# (FDX_AttrValue_FIELD(piFDX2(self),DF_FIELD_LENGTH       ,piFile2(self),field2#))
+      end
+      if (iIsChangedField.iii(self,DF_FIELD_PRECISION    ,field1#,field2#)) begin
+        send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_PRECISION     field1# name# (FDX_AttrValue_FIELD(piFDX2(self),DF_FIELD_PRECISION    ,piFile2(self),field2#))
+      end
+    end
+    if (iIsChangedField.iii(self,DF_FIELD_RELATED_FILE ,field1#,field2#)) begin
+      send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_RELATED_FILE  field1# name# (FDX_AttrValue_FIELD(piFDX2(self),DF_FIELD_RELATED_FILE ,piFile2(self),field2#))
+    end
+    if (iIsChangedField.iii(self,DF_FIELD_RELATED_FIELD,field1#,field2#)) begin
+      send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_RELATED_FIELD field1# name# (FDX_AttrValue_FIELD(piFDX2(self),DF_FIELD_RELATED_FIELD,piFile2(self),field2#))
+    end
+    if (iIsChangedField.iii(self,DF_FIELD_INDEX        ,field1#,field2#)) begin
+      send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_INDEX         field1# name# (FDX_AttrValue_FIELD(piFDX2(self),DF_FIELD_INDEX        ,piFile2(self),field2#))
+    end
+    if (iIsChangedField.iii(self,DF_FIELD_OFFSET       ,field1#,field2#)) begin
+      if type# eq DF_OVERLAP ;
+        send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_OFFSET      field1# name# (FDX_AttrValue_FIELD(piFDX2(self),DF_FIELD_OFFSET       ,piFile2(self),field2#))
+    end
+    if (iIsChangedField.iii(self,DF_FIELD_NAME         ,field1#,field2#)) begin
+      send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_NAME          field1# name# (FDX_AttrValue_FIELD(piFDX2(self),DF_FIELD_NAME         ,piFile2(self),field2#))
+    end
+    send add_field_map to (oFdxFieldMap(self)) field1# field2#
+  end_procedure
+
+  procedure item_not_matched1 integer field# integer info#
+    integer identity_field#
+    get FDX_AttrValue_FILE (piFDX1(self)) DF_FILE_RECORD_IDENTITY (piFile1(self)) to identity_field#
+    if field# ne identity_field# begin
+      // Field on left side not matched => We must delete it:
+      send add_field_instruction INSTR_TYPE_DELETE 0 field# (FDX_AttrValue_FIELD(piFDX1(self),DF_FIELD_NAME,piFile1(self),field#)) ""
+      send NoteFieldDeleted field#
+      send add_field_map to (oFdxFieldMap(self)) field# 0
+    end
+  end_procedure
+
+    // Means itm# on the right side couldn't be matched. The info parameter
+    // gives a little extra information.
+    //    -2: The item is missing in the end of the sequence
+    //    -1: Sync limit exceeded. Missing somewhere in the middle of things.
+    //   >=0: Missing from the left side at position info#
+  procedure item_not_matched2 integer field# integer info#
+    // Field on right side not matched => We must create it:
+    integer oFDX# file#
+    integer type# length# precision# offset# index# rfile# rfield#
+    string name#
+    integer identity_field#
+    get piFDX2 to oFDX#
+    get piFile2 to file#
+    get FDX_AttrValue_FILE oFDX# DF_FILE_RECORD_IDENTITY file# to identity_field#
+    if field# ne identity_field# begin
+      move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_NAME,file#,field#)) to name#
+      move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_TYPE         ,file#,field#)) to type#
+      move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_LENGTH       ,file#,field#)) to length#
+      move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_PRECISION    ,file#,field#)) to precision#
+      move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_RELATED_FILE ,file#,field#)) to rfile#
+      move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_RELATED_FIELD,file#,field#)) to rfield#
+      move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_INDEX        ,file#,field#)) to index#
+      move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_OFFSET       ,file#,field#)) to offset#
+  //  if info# ne -1 begin
+        if info# eq -2 begin
+          send add_field_instruction INSTR_TYPE_APPEND DF_FIELD_NAME 0 "" name#
+          move 0 to field#
+        end
+        else send add_field_instruction INSTR_TYPE_CREATE DF_FIELD_NAME field# "" name#
+        send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_TYPE          field# name# type#
+        if type# ne DF_DATE begin
+          send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_LENGTH        field# name# length#
+          send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_PRECISION     field# name# precision#
+        end
+        send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_RELATED_FILE  field# name# rfile#
+        send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_RELATED_FIELD field# name# rfield#
+        send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_INDEX         field# name# index#
+        if type# eq DF_OVERLAP send add_field_instruction INSTR_TYPE_EDIT DF_FIELD_OFFSET field# name# offset#
+        send add_field_map to (oFdxFieldMap(self)) 0 field#
+  //  end
+  //  else send obs "Info er sgu' -1" name#
+    end
+  end_procedure
+
+  procedure add_same_field integer field1# integer field2#
+    send add_field_match to (oFdxTheseFieldsAreTheSame(self)) field1# field2#
+  end_procedure
+  procedure add_not_same_field integer field1# integer field2#
+    send add_field_not_match to (oFdxTheseFieldsAreNotTheSame(self)) field1# field2#
+  end_procedure
+  procedure add_same_name string name1# string name2#
+    send add_name_match to (oFdxTheseNamesAreTheSame(self)) name1# name2#
+  end_procedure
+
+  procedure run
+    integer lhFdx liOrigin lhObj
+    string lsFileName lsPath
+    set pItemStart1 to 1
+    set pItemStart2 to 1
+//    if (iCanOpen.i(piFDX1(self),piFile1(self))) set pItemStop1 to (FDX_AttrValue_FILE(piFDX1(self),DF_FILE_NUMBER_FIELDS,piFile1(self)))
+    if (piFile1(self)) begin
+      set pItemStop1 to (FDX_AttrValue_FILE(piFDX1(self),DF_FILE_NUMBER_FIELDS,piFile1(self)))
+
+      get FDX_AttrValue_FILELIST (piFDX1(self)) DF_FILE_ROOT_NAME (piFile1(self)) to lsFileName
+      move (lsFileName+".fdn") to lsFileName
+
+      get piFDX2 to lhFdx
+      get piDataOrigin of lhFdx to liOrigin
+      if (liOrigin=FDX_REAL_WORLD) begin
+
+        if (iFdxIsEncapsulated(lhFdx)) begin
+          get piFileDefObject.i of lhFdx (piFile1(self)) to lhObj
+          get psDatPath of lhObj to lsPath
+          get SEQ_ExtractPathFromFileName lsPath to lsPath
+          get SEQ_ComposeAbsoluteFileName lsPath lsFileName to lsFileName
+        end
+        else move "" to lsFileName
+//        send obs "Real world" lsFileName
+      end
+      if (liOrigin=FDX_READ_FROM_FILE) begin
+        get psFileName of lhFdx to lsPath
+        get SEQ_ExtractPathFromFileName lsPath to lsPath
+        get SEQ_ComposeAbsoluteFileName lsPath lsFileName to lsFileName
+//        send obs "Read from file" lsFileName
+      end
+
+      if (lsFileName<>"") send DoReadFDNFile to (oFdxTheseNamesAreTheSame(self)) lsFileName
+      else send delete_data to (oFdxTheseNamesAreTheSame(self))
+    end
+    else set pItemStop1 to 0 // We are creating!
+
+
+    set pItemStop2 to (FDX_AttrValue_FILE(piFDX2(self),DF_FILE_NUMBER_FIELDS,piFile2(self)))
+
+    forward send run
+  end_procedure
+  procedure reset
+    send delete_data
+    send delete_data to (oFdxTheseFieldsAreTheSame(self))
+    send delete_data to (oFdxTheseFieldsAreNotTheSame(self))
+    send delete_data to (oFdxTheseNamesAreTheSame(self))
+    send delete_data to (oFdxFieldMap(self))
+  end_procedure
+end_class // cFdxFieldAttrCompare
+
+// INDEX COMPARING
+
+class cFdxIndexAttrCompare is a cArray
+  item_property_list
+    item_property integer piIndexDirty.i
+  end_item_property_list cFdxIndexAttrCompare
+  procedure reset
+    send delete_data
+  end_procedure
+  procedure AnalyzeDeletedFields integer fieldarr#
+    integer max# field# fdx# file# index# segment# seg_max#
+    get piFile1 to file#
+    get piFDX1 to fdx#
+    get item_count of fieldarr# to max#
+    for field# from 1 to (max#-1)
+      if (integer(value(fieldarr#,field#))) begin // Field has been deleted
+        for index# from 1 to 16
+          get FDX_AttrValue_INDEX fdx# DF_INDEX_NUMBER_SEGMENTS file# index# to seg_max#
+          for segment# from 1 to seg_max#
+            if (FDX_AttrValue_IDXSEG(fdx#,DF_INDEX_SEGMENT_FIELD,file#,index#,segment#)) eq field# set piIndexDirty.i index# to 1
+          loop
+        loop
+      end
+    loop
+  end_procedure
+  function sIndex_Fields.iii integer oFDX# integer file# integer index# returns string
+    integer max_segment# segment# field#
+    string rval#
+    move "" to rval#
+    if file# begin
+      move (FDX_AttrValue_INDEX(oFDX#,DF_INDEX_NUMBER_SEGMENTS,file#,index#)) to max_segment#
+      for segment# from 1 to max_segment#
+        move (FDX_AttrValue_IDXSEG(oFDX#,DF_INDEX_SEGMENT_FIELD,file#,index#,segment#)) to field#
+        move (rval#+string(field#)) to rval#
+        if segment# ne max_segment# move (rval#+" ") to rval#
+      loop
+    end
+    function_return rval# // This value is only used for comparing
+  end_function
+  function sIndex_Direction.iii integer oFDX# integer file# integer index# returns string
+    integer max_segment# segment# dir#
+    string rval#
+    move "" to rval#
+    if file# begin
+      move (FDX_AttrValue_INDEX(oFDX#,DF_INDEX_NUMBER_SEGMENTS,file#,index#)) to max_segment#
+      for segment# from 1 to max_segment#
+        move (FDX_AttrValue_IDXSEG(oFDX#,DF_INDEX_SEGMENT_DIRECTION,file#,index#,segment#)) to dir#
+        if dir# eq DF_ASCENDING  move (rval#+"+") to rval#
+        if dir# eq DF_DESCENDING move (rval#+"-") to rval#
+      loop
+    end
+    function_return rval# // This value is only used for comparing
+  end_function
+  function sIndex_CaseUsed.iii integer oFDX# integer file# integer index# returns string
+    integer max_segment# segment# case#
+    string rval#
+    move "" to rval#
+    if file# begin
+      move (FDX_AttrValue_INDEX(oFDX#,DF_INDEX_NUMBER_SEGMENTS,file#,index#)) to max_segment#
+      for segment# from 1 to max_segment#
+        move (FDX_AttrValue_IDXSEG(oFDX#,DF_INDEX_SEGMENT_CASE,file#,index#,segment#)) to case#
+        if case# eq DF_CASE_USED    move (rval#+"x") to rval#
+        if case# eq DF_CASE_IGNORED move (rval#+"X") to rval#
+      loop
+    end
+    function_return rval# // This value is only used for comparing
+  end_function
+  procedure Make_Directions integer index# string dir1# string dir2#
+    integer pos# len# value#
+    string char1# char2#
+    move (length(dir2#)) to len#
+    for pos# from 1 to len#
+      move (mid(dir1#,1,pos#)) to char1#
+      move (mid(dir2#,1,pos#)) to char2#
+      if char1# ne char2# begin
+        if char2# eq "-" move DF_DESCENDING to value#
+        else move DF_ASCENDING to value#
+        send add_indexseg_instruction INSTR_TYPE_EDIT DF_INDEX_SEGMENT_DIRECTION index# pos# value#
+      end
+    loop
+  end_procedure
+  procedure Make_CaseUsed integer index# string case1# string case2#
+    integer pos# len# value#
+    string char1# char2#
+    move (length(case2#)) to len#
+    for pos# from 1 to len#
+      move (mid(case1#,1,pos#)) to char1#
+      move (mid(case2#,1,pos#)) to char2#
+      if char1# ne char2# begin
+        if char2# eq "X" move DF_CASE_IGNORED to value#
+        else move DF_CASE_USED to value#
+        send add_indexseg_instruction INSTR_TYPE_EDIT DF_INDEX_SEGMENT_CASE index# pos# value#
+      end
+    loop
+  end_procedure
+
+  procedure Make_Index integer index#
+    integer max_segment# segment# field# oFDX# file#
+    move (piFDX2(self)) to oFDX#
+    move (piFile2(self)) to file#
+    move (FDX_AttrValue_INDEX(oFDX#,DF_INDEX_NUMBER_SEGMENTS,file#,index#)) to max_segment#
+    if max_segment# eq 0 begin // Delete index
+      send add_index_instruction INSTR_TYPE_DELETE DF_INDEX_NUMBER_SEGMENTS index# 0
+    end
+    else begin // Edit or create index
+      send add_index_instruction INSTR_TYPE_CREATE DF_INDEX_NUMBER_SEGMENTS index# max_segment#
+      for segment# from 1 to max_segment#
+        move (FDX_AttrValue_IDXSEG(oFDX#,DF_INDEX_SEGMENT_FIELD,file#,index#,segment#)) to field#
+        send add_indexseg_instruction INSTR_TYPE_EDIT DF_INDEX_SEGMENT_FIELD     index# segment# field#
+        send add_indexseg_instruction INSTR_TYPE_EDIT DF_INDEX_SEGMENT_CASE      index# segment# (FDX_AttrValue_IDXSEG(oFDX#,DF_INDEX_SEGMENT_CASE,file#,index#,segment#))
+        send add_indexseg_instruction INSTR_TYPE_EDIT DF_INDEX_SEGMENT_DIRECTION index# segment# (FDX_AttrValue_IDXSEG(oFDX#,DF_INDEX_SEGMENT_DIRECTION,file#,index#,segment#))
+      loop
+      send add_index_instruction INSTR_TYPE_CREATE DF_INDEX_TYPE index# (FDX_AttrValue_INDEX(oFDX#,DF_INDEX_TYPE,file#,index#))
+    end
+  end_procedure
+
+  procedure compare_index integer index#
+    integer type1# type2#
+    string fields1# fields2#
+    string comp_val1# comp_val2#
+    // Compare fields:
+    get sIndex_Fields.iii (piFDX1(self)) (piFile1(self)) index# to fields1#
+    get sIndex_Fields.iii (piFDX2(self)) (piFile2(self)) index# to fields2#
+    if (fields1#=fields2#) begin // At least the fields are identical
+      ifnot (piIndexDirty.i(self,index#)) begin // No segments have been deleted as a consequence of field deletions
+        // Compare directions:
+        get sIndex_Direction.iii (piFDX1(self)) (piFile1(self)) index# to comp_val1#
+        get sIndex_Direction.iii (piFDX2(self)) (piFile2(self)) index# to comp_val2#
+        send Make_Directions index# comp_val1# comp_val2#
+        // Compare cases:
+        get sIndex_CaseUsed.iii (piFDX1(self)) (piFile1(self)) index# to comp_val1#
+        get sIndex_CaseUsed.iii (piFDX2(self)) (piFile2(self)) index# to comp_val2#
+        send Make_CaseUsed index# comp_val1# comp_val2#
+        if fields2# ne "" begin
+          move (FDX_AttrValue_INDEX(piFDX1(self),DF_INDEX_TYPE,piFile1(self),index#)) to type1#
+          move (FDX_AttrValue_INDEX(piFDX2(self),DF_INDEX_TYPE,piFile2(self),index#)) to type2#
+          if type1# ne type2# send add_index_instruction INSTR_TYPE_EDIT DF_INDEX_TYPE index# type2#
+        end
+      end
+      else send Make_Index index#
+    end
+    else send Make_Index index#
+  end_procedure
+  procedure run
+    integer index#
+    for index# from 1 to 16
+      send compare_index index#
+    loop
+  end_procedure
+end_class // cFdxIndexAttrCompare
+
+class cDummyCompareResultReciever is a cArray
+  procedure construct_object integer liImg
+    forward send construct_object liImg
+    property integer piFile                  0
+    property string  psRootName              ""
+    property integer piFileList_Change       0  // True if changes in filelist parameters
+    property integer piFile_Change           0  // True if changes in file parameters
+    property integer piField_Change          0  // True if changes in field parameters
+    property integer piField_Sequence_Change 0  // True only if fields have been added or removed
+    property integer piIndex_Change          0  // True if changes in index parameters
+    property integer piProgramType           0
+  end_procedure
+  procedure add_filelist_instruction integer liAttr string lsValue
+    set piFileList_Change to true
+  end_procedure
+  procedure add_file_instruction integer liAttr string lsValue
+    set piFile_Change to true
+  end_procedure
+  procedure add_field_instruction integer liType integer liAttr integer liField string lsName string lsValue
+    set piField_Change to true
+    if (liType=INSTR_TYPE_DELETE or liType=INSTR_TYPE_APPEND or liType=INSTR_TYPE_CREATE) set piField_Sequence_Change to true
+  end_procedure
+  procedure add_index_instruction integer liType integer liAttr integer liIndex string lsValue
+    set piIndex_Change to true
+  end_procedure
+  procedure add_indexseg_instruction integer liType integer liAttr integer liIndex integer liSegment string lsValue
+    set piIndex_Change to true
+  end_procedure
+  procedure reset
+    set piFile            to 0
+    set psRootName        to ""
+    set piFileList_Change to 0
+    set piFile_Change     to 0
+    set piField_Change    to 0
+    set piIndex_Change    to 0
+    set piField_Sequence_Change to 0
+  end_procedure
+  function iGenericChange returns integer
+    function_return (piFile_Change(self) or piField_Change(self))
+  end_function
+end_class // cDummyCompareResultReciever
+
+// PUTTING IT ALL TOGETHER:
+
+enumeration_list
+  define FDXCOMP_MODE_ALL       // Compare both table definintion and filelist values
+  define FDXCOMP_MODE_FILE      // Compare table definitions only
+  define FDXCOMP_MODE_FILELIST  // Compare filelist values only
+end_enumeration_list
+
+class cFdxTableCompare is an cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piFile1                     0 // Compare file1
+    property integer piFDX1                      0 // of FDX1
+    property integer piFile2                     0 // with file2
+    property integer piFDX2                      0 // of FDX2
+    property integer piPgmObject                 0 // and put the result in this object
+
+    // These are set during the comparison operation:
+    property integer piFileList_Change           0
+    property integer piFile_Change               0
+    property integer piField_Change              0
+    property integer piIndex_Change              0
+
+    // Setup parameters:
+    property integer piSetup_RootName_CaseSens   1
+    property integer piSetup_DFName_CaseSens     0
+    property integer piSetup_UserName_CaseSens   1
+
+    property integer piIgnore_DisplayName        0 // Filelist, DF_FILE_DISPLAY_NAME
+    property integer piIgnore_MaxRecords         1 // File, DF_FILE_MAX_RECORDS
+    property integer piIgnore_Compression        0 // File, DF_FILE_COMPRESSION
+    property integer piIgnore_IntegrityCheck     0 // File, DF_FILE_INTEGRITY_CHECK
+    property integer piIgnore_LockType           0 // File, DF_FILE_LOCK_TYPE
+    property integer piIgnore_MultiUser          0 // File, DF_FILE_MULTIUSER
+    property integer piIgnore_ReuseDeleted       0 // File, DF_FILE_REUSE_DELETED
+    property integer piIgnore_TransactionSetting 0 // File, DF_FILE_TRANSACTION
+    property integer piIgnore_Rootname           0 // File, DF_FILE_ROOT_NAME
+    property integer piIgnore_RecordLength       0 // File, DF_FILE_RECORD_LENGTH
+    property integer piIgnore_RecordIdentity     0 // File, DF_FILE_RECORD_IDENTITY
+
+    object oFdxFieldAttrCompare is a cFdxFieldAttrCompare
+    end_object
+    object oFdxIndexAttrCompare is a cFdxIndexAttrCompare 
+    end_object
+    object oDeletedFields is a cArray
+    end_object
+  end_procedure
+
+  procedure reset
+    send reset to (oFdxFieldAttrCompare(self))
+    send reset to (oFdxIndexAttrCompare(self))
+    send delete_data to (oDeletedFields(self))
+    set piFileList_Change to False
+    set piFile_Change     to False
+    set piField_Change    to False
+    set piIndex_Change    to False
+  end_procedure
+
+  procedure NoteFieldDeleted integer field#
+    set value of (oDeletedFields(self)) item field# to 1
+  end_procedure
+
+  function iAnyChange returns integer
+    function_return (piFileList_Change(self)+piFile_Change(self)+piField_Change(self)+piIndex_Change(self))
+  end_function
+
+  procedure add_filelist_instruction integer attr# string value#
+    integer obj#
+    get piPgmObject to obj#
+    if obj# send add_filelist_instruction to obj# attr# value#
+    set piFileList_Change to true
+  end_procedure
+  procedure add_file_instruction integer attr# string value#
+    integer obj#
+    get piPgmObject to obj#
+    if obj# send add_file_instruction to obj# attr# value#
+    set piFile_Change to true
+  end_procedure
+  procedure add_field_instruction integer type# integer attr# integer field# string name# string value#
+    integer obj#
+    get piPgmObject to obj#
+    if obj# send add_field_instruction to obj# type# attr# field# name# value#
+    set piField_Change to true
+  end_procedure
+  procedure add_index_instruction integer type# integer attr# integer index# string value#
+    integer obj#
+    get piPgmObject to obj#
+    if obj# send add_index_instruction to obj# type# attr# index# value#
+    set piIndex_Change to true
+  end_procedure
+  procedure add_indexseg_instruction integer type# integer attr# integer index# integer segment# string value#
+    integer obj#
+    get piPgmObject to obj#
+    if obj# send add_indexseg_instruction to obj# type# attr# index# segment# value#
+    set piIndex_Change to true
+  end_procedure
+
+  function iIsChangedFileList.ii integer attr# integer CaseSens# returns integer
+    string value1# value2#
+    move (FDX_AttrValue_FILELIST(piFDX1(self),attr#,piFile1(self))) to value1#
+    move (FDX_AttrValue_FILELIST(piFDX2(self),attr#,piFile2(self))) to value2#
+    if (attr#=DF_FILE_DISPLAY_NAME and piIgnore_DisplayName(self) and trim(value2#)<>"") function_return 0
+    if (attr#=DF_FILE_ROOT_NAME and piIgnore_RootName(self) and trim(value2#)<>"") function_return 0
+    if (not(CaseSens#)) begin
+      move (uppercase(value1#)) to value1#
+      move (uppercase(value2#)) to value2#
+    end
+    function_return (value1#<>value2#)
+  end_function
+  function iIsChangedFile.i integer attr# returns integer
+    if (attr#=DF_FILE_MAX_RECORDS     and piIgnore_MaxRecords(self)) function_return 0
+    if (attr#=DF_FILE_COMPRESSION     and piIgnore_Compression(self)) function_return 0
+    if (attr#=DF_FILE_INTEGRITY_CHECK and piIgnore_IntegrityCheck(self)) function_return 0
+    if (attr#=DF_FILE_LOCK_TYPE       and piIgnore_LockType(self)) function_return 0
+    if (attr#=DF_FILE_MULTIUSER       and piIgnore_MultiUser(self)) function_return 0
+    if (attr#=DF_FILE_REUSE_DELETED   and piIgnore_ReuseDeleted(self)) function_return 0
+    if (attr#=DF_FILE_TRANSACTION     and piIgnore_TransactionSetting(self)) function_return 0
+    if (attr#=DF_FILE_RECORD_LENGTH   and piIgnore_RecordLength(self)) function_return 0
+    if (attr#=DF_FILE_RECORD_IDENTITY and piIgnore_RecordIdentity(self)) function_return 0
+    function_return (FDX_AttrValue_FILE(piFDX1(self),attr#,piFile1(self))<>FDX_AttrValue_FILE(piFDX2(self),attr#,piFile2(self)))
+  end_function
+
+  procedure run.ii integer restruct_program_object# integer liCompareMode
+    integer file1# file2# pgm_type# lhFDX2 lbFilelistSlotEmpty
+    set piPgmObject to restruct_program_object#
+    send reset to restruct_program_object# // 03-09-2000
+    send reset
+    get piFile1 to file1#
+    get piFile2 to file2#
+    if (file1#+file2#) begin
+      if file2# ne 0 begin
+        get piFDX2 to lhFDX2
+        if (liCompareMode=FDXCOMP_MODE_FILELIST or liCompareMode=FDXCOMP_MODE_ALL) begin
+          // Check filelist parameters:
+          get AttrValue_IsEmpty of lhFDX2 file2# to lbFilelistSlotEmpty
+
+          if (not(file1#) or iIsChangedFileList.ii(self,DF_FILE_ROOT_NAME,piSetup_RootName_CaseSens(self))) begin
+            if lbFilelistSlotEmpty send add_filelist_instruction DF_FILE_ROOT_NAME ""
+            else send add_filelist_instruction DF_FILE_ROOT_NAME    (FDX_AttrValue_FILELIST(lhFDX2,DF_FILE_ROOT_NAME,piFile2(self)))
+          end
+          if (not(file1#) or iIsChangedFileList.ii(self,DF_FILE_LOGICAL_NAME,piSetup_DFName_CaseSens(self))) begin
+            if lbFilelistSlotEmpty send add_filelist_instruction DF_FILE_LOGICAL_NAME ""
+            else send add_filelist_instruction DF_FILE_LOGICAL_NAME (FDX_AttrValue_FILELIST(lhFDX2,DF_FILE_LOGICAL_NAME,piFile2(self)))
+          end
+          if (not(file1#) or iIsChangedFileList.ii(self,DF_FILE_DISPLAY_NAME,piSetup_UserName_CaseSens(self))) begin
+            if lbFilelistSlotEmpty send add_filelist_instruction DF_FILE_DISPLAY_NAME ""
+            else send add_filelist_instruction DF_FILE_DISPLAY_NAME (FDX_AttrValue_FILELIST(lhFDX2,DF_FILE_DISPLAY_NAME,piFile2(self)))
+          end
+        end
+
+        if (liCompareMode=FDXCOMP_MODE_FILE or liCompareMode=FDXCOMP_MODE_ALL) begin
+          // Check file parameters:
+          if (not(file1#) or iIsChangedFile.i(self,DF_FILE_MAX_RECORDS    ))  send add_file_instruction DF_FILE_MAX_RECORDS      (FDX_AttrValue_FILE(lhFDX2,DF_FILE_MAX_RECORDS    ,file2#))
+          if (not(file1#) or iIsChangedFile.i(self,DF_FILE_MULTIUSER      ))  send add_file_instruction DF_FILE_MULTIUSER        (FDX_AttrValue_FILE(lhFDX2,DF_FILE_MULTIUSER      ,file2#))
+          if (not(file1#) or iIsChangedFile.i(self,DF_FILE_REUSE_DELETED  ))  send add_file_instruction DF_FILE_REUSE_DELETED    (FDX_AttrValue_FILE(lhFDX2,DF_FILE_REUSE_DELETED  ,file2#))
+          if (not(file1#) or iIsChangedFile.i(self,DF_FILE_COMPRESSION    ))  send add_file_instruction DF_FILE_COMPRESSION      (FDX_AttrValue_FILE(lhFDX2,DF_FILE_COMPRESSION    ,file2#))
+          if (not(file1#) or iIsChangedFile.i(self,DF_FILE_TRANSACTION    ))  send add_file_instruction DF_FILE_TRANSACTION      (FDX_AttrValue_FILE(lhFDX2,DF_FILE_TRANSACTION    ,file2#))
+          if (not(file1#) or iIsChangedFile.i(self,DF_FILE_RECORD_LENGTH  ))  send add_file_instruction DF_FILE_RECORD_LENGTH    (FDX_AttrValue_FILE(lhFDX2,DF_FILE_RECORD_LENGTH  ,file2#))
+          if (not(file1#) or iIsChangedFile.i(self,DF_FILE_INTEGRITY_CHECK))  send add_file_instruction DF_FILE_INTEGRITY_CHECK  (FDX_AttrValue_FILE(lhFDX2,DF_FILE_INTEGRITY_CHECK,file2#))
+          if (not(file1#) or iIsChangedFile.i(self,DF_FILE_RECORD_IDENTITY))  send add_file_instruction DF_FILE_RECORD_IDENTITY  (FDX_AttrValue_FILE(lhFDX2,DF_FILE_RECORD_IDENTITY,file2#))
+
+          send run to (oFdxFieldAttrCompare(self))
+          send AnalyzeDeletedFields to (oFdxIndexAttrCompare(self)) (oDeletedFields(self))
+          send run to (oFdxIndexAttrCompare(self))
+        end
+
+        if (file1#*file2#) begin // EDIT or NOCHANGE
+          if (iAnyChange(self)) move PGM_TYPE_EDIT to pgm_type#
+          else move PGM_TYPE_EMPTY to pgm_type#
+        end
+        else begin
+          if file1# eq 0 begin
+            if (liCompareMode=FDXCOMP_MODE_FILELIST) move PGM_TYPE_FILELIST to pgm_type#
+            else move PGM_TYPE_CREATE to pgm_type#
+          end
+        end
+      end
+      else begin // File2 is 0 => Drop table:
+        send add_filelist_instruction DF_FILE_ROOT_NAME    ""
+        send add_filelist_instruction DF_FILE_LOGICAL_NAME ""
+        send add_filelist_instruction DF_FILE_DISPLAY_NAME ""
+        move PGM_TYPE_DROP to pgm_type# // Makes the program drop the file.
+      end
+      set piProgramType of restruct_program_object# to pgm_type#
+    end
+  end_procedure
+end_class // cFdxTableCompare
+
+desktop_section
+  object oFdxTableCompare is a cFdxTableCompare
+  end_object
+end_desktop_section
+
+//> Function iFdxCompareTables.iiiiii compares two table definitions and
+//> returns the object ID of a cFdxRestructureProgram object that
+//> holds the instructions to restructure the data definition
+function iFdxCompareTables.iiiiii global integer lhPgmObj integer lhFdx1 integer liFile1 integer lhFdx2 integer liFile2 integer liCompareMode returns integer
+  integer lhTableCompare
+  ifnot lhPgmObj get iCreateFdxRestructureProgram to lhPgmObj
+  send reset to lhPgmObj
+  set piFile of lhPgmObj to liFile1
+  ifnot (iCanOpen.i(lhFdx1,liFile1)) begin
+    set psRootName of lhPgmObj to (FDX_AttrValue_FILELIST(lhFdx2,DF_FILE_ROOT_NAME,liFile2))
+    move 0 to liFile1 // This signals a creation
+  end
+  else set psRootName of lhPgmObj to (FDX_AttrValue_FILELIST(lhFdx1,DF_FILE_ROOT_NAME,liFile1))
+  move (oFdxTableCompare(self)) to lhTableCompare
+  set piFDX1  of lhTableCompare to lhFdx1
+  set piFile1 of lhTableCompare to liFile1
+  set piFDX2  of lhTableCompare to lhFdx2
+  set piFile2 of lhTableCompare to liFile2
+  send run.ii to lhTableCompare lhPgmObj liCompareMode
+//  send DoEditFieldMatch lhTableCompare
+  function_return lhPgmObj
+end_function
+
+// Returns 0 if no changes and file was not written (or rather deleted if present)
+// Returns 1 if changes and file was written
+// Returns 2 if different number of fields
+function Fdx_GenerateFieldNameChanges global integer lhFDX1 integer liFile1 integer lhFDX2 integer liFile2 string lsDir returns integer
+  integer liChannel liField liMax lbChanges liGarbage
+  string lsOutFileName lsName1 lsName2
+  ifnot (liFile1*liFile2) function_return 0
+  if (FDX_AttrValue_FILE(lhFdx1,DF_FILE_NUMBER_FIELDS,liFile1)=FDX_AttrValue_FILE(lhFdx2,DF_FILE_NUMBER_FIELDS,liFile2)) begin
+
+    move (FDX_AttrValue_FILE(lhFdx1,DF_FILE_NUMBER_FIELDS,liFile1)) to liMax
+
+    get FDX_AttrValue_FILELIST lhFDX1 DF_FILE_ROOT_NAME liFile1 to lsOutFileName
+
+    move (lsOutFileName+".fdn") to lsOutFileName
+    get SEQ_ComposeAbsoluteFileName lsDir lsOutFileName to lsOutFileName
+
+    get SEQ_DirectOutput lsOutFileName to liChannel
+    if (liChannel>=0) begin
+      move DFFALSE to lbChanges
+      for liField from 1 to liMax
+        get FDX_AttrValue_FIELD lhFDX1 DF_FIELD_NAME liFile1 liField to lsName1
+        get FDX_AttrValue_FIELD lhFDX2 DF_FIELD_NAME liFile2 liField to lsName2
+        if (lsName1<>lsName2) begin
+          move DFTRUE to lbChanges
+          writeln channel liChannel lsName1
+          writeln lsName2
+        end
+      loop
+      send SEQ_CloseOutput liChannel
+      ifnot lbChanges begin
+        get SEQ_EraseFile lsOutFileName to liGarbage
+        //delete the file
+      end
+      function_return 1
+    end
+  end
+  else begin
+//    send obs "Incompatible number of fields in file:" lsOutFileName
+    function_return 2
+  end
+end_function
+
+
+//enumeration_list
+//  define ARCERR_NO_ERROR
+//  define ARCERR_INCOMPATIBLE_FILE_FOUND // "Target data file exists, but can't be opened
+//  define ARCERR_SOURCE_FILE_NOT_FOUND
+//  define ARCERR_RESTRUCTURE_NEEDED
+//  define ARCERR_CREATE_FAILED
+//end_enumeration_list
+//
+//// Denne funktion unders›ger hvorvidt, der allerede findes en data file
+//// i target biblioteket. Hvis alt er i orden returneres 0
+//function iValidateDataFile integer file# returns integer
+//  integer oFDX1# oFDX2# rval# obj#
+//  string target_dir# root# target_root#
+//  move 0 to rval#
+//  close file#
+//  if (DBMS_OpenFile(file#,DF_SHARE,0)) begin
+//    // Read current file definition
+//    object oFdx1 is a cFdxFileDef 
+//      send Read_File_Definition.i file#
+//      move self to oFDX1#
+//    end_object
+//
+//    // Check if there's one in the target directory
+//    get ArchiveSetupValue ARC_DIRECTORY to target_dir#
+//    move (API_AttrValue_FILELIST(DF_FILE_ROOT_NAME,file#)) to root#
+//    move (SEQ_ComposeAbsoluteFileName(target_dir#,root#)) to target_root#
+//    if (SEQ_FileExists(target_root#+".dat")) begin // compare
+//      close file#
+//      if (DBMS_OpenFileAs(target_root#,file#,DF_SHARE,0)) begin
+//        object oFdx2 is a cFdxFileDef
+//          send Read_File_Definition.i file#
+//          move self to oFDX2#
+//        end_object
+//        get iFdxCompareTables.iiiiii (oArcCompareResult(self)) oFDX1# file# oFDX2# file# FDXCOMP_MODE_ALL to obj#
+//        if (iGenericChange(obj#)) move ARCERR_RESTRUCTURE_NEEDED to rval#
+//        send request_destroy_object to oFDX2#
+//        // Her
+//      end
+//      else move ARCERR_INCOMPATIBLE_FILE_FOUND to rval#
+//    end
+//    else begin
+//      //send obs "P† dette sted kunne programmet oprette filnr" (string(file#)) target_root#
+//      move (RSX_CreateTableFromFDX(oFDX1#,file#,target_root#)) to rval#
+//      if rval# move 0 to rval#
+//      else move ARCERR_CREATE_FAILED to rval#
+//    end
+//    send request_destroy_object to oFDX1#
+//  end
+//  else move ARCERR_SOURCE_FILE_NOT_FOUND to rval#
+//  close file#
+//  function_return rval#
+//end_function
+

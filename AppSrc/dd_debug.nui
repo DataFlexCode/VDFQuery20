@@ -1,0 +1,123 @@
+// Use dd_debug.nui // For web applications
+
+Use DDOCallBack.nui // Procedure DDO_Callback (that calls back for DDO's in a DDO structure)
+Use ApiIndex.nui // Switch indices offline and back online
+
+class cDbg_DdoStatus is a cArray
+  procedure construct_object
+    forward send construct_object
+    property string psName
+    property integer phRootDDO
+  end_procedure
+  item_property_list
+    item_property integer phDDO.i
+    item_property integer piCurrent_Record.i
+    item_property integer pbChanged_State.i
+  end_item_property_list cDbg_DdoStatus
+  function iFindDDO.i integer lhDDO returns integer
+    integer liRow liMax
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      if (lhDDO=phDDO.i(self,liRow)) function_return liRow
+    loop
+    function_return -1
+  end_function
+  procedure HandleDDO integer lhDDO integer liTable
+    integer liRow
+    get iFindDDO.i lhDDO to liRow
+    if (liRow=-1) begin
+      get row_count to liROw
+      set phDDO.i            liRow to lhDDO
+      set piCurrent_Record.i liRow to (current_record(lhDDO))
+      set pbChanged_State.i  liRow to (changed_state(lhDDO))
+    end
+  end_procedure
+  procedure analyze_ddo integer lhDDO string lsName
+    set psName to lsName
+    set phRootDDO to lhDDO
+    send DDO_CallbackReset
+    // First all parent DDO's
+    send DDO_Callback lhDDO TRUE TRUE TRUE TRUE MSG_HandleDDO self
+    send HandleDDO lhDDO
+    send DDO_Callback lhDDO FALSE TRUE FALSE TRUE MSG_HandleDDO self
+  end_procedure
+  procedure DoWriteHtml
+    integer liRow liMax liFile liIndex
+    string lsParentName
+    send XHTML_Add_Open_Element "table"
+    get row_count to liMax
+    move (lowercase(name(parent(phRootDDO(self))))) to lsParentName
+    decrement liMax
+    send XHTML_Add_Open_Element "tr"
+    send XHTML_Add_Closed_Element "th" "ID"
+    send XHTML_Add_Closed_Element "th" "Name"
+    send XHTML_Add_Closed_Element "th" "Changed"
+    send XHTML_Add_Closed_Element "th" "Record"
+    send XHTML_Add_Closed_Element "th" "Index Value"
+    send XHTML_Close_Element // tr
+    send XHTML_Add_Open_Element "tr"
+    send XHTML_Add_Closed_Element "td" ("Parent name: "+lsParentName)
+    send XHTML_Add_Attribute "colspan" 5
+
+    send XHTML_Close_Element // tr
+    for liRow from 0 to liMax
+      send XHTML_Add_Open_Element "tr"
+      send XHTML_Add_Closed_Element "td" (phDDO.i(self,liRow))
+      send XHTML_Add_Closed_Element "td" (replace(lsParentName+".",lowercase(name(phDDO.i(self,liRow))),""))
+      send XHTML_Add_Closed_Element "td" (pbChanged_State.i(self,liRow))
+      send XHTML_Add_Closed_Element "td" (piCurrent_Record.i(self,liRow))
+      get main_file of (phDDO.i(self,liRow)) to liFile
+      send XHTML_Add_Closed_Element "td" (API_IndexValue(liFile,FDX_IndexFindPrimary(0,liFile)))
+      send XHTML_Close_Element // tr
+    loop
+    send XHTML_Close_Element // table
+  end_procedure
+end_class // cDbg_DdoStatus
+
+object oDbg_DdoStatusList is a cArray
+  procedure add_snapshot integer lhDDO string lsName
+    integer lhSelf
+    object oDdoStatus is a cDbg_DdoStatus
+      move self to lhSelf
+      send analyze_ddo lhDDO lsName
+    end_object
+    set value (item_count(self)) to lhSelf
+  end_procedure
+  procedure DoReset
+    integer liMax liItm lhObj
+    get item_count to liMax
+    decrement liMax
+    for liItm from 0 to liMax
+      get value liItm to lhObj
+      send destroy of lhObj
+    loop
+    send delete_data
+  end_procedure
+  procedure DoWriteHtml
+    integer liMax liItm lhObj
+    get item_count to liMax
+    if liMax begin
+      send XHTML_Add_Open_Element "table"
+      decrement liMax
+      for liItm from 0 to liMax
+        get value liItm to lhObj
+        send XHTML_Add_Open_Element "tr"
+        send XHTML_Add_Open_Element "td"
+        send DoWriteHtml of lhObj
+        send XHTML_Close_Element // td
+        send XHTML_Close_Element // tr
+      loop
+      send XHTML_Close_Element // table
+      send DoReset
+    end
+  end_procedure
+end_object // oDbg_DdoStatusList
+
+procedure Dbg_ReadDdoStatus global integer lhDDO string lsName
+  send add_snapshot of oDbg_DdoStatusList lhDDO lsName
+end_procedure
+procedure Dbg_DoWriteHtml global
+  send DoWriteHtml of oDbg_DdoStatusList
+end_procedure
+

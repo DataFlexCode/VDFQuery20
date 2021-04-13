@@ -1,0 +1,136 @@
+// Use FDX_Attr.nui // FDX compatible attribute functions
+//
+//> The functions defined in this class allows you to query the setting
+//> of all the API attrbutes whether from the current runtime or from
+//> an FDX object, using the same calling syntax.
+
+
+Use API_Attr.nui // Database API attributes characteristics
+Use DBMS.nui     // Basic DBMS functions
+
+// The functions below are only declared if FDX.nui is used.
+register_function AttrValue_GLOBAL integer attr# returns string
+register_function AttrValue_FILELIST integer attr# integer file# returns string
+register_function AttrValue_FILE integer attr# integer file# returns string
+register_function AttrValue_FIELD integer attr# integer file# integer field# returns string
+register_function AttrValue_INDEX integer attr# integer file# integer index# returns string
+register_function AttrValue_IDXSEG integer attr# integer file# integer index# integer segment# returns string
+register_function AttrValue_SPECIAL1 integer attr# integer file# integer field1# integer field2# returns string
+register_function AttrValue_FLSTNAV integer attr# integer file# returns string
+register_function AttrValue_DRIVER integer attr# integer driver# returns string
+register_function AttrValue_DRVSRV integer attr# integer driver# integer server# returns string
+register_function OtherAttr_Value integer attr# returns string
+register_function piFileDefObject.i integer file# returns integer
+register_function psFileName returns string
+register_function iNextFileThatCanOpen integer file# returns integer
+
+function FDX_AttrValue_GLOBAL global integer oFDX# integer attr# returns string
+  if oFDX# function_return (AttrValue_GLOBAL(oFDX#,attr#))
+  else function_return (API_AttrValue_GLOBAL(attr#))
+end_function
+function FDX_AttrValue_FILELIST global integer oFDX# integer attr# integer file# returns string
+  if oFDX# function_return (AttrValue_FILELIST(oFDX#,attr#,file#))
+  else function_return (API_AttrValue_FILELIST(attr#,file#))
+end_function
+function FDX_AttrValue_FILE global integer oFDX# integer attr# integer file# returns string
+  if oFDX# function_return (AttrValue_FILE(oFDX#,attr#,file#))
+  else function_return (API_AttrValue_FILE(attr#,file#))
+end_function
+function FDX_AttrValue_FIELD global integer oFDX# integer attr# integer file# integer field# returns string
+  if oFDX# function_return (AttrValue_FIELD(oFDX#,attr#,file#,field#))
+  else function_return (API_AttrValue_FIELD(attr#,file#,field#))
+end_function
+function FDX_AttrValue_INDEX global integer oFDX# integer attr# integer file# integer index# returns string
+  if oFDX# function_return (AttrValue_INDEX(oFDX#,attr#,file#,index#))
+  else function_return (API_AttrValue_INDEX(attr#,file#,index#))
+end_function
+function FDX_AttrValue_IDXSEG global integer oFDX# integer attr# integer file# integer index# integer segment# returns string
+  if oFDX# function_return (AttrValue_IDXSEG(oFDX#,attr#,file#,index#,segment#))
+  else function_return (API_AttrValue_IDXSEG(attr#,file#,index#,segment#))
+end_function
+function FDX_AttrValue_SPECIAL1 global integer oFDX# integer attr# integer file# integer field1# integer field2# returns string
+  if oFDX# function_return (AttrValue_SPECIAL1(oFDX#,attr#,file#,field1#,field2#))
+  else function_return (API_AttrValue_SPECIAL1(attr#,file#,field1#,field2#))
+end_function
+function FDX_AttrValue_FLSTNAV global integer oFDX# integer attr# integer file# returns string
+  if oFDX# function_return (AttrValue_FLSTNAV(oFDX#,attr#,file#))
+  else function_return (API_AttrValue_FLSTNAV(attr#,file#))
+end_function
+function FDX_AttrValue_DRIVER global integer oFDX# integer attr# integer driver# returns string
+  if oFDX# function_return (AttrValue_DRIVER(oFDX#,attr#,driver#))
+  else function_return (API_AttrValue_DRIVER(attr#,driver#))
+end_function
+function FDX_AttrValue_DRVSRV global integer oFDX# integer attr# integer driver# integer server# returns string
+  if oFDX# function_return (AttrValue_DRVSRV(oFDX#,attr#,driver#,server#))
+  else function_return (API_AttrValue_DRVSRV(attr#,driver#,server#))
+end_function
+function FDX_OtherAttr_Value global integer oFDX# integer attr# returns string
+  if oFDX# function_return (OtherAttr_Value(oFDX#,attr#))
+  else function_return (API_OtherAttr_Value(attr#))
+end_function
+function FDX_CanOpenFile global integer oFDX# integer file# returns integer
+  if oFDX# function_return (piFileDefObject.i(oFdx#,file#))
+  else function_return (DBMS_CanOpenFile(file#))
+end_function
+function FDX_NextFileThatCanOpen global integer oFDX# integer file# returns integer
+  if oFDX# function_return (iNextFileThatCanOpen(oFdx#,file#))
+  else function_return (API_NextFileThatCanOpen(file#))
+end_function
+function FDX_FindRootName global integer lhFDX string lsFindRootName integer liFile returns integer
+  string lsRootStripped
+  get DBMS_StripPathAndDriver lsFindRootName to lsFindRootName
+  repeat
+    move (FDX_AttrValue_FLSTNAV(lhFDX,DF_FILE_NEXT_USED,liFile)) to liFile
+    if liFile begin
+      get FDX_AttrValue_FILELIST lhFDX DF_FILE_ROOT_NAME liFile to lsRootStripped
+      get DBMS_StripPathAndDriver lsRootStripped to lsRootStripped
+      if (lowercase(lsFindRootName)=lowercase(lsRootStripped)) function_return liFile
+    end
+  until liFile eq 0
+  function_return 0
+end_function
+function FDX_FindLogicalName global integer lhFDX string lsFindLogName integer liFile returns integer
+  string lsLogName
+  repeat
+    move (FDX_AttrValue_FLSTNAV(lhFDX,DF_FILE_NEXT_USED,liFile)) to liFile
+    if liFile begin
+      get FDX_AttrValue_FILELIST lhFDX DF_FILE_LOGICAL_NAME liFile to lsLogName
+      if (lowercase(lsFindLogName)=lowercase(lsLogName)) function_return liFile
+    end
+  until liFile eq 0
+  function_return 0
+end_function
+
+// ******** Samples ********************************************
+//
+// A loop through all files/all fields:
+//
+//   procedure GoThoughAllFields
+//     integer oFDX# file# field# max#
+//     get piFDX_Server to oFDX#
+//     move 0 to file#
+//     repeat
+//       move (FDX_AttrValue_FLSTNAV(oFDX#,DF_FILE_NEXT_USED,file#)) to file#
+//       if file# begin
+//         move (FDX_AttrValue_FILE(oFDX#,DF_FILE_NUMBER_FIELDS,file#)) to max#
+//         for field# from 1 to max#
+//           (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_NAME,file#,field#))
+//         loop
+//       end
+//     until file# eq 0
+//   end_procedure
+//
+// A loop through all indices/segments of a file:
+//
+//   procedure GoThoughAllIndices integer file#
+//     integer oFDX# index# seg_max# segment# field#
+//     get piFDX_Server to oFDX#
+//
+//     for index# from 1 to 16
+//       get FDX_AttrValue_INDEX oFDX# DF_INDEX_NUMBER_SEGMENTS file# index# to seg_max#
+//       if max_seg# begin // If there's an index at all
+//         for segment# from 1 to seg_max#
+//           get FDX_AttrValue_IDXSEG oFDX# DF_INDEX_SEGMENT_FIELD file# index# segment# to field#
+//         loop
+//       end
+//     loop

@@ -1,0 +1,6 @@
+// Use FTS.nui      // Freetext search system classes
+
+Use FTSWrdSp.nui // cFTS_WordSplitter class (to be used internally by cFreeText_Indexer and cFTS_Searcher classes)
+Use FTSData.nui  // cFTS_TableAccess class.
+Use FTSIndex.nui // cFTS_System and cFTS_Indexer classes
+use FTSearch.nui // cFTS_Searcher class.

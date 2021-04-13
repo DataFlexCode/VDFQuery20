@@ -1,0 +1,60 @@
+// Use Macros.utl   // Various macros (FOR_EX...)
+
+//  FOR_EX (extended FOR command)
+//  -----------------------------
+//> The FOR_EX command is exactly like the standard FOR command except
+//> that it will allow you to use keyword "DOWN_TO" instead of "TO" if
+//> you need to do a decremental loop.
+
+#COMMAND FOR_EX ECFWGSNR#LU "FROM" UGLR# "TO""DOWN_TO""" UGL#
+ #IFSAME !4 DOWN_TO
+  #SET N$ !N
+  #PUSH !R
+  #XPUSH !n $INIT
+  !A [] $082 !3 !1             // MOVEINT !3 TO !1
+  #IF (!0>3)
+   IF !1 GE !5 GOTO FOR$!r
+  #ENDIF
+  #$ !A 0 0 0 $041 |CL0        // GOTO BEGIN$!r
+  #FREF END$!r !a
+  #$ BEGIN$!r:
+  #$ WHILE$!r:
+  #IF !0=3
+   #$ !A [] $087 !1            // DECREMENT !1
+  #ELSE
+   #$ !A [] $087 !1 !5
+   #$ !A [|122] $041 |CL0      // GOTO BEGIN$!r
+   #FREF END$!r !a
+  #ENDIF
+  FOR$!r:
+ #ELSE
+  FOR !1 !2 !3 !4 !5 !6 !7 !8 !9
+ #ENDIF
+#ENDCOMMAND
+
+//  DESKTOP_SECTION
+//  ---------------
+//> The DESKTOP_SECTION/END_DESKTOP_SECTION commands will make a sequence of
+//> code compile (or rather instantiate) as if it was situated on the DESKTOP
+//> even when it isn't. DESKTOP_SECTION's may not be nested.
+#COMMAND DESKTOP_SECTION .
+ #IFDEF MACROS$self
+ #ELSE
+  integer macros$self
+  move 0 to macros$self
+ #ENDIF
+ if macros$self error 666 "Illegal nesting of desktop sections"
+ move self to macros$self
+ move desktop to self // Trick the object command into thinking that we are at desktop level.
+#ENDCOMMAND
+
+#COMMAND END_DESKTOP_SECTION .
+ ifnot macros$self error 667 "Illegal nesting of desktop sections"
+ move macros$self to self // Restore self to its original value.
+ move 0 to macros$self // Enable detection of "Illegal nesting".
+#ENDCOMMAND
+
+#COMMAND ENUMERATION_LIST_SET_ENUM_VALUE
+ #SET ZT$ !1
+#ENDCOMMAND
+

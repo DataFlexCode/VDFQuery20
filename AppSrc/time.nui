@@ -1,0 +1,95 @@
+// Use Time.nui
+
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+Use Dates.nui    // Date routines (No User Interface)
+
+enumeration_list
+  define TS_SECOND
+  define TS_MINUTE
+  define TS_HOUR
+end_enumeration_list
+
+function Time_Format global string lsValue integer liPrioritizedSegment returns string
+  integer liMax liPos liHours liMinutes liTmp
+  string lsRval
+  if (lsValue="-" or lowercase(lsValue)="now") function_return (sSysTime())
+  if (lsValue="") function_return ""
+  move (replaces(" ",lsValue,":")) to lsValue
+  move (replaces(",",lsValue,":")) to lsValue
+  get HowManyWords lsValue ":" to liMax
+  if (liMax=1) begin
+    if (liPrioritizedSegment=TS_MINUTE) begin
+      move (ExtractInteger(ExtractWord(lsValue,":",1),1)) to liMinutes
+      move 0 to liHours
+    end
+    else begin //So it is hour prioritized
+      move (ExtractInteger(ExtractWord(lsValue,":",1),1)) to lsValue
+      if (length(lsValue)>2) begin
+        if (length(lsValue)=3) move (append("0",lsValue)) to lsValue
+        if (length(lsValue)>4) move (left(lsValue,4)) to lsValue
+        move (left(lsValue,2)) to liHours
+        move (right(lsValue,2)) to liMinutes
+      end
+      else begin
+        move 0 to liMinutes
+        move lsValue to liHours
+      end
+    end
+  end
+  else begin
+    move (ExtractInteger(ExtractWord(lsValue,":",1),1)) to liHours
+    move (ExtractInteger(ExtractWord(lsValue,":",2),1)) to liMinutes
+  end
+  move (liMinutes/60) to liTmp
+  move (liMinutes-(liTmp*60)) to liMinutes
+  move (liHours+liTmp) to liHours
+  function_return (IntToStrRzf(liHours,2)+":"+IntToStrRzf(liMinutes,2))
+end_function
+
+function Time_ToHours global string lsTime returns number
+  integer liHours liMinutes liFraction
+  move (ExtractWord(lsTime,":",1)) to liHours
+  move (ExtractWord(lsTime,":",2)) to liMinutes
+  move (liMinutes*25/15) to liFraction
+  function_return (liHours+(liFraction/100.0))
+end_function
+
+// Returns true if lsTime is a legal time of day ("hh:mm:ss" or "hh:mm")
+function Time_IsTime global string lsTime returns integer
+  integer liLen liNumber
+  string lsNumber
+  move (trim(lsTime)) to lsTime
+  move (length(lsTime)) to liLen
+  if (liLen<>5 and liLen<>8) function_return 0 // Wrong length, couldn't be a time
+  if (mid(lsTime,1,3)<>":") function_return 0 // Missing ":"
+
+  move (mid(lsTime,2,1)) to lsNumber
+  if (StringIsInteger(lsNumber)) begin
+    move (integer(lsNumber)) to liNumber
+    if (liNumber<0 or liNumber>23) function_return 0 // Wrong hours
+  end
+  else function_Return 0 // Not digits
+
+  move (mid(lsTime,2,4)) to lsNumber
+  if (StringIsInteger(lsNumber)) begin
+    move (integer(lsNumber)) to liNumber
+    if (liNumber<0 or liNumber>59) function_return 0 // Wrong hours
+  end
+  else function_Return 0 // Not digits
+
+  if (liLen=8) begin
+    if (mid(lsTime,1,6)<>":") function_return 0 // Missing ":"
+    move (mid(lsTime,2,7)) to lsNumber
+    if (StringIsInteger(lsNumber)) begin
+      move (integer(lsNumber)) to liNumber
+      if (liNumber<0 or liNumber>59) function_return 0 // Wrong hours
+    end
+    else function_Return 0 // Not digits
+  end
+
+  function_return 1 // It's a time
+end_function
+
+function Time_HoursBetweenTimes global string lsTimeFrom string lsTimeTo returns number
+  function_return (Time_ToHours(lsTimeTo)-Time_ToHours(lsTimeFrom))
+end_function

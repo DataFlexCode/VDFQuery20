@@ -1,0 +1,1924 @@
+//**********************************************************************
+// use VdfSort.utl  // DFSORT for Visual DataFlex
+//
+// By Sture Andersen & Finn Kristensen
+//
+// Create: Sat  29-11-1997
+// Update: Thu  18-12-1997 - Argument for Info_Box is now gradually built, to
+//                           avoid violation of maximum line length (DFCOMP).
+//         Mon  22-12-1997 - Changed to work with files opened with the AS
+//                           clause.
+//         Mon  03-08-1998 - Now possible to specify reindex options
+//         Wed  20-01-1999 - Now displays file definitions if filedef.pkg
+//                           was used prior to using this package.
+//         Mon  15-03-1999 - Message VdfSort_RestoreOpenFiles is sent to
+//                           all objects after VdfSort is finished.
+//         Sun  18-04-1999 - 'chain wait "dbbldr noworkspace"' changed to
+//                           'runprogram wait "dfrun dbbldr"'.
+//         Wed  05-05-1999 - CleanUp code added
+//                         - Tampering with profile string "DEFAULTS"
+//                           "dbAdminMode" has been removed from the code.
+//         Thu  13-05-1999 - Cleanup code finished. Call to dbbldr removed.
+//         Mon  13-12-1999 - Changed the calling of procedure
+//                           DBMS_Callback_FilelistEntries according to
+//                           directions given by Bo Lincoln
+//         Wed  01-02-2000 - Define instead of #REPLACE
+//**********************************************************************
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+Use Language.pkg // Default language setup
+//Use FileList.utl // Filelist.cfg utilities
+Use Output.utl   // Basic sequential output service
+Use Files.utl    // Utilities for handling file related stuff
+Use Strings.nui  // String manipulation for VDF
+Use OpenStat.pkg // Call DFMatrix, Display open tables ...
+Use OpenStat.nui // cTablesOpenStatus class (formely cFileAllFiles) (No User Interface)
+Use Fdx3.utl     // FDX aware cFileList_List selector class
+Use Version.nui
+
+define VDFSORT$INCLUDE_VDFCLEAN for 1
+
+define hlpid.VdfSort_Select     for 5001
+define hlpid.VdfSort_Properties for 5002
+define hlpid.VdfSort_Result     for 5003
+
+#IF LNG_DEFAULT=LNG_DUTCH
+ define t.VdfSort.Caption           for "Selecteer bestand(en) om te sorteren"
+ define t.VdfSort.Btn.Reindex       for "Sorteer"
+ define t.VdfSort.Btn.CleanUp       for "Opschonen"
+ define t.VdfSort.Wait.Caption      for "Herindexeer, status"
+ define t.VdfSort.Wait.Status       for "Status"
+ define t.VdfSort.Wait.History      for "Historie"
+ define t.VdfSort.Wait.Error        for "Fout"
+ define t.VdfSort.Wait.Of           for " van "
+ define t.VdfSort.Err.Exclusive1    for "De sorteerroutine kon geen exclusieve rechten verkrijgen."
+ define t.VdfSort.Err.Exclusive2    for "Overtuig U ervan dat niemand anders het systeem gebruikt,"
+ define t.VdfSort.Err.Exclusive3    for "of dat U geen kopie van het programma in de achtergrond"
+ define t.VdfSort.Err.Exclusive4    for "draait. Probeer het daarna nog een keer."
+ define t.VdfSort.Prop_Caption      for "Sorteer eigenchappen"
+ define t.VdfSort.Prop_BadData      for "defecte data"
+ define t.VdfSort.Prop_BD_NoCheck   for "Niet controleren"
+ define t.VdfSort.Prop_BD_SpaceFill for "Vul met spaties"
+ define t.VdfSort.Prop_BD_WriteFile for "Schrijf naar bestand"
+ define t.VdfSort.Prop_BD_Abort     for "Afbreken bij defecte data"
+ define t.VdfSort.Prop_Duplicates   for "Dubbele records"
+ define t.VdfSort.Prop_DD_WriteFile for "Schrijf naar bestand"
+ define t.VdfSort.Prop_DD_Abort     for "Afbreken bij dubbele records"
+ define t.VdfSort.Prop_SortBuffer   for "Sorteer buffergrootte (Kb)"
+ define t.VdfSort.Done              for "Herindexeren gereed"
+ define t.VdfSort.NoErrors          for "Geen fouten opgetreden tijdens de sorteer operatie"
+ define t.VdfSort.FileLocations     for "Bestandslokaties"
+ define t.VdfSort.ReindexHistory    for "Herindex, historie"
+ define t.VdfSort.ReindexErrors     for "Herindex, fouten"
+ define t.VdfSort.NoFilesToClean    for "Geen bestanden om op te schonen"
+ define t.VdfSort.CleanFile         for "Opschonen bestand"
+ define t.VdfSort.Btn.Skip          for "Overslaan serie"
+ define t.VdfSort.Btn.Auto          for "Auto opschonen serie"
+ define t.VdfSort.Lbl.SetNo         for "Reeks van identieke records (reeks: #/#)"
+ define t.VdfSort.Lbl.SelectRec     for "Kies te bewaren record:"
+ define t.VdfSort.LoadingSet        for "Laden van reeks..."
+ define t.VdfSort.DeletingRecs      for "Verwijderen van records..."
+ define t.VdfSort.CountingSets      for "Tellen van nummer in reeks..."
+ define t.VdfSort.RecordsInSet      for " records in reeks"
+ define t.VdfSort.DoReindexAgain    for "Je moet het bestand herindexeren"
+ define t.VdfSort.SelectError       for "Er is geen te bewaren record gekozen!"
+ define t.VdfSort.Lbl.FieldName     for "Veldnaam"
+ define t.VdfSort.Lbl.CurrentRec    for "Huidig record"
+ define t.VdfSort.Lbl.RecordToKeep  for "Te bewaren record"
+ define t.VdfSort.Lbl.FieldType     for "Veldtype"
+ define t.VdfSort.SelectFileToClean for "Selecteer bestand om op te schonen"
+ define t.VdfSort.Lbl.UserName      for "Gebruikersnaam"
+ define t.VdfSort.Lbl.DataFileLoc   for "Data-bestand locatie"                             // PvM
+ define t.VdfSort.Lbl.BadFileLoc    for "Bad-bestand locatie"                              // PvM
+ define t.VdfSort.Lbl.SizeAndTime   for "Grootte en tijd"
+ define t.VdfSort.BadErr.Txt1       for "In het .BAD bestand komen meer fouten"            // PvM
+ define t.VdfSort.BadErr.Txt2       for "voor dan alleen dubbele records."                 // PvM
+ define t.VdfSort.BadErr.Txt3       for "Herindexeer het bestand opnieuw"                  // PvM
+ define t.VdfSort.BadErr.Txt4       for "met het reguliere programma"                      // PvM
+ define t.VdfSort.BadErr.Txt5       for "(Component genaamd 'DataBase Builder')"           // PvM
+ define t.VdfSort.Lbl.DataFile      for "Data-bestand:"
+ define t.VdfSort.Lbl.BadFile       for "BAD-bestand:"
+ define t.VdfSort.CantGainExcl      for "Kan geen (exclusieve)rechten tot het databestand verkrijgen"
+ define t.VdfSort.Definition        for "Definitie"                                        // PvM
+ define t.VdfSort.WriteFDX          for "Schrijf FDX"                                      // PvM
+#ENDIF
+#IF LNG_DEFAULT=LNG_SPANISH  // 03/10/2002 to 31/05/2005 for 2.3 Pepe GuimarÆes Moose Software  pg@moose-software.com
+ define t.VdfSort.Caption           for "Seleccionar tabla(s)) a ordenar"
+ define t.VdfSort.Btn.Reindex       for "Ordenar"
+ define t.VdfSort.Btn.CleanUp       for "Limpiar"
+ define t.VdfSort.Wait.Caption      for "Ordenar, estado"
+ define t.VdfSort.Wait.Status       for "Historia"
+ define t.VdfSort.Wait.History      for "Acci¢n"
+ define t.VdfSort.Wait.Error        for "Error"
+ define t.VdfSort.Wait.Of           for " de "
+ define t.VdfSort.Err.Exclusive1    for "La rutina de ordenaci¢n podr¡a no tener acceso exclusivo."
+ define t.VdfSort.Err.Exclusive2    for "Asegurese de que no hay ning£n usuario utilizando el sistema"
+ define t.VdfSort.Err.Exclusive3    for "y que no est  ejecutando una copia de este programa"
+ define t.VdfSort.Err.Exclusive4    for "en 'background'. Despu‚s intentelo de nuevo."
+ define t.VdfSort.Prop_Caption      for "Propiedades de ordenamiento"
+ define t.VdfSort.Prop_BadData      for "Datos da¤ados"
+ define t.VdfSort.Prop_BD_NoCheck   for "No Revisar"
+ define t.VdfSort.Prop_BD_SpaceFill for "Llenar con espacios"
+ define t.VdfSort.Prop_BD_WriteFile for "Escribir a archivo"
+ define t.VdfSort.Prop_BD_Abort     for "Abortar si hay datos da¤ados"
+ define t.VdfSort.Prop_Duplicates   for "Filas duplicados"
+ define t.VdfSort.Prop_DD_WriteFile for "Escribir a archivo"
+ define t.VdfSort.Prop_DD_Abort     for "Interrumpir si hay duplicados"
+ define t.VdfSort.Prop_SortBuffer   for "Tama¤o de buffer de ordenamiento"
+ define t.VdfSort.Done              for "Ordenaci¢n terminada"
+ define t.VdfSort.NoErrors          for "No hubo errores durante ordenamiento"
+ define t.VdfSort.FileLocations     for "Ubicaci¢n de los archivos"
+ define t.VdfSort.ReindexHistory    for "Registro de odenaci¢n"
+ define t.VdfSort.ReindexErrors     for "Errores de odenaci¢n"
+ define t.VdfSort.NoFilesToClean    for "No hay tablas para limpiar"
+ define t.VdfSort.CleanFile         for "Limpiar tabla"
+ define t.VdfSort.Btn.Skip          for "Ignorar conjunto" //Skip set"
+ define t.VdfSort.Btn.Auto          for "Limpieza automatica conjunto"
+ define t.VdfSort.Lbl.SetNo         for "Conjunto de filas duplicadas (conjunto: #/#)"
+ define t.VdfSort.Lbl.SelectRec     for "Seleccione fila v lida:"
+ define t.VdfSort.LoadingSet        for "Cargando conjunto..."
+ define t.VdfSort.DeletingRecs      for "Borrando filas..."
+ define t.VdfSort.CountingSets      for "Contando numero de conjuntos..."
+ define t.VdfSort.RecordsInSet      for " filas en conjunto"
+ define t.VdfSort.DoReindexAgain    for "Tiene que ordenar la tabla otra vez"
+ define t.VdfSort.SelectError       for "­No ha seleccionado la fila a guardar!"
+ define t.VdfSort.Lbl.FieldName     for "Nombre de la columna"
+ define t.VdfSort.Lbl.CurrentRec    for "Fila actual"
+ define t.VdfSort.Lbl.RecordToKeep  for "Fila a guardar"
+ define t.VdfSort.Lbl.FieldType     for "Tipo de columna"
+ define t.VdfSort.SelectFileToClean for "Seleccione tabla a limpiar"
+ define t.VdfSort.Lbl.UserName      for "Nombre usuario"
+ define t.VdfSort.Lbl.DataFileLoc   for "Ubicaci¢n tabla datos"
+ define t.VdfSort.Lbl.BadFileLoc    for "Ubicaci¢n tabla erronea"
+ define t.VdfSort.Lbl.SizeAndTime   for "Tama¤o y hora"
+ define t.VdfSort.BadErr.Txt1       for "En el archivo .BAD hab¡a m s"
+ define t.VdfSort.BadErr.Txt2       for "errores que filas duplicadas"
+ define t.VdfSort.BadErr.Txt3       for "Ordene tabla de nuevo y limpie"
+ define t.VdfSort.BadErr.Txt4       for "con el programa habitual de limpieza"
+ define t.VdfSort.BadErr.Txt5       for "(Un componente llamado 'DataBase Builder')"
+ define t.VdfSort.Lbl.DataFile      for "Tabla datos:"
+ define t.VdfSort.Lbl.BadFile       for "Fichero BAD:"
+ define t.VdfSort.CantGainExcl      for "Imposible obtener acceso (exclusivo) a la tabla de datos"
+ define t.VdfSort.Definition        for "Definici¢n"
+ define t.VdfSort.WriteFDX          for "Grabar FDX"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ENGLISH
+ define t.VdfSort.Caption           for "Select file(s) to sort"
+ define t.VdfSort.Btn.Reindex       for "Sort"
+ define t.VdfSort.Btn.CleanUp       for "Cleanup"
+ define t.VdfSort.Wait.Caption      for "Reindex, status"
+ define t.VdfSort.Wait.Status       for "History"
+ define t.VdfSort.Wait.History      for "Action"
+ define t.VdfSort.Wait.Error        for "Error"
+ define t.VdfSort.Wait.Of           for " of "
+ define t.VdfSort.Err.Exclusive1    for "The sort routine could not obtain exclusive access."
+ define t.VdfSort.Err.Exclusive2    for "Make sure noone else is using the system and that"
+ define t.VdfSort.Err.Exclusive3    for "you are not running a copy of this program in the"
+ define t.VdfSort.Err.Exclusive4    for "background. Then try again."
+ define t.VdfSort.Prop_Caption      for "Sort properties"
+ define t.VdfSort.Prop_BadData      for "Bad data"
+ define t.VdfSort.Prop_BD_NoCheck   for "No check"
+ define t.VdfSort.Prop_BD_SpaceFill for "Fill with spaces"
+ define t.VdfSort.Prop_BD_WriteFile for "Write to file"
+ define t.VdfSort.Prop_BD_Abort     for "Abort on bad data"
+ define t.VdfSort.Prop_Duplicates   for "Duplicate records"
+ define t.VdfSort.Prop_DD_WriteFile for "Write to file"
+ define t.VdfSort.Prop_DD_Abort     for "Abort on duplicates"
+ define t.VdfSort.Prop_SortBuffer   for "Sort buffer size (Kb)"
+ define t.VdfSort.Done              for "Re-index done"
+ define t.VdfSort.NoErrors          for "No errors during sort operation"
+ define t.VdfSort.FileLocations     for "File locations"
+ define t.VdfSort.ReindexHistory    for "Re-index, history"
+ define t.VdfSort.ReindexErrors     for "Re-index, errors"
+ define t.VdfSort.NoFilesToClean    for "No files to clean up"
+ define t.VdfSort.CleanFile         for "Clean up file"
+ define t.VdfSort.Btn.Skip          for "Skip set"
+ define t.VdfSort.Btn.Auto          for "Auto clean set"
+ define t.VdfSort.Lbl.SetNo         for "Set of duplicate records (set: #/#)"
+ define t.VdfSort.Lbl.SelectRec     for "Select record to keep:"
+ define t.VdfSort.LoadingSet        for "Loading set..."
+ define t.VdfSort.DeletingRecs      for "Deleting records..."
+ define t.VdfSort.CountingSets      for "Counting number of sets..."
+ define t.VdfSort.RecordsInSet      for " records in set"
+ define t.VdfSort.DoReindexAgain    for "You must re-index the file again"
+ define t.VdfSort.SelectError       for "You have not selected the record to keep!"
+ define t.VdfSort.Lbl.FieldName     for "Field name"
+ define t.VdfSort.Lbl.CurrentRec    for "Current record"
+ define t.VdfSort.Lbl.RecordToKeep  for "Record to keep"
+ define t.VdfSort.Lbl.FieldType     for "Field type"
+ define t.VdfSort.SelectFileToClean for "Select file to clean up"
+ define t.VdfSort.Lbl.UserName      for "User name"
+ define t.VdfSort.Lbl.DataFileLoc   for "Data file location"
+ define t.VdfSort.Lbl.BadFileLoc    for "Bad file location"
+ define t.VdfSort.Lbl.SizeAndTime   for "Size and time"
+ define t.VdfSort.BadErr.Txt1       for "In the .BAD file there were more"
+ define t.VdfSort.BadErr.Txt2       for "errors than just duplicate records."
+ define t.VdfSort.BadErr.Txt3       for "Re-index file again and clean"
+ define t.VdfSort.BadErr.Txt4       for "with regular clean up program"
+ define t.VdfSort.BadErr.Txt5       for "(A component called 'DataBase Builder')"
+ define t.VdfSort.Lbl.DataFile      for "Data file:"
+ define t.VdfSort.Lbl.BadFile       for "BAD file:"
+ define t.VdfSort.CantGainExcl      for "Can not get (exclusive) access to data file"
+ define t.VdfSort.Definition        for "Definition"
+ define t.VdfSort.WriteFDX          for "Write FDX"
+#ENDIF
+#IF LNG_DEFAULT=LNG_DANISH
+ define t.VdfSort.Caption           for "V‘lg fil(er) til reindeksering"
+ define t.VdfSort.Btn.Reindex       for "Re-indekser"
+ define t.VdfSort.Btn.CleanUp       for "Ryd op"
+ define t.VdfSort.Wait.Caption      for "Reindeksering status"
+ define t.VdfSort.Wait.Status       for "Status"
+ define t.VdfSort.Wait.History      for "Handling"
+ define t.VdfSort.Wait.Error        for "Fejl"
+ define t.VdfSort.Wait.Of           for " af "
+ define t.VdfSort.Err.Exclusive1    for "Eksklusiv adgang til data kunne ikke opn†s!"
+ define t.VdfSort.Err.Exclusive2    for "Du skal sikre dig, at der ikke er andre, der"
+ define t.VdfSort.Err.Exclusive3    for "bruger systemet og at du ikke selv har et"
+ define t.VdfSort.Err.Exclusive4    for "program k›rende i baggrunden."
+ define t.VdfSort.Prop_Caption      for "Egenskaber, reindeksering"
+ define t.VdfSort.Prop_BadData      for "Fejlbeh‘ftede data"
+ define t.VdfSort.Prop_BD_NoCheck   for "Intet check"
+ define t.VdfSort.Prop_BD_SpaceFill for "Erstat fejlbeh‘ftede data"
+ define t.VdfSort.Prop_BD_WriteFile for "Skriv til fil"
+ define t.VdfSort.Prop_BD_Abort     for "Afbryd ved fejlbeh‘ftede data"
+ define t.VdfSort.Prop_Duplicates   for "Ens poster"
+ define t.VdfSort.Prop_DD_WriteFile for "Skriv til fil"
+ define t.VdfSort.Prop_DD_Abort     for "Afbryd ved ens poster"
+ define t.VdfSort.Prop_SortBuffer   for "Sorterings hukommelse (Kb)"
+ define t.VdfSort.Done              for "Reindekseringen er f‘rdig"
+ define t.VdfSort.NoErrors          for "Reindekseringen forl›b uden fejl"
+ define t.VdfSort.FileLocations     for "Placeringer"
+ define t.VdfSort.ReindexHistory    for "Reindeksering, history"
+ define t.VdfSort.ReindexErrors     for "Reindeksering, fejl"
+ define t.VdfSort.NoFilesToClean    for "Der er ingen filer, der skal ryddes op i"
+ define t.VdfSort.CleanFile         for "Ryd op i fil"
+ define t.VdfSort.Btn.Skip          for "Spring over"
+ define t.VdfSort.Btn.Auto          for "Auto oprydning"
+ define t.VdfSort.Lbl.SetNo         for "Gruppe af ens poster (gruppe: #/#)"
+ define t.VdfSort.Lbl.SelectRec     for "V‘lg hvilken post, der skal gemmes"
+ define t.VdfSort.LoadingSet        for "Indl‘ser n‘ste gruppe..:"
+ define t.VdfSort.DeletingRecs      for "Sletter poster..."
+ define t.VdfSort.CountingSets      for "T‘ller antallet af grupper..."
+ define t.VdfSort.RecordsInSet      for " poster i gruppen"
+ define t.VdfSort.DoReindexAgain    for "Du skal reindeksere filen igen"
+ define t.VdfSort.SelectError       for "Du har ikke valgt hvilken post du vil gemme!"
+ define t.VdfSort.Lbl.FieldName     for "Feltnavn"
+ define t.VdfSort.Lbl.CurrentRec    for "Aktuel post"
+ define t.VdfSort.Lbl.RecordToKeep  for "Post, der skal gemmes"
+ define t.VdfSort.Lbl.FieldType     for "Felttype"
+ define t.VdfSort.SelectFileToClean for "V‘lg fil, der skal ryddes op i"
+ define t.VdfSort.Lbl.UserName      for "Brugernavn"
+ define t.VdfSort.Lbl.DataFileLoc   for "Placering af datafil"
+ define t.VdfSort.Lbl.BadFileLoc    for "Placering af .BAD fil"
+ define t.VdfSort.Lbl.SizeAndTime   for "St›rrelse og tid"
+ define t.VdfSort.BadErr.Txt1       for "Der blev fundet mere end blot"
+ define t.VdfSort.BadErr.Txt2       for "ens poster i .BAD-filen"
+ define t.VdfSort.BadErr.Txt3       for "Reindekser data-filen igen og ryd op"
+ define t.VdfSort.BadErr.Txt4       for "med standard rutinen til dette form†l."
+ define t.VdfSort.BadErr.Txt5       for "(En komponent ved navn 'DataBase Builder')"
+ define t.VdfSort.Lbl.DataFile      for "Data-fil:"
+ define t.VdfSort.Lbl.BadFile       for "BAD-fil:"
+ define t.VdfSort.CantGainExcl      for "Kunne ikke opn† (eksklusiv) adgang til datafilen"
+ define t.VdfSort.Definition        for "Definition"
+ define t.VdfSort.WriteFDX          for "Skriv FDX"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SWEDISH
+ define t.VdfSort.Caption           for "V„lj fil(er) att indexera"
+ define t.VdfSort.Btn.Reindex       for "Indexera"
+ define t.VdfSort.Btn.CleanUp       for "Rensa upp"
+ define t.VdfSort.Wait.Caption      for "Indexerar..."
+ define t.VdfSort.Wait.Status       for "Status"
+ define t.VdfSort.Wait.History      for "Aktivitet"
+ define t.VdfSort.Wait.Error        for "Fel"
+ define t.VdfSort.Wait.Of           for " av "
+ define t.VdfSort.Err.Exclusive1    for "Programmet kan ej f† exklusiv tillg†ng till databasfilerna."
+ define t.VdfSort.Err.Exclusive2    for "Se till att alla andra anv„ndare „r utloggade och/eller"
+ define t.VdfSort.Err.Exclusive3    for "du inte k”r n†got annat program i bakgrunden."
+ define t.VdfSort.Err.Exclusive4    for "F”rs”k sedan igen."
+ define t.VdfSort.Prop_Caption      for "Egenskaper, indexering"
+ define t.VdfSort.Prop_BadData      for "Fel i data"
+ define t.VdfSort.Prop_BD_NoCheck   for "Ingen kontroll"
+ define t.VdfSort.Prop_BD_SpaceFill for "Fyll med mellanrum"
+ define t.VdfSort.Prop_BD_WriteFile for "Skriv till fil"
+ define t.VdfSort.Prop_BD_Abort     for "Avbryt vid fel i data"
+ define t.VdfSort.Prop_Duplicates   for "Dubblett poster"
+ define t.VdfSort.Prop_DD_WriteFile for "Skriv till fil"
+ define t.VdfSort.Prop_DD_Abort     for "Avbryt vid dubbletter"
+ define t.VdfSort.Prop_SortBuffer   for "Index buffer storlek (Kb)"
+ define t.VdfSort.Done              for "Indexering f„rdig"
+ define t.VdfSort.NoErrors          for "Inga fel under indexeringen"
+ define t.VdfSort.FileLocations     for "Fil placeringar"
+ define t.VdfSort.ReindexHistory    for "Indexering, historik"
+ define t.VdfSort.ReindexErrors     for "Indexering, fel"
+ define t.VdfSort.NoFilesToClean    for "Inga filer att rensa upp"
+ define t.VdfSort.CleanFile         for "Rensa upp fil"
+ define t.VdfSort.Btn.Skip          for "Hoppa ”ver upps„ttningen"
+ define t.VdfSort.Btn.Auto          for "Auto-rensa upps„ttningen"
+ define t.VdfSort.Lbl.SetNo         for "Grupp av dubblettposter (Grupp: #/#)"
+ define t.VdfSort.Lbl.SelectRec     for "V„lj post att beh†lla:"
+ define t.VdfSort.LoadingSet        for "Laddar gruppe..."
+ define t.VdfSort.DeletingRecs      for "Raderar poster..."
+ define t.VdfSort.CountingSets      for "R„knar antal gruppar..."
+ define t.VdfSort.RecordsInSet      for " poster i upps„ttningen"
+ define t.VdfSort.DoReindexAgain    for "Du m†ste indexera om filen igen"
+ define t.VdfSort.SelectError       for "Du har inte valt posten som ska beh†llas!"
+ define t.VdfSort.Lbl.FieldName     for "F„lt namn"
+ define t.VdfSort.Lbl.CurrentRec    for "Aktuell post"
+ define t.VdfSort.Lbl.RecordToKeep  for "Post att beh†lla"
+ define t.VdfSort.Lbl.FieldType     for "F„lt typ"
+ define t.VdfSort.SelectFileToClean for "V„lj fil att rensa upp"
+ define t.VdfSort.Lbl.UserName      for "Anv„ndar namn"
+ define t.VdfSort.Lbl.DataFileLoc   for "Datafil placering"
+ define t.VdfSort.Lbl.BadFileLoc    for "Felaktig filplacering"
+ define t.VdfSort.Lbl.SizeAndTime   for "Storlek och tid"
+ define t.VdfSort.BadErr.Txt1       for "I .BAD filen fanns fler"
+ define t.VdfSort.BadErr.Txt2       for "fel „n just dubblettposter."
+ define t.VdfSort.BadErr.Txt3       for "Indexera om filen igen och rensa upp"
+ define t.VdfSort.BadErr.Txt4       for "med ordinarie 'rensa upp' program"
+ define t.VdfSort.BadErr.Txt5       for "(Ett program kallat 'DataBase Builder')"
+ define t.VdfSort.Lbl.DataFile      for "Data fil:"
+ define t.VdfSort.Lbl.BadFile       for "BAD fil:"
+ define t.VdfSort.CantGainExcl      for "Kan inte f† (exklusiv) tillg†ng till data fil"
+ define t.VdfSort.Definition        for "Definition"
+ define t.VdfSort.WriteFDX          for "Write FDX"
+#ENDIF
+#IF LNG_DEFAULT=LNG_NORWEGIAN   // 22.04.1999 torkild.resheim@emmaedb.no
+ define t.VdfSort.Caption           for "Velg fil(er) som skal sorteres"
+ define t.VdfSort.Btn.Reindex       for "Sorter"
+ define t.VdfSort.Btn.CleanUp       for "Rydd opp"
+ define t.VdfSort.Wait.Caption      for "Reindeksering, status"
+ define t.VdfSort.Wait.Status       for "Status"
+ define t.VdfSort.Wait.History      for "Historie"
+ define t.VdfSort.Wait.Error        for "Feil"
+ define t.VdfSort.Wait.Of           for " av "
+ define t.VdfSort.Err.Exclusive1    for "Sorteringsrutinen kunne ikke f† eksklusiv tilgang."
+ define t.VdfSort.Err.Exclusive2    for "Se til at ingen andre benytter systemet og at du"
+ define t.VdfSort.Err.Exclusive3    for "kj›rer en kopi av dette programmet i bakgrunnen."
+ define t.VdfSort.Err.Exclusive4    for "Pr›v deretter igjen"
+ define t.VdfSort.Prop_Caption      for "Sorteringsegenskaper"
+ define t.VdfSort.Prop_BadData      for "delagte data"
+ define t.VdfSort.Prop_BD_NoCheck   for "Ingen kontroll"
+ define t.VdfSort.Prop_BD_SpaceFill for "Fyll med mellomrom"
+ define t.VdfSort.Prop_BD_WriteFile for "Skriv til fil"
+ define t.VdfSort.Prop_BD_Abort     for "Avbryt ved ›delagte data"
+ define t.VdfSort.Prop_Duplicates   for "Duplikater oppdaget"
+ define t.VdfSort.Prop_DD_WriteFile for "Skriv til fil"
+ define t.VdfSort.Prop_DD_Abort     for "Avbryt ved duklikater"
+ define t.VdfSort.Prop_SortBuffer   for "St›rrelse p† sortingsbuffer (Kb)"
+ define t.VdfSort.Done              for "Reindekseringen er ferdig"
+ define t.VdfSort.NoErrors          for "Ingen feil ved sortering"
+ define t.VdfSort.FileLocations     for "Fillokalisjoner"
+ define t.VdfSort.ReindexHistory    for "Reindeksering, historie"
+ define t.VdfSort.ReindexErrors     for "Reindeksering, feil"
+ define t.VdfSort.NoFilesToClean    for "Ingen filer † rense"
+ define t.VdfSort.CleanFile         for "Rens fil"
+ define t.VdfSort.Btn.Skip          for "Hopp over sett"
+ define t.VdfSort.Btn.Auto          for "Auto-rens sett"
+ define t.VdfSort.Lbl.SetNo         for "Sett med duplikater (sett: #/#)"
+ define t.VdfSort.Lbl.SelectRec     for "Velg post som skal beholdes:"
+ define t.VdfSort.LoadingSet        for "Laster sett..."
+ define t.VdfSort.DeletingRecs      for "Sletter poster..."
+ define t.VdfSort.CountingSets      for "Teller antall sett..."
+ define t.VdfSort.RecordsInSet      for " poster i settet"
+ define t.VdfSort.DoReindexAgain    for "Du m† reindeksere igjen"
+ define t.VdfSort.SelectError       for "Du har ikke valgt posten som skal beholdes!"
+ define t.VdfSort.Lbl.FieldName     for "Feltnavn"
+ define t.VdfSort.Lbl.CurrentRec    for "Denne posten"
+ define t.VdfSort.Lbl.RecordToKeep  for "Posten som skal beholdes"
+ define t.VdfSort.Lbl.FieldType     for "Felt type"
+ define t.VdfSort.SelectFileToClean for "Velg fil † rense"
+ define t.VdfSort.Lbl.UserName      for "Brukernavn"
+ define t.VdfSort.Lbl.DataFileLoc   for "Filposisjon"
+ define t.VdfSort.Lbl.BadFileLoc    for "Ugyldig filposisjon"
+ define t.VdfSort.Lbl.SizeAndTime   for "St›rrelse og dato"
+ define t.VdfSort.BadErr.Txt1       for "I .BAD filen er det flere"
+ define t.VdfSort.BadErr.Txt2       for "feil enn bare duplikater."
+ define t.VdfSort.BadErr.Txt3       for "Reindekser filen igjen og rens"
+ define t.VdfSort.BadErr.Txt4       for "med standard renseprogram"
+ define t.VdfSort.BadErr.Txt5       for "(En komponent med navn 'DataBase Builder')"
+ define t.VdfSort.Lbl.DataFile      for "Datafil:"
+ define t.VdfSort.Lbl.BadFile       for "BAD-fil:"
+ define t.VdfSort.CantGainExcl      for "Klarer ikke † f† (eksklusiv) tilgang til datafil!"
+ define t.VdfSort.Definition        for "Definisjon"
+ define t.VdfSort.WriteFDX          for "Write FDX"
+#ENDIF
+#IF LNG_DEFAULT=LNG_GERMAN
+ define t.VdfSort.Caption           for "Sortieren Datenbanken"
+ define t.VdfSort.Btn.Reindex       for "Sortieren"
+ define t.VdfSort.Btn.CleanUp       for "Cleanup"
+ define t.VdfSort.Wait.Caption      for "Status Sortierung"
+ define t.VdfSort.Wait.Status       for "Status"
+ define t.VdfSort.Wait.History      for "Protokoll"
+ define t.VdfSort.Wait.Error        for "Fehler"
+ define t.VdfSort.Wait.Of           for " von "
+ define t.VdfSort.Err.Exclusive1    for "Sortierung muá exklusiven Zugriff auf die Dateien haben."
+ define t.VdfSort.Err.Exclusive2    for "Stellen Sie sicher daá niemand das System benutzt"
+ define t.VdfSort.Err.Exclusive3    for "und keine weitere Instanz des Programms im Hinter-"
+ define t.VdfSort.Err.Exclusive4    for "grund l„uft. Versuchen Sie es erneut."
+ define t.VdfSort.Prop_Caption      for "Sort Eigenschaften"
+ define t.VdfSort.Prop_BadData      for "Bad data"
+ define t.VdfSort.Prop_BD_NoCheck   for "Keine šberprfung"
+ define t.VdfSort.Prop_BD_SpaceFill for "Mit Blanks auffllen"
+ define t.VdfSort.Prop_BD_WriteFile for "Ausgabe auf Bestand"
+ define t.VdfSort.Prop_BD_Abort     for "Abbruch bei Bad Data"
+ define t.VdfSort.Prop_Duplicates   for "Doppelte S„tze"
+ define t.VdfSort.Prop_DD_WriteFile for "Ausgabe auf Bestand"
+ define t.VdfSort.Prop_DD_Abort     for "Abbruch bei doppelten S„tzen"
+ define t.VdfSort.Prop_SortBuffer   for "Sort Buffer Gr”áe (Kb)"
+ define t.VdfSort.Done              for "Sortierung beendet"
+ define t.VdfSort.NoErrors          for "Sortierung erfolgreich beendet"
+ define t.VdfSort.FileLocations     for "Datenpfad"
+ define t.VdfSort.ReindexHistory    for "Protokoll Sortierung"
+ define t.VdfSort.ReindexErrors     for "Fehler Sortierung"
+ define t.VdfSort.NoFilesToClean    for "Kein Bestand ben”tigt ein CleanUp"
+ define t.VdfSort.CleanFile         for "CleanUp Bestand"
+ define t.VdfSort.Btn.Skip          for "Satz berspringen"
+ define t.VdfSort.Btn.Auto          for "Automat. CleanUp"
+ define t.VdfSort.Lbl.SetNo         for "Satz von doppelten Datens„tzen (Satz: #/#)"
+ define t.VdfSort.Lbl.SelectRec     for "Datensatz zum Speichern:"
+ define t.VdfSort.LoadingSet        for "Satz wird geladen..."
+ define t.VdfSort.DeletingRecs      for "Datens„tze werden gel”scht..."
+ define t.VdfSort.CountingSets      for "Z„hlen der S„tze..."
+ define t.VdfSort.RecordsInSet      for " Datens„tze im Satz"
+ define t.VdfSort.DoReindexAgain    for "Datenbank muá neu sortiert werden"
+ define t.VdfSort.SelectError       for "Kein Datensatz zum Speichern ausgew„hlt!"
+ define t.VdfSort.Lbl.FieldName     for "Feldname"
+ define t.VdfSort.Lbl.CurrentRec    for "Aktueller Satz"
+ define t.VdfSort.Lbl.RecordToKeep  for "Zu speichernder Satz"
+ define t.VdfSort.Lbl.FieldType     for "Feldtyp"
+ define t.VdfSort.SelectFileToClean for "Bestand fr CleanUp ausw„hlen"
+ define t.VdfSort.Lbl.UserName      for "User Name"
+ define t.VdfSort.Lbl.DataFileLoc   for "Datenbankpfad"
+ define t.VdfSort.Lbl.BadFileLoc    for "Pfad fr BAD Bestand"
+ define t.VdfSort.Lbl.SizeAndTime   for "Gr”áe und Datum"
+ define t.VdfSort.BadErr.Txt1       for "Im .BAD Bestand sind nicht nur"
+ define t.VdfSort.BadErr.Txt2       for "Fehler 'Doppelte S„tze'."
+ define t.VdfSort.BadErr.Txt3       for "Sortieren Sie den Bestand neu und"
+ define t.VdfSort.BadErr.Txt4       for "verwenden Sie das normale CleanUp."
+ define t.VdfSort.BadErr.Txt5       for "(Eine Komponente namens 'DataBase Builder')"
+ define t.VdfSort.Lbl.DataFile      for "Datenbestand:"
+ define t.VdfSort.Lbl.BadFile       for "BAD Bestand."
+ define t.VdfSort.CantGainExcl      for "Kein (exklusiver) Zugriff auf die Datenbank"
+ define t.VdfSort.Definition        for "Definition"
+ define t.VdfSort.WriteFDX          for "Write FDX"
+#ENDIF
+#IF LNG_DEFAULT=LNG_PORTUGUESE // by Claudio Rossoni (SP-Brasil)
+ define t.VdfSort.Caption           for "Selecione os arquivos para reindexar"
+ define t.VdfSort.Btn.Reindex       for "Reindexar"
+ define t.VdfSort.Btn.CleanUp       for "Limpar"
+ define t.VdfSort.Wait.Caption      for "Reindexar, status"
+ define t.VdfSort.Wait.Status       for "Hist¢rico"
+ define t.VdfSort.Wait.History      for "A‡Æo"
+ define t.VdfSort.Wait.Error        for "Erro"
+ define t.VdfSort.Wait.Of           for " de "
+ define t.VdfSort.Err.Exclusive1    for "A rotina de ordena‡Æo nÆo pode obter acesso exclusivo."
+ define t.VdfSort.Err.Exclusive2    for "Tenha certeza de que ninguem mais est  usando o sistema"
+ define t.VdfSort.Err.Exclusive3    for "e que nÆo esteja executando uma c¢pia deste programa"
+ define t.VdfSort.Err.Exclusive4    for "em 'background'. Tende novamente depois."
+ define t.VdfSort.Prop_Caption      for "Propriedades da Reindexa‡Æo"
+ define t.VdfSort.Prop_BadData      for "Dados ruins"
+ define t.VdfSort.Prop_BD_NoCheck   for "Sem checagem"
+ define t.VdfSort.Prop_BD_SpaceFill for "Preencher com espa‡os"
+ define t.VdfSort.Prop_BD_WriteFile for "Escrever no arquivo"
+ define t.VdfSort.Prop_BD_Abort     for "Abortar com dados ruins"
+ define t.VdfSort.Prop_Duplicates   for "Registros Duplicados"
+ define t.VdfSort.Prop_DD_WriteFile for "Escrever no arquivo"
+ define t.VdfSort.Prop_DD_Abort     for "Abortar com duplicados"
+ define t.VdfSort.Prop_SortBuffer   for "Tamanho do buffer size (Kb)"
+ define t.VdfSort.Done              for "Reindexa‡Æo feita"
+ define t.VdfSort.NoErrors          for "Nenhum erro de opera‡Æo durante a reindexa‡Æo"
+ define t.VdfSort.FileLocations     for "Localiza‡Æo do Arquivo"
+ define t.VdfSort.ReindexHistory    for "Reindexa‡Æo, hist¢rico"
+ define t.VdfSort.ReindexErrors     for "Reindexa‡Æo, erro"
+ define t.VdfSort.NoFilesToClean    for "Nenhum Arquivo para cleanup"
+ define t.VdfSort.CleanFile         for "Arquivo Cleanup"
+ define t.VdfSort.Btn.Skip          for "Pular"
+ define t.VdfSort.Btn.Auto          for "Config. Automatico"
+ define t.VdfSort.Lbl.SetNo         for "Conjunto de registros duplicados (reg: #/#)"
+ define t.VdfSort.Lbl.SelectRec     for "Selecione o registro que sera mantido:"
+ define t.VdfSort.LoadingSet        for "Carregando a lista do cleanup..."
+ define t.VdfSort.DeletingRecs      for "Excluindo Registros..."
+ define t.VdfSort.CountingSets      for "Contando numero na lista..."
+ define t.VdfSort.RecordsInSet      for " registros na lista"
+ define t.VdfSort.DoReindexAgain    for "Voce deve reindexar o arquivo novamente"
+ define t.VdfSort.SelectError       for "Voce nao selecionou o registro que sera mantido!"
+ define t.VdfSort.Lbl.FieldName     for "Nome do Campo"
+ define t.VdfSort.Lbl.CurrentRec    for "Registro Corrente"
+ define t.VdfSort.Lbl.RecordToKeep  for "Registro para manter"
+ define t.VdfSort.Lbl.FieldType     for "Tipo do Campo"
+ define t.VdfSort.SelectFileToClean for "Escolha o arquivo para o cleanup"
+ define t.VdfSort.Lbl.UserName      for "Nome Usuario"
+ define t.VdfSort.Lbl.DataFileLoc   for "Localizacao do arq. de dados"
+ define t.VdfSort.Lbl.BadFileLoc    for "Localizacao ruim do arquivo"
+ define t.VdfSort.Lbl.SizeAndTime   for "Tamanho e tempo"
+ define t.VdfSort.BadErr.Txt1       for "No arquivo .BAD havia mais"
+ define t.VdfSort.BadErr.Txt2       for "erros com registros duplicados."
+ define t.VdfSort.BadErr.Txt3       for "Reindexar o arquivo novamente e"
+ define t.VdfSort.BadErr.Txt4       for "limpar com o programa cleanup (Um "
+ define t.VdfSort.BadErr.Txt5       for "componente chamado no 'DataBase Builder')"
+ define t.VdfSort.Lbl.DataFile      for "Arq.Dados:"
+ define t.VdfSort.Lbl.BadFile       for "Arq. BAD:"
+ define t.VdfSort.CantGainExcl      for "Nao pode obter acesso (exclusivo) para este arquivo"
+ define t.VdfSort.Definition        for "Definition"
+ define t.VdfSort.WriteFDX          for "Write FDX"
+#ENDIF
+#If LNG_DEFAULT=LNG_FRENCH // by Arnaud Mallick (Fr) (Arnaud.mallick@wanadoo.fr)
+ Define t.VdfSort.Caption           For "S‚lectionner le(s) fichier(s) … trier"
+ Define t.VdfSort.Btn.Reindex       For "Trier"
+ Define t.VdfSort.Btn.CleanUp       For "Corriger"
+ Define t.VdfSort.Wait.Caption      For "Statut de r‚indexation"
+ Define t.VdfSort.Wait.Status       For "Historique"
+ Define t.VdfSort.Wait.History      For "Action"
+ Define t.VdfSort.Wait.Error        For "Erreur"
+ Define t.VdfSort.Wait.Of           For " de "
+ Define t.VdfSort.Err.Exclusive1    For "Le programme de trie ne peut avoir un acces exclusif."
+ Define t.VdfSort.Err.Exclusive2    For "V‚rifier que personne d'autre utilise le systeme et que"
+ Define t.VdfSort.Err.Exclusive3    For "vous n'avez pas une copie du programme en cours d'ex‚cussion."
+ Define t.VdfSort.Err.Exclusive4    For "Puis r‚essayer."
+ Define t.VdfSort.Prop_Caption      For "Propri‚t‚s du trie"
+ Define t.VdfSort.Prop_BadData      For "Donn‚es mauvaises"
+ Define t.VdfSort.Prop_BD_NoCheck   For "Pas de verifications"
+ Define t.VdfSort.Prop_BD_SpaceFill For "Rempli pas blanc"
+ Define t.VdfSort.Prop_BD_WriteFile For "Ecriture fichier"
+ Define t.VdfSort.Prop_BD_Abort     For "Annuler quand donn‚es mauvaises"
+ Define t.VdfSort.Prop_Duplicates   For "Enregistrement en double"
+ Define t.VdfSort.Prop_DD_WriteFile For "Ecriture fichier"
+ Define t.VdfSort.Prop_DD_Abort     For "Annuler sur double"
+ Define t.VdfSort.Prop_SortBuffer   For "Taille du buffer de trie (Kb)"
+ Define t.VdfSort.Done              For "R‚indexation faite"
+ Define t.VdfSort.NoErrors          For "Auncune erreur durant l'op‚ration"
+ Define t.VdfSort.FileLocations     For "Emplacement fichier"
+ Define t.VdfSort.ReindexHistory    For "Historique de r‚indexation"
+ Define t.VdfSort.ReindexErrors     For "Historique des erreurs"
+ Define t.VdfSort.NoFilesToClean    For "Aucun fichier … corriger"
+ Define t.VdfSort.CleanFile         For "Correction fichier"
+ Define t.VdfSort.Btn.Skip          For "Sauter config"
+ Define t.VdfSort.Btn.Auto          For "Correction auto utilis‚"
+ Define t.VdfSort.Lbl.SetNo         For "Liste des enregistrement double (set: #/#)"
+ Define t.VdfSort.Lbl.SelectRec     For "S‚lectioner l'enregistrement … garder:"
+ Define t.VdfSort.LoadingSet        For "Chargement de liste..."
+ Define t.VdfSort.DeletingRecs      For "Suppression de l'enregistrement..."
+ Define t.VdfSort.CountingSets      For "Calcule du nombre de listes..."
+ Define t.VdfSort.RecordsInSet      For " enregistrement dans la liste"
+ Define t.VdfSort.DoReindexAgain    For "Vous devais r‚indexer le fichier … nouveau"
+ Define t.VdfSort.SelectError       For "Vous n'avez pas choisi l'enregistrement … garder!"
+ Define t.VdfSort.Lbl.FieldName     For "Nom du champ"
+ Define t.VdfSort.Lbl.CurrentRec    For "Enregistrement courrant"
+ Define t.VdfSort.Lbl.RecordToKeep  For "Enregistrement … garder"
+ Define t.VdfSort.Lbl.FieldType     For "Type du champ"
+ Define t.VdfSort.SelectFileToClean For "S‚lectionne le fichier … corriger"
+ Define t.VdfSort.Lbl.UserName      For "Nom utilisateur"
+ Define t.VdfSort.Lbl.DataFileLoc   For "Emplacement des donn‚es"
+ Define t.VdfSort.Lbl.BadFileLoc    For "Emplacement des donn‚es erron‚"
+ Define t.VdfSort.Lbl.SizeAndTime   For "Taille et date"
+ Define t.VdfSort.BadErr.Txt1       For "Dans le fichier .BAD, il y a d'autres"
+ Define t.VdfSort.BadErr.Txt2       For "erreurs que des enregistrements en double."
+ Define t.VdfSort.BadErr.Txt3       For "R‚indexer le fichier … nouveau et corriger le"
+ Define t.VdfSort.BadErr.Txt4       For "avec le programme d'administration"
+ Define t.VdfSort.BadErr.Txt5       For "(Utilitaire 'DataBase Builder')"
+ Define t.VdfSort.Lbl.DataFile      For "Fichiers de donn‚es:"
+ Define t.VdfSort.Lbl.BadFile       For "Fichiers ‚rron‚s:"
+ Define t.VdfSort.CantGainExcl      For "Ne peut ouvrir le fichier en mode exclusif"
+ Define t.VdfSort.Definition        For "D‚finition"
+ Define t.VdfSort.WriteFDX          For "Ecriture du FDX"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ITALIAN // 05/03/04 Paolo Zanni (Italia)
+ define t.VdfSort.Caption           for "Seleziona i files da ordinare"
+ define t.VdfSort.Btn.Reindex       for "Ordina"
+ define t.VdfSort.Btn.CleanUp       for "Cleanup"
+ define t.VdfSort.Wait.Caption      for "Reindex, status"
+ define t.VdfSort.Wait.Status       for "Riepilogo"
+ define t.VdfSort.Wait.History      for "Azione"
+ define t.VdfSort.Wait.Error        for "Errore"
+ define t.VdfSort.Wait.Of           for " di "
+ define t.VdfSort.Err.Exclusive1    for "La Routine di Ordinamento non puo' avere un accesso esclusivo"
+ define t.VdfSort.Err.Exclusive2    for "Assicurati che nessuno stia usando il sistema e che "
+ define t.VdfSort.Err.Exclusive3    for "una copia del programma non sia in esecuzione "
+ define t.VdfSort.Err.Exclusive4    for "in background. Quindi riprova."
+ define t.VdfSort.Prop_Caption      for "Proprieta' ordinamento"
+ define t.VdfSort.Prop_BadData      for "Bad data"
+ define t.VdfSort.Prop_BD_NoCheck   for "No check"
+ define t.VdfSort.Prop_BD_SpaceFill for "Fill with spaces"
+ define t.VdfSort.Prop_BD_WriteFile for "Write to file"
+ define t.VdfSort.Prop_BD_Abort     for "Abort on bad data"
+ define t.VdfSort.Prop_Duplicates   for "Records duplicati"
+ define t.VdfSort.Prop_DD_WriteFile for "Write to file"
+ define t.VdfSort.Prop_DD_Abort     for "Abort on duplicates"
+ define t.VdfSort.Prop_SortBuffer   for "Sort buffer size (Kb)"
+ define t.VdfSort.Done              for "Re-index fatto"
+ define t.VdfSort.NoErrors          for "Nessun errore durante le operazioni di riordino"
+ define t.VdfSort.FileLocations     for "Posizione File"
+ define t.VdfSort.ReindexHistory    for "Re-index, riepilogo"
+ define t.VdfSort.ReindexErrors     for "Re-index, errori"
+ define t.VdfSort.NoFilesToClean    for "Nessun files da pulire"
+ define t.VdfSort.CleanFile         for "Pulizia file"
+ define t.VdfSort.Btn.Skip          for "Skip set"
+ define t.VdfSort.Btn.Auto          for "Auto clean set"
+ define t.VdfSort.Lbl.SetNo         for "Set of duplicate records (set: #/#)"
+ define t.VdfSort.Lbl.SelectRec     for "Select record to keep:"
+ define t.VdfSort.LoadingSet        for "Loading set..."
+ define t.VdfSort.DeletingRecs      for "Cancellazione records..."
+ define t.VdfSort.CountingSets      for "Counting number of sets..."
+ define t.VdfSort.RecordsInSet      for " records in set"
+ define t.VdfSort.DoReindexAgain    for "You must re-index the file again"
+ define t.VdfSort.SelectError       for "You have not selected the record to keep!"
+ define t.VdfSort.Lbl.FieldName     for "Nome campo"
+ define t.VdfSort.Lbl.CurrentRec    for "Record corrente"
+ define t.VdfSort.Lbl.RecordToKeep  for "Record to keep"
+ define t.VdfSort.Lbl.FieldType     for "Tipo campo"
+ define t.VdfSort.SelectFileToClean for "Selezionare il file da pulire"
+ define t.VdfSort.Lbl.UserName      for "Nome utente"
+ define t.VdfSort.Lbl.DataFileLoc   for "Data file location"
+ define t.VdfSort.Lbl.BadFileLoc    for "Bad file location"
+ define t.VdfSort.Lbl.SizeAndTime   for "Size and time"
+ define t.VdfSort.BadErr.Txt1       for "In the .BAD file there were more"
+ define t.VdfSort.BadErr.Txt2       for "errors than just duplicate records."
+ define t.VdfSort.BadErr.Txt3       for "Re-index file again and clean"
+ define t.VdfSort.BadErr.Txt4       for "with regular clean up program"
+ define t.VdfSort.BadErr.Txt5       for "(A component called 'DataBase Builder')"
+ define t.VdfSort.Lbl.DataFile      for "Data file:"
+ define t.VdfSort.Lbl.BadFile       for "BAD file:"
+ define t.VdfSort.CantGainExcl      for "Can not get (exclusive) access to data file"
+ define t.VdfSort.Definition        for "Definition"
+ define t.VdfSort.WriteFDX          for "Write FDX"
+#ENDIF
+
+function VdfSort_field_length_string global integer file# integer field# returns string
+  integer fieldtype# len# dec# obj#
+  string rval#
+  get_attribute DF_FIELD_TYPE of file# field# to fieldtype#
+  get_attribute DF_FIELD_LENGTH of file# field# to len#
+  if fieldtype# eq DF_DATE move 3 to len#
+  move len# to rval#
+  if fieldtype# eq DF_BCD begin
+    get gl_effective_form_datatype file# field# to dec#
+    move "#.#" to rval#
+    replace "#" in rval# with (string(len#-dec#))
+    replace "#" in rval# with (string(dec#))
+  end
+  function_return rval#
+end_function
+
+function VdfSort_field_status_help global integer file# integer field# returns string
+  integer fieldtype# obj#
+  string rval# str#
+  move "# (#)" to rval#
+  move (FieldInf_FieldType(file#,field#)) to fieldtype#
+  if fieldtype# eq DF_ASCII move "Ascii" to str#
+  if fieldtype# eq DF_DATE move "Date" to str#
+  if fieldtype# eq DF_TEXT move "Text" to str#
+  if fieldtype# eq DF_BCD  move "Number" to str#
+  If fieldtype# eq DF_BINARY  Move "Binary" to str#
+  if str# eq "" move "Unknown" to str#
+  replace "#" in rval# with str#
+  replace "#" in rval# with (VdfSort_field_length_string(file#,field#))
+  function_return rval#
+end_function
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+Use ObjGroup.utl // Defining groups of objects
+Use MsgBox       // DAC class
+register_object oList
+register_object oCont
+register_object oVdfSort
+
+integer oVdfSort_Callback_vw# oVdfSort#
+
+integer oVdfSort_SortOptions#
+move (DF_SORT_OPTION_BAD_DATA_FILE+DF_SORT_OPTION_DUP_DATA_FILE) to oVdfSort_SortOptions#
+//move (DF_SORT_OPTION_NO_DATA_CHECK+DF_SORT_OPTION_DUP_DATA_FILE) to oVdfSort_SortOptions#
+
+DEFINE_OBJECT_GROUP OG_VdfSort_Callback_vw
+
+  object oVdfSort_Callback_vw is a aps.View label t.VdfSort.Wait.Caption
+    on_key kcancel send close_panel
+    set Border_Style to BORDER_THICK   // Make panel resizeable
+    property integer pCount 0
+    property integer pCount2 0
+    set help_id to hlpid.VdfSort_Result
+
+    object oCnt is a aps.Container3D
+      set peAnchors to (anTop+anLeft+anRight+anBottom)
+      object Sort_Progress_List is a aps.Edit Label t.VdfSort.Wait.History
+        set peAnchors to (anTop+anLeft+anRight)
+        set size to 75 250
+      end_object
+      Send Aps_Goto_Max_Row
+      object Sort_Warning is a aps.Edit Label t.VdfSort.Wait.Error
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        set size to 50 250
+      end_object
+      Send Aps_Goto_Max_Row
+      Send Make_Row_Space 3
+      object Sort_Progress_Title is a aps.Form Label t.VdfSort.Wait.Status Abstract AFT_ASCII20
+        set object_shadow_state to true
+        set peAnchors to (anLeft+anBottom)
+      end_object
+      object Sort_Progress_Value is a aps.Form Abstract AFT_ASCII25 snap SL_RIGHT
+        set object_shadow_state to true
+        set peAnchors to (anLeft+anRight+anBottom)
+      end_object
+      send aps_align_by_sizing (Sort_Progress_Value(self)) (Sort_Warning(self)) sl_align_right
+      procedure Print_History
+        integer obj# itm# max#
+        if (iDirect_Output_Title(seq.object#,t.VdfSort.ReindexHistory)) begin
+          seq.writeln t.VdfSort.ReindexHistory
+          send make_horizontal_line to seq.object#
+          seq.writeln ""
+          move (Sort_Progress_List(self)) to obj#
+          get pCount to max#
+          for itm# from 0 to max#
+            seq.writeln (value(obj#,itm#))
+          loop
+          seq.writeln ""
+          seq.writeln ""
+          seq.writeln t.VdfSort.ReindexErrors
+          send make_horizontal_line to seq.object#
+          move (Sort_Warning(self)) to obj#
+          get pCount2 to max#
+          for itm# from 0 to max#
+            seq.writeln (value(obj#,itm#))
+          loop
+          seq.close_output
+        end
+      end_procedure
+    end_object
+
+    procedure Print_Report
+      send Print_History to (oCnt(self))
+    end_procedure
+
+    object oBtn1 is a aps.multi_button
+      set peAnchors to (anRight+anBottom)
+      on_item t.btn.print send Print_History to (oCnt(self))
+    end_object
+    object oBtn2 is a aps.multi_button
+      set peAnchors to (anRight+anBottom)
+      on_item t.VdfSort.Btn.CleanUp send SelectBadFile to (oList(oCont(oVdfSort(self))))
+    end_object
+    object oBtn3 is a aps.multi_button
+      set peAnchors to (anRight+anBottom)
+      on_item t.btn.close send close_panel
+    end_object
+    send aps_locate_multi_buttons
+
+    function callback string txt# integer typ# returns integer
+      if (typ# ge DF_MESSAGE_HEADING_1 and typ# le DF_MESSAGE_HEADING_5) begin
+        set value of (Sort_Progress_List(oCnt(self))) item (pcount(self)) to txt#
+        send paint to (Sort_Progress_List(oCnt(self)))
+        set pcount to (pcount(self) + 1)
+      end
+      else if typ# eq DF_MESSAGE_PROGRESS_TITLE begin
+        set value of (sort_progress_title(oCnt(self))) item 0 to txt#
+        send paint to (sort_progress_title(oCnt(self)))
+      end
+      else if typ# eq DF_MESSAGE_PROGRESS_VALUE begin
+        replace ',' in txt# with t.VdfSort.Wait.Of
+        set value of (sort_progress_value(oCnt(self))) item 0 to txt#
+        send paint to (sort_progress_value(oCnt(self)))
+      end
+      else if typ# eq DF_MESSAGE_WARNING begin
+        set value of (sort_warning(oCnt(self))) item (pcount2(self)) to txt#
+        send paint to (sort_warning(oCnt(self)))
+        set pcount2 to (pcount2(self)+1)
+        set value of (Sort_Progress_List(oCnt(self))) item (pcount(self)) to txt#
+        send paint to (Sort_Progress_List(oCnt(self)))
+        set pcount to (pcount(self)+1)
+      end
+      function_return 0
+    end_function
+    procedure popup
+      set pcount to 0
+      set pcount2 to 0
+      send delete_data to (Sort_Progress_List(oCnt(self)))
+      send delete_data to (Sort_Warning(oCnt(self)))
+      set value of (Sort_Progress_Title(oCnt(self))) item 0 to ""
+      set value of (Sort_Progress_Value(oCnt(self))) item 0 to ""
+      set object_shadow_state of (oBtn1(self)) to true
+      set object_shadow_state of (oBtn2(self)) to true
+      set object_shadow_state of (oBtn3(self)) to true
+      forward send popup
+    end_procedure
+    procedure ending_sort
+      set value of (Sort_Progress_List(oCnt(self))) item (pcount(self)) to t.VdfSort.Done
+      ifnot (pcount2(self)) ;
+          set value of (Sort_Warning(oCnt(self))) item 0 to t.VdfSort.NoErrors
+      set object_shadow_state of (oBtn1(self)) to false
+      set object_shadow_state of (oBtn2(self)) to false
+      set object_shadow_state of (oBtn3(self)) to false
+      send activate to (oBtn3(self))
+    end_procedure
+
+    move self to oVdfSort_Callback_vw#
+  end_object
+  set piMinSize of oVdfSort_Callback_vw# to (hi(size(oVdfSort_Callback_vw#))) (low(size(oVdfSort_Callback_vw#)))
+END_DEFINE_OBJECT_GROUP
+
+DEFINE_OBJECT_GROUP OG_VdfSort
+  object VdfSort_oFileAllFiles is a cTablesOpenStatus
+  end_object
+
+  #IF VDFSORT$INCLUDE_VDFCLEAN
+   class cBadFileReader is an array
+     procedure construct_object
+       forward send construct_object
+       set delegation_mode to DELEGATE_TO_PARENT
+       property string  pBadFileName      ""
+       property integer pCurrentPosition  0
+       property integer pChannel          0
+       property integer pBadDataInFile    0 // Something other than duplicate records in file?
+       property integer pMainFile         0
+       property integer private.pFirstRec 0
+       property integer private.pRecCount 0
+     end_procedure
+
+     function iCountSetsInFile returns integer
+       integer rval# ch# prev_rec# current_rec# fin#
+       string str#
+       get Seq_New_Channel to ch#
+       move 0 to rval#
+       move 0 to fin#
+       direct_input channel ch# (pBadFileName(self))
+       move -1 to prev_rec#
+       repeat
+         readln str#
+         move (seqeof) to fin#
+         ifnot fin# begin
+           if (StringBeginsWith(str#,"DUPLICATE,")) begin
+             move (ExtractInteger(str#,1)) to current_rec#
+             if current_rec# ne prev_rec# increment rval#
+             move (ExtractInteger(str#,2)) to prev_rec#
+           end
+         end
+       until fin#
+       close_input channel ch#
+       send Seq_Release_Channel ch#
+       function_return rval#
+     end_function
+
+     procedure DeleteBadFile
+       string str1# str2# str3# str4# str5#
+       if (pBadDataInFile(self)) begin
+         move t.VdfSort.BadErr.Txt1 to str1#
+         move t.VdfSort.BadErr.Txt2 to str2#
+         move t.VdfSort.BadErr.Txt3 to str3#
+         move t.VdfSort.BadErr.Txt4 to str4#
+         move t.VdfSort.BadErr.Txt5 to str5#
+         send obs str1# str2# "" str3# str4# str5#
+       end
+       erasefile (pBadFileName(self))
+     end_procedure
+     procedure reset
+       set pCurrentPosition to 0
+       set pBadDataInFile to 0
+     end_procedure
+     // function sReadLnDuplicate.i will return the empty string only if an EOF
+     // marker has been reached
+     function sReadLnDuplicate.i integer ch# returns string
+       integer fin# pos#
+       string rval#
+       repeat
+         get_channel_position ch# to pos# // Always keep pCurrentPosition pointing
+         set pCurrentPosition to pos#     // to the beginning of the line just read.
+         readln channel ch# rval#
+         if (seqeof) function_return ""
+         if (StringBeginsWith(rval#,"DUPLICATE,")) move 1 to fin#
+         else if rval# ne "" set pBadDataInFile to true
+       until fin#
+       function_return rval#
+     end_function
+
+     enumeration_list // Return values of call back function (iCallBack_Next_Set)
+       define CBNS_CANCELLED          // The reading operation was cancelled by operator
+       define CBNS_END_OF_FILE        // The file is empty
+       define CBNS_OK                 // The reading of the set was completed
+       define CBNS_ERROR              // Some error occurred
+       define CBNS_ONE_OR_NONE_IN_SET // One or no records in set, but we're not done...
+     end_enumeration_list
+
+     function iExistsRecord.i integer rec# returns integer
+       integer file#
+       get pMainFile to file#
+       clear file#
+       set_field_value file# 0 to rec#
+       vfind file# 0 EQ
+       function_return (found)
+     end_function
+
+     function iCallBack_Next_Set_Help integer get# integer obj# integer rec# returns integer
+       integer rval#
+       if (iExistsRecord.i(self,rec#)) begin
+         if (private.pRecCount(self)) begin
+           get get# of obj# rec# to rval#
+           set private.pRecCount to (private.pRecCount(self)+1)
+         end
+         else begin
+           if (private.pFirstRec(self)) begin
+             // Only call back when we have at least two
+             get get# of obj# (private.pFirstRec(self)) to rval#
+             if rval# get get# of obj# rec# to rval#
+             set private.pRecCount to 2
+           end
+           else begin
+             set private.pFirstRec to rec#
+             move 1 to rval# // 1 means continue...
+           end
+         end
+       end
+       else move 1 to rval#
+       function_return rval#
+     end_function
+
+     function iCallBack_Next_Set integer get# integer tmp_obj# returns integer
+       integer obj# ch# rval# pos# continue# fin#
+       integer prev_rec# current_rec#
+       string str#
+       if num_arguments gt 1 move tmp_obj# to obj#
+       else move self to obj#
+       get Seq_New_Channel to ch#
+
+       move CBNS_OK to rval# // Default return value
+       set private.pFirstRec to 0
+       set private.pRecCount to 0
+
+       get pCurrentPosition to pos#
+       direct_input channel ch# (pBadFileName(self))
+       ifnot (seqeof) begin
+         set_channel_position ch# to (pCurrentPosition(self))
+
+         get sReadLnDuplicate.i ch# to str# // Get first line
+         if str# eq "" move CBNS_END_OF_FILE to rval#
+
+         if rval# ne CBNS_END_OF_FILE begin
+           move (ExtractInteger(str#,1)) to current_rec#
+           move (ExtractInteger(str#,2)) to prev_rec#
+           get iCallBack_Next_Set_Help get# obj# current_rec# to continue#
+           if continue# get iCallBack_Next_Set_Help get# obj# prev_rec# to continue#
+           if continue# begin
+             move 0 to fin#
+             repeat
+               get sReadLnDuplicate.i ch# to str# // Get first line
+               if str# eq "" move 1 to fin#
+               else begin
+                 move (ExtractInteger(str#,1)) to current_rec#
+                 if current_rec# eq prev_rec# begin // still part of current set
+                   move (ExtractInteger(str#,2)) to prev_rec#
+                   get iCallBack_Next_Set_Help get# obj# prev_rec# to continue#
+                   ifnot continue# begin
+                     move 1 to fin#
+                     move CBNS_CANCELLED to fin#
+                   end
+                 end
+                 else move 1 to fin#
+               end
+             until fin#
+           end
+           else move CBNS_CANCELLED to rval#
+         end
+
+         if (rval#=CBNS_OK and not(private.pRecCount(self))) ;
+                                         move CBNS_ONE_OR_NONE_IN_SET to rval#
+       end
+       else move CBNS_ERROR to rval#
+       close_input channel ch#
+       send Seq_Release_Channel ch#
+       function_return rval#
+     end_procedure
+   end_class // iCallBack_Next_Set
+
+   class cDisplayRecordsGrid is a aps.Grid
+     procedure construct_object
+       forward send construct_object
+       property integer pMainFile 0
+       //> The embedded array oFields contains a list of fields in file
+       //> pMainFile that should be displayed by the grid.
+       object oFields is an array
+       end_object
+       object oColors is an array
+       end_object
+     end_procedure
+
+     function iColumns returns integer
+       integer ms#
+       get matrix_size to ms#
+       function_return (low(ms#))
+     end_function
+
+     procedure set column_color integer column# integer color#
+       set value of (oColors(self)) item column# to color#
+     end_procedure
+
+     procedure read_fields
+       integer file# fld# itm# obj# type# max#
+       get pMainFile to file#
+       move (oFields(self)) to obj#
+       send delete_data to obj#
+       move 0 to itm#
+       get_attribute DF_FILE_NUMBER_FIELDS of file# to max#
+       for fld# from 0 to max#
+         get_attribute DF_FIELD_TYPE of file# fld# to type#
+         if type# ne DF_OVERLAP begin
+           set value of obj# item itm# to fld#
+           increment itm#
+         end
+       loop
+     end_procedure
+
+     procedure initialize_items
+       integer max# itm# file# columns# rows# column# row# color# oColors#
+       get pMainFile to file#
+       move (oColors(self)) to oColors#
+       get item_count of (oFields(self)) to rows#
+       get icolumns to columns#
+       send delete_data
+       for row# from 0 to (rows#-1)
+         for column# from 0 to (columns#-1)
+           move (row#*columns#+column#) to itm#
+           send add_item msg_none ""
+           set entry_state item itm# to dfFalse
+           get value of oColors# item column# to color#
+           if color# set item_color item itm# to color#
+         loop
+       loop
+     end_procedure
+
+     procedure fill_list_field_names integer col#
+       integer fld# max# itm# step_size# file# obj#
+       string str#
+       move (oFields(self)) to obj#
+       get iColumns to step_size#
+       get item_count of obj# to max#
+       get pMainFile to file#
+       for itm# from 0 to (max#-1)
+         get value of obj# item itm# to fld#
+         move (FieldInf_FieldLabel_Long(file#,fld#)) to str#
+         set value item col# to str#
+         move (col#+step_size#) to col#
+       loop
+       set dynamic_update_state to true // Otherwise nothing will display
+     end_procedure
+
+     procedure fill_list_field_types integer col#
+       integer fld# max# itm# step_size# file# obj#
+       string str#
+       move (oFields(self)) to obj#
+       get iColumns to step_size#
+       get item_count of obj# to max#
+       get pMainFile to file#
+       for itm# from 0 to (max#-1)
+         get value of obj# item itm# to fld#
+         move (VdfSort_field_status_help(file#,fld#)) to str#
+         set value item col# to str#
+         move (col#+step_size#) to col#
+       loop
+       set dynamic_update_state to true // Otherwise nothing will display
+     end_procedure
+
+     procedure fill_list_field_data integer col# // Uses current record
+       integer fld# max# itm# step_size# file# obj#
+       string str#
+       move (oFields(self)) to obj#
+       get iColumns to step_size#
+       get item_count of obj# to max#
+       get pMainFile to file#
+       for itm# from 0 to (max#-1)
+         get value of obj# item itm# to fld#
+         get_field_value file# fld# to str#
+         set value item col# to str#
+         move (col#+step_size#) to col#
+       loop
+       set dynamic_update_state to true // Otherwise nothing will display
+     end_procedure
+
+     procedure clear_column integer col#
+       integer fld# max# itm# step_size# file#
+       get iColumns to step_size#
+       get item_count of (oFields(self)) to max#
+       get pMainFile to file#
+       for itm# from 0 to (max#-1)
+         set value item col# to ""
+         move (col#+step_size#) to col#
+       loop
+       set dynamic_update_state to true // Otherwise nothing will display
+     end_procedure
+
+     procedure fill_list.i integer file#
+       set pMainFile to file#
+       send read_fields
+       send initialize_items
+       send fill_list_field_names 0
+       send fill_list_field_types 3
+     end_procedure
+   end_class // cDisplayRecordsGrid
+
+   object oCleanUp_Panel is a aps.ModalPanel
+     set p_Auto_Column to true
+     set locate_mode to center_on_screen
+     on_key kcancel send close_panel
+     property integer pChanged_State  0
+     property integer pRecordToKeep   0
+     property integer pMainFile       0
+     property integer pDeleteBadOnEOF 0
+     object oBadFileReader is an cBadFileReader
+     end_object
+     object oDataFileName is a aps.Form label t.VdfSort.Lbl.DataFile abstract aft_ascii80
+       set object_shadow_state to true
+     end_object
+     object oBadFileName is a aps.Form label t.VdfSort.Lbl.BadFile abstract aft_ascii80
+       set object_shadow_state to true
+     end_object
+     procedure DeleteBadFile
+       if (pDeleteBadOnEOF(self)) send DeleteBadFile to (oBadFileReader(self))
+     end_procedure
+
+     set p_Auto_Column to false
+     send aps_goto_max_row
+     send aps_make_row_space
+
+     object oGrp is a aps.Group
+       set p_Auto_Column to false
+       property integer pSetNumber 0
+       property integer pMaxSet    0
+       procedure display_set_no
+         string str#
+         move t.VdfSort.Lbl.SetNo to str#
+         replace "#" in str# with (string(pSetNumber(self)))
+         replace "#" in str# with (string(pMaxSet(self)))
+         set label to str#
+       end_procedure
+       procedure increment_set_no
+         set pSetNumber to (pSetNumber(self)+1)
+         send display_set_no
+       end_procedure
+       procedure reset_set_no
+         set pSetNumber to 0
+         send display_set_no
+       end_procedure
+       object oLst is a aps.List label t.VdfSort.Lbl.SelectRec
+         set size to 150 65
+         set label_justification_mode to jmode_top
+         set select_mode to multi_select // Makes it single select (???)
+         function add_recnum integer rec# returns integer
+           send add_item msg_none rec# //(string(rec#))
+           function_return 1 // makes it continue
+         end_function
+         function iFill_List returns integer
+           integer rval# get# self# max#
+           send cursor_wait to (cursor_control(self))
+           send update_form t.VdfSort.LoadingSet
+           send clear_record_grid
+           send delete_data
+           move self to self#
+           move get_add_recnum to get#
+           repeat
+             get iCallBack_Next_Set of (oBadFileReader(self)) get# self# to rval#
+             if (rval#=CBNS_OK or rval#=CBNS_ONE_OR_NONE_IN_SET) send increment_set_no
+           until (rval#<>CBNS_ONE_OR_NONE_IN_SET)
+           get item_count to max#
+           send update_form (string(max#)+t.VdfSort.RecordsInSet)
+           send cursor_ready to (cursor_control(self))
+           function_return rval#
+         end_function
+         procedure fill_list
+           integer rval#
+           get iFill_List to rval#
+           if rval# eq CBNS_END_OF_FILE begin
+             send obs t.VdfSort.DoReindexAgain
+             send DeleteBadFile // Delete .BAD file if file is cleaned
+             send close_panel
+           end
+         end_procedure
+         procedure select_first
+           integer rec#
+           set current_item to 0
+           set select_state item 0 to true
+           get value item 0 to rec#
+           set pRecordToKeep to rec#
+         end_procedure
+         procedure initialize_set_count
+           send cursor_wait to (cursor_control(self))
+           send update_form t.VdfSort.CountingSets
+           set pMaxSet to (iCountSetsInFile(oBadFileReader(self)))
+           send cursor_ready to (cursor_control(self))
+         end_procedure
+         procedure auto_clean
+           integer fin# keep_rec# rval#
+           move 0 to fin#
+           repeat
+             get iRecordSelected to keep_rec#
+             ifnot keep_rec# begin
+               send select_first
+               get iRecordSelected to keep_rec#
+             end
+             ifnot keep_rec# move 1 to fin#
+             ifnot fin# begin
+               send delete_records keep_rec#
+               get iFill_List to rval#
+               if rval# eq CBNS_END_OF_FILE begin
+                 send obs t.VdfSort.DoReindexAgain
+                 send DeleteBadFile // Delete .BAD file if file is cleaned
+                 move 1 to fin#
+               end
+             end
+           until fin#
+           send close_panel
+         end_procedure
+         // This function will serve as a boolean test that it is indeed
+         // OK to delete all the records (but one) in the set. And it will
+         // in fact return the record number of the record to be kept
+         function iRecordSelected returns integer
+           integer rec# file#
+           // First we will check that a record has been selected:
+           get pRecordToKeep to rec#
+           if rec# begin
+             // OK! Now we know that a record has been selected. But we
+             // have to make sure that it actually still exists. It may
+             // have been wiped by a previous attempt to clean the file
+             // or indeed as a result of cleaning a previous set of identical
+             // records (according to another index).
+             //   If this situation arises (un-likely) the best the operator
+             // can do is to re-index the file again to generate a new up-
+             // to-date BAD file. Well, that's enough talking:
+             get pMainFile to file#
+             clear file#
+             set_field_value file# 0 to rec#
+             vfind file# 0 EQ
+             ifnot (found) move 0 to rec#
+           end
+           function_return rec#
+         end_function
+         procedure delete_records integer keep_rec#
+           integer itm# max# rec# file#
+           send cursor_wait to (cursor_control(self))
+           send update_form t.VdfSort.DeletingRecs
+           get pMainFile to file#
+           get item_count to max#
+           lock
+             for itm# from 0 to (max#-1)
+               get value item itm# to rec#
+               if rec# ne keep_rec# begin // If it's not the record we want to keep
+                 clear file#
+                 set_field_value file# 0 to rec#
+                 vfind file# 0 EQ
+                 if (found) delete file#
+               end
+             loop
+           unlock
+           send cursor_ready to (cursor_control(self))
+         end_procedure
+         procedure delete_records_and_fill_list // Delete all records not selected and get next set
+           integer keep_rec#
+           get iRecordSelected to keep_rec#
+           if keep_rec# begin
+             send delete_records keep_rec#
+             send fill_list
+           end
+           else send obs t.VdfSort.SelectError
+         end_procedure
+         procedure item_change integer i1# integer i2# returns integer
+           integer rec#
+           forward get msg_item_change i1# i2# to i2#
+           get value item i2# to rec#
+           send display_current_record rec#
+           procedure_return i2#
+         end_procedure
+         procedure select_toggling integer itm# integer st#
+           integer rec#
+           forward send select_toggling itm# st#
+           if st# begin
+             get value item itm# to rec#
+             send display_keep_record rec#
+           end
+         end_procedure
+       end_object
+       object oFrm1 is a aps.form abstract aft_ascii25 snap sl_down
+         set object_shadow_state to true
+       end_object
+       send aps_size_identical_max (oLst(self)) (oFrm1(self)) sl_horizontal
+       procedure update_form string str#
+         set value of (oFrm1(self)) item 0 to str#
+         set dynamic_update_state of (oFrm1(self)) to true
+       end_procedure
+     end_object // oGrp
+
+     object oRecordValues is a cDisplayRecordsGrid
+       set size to 100 0
+       set highlight_row_state to true
+//      set highlight_row_color to (rgb(0,255,255))
+//      set current_item_color to (rgb(0,255,255))
+       set CurrentCellColor     to clHighlight
+       set CurrentCellTextColor to clHighlightText
+       set CurrentRowColor      to clHighlight
+       set CurrentRowTextColor  to clHighlightText
+       set line_width to 4 0
+       set form_margin item 0 to 3
+       set form_margin item 1 to 25
+       set form_margin item 2 to 25
+       set form_margin item 3 to 10
+       set header_label item 0 to t.VdfSort.Lbl.FieldName
+       set header_label item 1 to t.VdfSort.Lbl.CurrentRec
+       set header_label item 2 to t.VdfSort.Lbl.RecordToKeep
+       set header_label item 3 to t.VdfSort.Lbl.FieldType
+       set select_mode to no_select
+       set column_color item 0 to clLtGray
+       set column_color item 2 to |CI$0000FF00 // Light green
+       set column_color item 3 to clLtGray
+       on_key knext_item send switch
+       on_key kprevious_item send switch_back
+       on_key kswitch send switch
+       on_key kswitch_back send switch_back
+       procedure clear_column integer col#
+         if col# eq 2 set pRecordToKeep to 0
+         forward send clear_column col#
+       end_procedure
+       procedure fill_list.i integer file#
+         set pRecordToKeep to 0
+         forward send fill_list.i file#
+       end_procedure
+       procedure display_current_record integer rec#
+         integer file#
+         get pMainFile to file#
+         if rec# begin
+           clear file#
+           set_field_value file# 0 to rec#
+           vfind file# 0 EQ
+           send fill_list_field_data 1
+         end
+         else send clear_column 1
+       end_procedure
+       procedure display_keep_record integer rec#
+         integer file#
+         get pMainFile to file#
+         set pRecordToKeep to rec#
+         if rec# begin
+           clear file#
+           set_field_value file# 0 to rec#
+           vfind file# 0 EQ
+           send fill_list_field_data 2
+         end
+         else send clear_column 2
+       end_procedure
+     end_object // oRecordValues
+     send aps_align_by_sizing (oRecordValues(self)) (oGrp(self)) sl_align_bottom
+     procedure display_current_record integer rec#
+       send display_current_record to (oRecordValues(self)) rec#
+     end_procedure
+     procedure display_keep_record integer rec#
+       send display_keep_record to (oRecordValues(self)) rec#
+     end_procedure
+     procedure clear_record_grid
+       send clear_column to (oRecordValues(self)) 1
+       send clear_column to (oRecordValues(self)) 2
+     end_procedure
+     procedure skip_set
+       set pDeleteBadOnEOF to false
+       send fill_list to (oLst(oGrp(self)))
+     end_procedure
+     on_key ksave_record send delete_records_and_fill_list to (oLst(oGrp(self)))
+     object oBtn1 is a aps.Multi_Button
+       on_item t.btn.ok send delete_records_and_fill_list to (oLst(oGrp(self)))
+     end_object
+     object oBtn2 is a aps.Multi_Button
+       on_item t.VdfSort.Btn.Skip send skip_set
+     end_object
+     object oBtn3 is a aps.Multi_Button
+       on_item t.VdfSort.Btn.Auto send auto_clean to (oLst(oGrp(self)))
+     end_object
+     object oBtn4 is a aps.Multi_Button
+       on_item t.btn.cancel send close_panel
+     end_object
+     send aps_locate_multi_buttons
+     function sBadFileInfo string badfile# returns string
+       string rval#
+       number ts#
+       if (SEQ_FileExists(badfile#)) begin
+         move "# bytes, generated: #" to rval#
+         replace "#" in rval# with (string(SEQ_FileSize(badfile#)))
+         move (SEQ_FileModTime(badfile#)) to ts#
+         replace "#" in rval# with (TS_ConvertToString(ts#))
+       end
+       else move "File not found" to rval#
+       function_return rval#
+     end_function
+     procedure run.isss integer file# string caption# string rn# string bad#
+       integer wasopen# open# type#
+       move (DBMS_IsOpenFile(file#)) to wasopen#
+       move (DBMS_OpenFile(file#,DF_EXCLUSIVE,0)) to open#
+       if open# begin
+         set pChanged_State to false
+         set pBadFileName of (oBadFileReader(self)) to bad#
+         send reset to (oBadFileReader(self))
+         set pMainFile of (oBadFileReader(self)) to file#
+         send reset_set_no to (oGrp(self))
+         send fill_list.i to (oRecordValues(self)) file#
+         set value of (oDataFileName(self)) to (rn#+" ("+string(DBMS_FileInfo(file#,1))+" records in file)")
+         set value of (oBadFileName(self)) to (bad#+" ("+sBadFileInfo(self,bad#)+")")
+         set label to ("Clean up, "+caption#)
+         set pMainFile to file#
+         send deferred_message msg_initialize_set_count (oLst(oGrp(self)))
+         send deferred_message msg_fill_list (oLst(oGrp(self)))
+         set pDeleteBadOnEOF to true
+         send popup
+       end
+       else send obs t.VdfSort.CantGainExcl
+       if wasopen# move (DBMS_OpenFile(file#,DF_SHARE,0)) to open# // Switch back to shared mode
+       else close file#
+     end_procedure
+     set pMinimumSize to 160 0
+     set Border_Style to BORDER_THICK   // Make panel resizeable
+     procedure aps_onResize integer delta_rw# integer delta_cl#
+       send aps_init to (oGrp(self))
+       send aps_resize (oLst(oGrp(self))) delta_rw# 0
+       send aps_auto_locate_control to (oGrp(self)) (oFrm1(oGrp(self))) sl_down (oLst(oGrp(self)))
+       send aps_auto_size_container to (oGrp(self))
+       send aps_align_by_sizing (oRecordValues(self)) (oGrp(self)) sl_align_bottom
+       send aps_register_max_rc (oRecordValues(self))
+       send aps_register_multi_button (oBtn1(self))
+       send aps_register_multi_button (oBtn2(self))
+       send aps_register_multi_button (oBtn3(self))
+       send aps_register_multi_button (oBtn4(self))
+       send aps_locate_multi_buttons
+       send aps_auto_size_container
+     end_procedure
+   end_object
+
+   procedure DoCleanupFile integer file# string caption# string rn# string bad#
+     send run.isss to (oCleanUp_Panel(self)) file# caption# rn# bad#
+   end_procedure
+
+   object oSelectBadFile is a aps.ModalPanel label t.VdfSort.SelectFileToClean
+     set locate_mode to center_on_screen
+     set Border_Style to BORDER_THICK   // Make panel resizeable
+     on_key kCancel      send close_panel
+     on_key kSave_Record send CleanUp_File
+     object oGrd is a aps.Grid
+       set size to 200 0
+       set highlight_row_state to true
+       set CurrentCellColor     to clHighlight
+       set CurrentCellTextColor to clHighlightText
+       set CurrentRowColor      to clHighlight
+       set CurrentRowTextColor  to clHighlightText
+     //set highlight_row_color to (rgb(0,255,255))
+     //set current_item_color to (rgb(0,255,255))
+       set line_width to 5 0
+       set form_margin item 0 to 3
+       set form_margin item 1 to 17
+       set form_margin item 2 to 30
+       set form_margin item 3 to 30
+       set form_margin item 4 to 25
+       set header_label item 0 to "#"
+       set header_label item 1 to t.VdfSort.Lbl.UserName
+       set header_label item 2 to t.VdfSort.Lbl.DataFileLoc
+       set header_label item 3 to t.VdfSort.Lbl.BadFileLoc
+       set header_label item 4 to t.VdfSort.Lbl.SizeAndTime
+       set select_mode to no_select
+       on_key kenter send CleanUp_File
+       on_key kSave_Record send CleanUp_File
+
+       object oValues is an array
+       end_object
+
+       procedure add_item_value string value#
+         integer arr#
+         move (oValues(self)) to arr#
+         set value of arr# item (item_count(arr#)) to value#
+       end_procedure
+
+       procedure add_bad_file integer file# string dn# string rn_path# string badfile#
+         string str#
+         move (TS_ConvertToString(SEQ_FileModTime(badfile#))+", ("+InsertThousandsSep(string(SEQ_FileSize(badfile#)))+" bytes)") to str#
+         send add_item msg_none (string(file#))
+         send add_item msg_none dn#
+         send add_item msg_none (lowercase(rn_path#))
+         send add_item msg_none badfile#
+         send add_item msg_none str#
+         send add_item_value (string(file#))
+         send add_item_value dn#
+         send add_item_value (lowercase(rn_path#))
+         send add_item_value badfile#
+         send add_item_value str#
+       end_procedure
+
+       object oBadFiles is a set
+         set delegation_mode to delegate_to_parent
+         procedure dump_items integer file# string dn# string rn_path#
+           integer max# itm#
+           get item_count to max#
+           for itm# from 0 to (max#-1)
+             send add_bad_file file# dn# rn_path# (value(self,itm#))
+           loop
+         end_procedure
+         procedure add_element_lowercase string file#
+           move (SEQ_TranslatePathToAbsolute(file#)) to file#
+           send add_element (lowercase(file#))
+         end_procedure
+         procedure fill_list_help2 integer file# string dn# string rn# string rn_path#
+           string badfile# path#
+           send delete_data
+
+           // First test if there is a .BAD file next to the .DAT file:
+           uppercase rn_path#
+           move (StripFromLastOccurance(rn_path#,".DAT")) to badfile#
+           move (badfile#+".BAD") to badfile#
+           if (SEQ_FileExists(badfile#)) send add_element_lowercase badfile#
+
+           // Then we check to see if there are any bad files in other directories along dfpath
+           get SEQ_DfPath to path#
+           send SEQ_CallBack_FileInPath (rn#+".bad") path# msg_add_element_lowercase self
+           send dump_items file# dn# rn_path#
+           send delete_data
+         end_procedure
+       end_object // oBadFiles
+       procedure fill_list1 integer file#
+         integer wasopen# type#
+         string str# rn# bad_name#
+         if file# begin
+           move (DBMS_IsOpenFile(file#)) to wasopen#
+           if wasopen# move (DBMS_FileDriverType(file#)) to type#
+           else move (DBMS_OpenFile(file#,DF_SHARE,0)) to type#
+           if type# eq DBMS_DRIVER_DATAFLEX begin // OK! We're dealing with a DF file that can be opened:
+             // Now, is there a BAD file present on the system?:
+             get_attribute DF_FILE_ROOT_NAME of file# to rn#
+             send fill_list_help2 to (oBadFiles(self)) file# (File_Display_Name(file#)) rn# (DBMS_Rootname_Path(file#))
+           end
+           if (DBMS_IsOpenFile(file#) and not(wasopen#)) close file#
+         end
+       end_procedure
+       procedure fill_list
+         integer itm# max# self#
+         send cursor_wait to (cursor_control(self))
+         send delete_data
+         send delete_data to (oValues(self))
+         move self to self#
+         send DBMS_Callback_FilelistEntries (FLEC_ALL+FLEC_NO_ALIAS) msg_fill_list1 self#
+         get item_count to max#
+         for itm# from 0 to (max#-1)
+           set entry_state item itm# to false
+         loop
+         send cursor_ready to (cursor_control(self))
+       end_procedure
+       procedure CleanUp_File
+         integer base# tmp# file#
+         string caption# rn# bad_file#
+         if (item_count(self)) begin
+           get current_item to base#
+           move ((base#/5)*5) to base#
+           get value of (oValues(self)) item base# to file#
+           get value of (oValues(self)) item (base#+1) to caption#
+           get value of (oValues(self)) item (base#+2) to rn#
+           get value of (oValues(self)) item (base#+3) to bad_file#
+           send DoCleanupFile file# caption# rn# bad_file#
+           ifnot (SEQ_FileExists(bad_file#)) send fill_list
+         end
+       end_procedure
+     end_object // oGrd
+     procedure CleanUp_File
+       send CleanUp_File to (oGrd(self))
+     end_procedure
+     register_object oBtn2
+     procedure empty_warning
+       send obs t.VdfSort.NoFilesToClean
+       send activate to (oBtn2(self))
+     end_procedure
+     procedure popup
+       send fill_list to (oGrd(self))
+       ifnot (item_count(oGrd(self))) send deferred_message msg_empty_warning
+       forward send popup
+     end_procedure
+     object oBtn1 is a aps.Multi_Button
+       on_item t.VdfSort.CleanFile send CleanUp_File
+     end_object
+     object oBtn2 is a aps.Multi_Button
+       on_item t.btn.close send close_panel
+     end_object
+     send aps_locate_multi_buttons
+     procedure aps_onResize integer delta_rw# integer delta_cl#
+       send aps_resize (oGrd(self)) delta_rw# 0
+       send aps_register_multi_button (oBtn1(self))
+       send aps_register_multi_button (oBtn2(self))
+       send aps_locate_multi_buttons
+       send aps_auto_size_container
+     end_procedure
+   end_object
+  #ENDIF
+  register_object oBtn2
+  register_object oSortBufferSize
+
+  object oVdfSort_Properties is a aps.ModalPanel label t.VdfSort.Prop_Caption
+    set help_id to hlpid.VdfSort_Properties
+    property integer pResult 0
+    set locate_mode to center_on_screen
+    on_key kcancel send close_panel
+    procedure activate_next
+      send activate to (oSortBufferSize(self))
+    end_procedure
+    procedure activate_previous
+      send activate to (oBtn2(self))
+    end_procedure
+    object oRadio1 is a aps.RadioGroup label t.VdfSort.Prop_BadData
+      on_key knext_item     send activate_next
+      on_key kprevious_item send activate_previous
+      object oRad1 is a aps.Radio label t.VdfSort.Prop_BD_NoCheck
+      end_object
+      object oRad2 is a aps.Radio label t.VdfSort.Prop_BD_SpaceFill
+      end_object
+      object oRad3 is a aps.Radio label t.VdfSort.Prop_BD_WriteFile
+      end_object
+      object oRad4 is a aps.Radio label t.VdfSort.Prop_BD_Abort
+        set object_shadow_state to true
+      end_object
+    end_object
+    object oRadio2 is a aps.RadioGroup label t.VdfSort.Prop_Duplicates
+      object oRad1 is a aps.Radio label t.VdfSort.Prop_DD_WriteFile
+        set object_shadow_state to true
+      end_object
+      object oRad2 is a aps.Radio label t.VdfSort.Prop_DD_Abort
+        set object_shadow_state to true
+      end_object
+    end_object
+    send aps_size_identical_max (oRadio1(self)) (oRadio2(self)) sl_vertical
+    send aps_goto_max_row
+    object oSortBufferSize is a aps.Form label (t.VdfSort.Prop_SortBuffer+":") abstract aft_numeric6.0
+      procedure switch_back
+        send activate to (oRadio1(self))
+      end_procedure
+      on_key kprevious_item send switch_back
+    end_object
+    send aps_align_by_moving (oSortBufferSize(self)) (oRadio2(self)) sl_align_left
+    object oBtn1 is a aps.Multi_Button
+      on_item t.btn.ok send close_panel_ok
+    end_object
+    object oBtn2 is a aps.Multi_Button
+      on_item t.btn.cancel send close_panel
+    end_object
+    send aps_locate_multi_buttons
+    procedure close_panel_ok
+      set pResult to true
+      send close_panel
+    end_procedure
+    procedure popup
+      integer itm# grb# buffer#
+      integer iNull
+      string sNull
+      move 0 to iNull
+      move "" to sNull
+      move 0 to itm#
+      if (oVdfSort_SortOptions# iand DF_SORT_OPTION_NO_DATA_CHECK ) move 0 to itm#
+      if (oVdfSort_SortOptions# iand DF_SORT_OPTION_BAD_DATA_FIXUP) move 1 to itm#
+      if (oVdfSort_SortOptions# iand DF_SORT_OPTION_BAD_DATA_FILE ) move 2 to itm#
+      if (oVdfSort_SortOptions# iand DF_SORT_OPTION_BAD_DATA_ABORT) move 3 to itm#
+      set current_radio of (oRadio1(self)) to itm#
+      move 0 to itm#
+      if (oVdfSort_SortOptions# iand DF_SORT_OPTION_DUP_DATA_FILE ) move 0 to itm#
+      if (oVdfSort_SortOptions# iand DF_SORT_OPTION_DUP_DATA_ABORT) move 1 to itm#
+      set current_radio of (oRadio2(self)) to itm#
+
+      call_driver iNull "DATAFLEX" function FLEX_GET_MAX_SORT_BUFFER callback iNull passing sNull iNull iNull result buffer#
+      set value of (oSortBufferSize(self)) item 0 to buffer#
+
+      set pResult to false
+      forward send popup
+      if (pResult(self)) begin
+        move 0 to oVdfSort_SortOptions#
+        get current_radio of (oRadio1(self)) to itm#
+        if itm# eq 0 move DF_SORT_OPTION_NO_DATA_CHECK  to oVdfSort_SortOptions#
+        if itm# eq 1 move DF_SORT_OPTION_BAD_DATA_FIXUP to oVdfSort_SortOptions#
+        if itm# eq 2 move DF_SORT_OPTION_BAD_DATA_FILE  to oVdfSort_SortOptions#
+        if itm# eq 3 move DF_SORT_OPTION_BAD_DATA_ABORT to oVdfSort_SortOptions#
+        get current_radio of (oRadio2(self)) to itm#
+        if itm# eq 0 move (DF_SORT_OPTION_DUP_DATA_FILE +oVdfSort_SortOptions#) to oVdfSort_SortOptions#
+        if itm# eq 1 move (DF_SORT_OPTION_DUP_DATA_ABORT+oVdfSort_SortOptions#) to oVdfSort_SortOptions#
+
+        get value of (oSortBufferSize(self)) item 0 to buffer#
+        call_driver iNull "DATAFLEX" function FLEX_SET_MAX_SORT_BUFFER callback iNull passing sNull iNull buffer# result grb#
+      end
+    end_procedure
+  end_object //oVdfSort_Properties
+
+  procedure popup_sort_properties
+    send popup to (oVdfSort_Properties(self))
+  end_procedure
+
+  object oVdfSort is a aps.View label t.VdfSort.Caption
+    on_key kCancel send close_panel
+    set help_id to hlpid.VdfSort_Select
+    procedure Print_Report
+      // Cancel ToolBar message
+    end_procedure
+    object oCont is a aps.Container3D
+      set p_auto_column to false
+      set peAnchors to (anTop+anLeft+anRight+anBottom)
+      object oList is a cFdxFileMultiSelector // cFileListMultiSelectorGrid
+        set size to 180 0
+        set piNo_Alias_State to true          // Exclude alias files
+        set piBad_Entries_State to BAD_ENTRIES_SHADOW // Shade un-available entries
+        send DriverFilter_Add DBMS_DRIVER_DATAFLEX
+        set peResizeColumn to rcAll
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        object oExclusiveError is an Array
+        end_object
+        function sExclusiveErrorText returns string
+          integer obj# itm# max#
+          string rval#
+          move (oExclusiveError(self)) to obj#
+          get item_count of obj# to max#
+          move (max# min 5) to max#
+          for itm# from 0 to (max#-1)
+            move (rval#+DBMS_Rootname_Path(value(obj#,itm#))) to rval#
+            if itm# ne (max#-1) move (rval#+character(10)) to rval#
+          loop
+          if (item_count(obj#)) gt max# move (rval#+character(10)+"...") to rval#
+          function_return rval#
+        end_function
+
+        procedure add_file.i integer file#
+          if file# ne 50 forward send add_file.i file# // Skip FLEXERRS
+        end_procedure
+
+        procedure SortFile integer file#
+          sort File# '' oVdfSort_SortOptions# oVdfSort_Callback_vw#
+        end_procedure
+
+        procedure OpenFileExclusive integer file#
+          ifnot (iOpen_file.ii(VdfSort_oFileAllFiles(self),file#,DF_EXCLUSIVE)) ;
+            set value of (oExclusiveError(self)) ;
+              item (item_count(oExclusiveError(self))) to file#
+        end_procedure
+
+        procedure VdfSort_RestoreOpenFiles
+          //send obs "VdfSort_RestoreOpenFiles was called"
+        end_procedure
+
+        procedure CustomizedRestore
+          broadcast recursive send VdfSort_RestoreOpenFiles to desktop
+        end_procedure
+
+        procedure WS_OnCloseWorkSpace string lsOldWS
+          send delete_data
+        end_procedure
+
+        procedure DoReindex_Help
+          send Callback_Selected_Files msg_SortFile
+          send Ending_Sort to oVdfSort_Callback_vw#
+          send RestoreFiles to (VdfSort_oFileAllFiles(self))
+          send CustomizedRestore
+          send Cursor_Ready to (cursor_control(self))
+        end_procedure
+
+        procedure DoReindex
+          integer Self# Client_ID#
+          string str#
+          move self to Self#
+          ifnot oVdfSort_Callback_vw# begin
+            // If oVdfSort_Callback_vw has not yet been created we do it here:
+            move (Client_ID(Self#)) to Client_ID#
+            if Client_ID# CREATE_OBJECT_GROUP OG_VdfSort_Callback_vw PARENT Client_ID#
+            else error 666 "ClientArea not found!"
+          end
+          if oVdfSort_Callback_vw# begin
+            send Cursor_Wait to (cursor_control(self))
+            send RegisterCurrentOpenFiles to (VdfSort_oFileAllFiles(self))
+            send CloseAllFiles to (VdfSort_oFileAllFiles(self))
+            send Delete_Data to (oExclusiveError(self))
+            send Callback_Selected_Files msg_OpenFileExclusive
+            ifnot (item_count(oExclusiveError(self))) begin
+              send Popup to oVdfSort_Callback_vw#
+              // The below message makes sure that procedure DoReindex_Help
+              // is not executed until the previous message has finished
+              // 100%. It's a way of bypassing screen paint optimization.
+              send deferred_message msg_DoReindex_Help
+            end
+            else begin // Exclusive access could not be obtained
+              send CloseAllFiles to (VdfSort_oFileAllFiles(self))
+              send RestoreFiles to (VdfSort_oFileAllFiles(self))
+              send CustomizedRestore
+              send Cursor_Ready to (cursor_control(self))
+              move (t.VdfSort.Err.Exclusive1+character(10)) to str#
+              move (str#+t.VdfSort.Err.Exclusive2+character(10)) to str#
+              move (str#+t.VdfSort.Err.Exclusive3+character(10)) to str#
+              move (str#+t.VdfSort.Err.Exclusive4) to str#
+              move (str#+character(10)+character(10)+sExclusiveErrorText(self)) to str#
+              send Info_Box str# t.VdfSort.Wait.Error
+            end
+          end
+        end_procedure
+        send fill_list_all_files
+        procedure Conditional_FillList
+          ifnot (item_count(self)) send fill_list_all_files
+        end_procedure
+        procedure SelectBadFile
+          send popup to (oSelectBadFile(self))
+        end_procedure
+        procedure update_select_display // This is called automatically by the class
+          integer selected# total#
+          get File_Select_Count to selected#
+          get Row_Count to total#
+          send select_display selected# total#
+        end_procedure
+        register_procedure cleanup_file integer file# string dn# string fn# string bad#
+      end_object // oList
+      object oBtn1 is a aps.multi_button
+        set peAnchors to (anTop+anRight)
+        on_item t.FDX.Btn.SelectOpen send select_open to (oList(self))
+      end_object
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anTop+anRight)
+        on_item t.FDX.Btn.SelectAll send select_all_not_bad to (oList(self))
+      end_object
+      object oBtn3 is a aps.multi_button
+        set peAnchors to (anTop+anRight)
+        on_item t.FDX.Btn.SelectNone send select_none to (oList(self))
+      end_object
+      object oBtn4 is a aps.multi_button
+        set peAnchors to (anTop+anRight)
+        on_item t.FDX.Btn.SelectInvert send select_invert to (oList(self))
+      end_object
+      object oBtn6 is a aps.multi_button
+        set peAnchors to (anTop+anRight)
+        on_item t.VdfSort.FileLocations send OpenStat.DisplayFileLocations
+      end_object
+      send aps_register_multi_button (oBtn6(self))
+      object oBtn7 is a aps.multi_button
+        set peAnchors to (anTop+anRight)
+        on_item "DFMatrix" send OpenStat.Chain_DFMatrix
+      end_object
+      send aps_locate_multi_buttons SL_VERTICAL
+      object oSelectTxt is a aps.TextBox snap sl_right relative_to (oList(self))
+        set fixed_size to 10 50
+        set peAnchors to (anBottom+anRight)
+      end_object
+      send aps_align_by_moving (oSelectTxt(self)) (oList(self)) SL_ALIGN_BOTTOM
+      procedure select_display integer selected# integer total#
+        set value of (oSelectTxt(self)) to (t.FDX.Selected+" "+string(selected#))
+      end_procedure
+    end_object
+    on_key ksave_record send DoReindex to (oList(oCont(self)))
+    object oBtn1 is a aps.multi_button
+      set peAnchors to (anBottom+anRight)
+      on_item t.VdfSort.Btn.Reindex send DoReindex to (oList(oCont(self)))
+    end_object
+    object oBtn2 is a aps.multi_button
+      set peAnchors to (anBottom+anRight)
+      on_item t.btn.properties send popup_sort_properties
+    end_object
+    object oBtn3 is a aps.multi_button
+      set peAnchors to (anBottom+anRight)
+      on_item t.btn.close send close_panel
+    end_object
+    send aps_locate_multi_buttons
+
+    set Border_Style to BORDER_THICK   // Make panel resizeable
+    set Window_Style to WS_MAXIMIZEBOX 1
+    move self to oVdfSort#
+    procedure Close_Query_View
+      send close_panel
+    end_procedure
+    procedure popup
+      send Conditional_FillList to (oList(oCont(self)))
+      forward send popup
+    end_procedure
+
+    procedure DoDefaultSortBuffer
+      integer liGrb iNull
+      string sNull
+      call_driver iNull "DATAFLEX" function FLEX_SET_MAX_SORT_BUFFER callback iNull passing sNull iNull 65536 result liGrb
+    end_procedure
+    send DoDefaultSortBuffer
+
+  end_object
+  set piMinSize of oVdfSort# to (hi(size(oVdfSort#))) (low(size(oVdfSort#)))
+END_DEFINE_OBJECT_GROUP // OG_VdfSort
+
+procedure Activate_Sort_Vw
+  integer Self# Client_ID# DbBldr#
+  ifnot oVdfSort# begin
+    // If oVdfSort view has not yet been created we do it here:
+    move self to Self#
+    move (Client_ID(Self#)) to Client_ID#
+    if Client_ID# CREATE_OBJECT_GROUP OG_VdfSort PARENT Client_ID# //DbBldr#
+    else error 666 "ClientArea not found!"
+  end
+  if oVdfSort# send popup to oVdfSort#
+end_procedure
+
+
+//  Use DBMS.utl     // Basic DBMS functions
+//  Use Files.utl    // Utilities for handling file related stuff
+//
+//  procedure reindex_one
+//    integer open#
+//    string file_name#
+//
+//    get SEQ_SelectFile "Locate data file to reindex" ;
+//                         "Datafiles (*.dat)|*.DAT" to file_name#
+//    if file_name# ne "" begin
+//      get DBMS_OpenFileAs file_name# 249 DF_EXCLUSIVE 0 to open#
+//      if open# begin
+//        sort 249 // Vi foruds‘tter at 249 er ledig
+//        close 249
+//      end
+//    end
+//  end_procedure

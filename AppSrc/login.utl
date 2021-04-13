@@ -1,0 +1,164 @@
+// Use Login.utl    // DBMS_GetDriverLogin function
+Use Driver.nui   // This package is used to load a driver DLL
+// Marcelo Nachbar da Silva [nachbar@mertechdata.com]
+
+#HEADER
+Use language.pkg    // Set default languange if not set by compiler command line
+Use seq_chnl.pkg    // Defines global sequential device management operations (DAW)
+use buttons.utl
+use dbms.utl
+use files.utl
+#ENDHEADER
+
+
+use aps.pkg
+class cDriverComboForm is a aps.ComboFormAux
+  procedure construct_object integer img#
+    forward send construct_object img#
+    set p_abstract to aft_ascii20
+    set entry_state item 0 to false
+    on_key kenter send next
+  end_procedure
+  procedure fill_list
+    integer id#
+    send Combo_Delete_Data
+    for id# from (DBMS_DRIVER_DATAFLEX+1) to (DBMS_DRIVER_MAX-1)
+      if (DBMS_TypeToDriverName(id#)) ne "Unknown" begin
+        send combo_add_item (DBMS_Driver_UserName(id#)) id#
+      end
+    loop
+  end_procedure
+  procedure end_construct_object
+    send fill_list
+    forward send end_construct_object
+  end_procedure
+end_class // cDriverComboForm
+
+object oDriverLogin is a aps.TopMostModalPanel label "Login"
+  set p_left_margin   to 5
+  set p_right_margin  to 20
+  set p_top_margin    to 10
+  set p_bottom_margin to 10
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  on_key kuser send DoLoadDriver
+  property integer piResult 0
+  property string psDriverFileName ""
+  send aps_init
+  set p_auto_column to 1
+  send tab_column_define 1 50 45 jmode_right // Default column setting
+  object oFrm0 is a cDriverComboForm label "Driver:"
+  end_object
+  object oFrm1 is a aps.Form label "Server:" abstract aft_ascii20
+    on_key kenter send next
+  end_object
+  object oFrm2 is a aps.Form label "User:" abstract aft_ascii20
+    on_key kenter send next
+  end_object
+  object oFrm3 is a aps.Form label "Password:" abstract aft_ascii20
+    set password_state item 0 to true
+    on_key kenter send next
+  end_object
+  object oSavePW is a aps.checkbox label "Save password"
+    on_key kenter send next
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  procedure DoLoadDriver
+    integer liDriverType
+    move (Combo_Current_Aux_Value(oFrm0(self))) to liDriverType
+    if (DRV_LoadDriverByType(liDriverType)) send obs "Driver loaded"
+    else send obs "Driver could not be found." "(and therefore it could not be loaded)"
+  end_procedure
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    integer ch#
+    string fn#
+    get psDriverFileName to fn#
+    get SEQ_DirectOutput fn# to ch#
+    if (ch#>=0) begin
+      writeln (value(oFrm1(self),0))
+      writeln (value(oFrm2(self),0))
+      if (select_state(oSavePW(self),0)) writeln (value(oFrm3(self),0))
+      else writeln ""
+      close_output channel ch#
+      send Seq_Release_Channel ch#
+      set piResult to 1
+      send close_panel
+    end
+  end_procedure
+  procedure reset
+    integer ch#
+    string fn# str#
+    set value of (oFrm1(self)) item 0 to ""
+    set value of (oFrm2(self)) item 0 to ""
+    set value of (oFrm3(self)) item 0 to ""
+    set select_state of (oSavePW(self)) item 0 to 0
+    get psDriverFileName to fn#
+    get SEQ_DirectInput fn# to ch#
+    if (ch#>=0) begin
+      readln str#
+      set value of (oFrm1(self)) item 0 to str#
+      readln str#
+      set value of (oFrm2(self)) item 0 to str#
+      readln str#
+      set value of (oFrm3(self)) item 0 to str#
+      if str# ne "" set select_state of (oSavePW(self)) item 0 to 1
+      close_input channel ch#
+      send Seq_Release_Channel ch#
+      //nd close_panel
+    end
+  end_procedure
+  function iLogin.i integer driver# returns integer
+    string username# filename#
+    set piResult to 0
+    if driver# begin
+      get DBMS_TypeToDriverName driver# to filename#
+      get DBMS_Driver_UserName driver# to username#
+    end
+    else move "drvlogin" to filename#
+    set psDriverFileName to (lowercase(filename#+".ini"))
+    if driver# begin
+      set object_shadow_state of (oFrm0(self)) to true
+      set value of (oFrm0(self)) to (DBMS_Driver_UserName(driver#))
+    end
+    else set object_shadow_state of (oFrm0(self)) to false
+    set label to ("Login: "+username#)
+    send reset
+    send popup
+    function_return (piResult(self))
+  end_function
+end_object
+
+function DBMS_GetDriverLogin global integer driver# returns integer
+  integer rval#
+  get iLogin.i of (oDriverLogin(self)) driver# to rval#
+  function_return rval#
+end_function
+
+function DBMS_GetDriverLoginDriverID global returns integer
+  function_return (Combo_Current_Aux_Value(oFrm0(oDriverLogin(self))))
+end_function
+function DBMS_GetDriverLoginServer global returns string
+  function_return (value(oFrm1(oDriverLogin(self)),0))
+end_function
+function DBMS_GetDriverLoginUserID global returns string
+  function_return (value(oFrm2(oDriverLogin(self)),0))
+end_function
+function DBMS_GetDriverLoginPassWord global returns string
+  function_return (value(oFrm3(oDriverLogin(self)),0))
+end_function
+
+//get DBMS_GetDriverLogin DBMS_DRIVER_ORACLE to windowindex
+//get DBMS_GetDriverLogin 0 to windowindex
+//if windowindex begin
+//  showln (DBMS_GetDriverLoginServer())
+//  showln (DBMS_GetDriverLoginUserID())
+//  showln (DBMS_GetDriverLoginPassWord())
+//  inkey windowindex
+//end

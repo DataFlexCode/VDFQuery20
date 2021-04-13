@@ -1,0 +1,114 @@
+// Use ApiIndex.nui // Switch indices offline and back online
+// Part of VDFQuery by Sture ApS
+
+//> pkgdoc.begin
+//> This package may be used if you want to temporarily switch on-line indices on DF tables off-line.
+//> This may used to speed up importing records to a table when you are sure that there will be no
+//> duplicate records.
+//>
+//> For all methods in this package it is true that the table should be opened prior to calling the method.
+//> pkgdoc.end
+
+Use DBMS.nui     // Basic DBMS functions (No User Interface)
+Use FdxIndex.nui // Index analysing functions
+Use FdxField.nui
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+
+//> Rebuild all off-line index files on file.
+procedure DoReindexOfflineIndices global integer liFile
+  sort liFile (FDX_SetOfIndices(0,liFile,DF_INDEX_TYPE_BATCH))
+end_procedure
+
+//> Rebuild all on-line index files on file.
+procedure DoReindexOnlineIndices global integer liFile
+  sort liFile (FDX_SetOfIndices(0,liFile,DF_INDEX_TYPE_ONLINE))
+end_procedure
+
+//> Call this function to switch all on-line indices for a table to off-line. The function returns
+//> the set of indices that were switched off-line. The return value should be used when calling the
+//> DoSwitchIndicesOnline procedure below.
+function DoSwitchIndicesOffLine global integer liFile returns string
+  integer liType liItm liMax liIndex liReopenFile liOpenMode liOpen
+  string lsRval lsReopenRootName
+  move "" to lsRval
+
+  get DBMS_FileDriverType liFile to liType
+  if (liType=DBMS_DRIVER_DATAFLEX) begin
+    move liFile to liReopenFile
+    get_attribute DF_FILE_PHYSICAL_NAME of liFile to lsReopenRootName
+    get_attribute DF_FILE_OPEN_MODE     of liFile to liOpenMode
+    get FDX_SetOfIndices 0 liFile DF_INDEX_TYPE_ONLINE to lsRval
+    get HowManyIntegers lsRval to liMax
+    structure_start liFile
+    for liItm from 1 to liMax
+      get ExtractInteger lsRval liItm to liIndex
+      set_attribute DF_INDEX_TYPE Of liFile liIndex To DF_INDEX_TYPE_BATCH
+    loop
+    structure_end liFile DF_STRUCTEND_OPT_NONE
+    close liReopenFile
+    move (DBMS_OpenFileAs(lsReopenRootName,liReopenFile,liOpenMode,0)) to liOpen
+    ifnot liOpen error 721 "Table could not be opened after switching indices offline"
+  end
+  function_return lsRval
+end_function
+
+//> Call this procedure to switch indices back online. The lsIndices parameter
+//> should be given the value the DoSwitchIndicesOffLine returned prior to calling
+//> this procedure.
+procedure DoSwitchIndicesOnline global integer liFile string lsIndices
+  integer liType liItm liMax liIndex liReopenFile liOpenMode liOpen
+  string lsRval lsReopenRootName
+  get DBMS_FileDriverType liFile to liType
+  if (liType=DBMS_DRIVER_DATAFLEX) begin
+    move liFile to liReopenFile
+    get_attribute DF_FILE_PHYSICAL_NAME of liFile to lsReopenRootName
+    get_attribute DF_FILE_OPEN_MODE     of liFile to liOpenMode
+    get HowManyIntegers lsIndices to liMax
+    structure_start liFile
+    for liItm from 1 to liMax
+      get ExtractInteger lsIndices liItm to liIndex
+      set_attribute DF_INDEX_TYPE Of liFile liIndex To DF_INDEX_TYPE_ONLINE
+    loop
+    structure_end liFile DF_STRUCTEND_OPT_NONE
+    close liReopenFile
+    move (DBMS_OpenFileAs(lsReopenRootName,liReopenFile,liOpenMode,0)) to liOpen
+    ifnot liOpen error 722 "Table could not be opened after switching indices online"
+  end
+end_procedure
+
+
+//> Returns the concatenated values of the fields in sFields parameter
+//> separated by space characters. Overlap fields are ignored. (and so
+//> are Text and Binary fields)
+function API_FieldValues global integer liFile string lsFields returns string
+  integer liMaxPos liField liPos liType liLen liDec
+  string lsRval lsFieldValue
+  move "" to lsRval
+  move (length(lsFields)+3/4) to liMaxPos
+  for liPos from 1 to liMaxPos
+    move (mid(lsFields,4,liPos-1*4+1)) to liField
+
+//  move (integer(FDX_AttrValue_FIELD(oFDX#,DF_FIELD_TYPE,liFile,liField))) to liType
+    get_attribute DF_FIELD_TYPE of liFile liField to liType
+
+    get_field_value liFile liField to lsFieldValue
+    if liType eq DF_ASCII move (lsRval+rtrim(lsFieldValue)) to lsRval
+    if liType eq DF_BCD begin
+      get_attribute DF_FIELD_LENGTH of liFile liField to liLen
+      get_attribute DF_FIELD_PRECISION of liFile liField to liDec
+      if liDec increment liLen // Make room for comma
+      move (lsRval+NumToStrR(lsFieldValue,liDec,liLen)) to lsRval
+    end
+    if liType eq DF_DATE move (lsRval+IntToStrR(DateToInteger(lsFieldValue),8)) to lsRval
+    if liPos ne liMaxPos move (lsRval+" ") to lsRval
+  loop
+  function_return lsRval
+end_function
+
+function API_IndexValue global integer liFile integer liIndex returns string
+  string lsFields lsValue
+  get FDX_IndexAsFields 0 liFile liIndex to lsFields
+  get FDX_FieldsTranslateOverlaps 0 liFile lsFields to lsFields
+  get API_FieldValues liFile lsFields to lsValue
+  function_return lsValue
+end_function

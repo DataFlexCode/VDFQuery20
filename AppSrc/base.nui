@@ -1,0 +1,19 @@
+// Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+
+// This purpose of this package is to relieve me of having to remember which
+// package exactly holds a particular command or class.
+
+#IFDEF self
+#ELSE
+ define self for current_object
+#ENDIF
+
+//#IFDEF BaseClass
+//#ELSE
+// define BaseClass for Desktop
+//#ENDIF
+
+Use Array.nui    // Item_Property command
+Use Macros.utl   // Various macros (FOR_EX...)
+Use Set.utl      // cArray, cSet and cStack classes
+

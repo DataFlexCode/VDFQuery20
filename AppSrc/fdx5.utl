@@ -1,0 +1,336 @@
+//**********************************************************************
+// Use Fdx5.utl     // Basic administration of FDX objects
+//
+// By Sture Andersen
+//
+// Create: Sun  16-01-2000
+// Update:
+//
+//**********************************************************************
+
+Use FDX.nui      // cFDX class
+Use Fdx4.utl     // FDX aware cFileList_List selector object
+Use Files.utl    // Utilities for handling file related stuff
+Use Macros.utl   // Various macros (FOR_EX...)
+Use MsgBox.utl   // obs procedure
+Use Wait.utl     // Something to put on screen while batching.
+Use SetFiles.utl // SetOfFiles class
+Use FdxSet.nui   // cFdxSetOfFiles, cFdxSetOfFields, cFdxSetOfIndices
+
+object oSentinelAbstraction is a cBatchCompanion 
+  Set Allow_Cancel_State to False
+  
+  procedure Wait_On
+    //send cursor_wait to (cursor_control(self))
+    send batch_on "DFMatrix batch process"
+  end_procedure
+  procedure Wait_Off
+    //send cursor_ready to (cursor_control(self))
+    send batch_off
+  end_procedure
+  procedure Wait_Text1 string str#
+    send batch_update str#
+  end_procedure
+  procedure Wait_Text2 string str#
+    send batch_update2 str#
+  end_procedure
+end_object
+
+class cDFM_ListDir_SnapShot is a cSetOfFiles
+  procedure Wait_SetText string str#
+    delegate send Wait_SetText str#
+  end_procedure
+  procedure Wait_SetText2 string str#
+    delegate send Wait_SetText2 str#
+  end_procedure
+end_class // cDFM_ListFile_SnapShot
+
+procedure fdx.wait.on global
+  send wait_on to (oSentinelAbstraction(self))
+end_procedure
+procedure fdx.wait.off global
+  send wait_off to (oSentinelAbstraction(self))
+end_procedure
+procedure fdx.wait.text1 global string str#
+  send wait_text1 to (oSentinelAbstraction(self)) str#
+end_procedure
+procedure fdx.wait.text2 global string str#
+  send wait_text2 to (oSentinelAbstraction(self)) str#
+end_procedure
+
+class cDFM_Fdx is a cFDX
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piDirsPresentInFile 0 //> Is dir information present in most currently read file?
+    property integer piDirsLoaded        0 //> Have the dir information already been loaded?
+    property integer piDirsOffSet        0 //> Offset where dir information begins
+    object oListDir_SnapShot is a cDFM_ListDir_SnapShot 
+    end_object
+  end_procedure
+  procedure Reset
+    forward send Reset
+    set piDirsLoaded to false
+    set piDirsPresentInFile to false
+    send reset to (oListDir_SnapShot(self))
+  end_procedure
+  procedure Read_Directory_Contents_From_File
+    integer ch#
+    string fn#
+    if (piDataOrigin(self)) eq FDX_READ_FROM_FILE begin
+      if (piDirsPresentInFile(self)) begin
+        get psFileName to fn#
+        if fn# ne "" begin
+          move (SEQ_DirectInput(fn#)) to ch#
+          if ch# ge 0 begin
+            set_channel_position ch# to (piDirsOffSet(self))
+            send Seq_Read to (oListDir_SnapShot(self)) ch#
+            set piDirsLoaded to true
+            send SEQ_CloseInput ch#
+          end
+          else begin
+            send fdx.wait.off
+            send obs "File name" fn# "not found on disk"
+          end
+        end
+        else begin
+          send fdx.wait.off
+          send obs "File name of previously read file is unknown"
+        end
+      end
+      else begin
+        send fdx.wait.off
+        send obs "Directory contents not present in previously read file"
+      end
+    end
+    else begin
+      send fdx.wait.off
+      send obs "Contents not previously read from file"
+    end
+  end_procedure
+  procedure Read_Directory_Contents
+    integer obj#
+    move (oListDir_SnapShot(self)) to obj#
+    send AddDFPath to obj#
+    send SnapShot_Build to obj#
+    set piDirsLoaded to true
+  end_procedure
+  procedure Wait_SetText string str#
+    send fdx.wait.text1 str#
+  end_procedure
+  procedure Wait_SetText2 string str#
+    send fdx.wait.text2 str#
+  end_procedure
+  procedure Seq_Write integer ch#
+    forward send Seq_Write ch#
+    if (piDirsLoaded(self)) send Seq_Write to (oListDir_SnapShot(self)) ch#
+  end_procedure
+  procedure Seq_Read integer ch#
+    integer ch_pos#
+    string str#
+    forward send Seq_Read ch#
+    get_channel_position ch# to ch_pos#
+    readln channel ch# str#
+    if str# eq "DIRCONT1.0" begin
+      set piDirsPresentInFile to 1
+      set piDirsLoaded        to 0
+      set piDirsOffSet        to ch_pos#
+    end
+    else begin
+      set piDirsPresentInFile to 0
+      set piDirsLoaded        to 0
+      set piDirsOffSet        to 0
+    end
+  end_procedure
+end_class // cDFM_Fdx
+
+//function iFdxIsEncapsulated for cDFM_Fdx returns integer
+//  function_return DFTRUE
+//end_function
+
+desktop_section
+  object oFdxObjectList is a cArray
+    //> Creates a new FDX object and returns its object ID
+    function iCreateFdxObject returns integer
+      integer rval#
+      object oFdx is a cDFM_Fdx 
+        move self to rval#
+      end_object
+      function_return rval#
+    end_function
+    function iFdxObjectID.i integer itm# returns integer
+      integer rval#
+      get value item itm# to rval#
+      ifnot rval# begin
+        get iCreateFdxObject to rval#
+        set value item itm# to rval#
+      end
+      function_return rval#
+    end_function
+    //> Delete all FDX objects and reset the array
+    procedure reset
+      integer itm# max# obj#
+      get item_count to max#
+      for itm# from 0 to (max#-1)
+        send entry_delete itm#
+      loop
+      send delete_data
+    end_procedure
+    //> Deletes an FDX object specified by its entry number.
+    procedure entry_delete integer itm#
+      integer obj#
+      get value item itm# to obj#
+      if obj# begin
+        send request_destroy_object to obj#
+      end
+      set value item itm# to 0
+    end_procedure
+    //> Save an FDX object to a sequential file.
+    procedure entry_save integer itm# string fn#
+      integer fdx# ch#
+      get value item itm# to fdx#
+      if fdx# begin
+        move (SEQ_DirectOutput(fn#)) to ch#
+        set psFileName of fdx# to fn#
+        send Seq_Write to fdx# ch#
+        send SEQ_CloseOutput ch#
+      end
+      else send obs ("No FDX entry in slot "+string(itm#)+" to save")
+    end_procedure
+    //> Save an FDX object to a sequential file. File name prompted by the user.
+    procedure entry_save_as integer itm#
+      integer fdx#
+      string fn#
+      move (SEQ_SelectOutFile("Save table definitions as","Extended file definition (*.fdx)|*.FDX")) to fn#
+      if fn# ne "" begin
+        send fdx.wait.on
+        get value item itm# to fdx#
+        set psFileName of fdx# to fn#
+        send entry_save itm# fn#
+        send fdx.wait.off
+      end
+    end_procedure
+    function entry_read_file integer itm# string fn# returns integer
+      integer rval# fdx# ch#
+      move -1 to rval#
+      if (SEQ_FileExists(fn#)) begin
+        send fdx.wait.on
+        get iFdxObjectID.i itm# to fdx#
+        move (SEQ_DirectInput(fn#)) to ch#
+        send Seq_Read to fdx# ch#
+        send SEQ_CloseInput ch#
+        set psFileName of fdx# to fn#
+        send fdx.wait.off
+        function_return (piReadResult(fdx#))
+      end
+      else begin
+        send obs "File not found!" ("("+fn#+")")
+        function_return 0
+      end
+    end_function
+    procedure entry_create_empty integer itm#
+      integer fdx#
+      get iFdxObjectID.i itm# to fdx#
+    end_procedure
+    procedure entry_read_current integer itm#
+      integer fdx#
+      get iFdxObjectID.i itm# to fdx#
+      send fdx.wait.on
+      send Read_Current_Filelist to fdx# FDX_ALL_FILES
+      send fdx.wait.off
+    end_procedure
+  end_object
+
+  // These three objects are used to store the current sets
+  // of tables, fields and indices
+  object oFdxSetOfTables is a cFdxSetOfTables 
+  end_object
+  object oFdxSetOfFields is a cFdxSetOfFields 
+  end_object
+  object oFdxSetOfIndices is a cFdxSetOfIndices 
+  end_object
+
+  // These three objects are used temorarily when exporting
+  // on type of set to another
+  object oAuxFdxSetOfTables is a cFdxSetOfTables 
+    procedure DoTableSelector_Union
+      integer max# row# table_selector#
+      get row_count to max#
+      get DFMatrix_SelectorObject to table_selector#
+      for row# from 0 to (max#-1)
+        set File_Select_State of table_selector# (piFile.i(self,row#)) to true
+      loop
+      send update_select_display to table_selector#
+    end_procedure
+    procedure DoTableSelector_Intersection
+      integer max# row# table_selector# file#
+      get DFMatrix_SelectorObject to table_selector#
+      get row_count of table_selector# to max#
+      for row# from 0 to (max#-1)
+        if (Row_Select_State(table_selector#,row#)) begin
+          get Row_File of table_selector# row# to file#
+          if (iFindItem.ii(self,file#,0)) eq -1 set Row_Select_State of table_selector# row# to false
+        end
+      loop
+    end_procedure
+  end_object
+  object oAuxFdxSetOfFields is a cFdxSetOfFields 
+  end_object
+  object oAuxFdxSetOfIndices is a cFdxSetOfIndices
+  end_object
+end_desktop_section
+
+//> Destroy all FDX objects and reset the array.
+procedure fdx.reset_all global
+  send reset to (oFdxObjectList(self))
+end_procedure
+
+//> Returns the object ID of fdx object associated with entry number itm#
+function fdx.object_id global integer itm# returns integer
+  function_return (value(oFdxObjectList(self),itm#))
+end_function
+
+//> Let's the user browse for a FDX file for loading. If a file is indeed
+//> opened fdx.open_browse will returns the number of the row (not -1)
+//> in which the object is placed.
+function fdx.open_file_browse global integer itm# returns integer
+  integer rval#
+  string fn#
+  move (SEQ_SelectFile("Select FDX-definition file (*.fdx)","Extended file definition|*.FDX")) to fn#
+  if fn# ne "" begin
+    get entry_read_file of (oFdxObjectList(self)) itm# fn# to rval#
+    function_return rval#
+  end
+  function_return 0
+end_function
+
+procedure fdx.open_file global integer itm# string fn#
+  integer rval#
+  get entry_read_file of (oFdxObjectList(self)) itm# fn# to rval#
+end_procedure
+
+procedure fdx.entry_create_empty global integer itm# returns integer
+  send entry_create_empty to (oFdxObjectList(self)) itm#
+end_procedure
+
+//> Reads the current data definitions into a new FDX object and returns
+//> the entry in which it was placed.
+procedure fdx.entry_read_current global integer itm#
+  send entry_read_current to (oFdxObjectList(self)) itm#
+end_procedure
+
+
+//> Destroy FDX object associated with entry number itm#
+procedure fdx.entry_reset global integer itm#
+  send entry_delete to (oFdxObjectList(self)) itm#
+end_procedure
+
+//> Saves FDX object number itm# in file name fn#.
+procedure fdx.entry_save global integer itm# string fn#
+  send entry_save to (oFdxObjectList(self)) itm# fn#
+end_procedure
+
+//> Saves FDX object number itm# in a file name supplied by the
+//> operator.
+procedure fdx.entry_save_as global integer itm#
+  send entry_save_as to (oFdxObjectList(self)) itm#
+end_procedure

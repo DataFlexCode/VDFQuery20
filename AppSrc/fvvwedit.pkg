@@ -1,0 +1,789 @@
+// Use FvVwEdit.pkg // Classes and objects for editing FastView-views
+Use Aps.pkg
+Use FdxUiCls.pkg // UI classes for displaying FDX data
+Use Classes.pkg  // UI Classes for class selection
+Use FvDynamo.pkg // Part that generates the view based on vw-definition
+Use Fdx2.utl     // FDX aware object for displaying a table definition
+Use Version.nui
+
+function sSnapText.i global integer liSnap returns string
+  if liSnap le 0 begin
+    if liSnap eq 0                                   function_return "NewLine"
+    if liSnap eq SL_DOWN                             function_return "Down"
+    if liSnap eq SL_LEFT                             function_return "Left"
+    if liSnap eq SL_LOWER_RIGHT_CORNER_EXTEND_ROW    function_return "lrcer"
+    if liSnap eq SL_CURRENT_POS_NO_LABEL_ADJUST      function_return "X"
+    if liSnap eq SL_RIGHT                            function_return "Right"
+    if liSnap eq SL_UP                               function_return "Up"
+    if liSnap eq SL_LOWER_RIGHT_CORNER               function_return "X"
+    if liSnap eq SL_XRIGHT                           function_return "X"
+    if liSnap eq SL_UPPER_RIGHT_CORNER_EXTEND_COLUMN function_return "urcec"
+    if liSnap eq SL_RIGHT_SPACE                      function_return "Space"
+    if liSnap eq SL_CURRENT_POS                      function_return "X"
+  end
+  else function_return ("Tab "+string(liSnap))
+end_function
+
+object oSnap_SL is a aps.ModalPanel label "Select snap"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult DFFALSE
+  object oLst is a aps.List
+    set size to 200 200
+
+    procedure mouse_click integer liItem integer liGrb
+      if ((liItem-1)<item_count(self)) send close_panel_ok
+    end_procedure
+    procedure fill_list_help integer liSnap string lsText
+      send add_item MSG_NONE lsText
+      set aux_value item (item_count(self)-1) to liSnap
+    end_procedure
+    procedure fill_list.ii integer liCurSnap integer liMaxTab
+      integer liSnap liMax liItm
+      send delete_data
+      send fill_list_help SL_RIGHT (sSnapText.i(SL_RIGHT))
+      send fill_list_help SL_RIGHT_SPACE (sSnapText.i(SL_RIGHT_SPACE))
+      send fill_list_help SL_DOWN (sSnapText.i(SL_DOWN))
+      send fill_list_help 0 (sSnapText.i(0))
+      for liSnap from 1 to liMaxTab
+        send fill_list_help liSnap (sSnapText.i(liSnap))
+      loop
+      get item_count to liMax
+      decrement liMax
+      for liItm from 0 to liMax
+        if (liCurSnap=aux_value(self,liItm)) set current_item to liItm
+      loop
+    end_procedure
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    set piResult to DFTRUE
+    send close_panel
+  end_procedure
+  function iPopup.ii integer liSnap integer liMaxTab returns integer
+    set piResult to DFFALSE
+    send fill_list.ii to (oLst(self)) liSnap liMaxTab
+    send popup
+    if (piResult(self)) begin
+      get aux_value of (oLst(self)) item CURRENT to liSnap
+      function_return liSnap
+    end
+    function_return -999
+  end_function
+end_object // oSnap_SL
+
+class cFastView_BasicFieldsGrid is a aps.Grid
+  procedure construct_object
+    forward send construct_object
+    property integer phServer 0 // handle to cFastView_Fields object
+    set select_mode to MULTI_SELECT
+    on_key key_ctrl+key_up_arrow   send MoveRowUp
+    on_key key_ctrl+key_down_arrow send MoveRowDown
+    set auto_top_item_state to false
+    on_key kuser send popup_field_selector
+    on_key kDelete_Record send DeleteRow
+    on_key KEY_CTRL+KEY_I send DisplayTableDefinition
+    on_key KEY_CTRL+KEY_W send DoWriteToFile
+  end_procedure // cFastView_FieldsGridSmall
+
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+
+  procedure AddRow integer liRow integer lhFieldsObject
+  end_procedure
+  procedure fill_list
+    integer liMax liRow lhObj
+    set dynamic_update_state to DFFALSE
+    send delete_data
+    get phServer to lhObj
+    get row_count of lhObj to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      send AddRow liRow lhObj
+    loop
+    set dynamic_update_state to DFTRUE
+  end_procedure
+
+  procedure RowFromGridToArray integer liRow integer liBase
+  end_procedure
+  procedure MoveGridToArray
+    integer liMax liRow lhServer liBase
+    get phServer to lhServer
+    get row_count of lhServer to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get Grid_RowBaseItem self liRow to liBase
+      send RowFromGridToArray liRow liBase
+    loop
+  end_procedure
+  procedure DisplayTableDefinition
+    integer liRow liFile
+    if (item_count(self)) begin
+      get Grid_CurrentRow self to liRow
+      get piFile.i of (phServer(self)) liRow to liFile
+      send FDX_ModalDisplayFileAttributes ghFDX liFile
+    end
+  end_procedure
+
+  procedure Add_Field integer liFile integer liField
+    send add_field to (phServer(self)) liFile liField
+    send fill_list
+    set Grid_CurrentRow self to (row_count(phServer(self))-1)
+  end_procedure
+
+  procedure DeleteRow
+    integer liRow lhServer liMax
+    get phServer to lhServer
+    if (item_count(self)) begin
+      get Grid_CurrentRow self to liRow
+      send MoveGridToArray
+      send delete_row to lhServer liRow
+      send fill_list
+      get row_count of lhServer to liMax
+      if liMax begin
+        if (liRow<liMax) set Grid_CurrentRow self to liRow
+        else set Grid_CurrentRow self to (liRow-1)
+      end
+    end
+  end_procedure
+
+  procedure MoveRowUp
+    integer liRow lhServer
+    get phServer to lhServer
+    if (item_count(self)) begin
+      get Grid_CurrentRow self to liRow
+      if (liRow>0) begin
+        send MoveGridToArray
+        send swap_rows to lhServer liRow (liRow-1)
+        send fill_list
+        set Grid_CurrentRow self to (liRow-1)
+      end
+    end
+  end_procedure
+
+  procedure MoveRowDown
+    integer liRow lhServer
+    get phServer to lhServer
+    if (item_count(self)) begin
+      get Grid_CurrentRow self to liRow
+      if (liRow<(row_count(lhServer)-1)) begin
+        send MoveGridToArray
+        send swap_rows to lhServer liRow (liRow+1)
+        send fill_list
+        set Grid_CurrentRow self to (liRow+1)
+      end
+    end
+  end_procedure
+  procedure popup_field_selector
+    integer liFile lhServer liLen liPos liField liMax liViewType
+    string lsFields lsFileField
+    get phServer to lhServer
+    get iEffectiveFile of lhServer to liFile
+    if liFile begin
+      get FDX_PopupFdxTreeViewFieldSelector ghFDX liFile DFTRUE to lsFields
+      move (length(lsFields)) to liLen
+      move (liLen/8) to liMax
+      for liPos from 1 to liMax
+        move (mid(lsFields,8,liPos-1*8+1)) to lsFileField
+        move (left(lsFileField,4)) to liFile
+        move (right(lsFileField,4)) to liField
+        send add_field liFile liField
+      loop
+    end
+    else send obs "No associated table"
+  end_procedure
+  procedure next
+    integer liItem
+    get current_item to liItem
+    if (liItem<(item_count(self)-1)) set current_item to (liItem+1)
+    else send switch
+  end_procedure
+  procedure previous
+    integer liItem
+    get current_item to liItem
+    if (liItem>0) set current_item to (liItem-1)
+    else send switch_back
+  end_procedure
+end_class // cFastView_BasicFieldsGrid
+
+class cFastView_FieldsGridSmall is a cFastView_BasicFieldsGrid
+  procedure construct_object
+    forward send construct_object
+    send GridPrepare_AddColumn "#"               AFT_ASCII4
+    send GridPrepare_AddColumn "Selected fields" AFT_ASCII25
+    send GridPrepare_Apply self
+  end_procedure
+  procedure RowFromGridToArray integer liRow integer liBase
+    integer lhFieldsObject
+    get phServer to lhFieldsObject
+    set piFileField.i of lhFieldsObject liRow to (aux_value(self,liBase+1))
+  end_procedure
+  procedure AddRow integer liRow integer lhFieldsObject
+    integer liBase
+    get item_count to liBase
+    send add_item MSG_NONE (string(liRow+1))
+    send add_item MSG_NONE (FDX_FieldName(ghFDX,piFile.i(lhFieldsObject,liRow),piField.i(lhFieldsObject,liRow),DFTRUE))
+    set aux_value item (liBase+1) to (piFileField.i(lhFieldsObject,liRow))
+    set entry_state item liBase to DFFALSE
+    set entry_state item (liBase+1) to DFFALSE
+  end_procedure
+end_class // cFastView_FieldsGridSmall
+
+class cFastView_FieldsGridBig is a cFastView_BasicFieldsGrid
+  procedure construct_object
+    forward send construct_object
+    send GridPrepare_AddColumn "#"               AFT_ASCII4     //  0
+    send GridPrepare_AddColumn "Fields"          AFT_ASCII25    //  1
+    send GridPrepare_AddColumn "Label"           AFT_ASCII25    //  2
+    send GridPrepare_AddColumn "No lbl"          AFT_ASCII3     //  3
+    send GridPrepare_AddColumn "Snap"            AFT_ASCII6     //  4
+    send GridPrepare_AddColumn "SzX"             AFT_NUMERIC3.0 //  5
+    send GridPrepare_AddColumn "SzY"             AFT_NUMERIC3.0 //  6
+    send GridPrepare_AddColumn "Delta X"         AFT_NUMERIC4.0 //  7
+    send GridPrepare_AddColumn "NoEnter"         AFT_ASCII3     //  8
+    send GridPrepare_AddColumn "Caps"            AFT_ASCII3     //  9
+    send GridPrepare_AddColumn "Prompt"          AFT_ASCII3     // 10
+    send GridPrepare_AddColumn "Class"           AFT_ASCII5     // 11
+    send GridPrepare_Apply self
+    set aps_fixed_column_width 2 to 75 // Label column
+    set select_mode to MULTI_SELECT
+    on_key kPrompt send prompt
+    on_key kNext_Item send next
+    on_key kPrevious_Item send previous
+  end_procedure
+
+  procedure prompt_add_fields
+    send popup_field_selector
+  end_procedure
+
+  procedure prompt_snap
+    integer liRow liSnap liBase lhServer liItem
+    get Grid_CurrentRow self to liRow
+    get Grid_RowBaseItem self liRow to liBase
+    move (liBase+4) to liItem
+    ifnot (shadow_state(self,liItem)) begin
+      get aux_value item liItem to liSnap
+      get phServer to lhServer             //   Max Tab
+      get iPopup.ii of (oSnap_SL(self)) liSnap 8 to liSnap
+      if (liSnap<>-999) begin
+        set aux_value item liItem to liSnap
+        set value     item liItem to (sSnapText.i(liSnap))
+        send RowFromGridToArray liRow liBase
+      end
+    end
+  end_procedure
+
+  procedure prompt_class
+    integer liFile liField liType liLen liDec liRow liClass liBase lhServer liItem
+    get Grid_CurrentRow self to liRow
+    get Grid_RowBaseItem self liRow to liBase
+    move (liBase+11) to liItem
+    ifnot (shadow_state(self,liItem)) begin
+      get aux_value item liItem to liClass
+      get phServer to lhServer
+      get piFile.i  of lhServer liRow to liFile
+      get piField.i of lhServer liRow to liField
+      get FDX_AttrValue_FIELD ghFDX DF_FIELD_TYPE liFile liField to liType
+      get FDX_AttrValue_FIELD ghFDX DF_FIELD_LENGTH    liFile liField to liLen
+      get FDX_AttrValue_FIELD ghFDX DF_FIELD_PRECISION liFile liField to liDec
+      get Cls_SelectForm liClass liType liLen liDec to liClass
+      if (liClass<>-1) begin
+        set aux_value item liItem to liClass
+        set value     item liItem to (Cls_ClassName(liClass))
+        send RowFromGridToArray liRow liBase
+      end
+    end
+  end_procedure
+  procedure prompt
+    integer liColumn liClass
+    if (item_count(self)) begin
+      get Grid_CurrentColumn self to liColumn
+      if (liColumn=1)  send prompt_add_fields
+      if (liColumn=11) send prompt_class
+      if (liColumn=4)  send prompt_snap
+    end
+  end_procedure
+  procedure mouse_click integer liItem integer liGrb
+    integer liColumn
+    if ((liItem-1)<item_count(self)) begin
+      get Grid_CurrentColumn self to liColumn
+      if (liColumn=1)  send prompt_add_fields
+      if (liColumn=11) send prompt_class
+      if (liColumn=4)  send prompt_snap
+    end
+  end_procedure
+  procedure header_mouse_click integer itm#
+    forward send header_mouse_click itm#
+    send prompt
+  end_procedure
+  procedure select_toggling integer liItem integer i#
+    integer liColumn
+    get Grid_ItemColumn self liItem to liColumn
+    if (liColumn=3 or liColumn=8 or liColumn=9 or liColumn=10) forward send select_toggling liItem i#
+  end_procedure
+  procedure RowFromGridToArray integer liRow integer liBase
+    integer lhFieldsObject
+    get phServer to lhFieldsObject
+    set piFileField.i     of lhFieldsObject liRow to (aux_value(self,liBase+1))
+    set psLabel.i         of lhFieldsObject liRow to (value(self,liBase+2))
+    set pbNoLabel.i       of lhFieldsObject liRow to (select_state(self,liBase+3))
+    set piSnap.i          of lhFieldsObject liRow to (aux_value(self,liBase+4))
+    set piSizeX.i         of lhFieldsObject liRow to (value(self,liBase+5))
+    set piSizeY.i         of lhFieldsObject liRow to (value(self,liBase+6))
+    set piExtraIntWidth.i of lhFieldsObject liRow to (value(self,liBase+7))
+    set pbForceNoenter.i  of lhFieldsObject liRow to (select_state(self,liBase+8))
+    set pbCapslock.i      of lhFieldsObject liRow to (select_state(self,liBase+9))
+    set pbDefaultSL.i     of lhFieldsObject liRow to (select_state(self,liBase+10))
+    set piClass.i         of lhFieldsObject liRow to (aux_value(self,liBase+11))
+//    set piLastObjectRow.i of lhFieldsObject liRow to (value(self,liBase+11))
+  end_procedure
+
+//  "#"         0
+//  "Fields"    1
+//  "Label"     2
+//  "No lbl"    3
+//  "Snap"      4
+//  "SzX"       5
+//  "SzY"       6
+//  "Delta X"   7
+//  "NoEnter"   8
+//  "Caps"      9
+//  "Prompt"   10
+//  "Class"    11
+
+  procedure DoAutoShadeRow integer liBase
+    integer lbGrid liClass liFieldType liFile liField liMainIndex
+    get aux_value item (liBase+11) to liClass
+    get iEffectiveIsGrid of (phServer(self)) to lbGrid
+    get aux_value (liBase+1) to liFile
+    move (mod(liFile,65536)) to liField
+    move (liFile/65536) to liFile
+    get FDX_AttrValue_FIELD ghFDX DF_FIELD_TYPE liFile liField to liFieldType
+    get FDX_AttrValue_FIELD ghFDX DF_FIELD_INDEX liFile liField to liMainIndex
+
+    // Column 0   #
+    set entry_state item (liBase+0) to DFFALSE
+    // Column 1   Field
+    set entry_state item (liBase+1) to DFFALSE
+    // Column 2   Label
+    // Column 3   NoLabel
+    set shadow_state item (liBase+3) to lbGrid
+    // Column 4   Snap
+    set entry_state  item (liBase+4) to DFFALSE
+    set shadow_state item (liBase+4) to lbGrid
+    // Column 5   Size X
+    set shadow_state item (liBase+5) to (lbGrid or liClass<>class.dbEdit)
+    // Column 6   Size Y
+    set shadow_state item (liBase+6) to (lbGrid or liClass<>class.dbEdit)
+    // Column 7   Delta X
+    set shadow_state item (liBase+7) to DFFALSE // lbGrid
+    // Column 8   NoEnter
+    // Column 9   Capslock
+    set shadow_state item (liBase+9) to (liFieldType<>DF_ASCII)
+    // Column 10  PromptList
+    set shadow_state item (liBase+10) to (liMainIndex=0)
+    // Column 11  Class
+    set entry_state  item (liBase+11) to DFFALSE
+    set shadow_state item (liBase+11) to lbGrid
+  end_procedure
+
+
+  procedure AddRow integer liRow integer lhFieldsObject
+    integer liBase liClass
+    get item_count to liBase
+
+    // Column 0   #
+    send add_item MSG_NONE (string(liRow+1))
+    // Column 1   Field
+    send add_item MSG_prompt (FDX_FieldName(ghFDX,piFile.i(lhFieldsObject,liRow),piField.i(lhFieldsObject,liRow),DFTRUE))
+    set aux_value item (liBase+1) to (piFileField.i(lhFieldsObject,liRow))
+    // Column 2   Label
+    send add_item MSG_NONE (psLabel.i(lhFieldsObject,liRow))
+    // Column 3   NoLabel
+    send add_item MSG_NONE ""
+    set checkbox_item_state item (liBase+3) to DFTRUE
+    set select_state        item (liBase+3) to (pbNoLabel.i(lhFieldsObject,liRow))
+    // Column 4   Snap
+    send add_item MSG_prompt (sSnapText.i(piSnap.i(lhFieldsObject,liRow)))
+    set aux_value item (liBase+4) to (piSnap.i(lhFieldsObject,liRow))
+    // Column 5   Size X
+    send add_item MSG_NONE (piSizeX.i(lhFieldsObject,liRow))
+    // Column 6   Size Y
+    send add_item MSG_NONE (piSizeY.i(lhFieldsObject,liRow))
+    // Column 7   Delta X
+    send add_item MSG_NONE (piExtraIntWidth.i(lhFieldsObject,liRow))
+    // Column 8   NoEnter
+    send add_item MSG_NONE ""
+    set checkbox_item_state item (liBase+8) to DFTRUE
+    set select_state        item (liBase+8) to (pbForceNoenter.i(lhFieldsObject,liRow))
+    // Column 9   Capslock
+    send add_item MSG_NONE ""
+    set checkbox_item_state item (liBase+9) to DFTRUE
+    set select_state        item (liBase+9) to (pbCapslock.i(lhFieldsObject,liRow))
+    // Column 10  PromptList
+    send add_item MSG_NONE ""
+    set checkbox_item_state item (liBase+10) to DFTRUE
+    set select_state        item (liBase+10) to (pbDefaultSL.i(lhFieldsObject,liRow))
+    // Column 11  Class
+    get piClass.i of lhFieldsObject liRow to liClass
+    send add_item MSG_prompt (Cls_ClassName(liClass))
+    set aux_value item (liBase+11) to liClass
+
+    send DoAutoShadeRow liBase
+
+//  set entry_state item (liBase+0) to DFFALSE
+//  set entry_state item (liBase+1) to DFFALSE
+//  set entry_state item (liBase+2) to DFFALSE
+//  set entry_state item (liBase+3) to DFTRUE
+//  set entry_state item (liBase+4) to DFTRUE
+//  set entry_state item (liBase+5) to DFTRUE
+//  set entry_state item (liBase+6) to DFTRUE
+//  set entry_state item (liBase+7) to DFTRUE
+//  set entry_state item (liBase+8) to DFTRUE
+//  set entry_state item (liBase+9) to DFTRUE
+//  set entry_state item (liBase+10) to DFFALSE
+  end_procedure
+end_class // cFastView_FieldsGridBig
+
+class cFastView.TableSelectorForm is a aps.ComboFormAux
+  procedure construct_object
+    forward send construct_object
+    set combo_sort_state to false
+    set entry_state item 0 to false
+    set allow_blank_state to true
+    property integer priv.pbOK
+    on_key KEY_CTRL+KEY_I send DisplayTableDefinition
+  end_procedure
+  procedure DisplayTableDefinition
+    integer liFile
+    get Combo_Current_Aux_Value to liFile
+    send FDX_ModalDisplayFileAttributes ghFDX liFile
+  end_procedure
+  procedure fill_list
+    integer liFile
+    string lsValue
+    send Combo_Delete_Data
+    move 0 to liFile
+    repeat
+      get_attribute df_file_next_used of liFile to liFile
+      if liFile begin
+        get_attribute DF_FILE_DISPLAY_NAME of liFile to lsValue
+        send combo_add_item (rtrim(lsValue)) liFile
+      end
+    until liFile eq 0
+//    set value item 0 to lsValue
+  end_procedure
+  procedure HandleFile integer liType integer liFromFile integer liFromField integer liToFile integer liToField
+    // We assume that ToFile.ToField is uniquely indexed
+    integer liIndex
+    string lsValue
+    get FDX_IndexFindMatching ghFDX liFromFile (FDX_FieldsTranslateOverlaps(ghFDX,liFromFile,liFromField)) 0 to liIndex
+    if liIndex begin
+      get_attribute DF_FILE_DISPLAY_NAME of liFromFile to lsValue
+      send combo_add_item (rtrim(lsValue)) liFromFile
+    end
+  end_procedure
+  procedure fill_list.i integer liConstrainFile
+    send Combo_Delete_Data
+    if liConstrainFile send Callback_Relations to ghFDX MSG_HandleFile self FDX_RELORIG_GENERIC 0 liConstrainFile
+  end_procedure
+
+  procedure HandleFileX integer liType integer liFromFile integer liFromField integer liToFile integer liToField
+    // We assume that ToFile.ToField is uniquely indexed
+    ifnot (priv.pbOK(self)) begin
+      integer liIndex
+      string lsValue
+      get FDX_IndexFindMatching ghFDX liFromFile (FDX_FieldsTranslateOverlaps(ghFDX,liFromFile,liFromField)) 0 to liIndex
+      if liIndex set priv.pbOK to DFTRUE
+    end
+  end_procedure
+  procedure fill_list_parents_only
+    integer liFile
+    string lsValue
+    send Combo_Delete_Data
+    move 0 to liFile
+    repeat
+      get_attribute df_file_next_used of liFile to liFile
+      if liFile begin
+        set priv.pbOK to DFFALSE
+        send Callback_Relations to ghFDX MSG_HandleFileX self FDX_RELORIG_GENERIC 0 liFile
+        if (priv.pbOK(self)) begin
+          get_attribute DF_FILE_DISPLAY_NAME of liFile to lsValue
+          send combo_add_item (rtrim(lsValue)) liFile
+        end
+      end
+    until liFile eq 0
+  end_procedure
+end_class // cFastView.TableSelector
+
+object oFastView_PropertyEdit is a aps.ModalPanel label "Edit FastView properties"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult DFFALSE
+  property integer phDefinition 0
+  property integer phViewObject 0
+  property integer piChildFileTmp 0
+
+  object oWorkingDef is a cFastView_ViewDefinition
+  end_object
+
+  send tab_column_define 1 40 35 JMODE_LEFT // Default column setting
+
+  set p_auto_column to 1
+  object oViewTitle is a aps.Form abstract AFT_ASCII60 label "View title:"
+  end_object
+  object oRad is a aps.RadioContainer
+    set enabled_state to DFFALSE
+    object oRad1 is a aps.Radio label "Form based view"
+    end_object
+    object oRad2 is a aps.Radio label "Grid view"          snap SL_RIGHT_SPACE
+    end_object
+    object oRad3 is a aps.Radio label "Header/Detail view" snap SL_RIGHT_SPACE
+    end_object
+  end_object
+//  send aps_goto_max_row
+//  send aps_make_row_space 5
+  register_object oChildFile
+
+  object oMainFile is a cFastView.TableSelectorForm abstract AFT_ASCII30 label "Main table:"
+    set enabled_state to DFFALSE
+    procedure OnChange
+      integer liFile
+      get Combo_Current_Aux_Value to liFile
+      send fill_list.i to (oChildFile(self)) liFile
+      set piMainFile of (phDefinition(self)) to (Combo_Current_Aux_Value(self))
+    end_procedure
+    procedure select_table
+      integer liFile
+      string lsValue
+      get Combo_Current_Aux_Value to liFile
+      move (iFdxSelectOneFileValidate(0,liFile,0,0)) to liFile
+      if liFile begin
+        get_attribute DF_FILE_DISPLAY_NAME of liFile to lsValue
+        set value item 0 to (rtrim(lsValue))
+      end
+    end_procedure
+    set p_extra_external_width to 70
+  end_object
+  procedure AdvancedTableOpen
+    send select_table to (oMainFile(self))
+  end_procedure
+
+//object oToolButton is a aps.ToolButton snap SL_RIGHT
+//  set p_extra_external_width to 1
+//  send Add_Button ICO_STD_FIND msg_AdvancedTableOpen
+//  send Add_ToolTip t.DfQuery.tt.AdvTableOpen
+//end_object
+
+  object oSaveOnExit is a aps.CheckBox label "Automatically save definition on exit" snap SL_RIGHT_SPACE
+    set checked_state to DFTRUE
+  end_object
+  object oChildFile is a cFastView.TableSelectorForm abstract AFT_ASCII30 label "Child table:"
+    set enabled_state to DFFALSE
+    procedure OnChange
+      set piChildFile of (phDefinition(self)) to (Combo_Current_Aux_Value(self))
+    end_procedure
+  end_object
+  object oCb is a aps.CheckBox label "Use Workspace DD objects (if available)"
+    if (FVSetupValue(FVSETUP_WORKSPACE_NAME)="") set enabled_state to DFFALSE
+    procedure WS_OnOpenWorkSpace string lsWS
+      if (integer(FVSetupValue(FVSETUP_USER_BYPASS_WS_DD))) begin
+        if (FVSetupValue(FVSETUP_WORKSPACE_NAME)<>"") set enabled_state to (FastView_GenericDDsApplicable())
+      end
+      else begin
+        set checked_state to DFTRUE
+        set enabled_state to DFFALSE
+      end
+    end_procedure
+  end_object
+  object oDiskFileName is a aps.Form snap SL_RIGHT_SPACE abstract AFT_ASCII80 label "Saved as:"
+    set p_extra_internal_width to -150
+    set enabled_state to DFFALSE
+  end_object
+  send aps_goto_max_row
+  send aps_make_row_space 4
+  set p_auto_column to 0
+  object oTabs is a aps.TabDialog
+    object oTab1 is a aps.TabPage label "Main table fields"
+      set p_auto_column to 0
+      object oGrid is a cFastView_FieldsGridBig //snap SL_RIGHT
+        set size to 150 0
+        set phServer to (oMainFileFields(oWorkingDef(self)))
+      end_object
+      object oBtn1 is a aps.Multi_Button
+        on_item "Add fields" send prompt_add_fields to (oGrid(self))
+        set psExtraLabel to "Ctrl+A"
+      end_object
+      object oBtn2 is a aps.Multi_Button
+        on_item "Delete field" send DeleteRow to (oGrid(self))
+        set psExtraLabel to "Shift+F2"
+      end_object
+      object oBtn3 is a aps.Multi_Button
+        on_item "Move up" send MoveRowUp to (oGrid(self))
+        set psExtraLabel to "Ctrl+Up"
+      end_object
+      object oBtn4 is a aps.Multi_Button
+        on_item "Move down" send MoveRowDown to (oGrid(self))
+        set psExtraLabel to "Ctrl+Down"
+      end_object
+      object oBtn5 is a aps.Multi_Button
+        on_item "Change class" send prompt_class to (oGrid(self))
+        set psExtraLabel to "Ctrl+C"
+      end_object
+      object oBtn6 is a aps.Multi_Button
+        on_item "Change snap" send prompt_snap to (oGrid(self))
+        set psExtraLabel to "Ctrl+S"
+      end_object
+      send aps_locate_multi_buttons
+      on_key KEY_CTRL+KEY_A send prompt_add_fields to (oGrid(self))
+      on_key KEY_CTRL+KEY_C send prompt_class to (oGrid(self))
+      on_key KEY_CTRL+KEY_S send prompt_snap to (oGrid(self))
+    end_object
+    object oTab2 is a aps.TabPage label "Child table fields"
+      set p_auto_column to 0
+      object oGrid is a cFastView_FieldsGridBig //snap SL_RIGHT
+        set size to 150 0
+        set phServer to (oChildFileFields(oWorkingDef(self)))
+      end_object
+      object oBtn1 is a aps.Multi_Button
+        on_item "Add fields" send prompt_add_fields to (oGrid(self))
+        set psExtraLabel to "Ctrl+A"
+      end_object
+      object oBtn2 is a aps.Multi_Button
+        on_item "Delete field" send DeleteRow to (oGrid(self))
+        set psExtraLabel to "Shift+F2"
+      end_object
+      object oBtn3 is a aps.Multi_Button
+        on_item "Move up" send MoveRowUp to (oGrid(self))
+        set psExtraLabel to "Ctrl+Up"
+      end_object
+      object oBtn4 is a aps.Multi_Button
+        on_item "Move down" send MoveRowDown to (oGrid(self))
+        set psExtraLabel to "Ctrl+Down"
+      end_object
+      send aps_locate_multi_buttons
+      on_key KEY_CTRL+KEY_A send prompt_add_fields to (oGrid(self))
+    end_object
+    object oTab3 is a aps.TabPage label "Grid sidecar fields"
+      set p_auto_column to 0
+      object oGrid is a cFastView_FieldsGridBig // snap SL_RIGHT
+        set size to 150 0
+        set phServer to (oGridSideCarFields(oWorkingDef(self)))
+      end_object
+      object oBtn1 is a aps.Multi_Button
+        on_item "Add fields" send prompt_add_fields to (oGrid(self))
+        set psExtraLabel to "Ctrl+A"
+      end_object
+      object oBtn2 is a aps.Multi_Button
+        on_item "Delete field" send DeleteRow to (oGrid(self))
+        set psExtraLabel to "Shift+F2"
+      end_object
+      object oBtn3 is a aps.Multi_Button
+        on_item "Move up" send MoveRowUp to (oGrid(self))
+        set psExtraLabel to "Ctrl+Up"
+      end_object
+      object oBtn4 is a aps.Multi_Button
+        on_item "Move down" send MoveRowDown to (oGrid(self))
+        set psExtraLabel to "Ctrl+Down"
+      end_object
+      object oBtn5 is a aps.Multi_Button
+        on_item "Change class" send prompt_class to (oGrid(self))
+        set psExtraLabel to "Ctrl+C"
+      end_object
+      object oBtn6 is a aps.Multi_Button
+        on_item "Change snap" send prompt_snap to (oGrid(self))
+        set psExtraLabel to "Ctrl+S"
+      end_object
+      send aps_locate_multi_buttons
+      on_key KEY_CTRL+KEY_A send prompt_add_fields to (oGrid(self))
+      on_key KEY_CTRL+KEY_C send prompt_class to (oGrid(self))
+      on_key KEY_CTRL+KEY_S send prompt_snap to (oGrid(self))
+    end_object
+  end_object
+
+  procedure read_from_definition
+    integer lhDef
+    get phDefinition to lhDef
+    set value of (oViewTitle(self)) to (psViewTitle(lhDef))
+    set current_radio of (oRad(self)) to (piViewType(lhDef))
+    send fill_list to (oMainFile(self))
+    set Combo_Current_Aux_Value of (oMainFile(self)) to (piMainFile(lhDef))
+    send fill_list.i to (oChildFile(self)) (piMainFile(lhDef))
+    set Combo_Current_Aux_Value of (oChildFile(self)) to (piChildFile(lhDef))
+    set piChildFileTmp to (piChildFile(lhDef))
+    set Checked_State of (oCb(self)) to (pbUseGenericDD(lhDef))
+    set value of (oDiskFileName(self)) item 0 to (psDiskFileName(lhDef))
+    send fill_list to (oGrid(oTab1(oTabs(self))))
+    send fill_list to (oGrid(oTab2(oTabs(self))))
+    send fill_list to (oGrid(oTab3(oTabs(self))))
+  end_procedure
+
+  procedure write_to_definition
+    integer lhDef
+    get phDefinition to lhDef
+    set psViewTitle    of lhDef to (value(oViewTitle(self)))
+    set piViewType     of lhDef to (current_radio(oRad(self)))
+    set piMainFile     of lhDef to (Combo_Current_Aux_Value(oMainFile(self)))
+//    set piChildFile    of lhDef to (Combo_Current_Aux_Value(oChildFile(self)))
+    set piChildFile    of lhDef to (piChildFileTmp(self))
+    set pbUseGenericDD of lhDef to (Checked_State(oCb(self)))
+    send MoveGridToArray to (oGrid(oTab1(oTabs(self))))
+    send MoveGridToArray to (oGrid(oTab2(oTabs(self))))
+    send MoveGridToArray to (oGrid(oTab3(oTabs(self))))
+  end_procedure
+
+  procedure close_panel_ok
+    set piResult to DFTRUE
+    send close_panel
+  end_procedure
+  procedure SaveDefinition
+    send write_to_definition
+    send DoSaveDefinition to (phDefinition(self))
+  end_procedure
+  procedure SaveDefinitionAs
+    send write_to_definition
+    send DoSaveDefinitionAs to (phDefinition(self))
+  end_procedure
+  object oBtn1 is a aps.Multi_Button
+    on_item "OK" send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item "Cancel" send close_panel
+  end_object
+  send aps_locate_multi_buttons
+
+  procedure popup.ii integer lhDef integer lhView
+    integer liLocation
+    send DoCopyFromOtherDefObject to (oWorkingDef(self)) lhDef
+    set phDefinition to (oWorkingDef(self))
+    set phViewObject to lhView
+    set piResult to DFFALSE
+    send read_from_definition
+    send popup
+    if (piResult(self)) begin
+      send write_to_definition
+      send DoCopyFromOtherDefObject to lhDef (oWorkingDef(self))
+      if lhView begin
+        get location of lhView to liLocation
+        send close_panel to lhView
+        get iPopupPanel of lhDef to lhView
+        set location of lhView to (hi(liLocation)) (low(liLocation))
+        if (checked_state(oSaveOnExit(self))) send SaveDefinition to lhView
+      end
+    end
+  end_procedure
+end_object
+
+procedure Activate_FastViewPropertyEdit integer lhDef integer lhView
+  send popup.ii to (oFastView_PropertyEdit(self)) lhDef lhView
+end_procedure
+

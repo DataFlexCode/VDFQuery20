@@ -1,0 +1,499 @@
+// Use FdxCheck.utl // Check validity of table definitions
+
+Use Fdx_Attr.nui // FDX compatible attribute functions
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, c
+Use Files.utl    // Utilities for handling file related stuff
+Use Strings.nui  // String manipulation for VDF
+Use FdxSet.nui   // cFdxSetOfTables, cFdxSetOfFields, cFdxSetOfIndices
+
+enumeration_list
+  define TDINFO_INFO
+  define TDINFO_WARNING
+  define TDINFO_ERROR
+end_enumeration_list
+
+enumeration_list
+  define TDERROR_COULD_NOT_CHECK
+  define TDERROR_FILE_INCOMPATIBLE_FD1
+  define TDERROR_FILE_INCOMPATIBLE_FD2
+  define TDERROR_FILE_INCOMPATIBLE_FD3
+  define TDERROR_FILE_INCOMPATIBLE_TAG
+  define TDERROR_FILE_MISSING_HDR
+  define TDERROR_FILE_MISSING_VLD
+  define TDERROR_FILE_MISSING_IDX
+  define TDERROR_FILE_ENTRY_207
+  define TDERROR_FILE_ENTRY_208
+  define TDERROR_REL_FILE_NOT_AVAILABLE1
+  define TDERROR_REL_FILE_NOT_AVAILABLE2
+  define TDERROR_REL_MORE_THAN_ONE
+  define TDERROR_REL_MISMATCH1
+  define TDERROR_REL_MISMATCH2
+  define TDERROR_REL_FIELD_NOT_UNIQUELY_INDEXED
+  define TDERROR_REL_FIELD_NO_MAIN_INDEX
+  define TDERROR_REL_FIELD_WRONG_MAIN_INDEX
+  define TDERROR_REL_RECNUM_BASED
+  define TDERROR_REL_TO_SYSTEM_FILE
+  define TDERROR_IDX_SAME_FIELD
+  define TDERROR_IDX_RECNUM_NOT_AT_END
+  define TDERROR_IDX_UPPERCASE_ERROR
+  define TDERROR_IDX_MISSING_FILE
+  define TDERROR_IDX_SUPERFLUOUS
+  define TDERROR_IDX_IDENTICAL
+  define TDERROR_IDX_LOCATION
+end_enumeration_list
+desktop_section
+  object oTDError_Decoder is a cArray
+    item_property_list
+      item_property integer piErrorClass.i   // TDINFO_INFO  TDINFO_WARNING  TDINFO_ERROR
+      item_property string  psDescription.i
+      item_property string  psExplicit.i
+    end_item_property_list
+    procedure add_error.iss integer Err# integer IsErr# string Descr# string Explicit#
+      set piErrorClass.i  err# to IsErr#
+      set psDescription.i err# to Descr#
+      set psExplicit.i    err# to Explicit#
+    end_procedure
+    send add_error.iss TDERROR_COULD_NOT_CHECK                TDINFO_INFO    "Could not perform check"                  "#"
+    send add_error.iss TDERROR_FILE_INCOMPATIBLE_FD1          TDINFO_ERROR   "Wrong table number in FD file"            "Number in FD file is # when it should be #"
+    send add_error.iss TDERROR_FILE_INCOMPATIBLE_FD2          TDINFO_ERROR   "Wrong table name in FD file"              "Name in FD file is # when it should be #"
+    send add_error.iss TDERROR_FILE_INCOMPATIBLE_FD3          TDINFO_ERROR   "Incompatible FD file"                     "Fields in FD file is out of synch. with table definition"
+    send add_error.iss TDERROR_FILE_INCOMPATIBLE_TAG          TDINFO_ERROR   "Incompatible TAG file"                    "Wrong number of entries in TAG file: # (should be #)"
+    send add_error.iss TDERROR_FILE_MISSING_HDR               TDINFO_ERROR   "HDR file not found"                       "File # not found"
+    send add_error.iss TDERROR_FILE_MISSING_VLD               TDINFO_ERROR   "VLD file not found"                       "File # not found"
+    send add_error.iss TDERROR_FILE_MISSING_IDX               TDINFO_ERROR   "Index file not found"                     "File # not found"
+    send add_error.iss TDERROR_FILE_ENTRY_207                 TDINFO_WARNING "Entry 207 normally reserved for CodeType" "Entry 207 used for #"
+    send add_error.iss TDERROR_FILE_ENTRY_208                 TDINFO_WARNING "Entry 208 normally reserved for CodeMast" "Entry 208 used for #"
+    send add_error.iss TDERROR_REL_FILE_NOT_AVAILABLE1        TDINFO_WARNING "Related table not available"              "Field # relates to table # which is not present in FILELIST.CFG"
+    send add_error.iss TDERROR_REL_FILE_NOT_AVAILABLE2        TDINFO_WARNING "Related table not available"              "Field # relates to table # which is not found on system"
+    send add_error.iss TDERROR_REL_MORE_THAN_ONE              TDINFO_WARNING "Multiple relations to table"              "More than one relation exists between # and #"
+    send add_error.iss TDERROR_REL_MISMATCH1                  TDINFO_ERROR   "Field type mismatch in relation"          "Field # (#) relates to field # (#)"
+    send add_error.iss TDERROR_REL_MISMATCH2                  TDINFO_ERROR   "Overlap structure mismatch in relation"   "Field # (#) relates to field # (#)"
+    send add_error.iss TDERROR_REL_FIELD_NOT_UNIQUELY_INDEXED TDINFO_ERROR   "Related table not uniquely indexed"       "Field # relates to # that is not uniquely indexed"
+    send add_error.iss TDERROR_REL_FIELD_WRONG_MAIN_INDEX     TDINFO_ERROR   "Wrong main index on related field"        "Field # relates to # that has the wrong main index"
+    send add_error.iss TDERROR_REL_FIELD_NO_MAIN_INDEX        TDINFO_ERROR   "Missing index on related table"           "Field # relates to # that has no main index"
+    send add_error.iss TDERROR_REL_RECNUM_BASED               TDINFO_WARNING "Relation based on RECNUM"                 "Field # relates to #"
+    send add_error.iss TDERROR_REL_TO_SYSTEM_FILE             TDINFO_WARNING "Relation to system table"                 "Field # relates to system table #"
+    send add_error.iss TDERROR_IDX_SAME_FIELD                 TDINFO_WARNING "Same field appears more than once"        "Field # appears more than once in index #"
+    send add_error.iss TDERROR_IDX_RECNUM_NOT_AT_END          TDINFO_WARNING "Recnum not last segment"                  "RECNUM appears as a more significant segment in index #"
+    send add_error.iss TDERROR_IDX_UPPERCASE_ERROR            TDINFO_ERROR   "Case ignored on non-ASCII field in index" "Field # (index #)"
+    send add_error.iss TDERROR_IDX_MISSING_FILE               TDINFO_ERROR   "Index file not found"                     "File # not found"
+    send add_error.iss TDERROR_IDX_SUPERFLUOUS                TDINFO_WARNING "Superfluous index"                         "Drop index # and use index # instead"
+    send add_error.iss TDERROR_IDX_IDENTICAL                  TDINFO_WARNING "Identical indices"                        "Index # and # are identically defined"
+    send add_error.iss TDERROR_IDX_LOCATION                   TDINFO_WARNING "Location of index file"                   "Index file #"
+  end_object // oTDError_Decoder
+end_desktop_section
+
+class cFdxCheck is a cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+    // Currently checking tables with these features:
+    property integer piFile         0
+    property string  psLogicalName  ""
+    property string  psPhysicalName ""
+    property integer piRealData     0
+    property integer piDataFlex     0 // Is it a DF table
+    property integer piServer       0
+    object oCheckIndexSet is a Set 
+    end_object
+    object oFdxSetOfTables is a cFdxSetOfTables 
+    end_object
+  end_procedure
+  //> Send this to reset the error list
+
+  item_property_list
+    item_property integer piFile.i
+    item_property integer piError.i
+    item_property string  psArg1.i
+    item_property string  psArg2.i
+    item_property string  psArg3.i
+    item_property string  psArg4.i
+  end_item_property_list cFdxCheck
+
+  procedure reset
+    send delete_data
+    send delete_data to (oCheckIndexSet(self))
+    send delete_data to (oFdxSetOfTables(self))
+    set psLogicalName  to ""
+    set psPhysicalName to ""
+    set piServer   to 0
+    set piRealData to 0
+    set piDataFlex to 0
+    set piServer   to 0
+  end_procedure
+
+  function iFileExists string sFile returns integer
+    string sPath
+    if (SEQ_ExtractPathFromFileName(sFile)) eq "" begin
+      move (SEQ_FindFileAlongDFPath(sFile)) to sPath
+      move (SEQ_ComposeAbsoluteFileName(sPath,sFile)) to sFile
+    end
+    function_return (SEQ_FileExists(sFile))
+  end_function
+
+  function iErrorClass.i integer row# returns integer
+    integer arr#
+    move (oTDError_Decoder(self)) to arr#
+    function_return (piErrorClass.i(arr#,piError.i(self,row#)))
+  end_function
+  function sErrorText1.i integer row# returns string
+    integer arr#
+    move (oTDError_Decoder(self)) to arr#
+    function_return (psDescription.i(arr#,piError.i(self,row#)))
+  end_function
+  function sErrorText2.i integer row# returns string
+    integer err#
+    string rval#
+    get piError.i row# to err#
+    get psExplicit.i of (oTDError_Decoder(self)) err# to rval#
+    move (replace("#",rval#,psArg1.i(self,row#))) to rval#
+    move (replace("#",rval#,psArg2.i(self,row#))) to rval#
+    move (replace("#",rval#,psArg3.i(self,row#))) to rval#
+    move (replace("#",rval#,psArg4.i(self,row#))) to rval#
+    function_return rval#
+  end_function
+
+  procedure add_error integer err# string a1# string a2# string a3# string a4#
+    integer row# file#
+    get piFile to file#
+    get row_count to row#
+    set piFile.i  row# to file#
+    set piError.i row# to err#
+    set psArg1.i  row# to a1#
+    set psArg2.i  row# to a2#
+    set psArg3.i  row# to a3#
+    set psArg4.i  row# to a4#
+  end_procedure
+
+  function Check_FD_File_Help string str# returns string // Extract the field type
+    integer pos#
+    pos "|" in str# to pos#
+    if pos# function_return (mid(str#,1,(pos#+2)))
+    function_return ""
+  end_function
+
+  procedure Check_FD_File
+    integer oFDX# file# RealData#
+    integer ch# max_field# field# fd_file# err# type#
+    string fn# str# fd_name# tmp#
+    get piServer to oFDX#
+    get piFile to file#
+    get piRealData to RealData#
+    if RealData# begin
+      get psLogicalName to fn#
+      move (SEQ_DirectInput(fn#+".FD")) to ch#
+      if ch# ge 0 begin
+        move (SEQ_ReadLn(ch#)) to str#
+        move (ExtractInteger(str#,1)) to fd_file#
+        if fd_file# eq file# begin
+          move (ExtractWord(str#," ",3)) to fd_name#
+          if fd_name# eq (psLogicalName(self)) begin
+            move (SEQ_ReadLn(ch#)) to str# // Throw away RECNUM replace
+            move 0 to err#
+            move (FDX_AttrValue_FILE(oFDX#,DF_FILE_NUMBER_FIELDS,file#)) to max_field#
+            for field# from 1 to max_field#
+              ifnot err# begin
+                move (SEQ_ReadLn(ch#)) to str#
+                if (ExtractItem(str#,". ",3)) ne (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_NAME,file#,field#)) move 1 to err#
+                ifnot err# begin
+                  move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_TYPE,file#,field#)) to type#
+                  move "Z" to tmp#
+                  if type# eq DF_ASCII   move "S" to tmp#  // ascii   0
+                  if type# eq DF_BCD     move "N" to tmp#  // numeric 1
+                  if type# eq DF_DATE    move "D" to tmp#  // date    2
+                  if type# eq DF_OVERLAP move "S" to tmp#  // overlap 3
+                  if type# eq DF_TEXT    move "S" to tmp#  // text    5
+                  if type# eq DF_BINARY  move "S" to tmp#  // binary  6
+                  if tmp# ne (Check_FD_File_Help(self,str#)) move 1 to err#
+                end
+              end
+            loop
+            if err# send add_error TDERROR_FILE_INCOMPATIBLE_FD3 "" "" "" ""
+          end
+          else send add_error TDERROR_FILE_INCOMPATIBLE_FD2 fd_name# (psLogicalName(self)) 0 0
+        end
+        else send add_error TDERROR_FILE_INCOMPATIBLE_FD1 fd_file# file# 0 0
+        send SEQ_CloseInput ch#
+      end
+      else send add_error TDERROR_COULD_NOT_CHECK "Could not check FD file (not found)" "" "" ""
+    end
+    else send add_error TDERROR_COULD_NOT_CHECK "Could not check FD file (not live data)" "" "" ""
+  end_procedure
+
+  procedure Check_TAG_File
+    integer oFDX# file# RealData#
+    integer ch# field_count# fields# eof#
+    string fn# field_name#
+    get piServer to oFDX#
+    get piFile to file#
+    get piRealData to RealData#
+    if RealData# begin
+      get psPhysicalName to fn#
+      move (SEQ_DirectInput(fn#+".TAG")) to ch#
+      if ch# ge 0 begin
+        move 0 to field_count#
+        repeat
+          move (SEQ_ReadLn(ch#)) to field_name#
+          move (seqeof) to eof#
+          ifnot eof# begin
+            // Here we could check for legal field names!
+            increment field_count#
+          end
+        until eof#
+        send SEQ_CloseInput ch#
+        move (FDX_AttrValue_FILE(oFDX#,DF_FILE_NUMBER_FIELDS,file#)) to fields#
+        if field_count# ne fields# send add_error TDERROR_FILE_INCOMPATIBLE_TAG field_count# fields# "" ""
+      end
+      else send add_error TDERROR_COULD_NOT_CHECK "Could not check TAG file (not found)" "" "" ""
+    end
+    else send add_error TDERROR_COULD_NOT_CHECK "Could not check TAG file (not live data)" "" "" ""
+  end_procedure
+
+  //> If compression is used check for presence of VLD file.
+  //> If integrity check is on check for presence of HDR file.
+  procedure Check_Missing_Files
+    integer oFDX# file# RealData#
+    string fn#
+    get piServer to oFDX#
+    get piFile to file#
+    get piRealData to RealData#
+    if (FDX_AttrValue_FILE(oFDX#,DF_FILE_DRIVER,file#)="DATAFLEX") begin
+      if RealData# begin
+        get psPhysicalName to fn#
+        if (integer(FDX_AttrValue_FILE(oFDX#,DF_FILE_COMPRESSION,file#))) ne DF_FILE_COMPRESS_NONE begin
+          if (iFileExists(self,fn#+".VLD")) ne SEQIT_FILE send add_error TDERROR_FILE_MISSING_VLD (fn#+".VLD") "" "" ""
+        end
+        if (integer(FDX_AttrValue_FILE(oFDX#,DF_FILE_INTEGRITY_CHECK,file#))) eq DFTRUE begin
+          if (iFileExists(self,fn#+".HDR")) ne SEQIT_FILE send add_error TDERROR_FILE_MISSING_HDR (fn#+".HDR") "" "" ""
+        end
+      end
+      else send add_error TDERROR_COULD_NOT_CHECK "Could not check missing files (not live data)" "" "" ""
+    end
+  end_procedure
+
+  //> Reports errors/warnings if:
+  //> 1. Related file not available
+  //> 2. Relation mismatch
+  //> 3. Related file not (uniquely) indexed on related field
+  //> 4. Related field has got wrong main index
+  //> 5. Relation using recnum
+
+  procedure Check_Relations
+    integer file# oFDX# field# rel_file# rel_field# index# max_field#
+    integer rel_count#
+    integer CanCheckAvailable# Can_Open# type# rel_index#
+    integer max_pos# pos#
+    string  Files# rel_root# rel_index_fields# rel_fields# index_field#
+
+    get piServer to oFDX#
+    get piFile to file#
+
+    get iFdxIsEncapsulated of oFDX# to CanCheckAvailable# // Check for availability of related tables
+    move "" to files#
+    get FDX_AttrValue_FILE oFDX# DF_FILE_NUMBER_FIELDS file# to max_field#
+    for field# from 1 to max_field#
+      get FDX_AttrValue_FIELD oFDX# DF_FIELD_RELATED_FILE file# field# to rel_file#
+      get FDX_AttrValue_FIELD oFDX# DF_FIELD_RELATED_FIELD file# field# to rel_field#
+
+      if rel_file# begin // If there's a relation
+
+        // Check that there is no more than one relating field to that file:
+        move (mid(files#,1,rel_file#)) to rel_count#
+        increment rel_count#
+        move (overstrike(string(rel_count#),files#,rel_file#)) to files#
+        if rel_count# eq 2 send add_error TDERROR_REL_MORE_THAN_ONE rel_file# "" "" ""
+
+        // Check that related file is avaiable:
+        if (rel_count#=1 and CanCheckAvailable#) begin
+          get FDX_AttrValue_FILELIST oFDX# DF_FILE_ROOT_NAME file# to rel_root#
+          if rel_root# eq "" send add_error TDERROR_REL_FILE_NOT_AVAILABLE1 field# rel_file# "" ""
+          else begin
+            get iCanOpen.i of oFDX# file# to can_open#
+            ifnot can_open# send add_error TDERROR_REL_FILE_NOT_AVAILABLE2 field# rel_file# "" ""
+          end
+        end
+
+        if (CanCheckAvailable# and iCanOpen.i(oFDX#,rel_file#)) begin
+
+          // Check for field type match:
+          ifnot (FDX_FieldIdenticalFieldDefinition(oFDX#,file#,field#,rel_file#,rel_field#)) begin
+            // We must filter out the case where recnum is used:
+            if rel_field# ne 0 send add_error TDERROR_REL_MISMATCH1 field# rel_file# rel_field# ""
+          end
+          else begin
+            move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_TYPE,file#,field#)) to type#
+            // If overlap field we must also check the underlying fields
+            if type# eq DF_OVERLAP begin
+              ifnot (FDX_FieldIdenticalOverlapStructures(oFDX#,file#,field#,rel_file#,rel_field#)) send add_error TDERROR_REL_MISMATCH2 field# rel_file# rel_field# ""
+            end
+          end
+
+          // Check if index is RECNUM
+          ifnot rel_field# send add_error TDERROR_REL_RECNUM_BASED field# rel_file# "" ""
+          else begin
+            if (integer(FDX_AttrValue_FILE(oFDX#,DF_FILE_IS_SYSTEM_FILE,rel_file#))) eq DFTRUE send add_error TDERROR_REL_TO_SYSTEM_FILE field# rel_file# "" ""
+            else begin
+              // Check to see if related file is uniquely indexed on that related field:
+              get FDX_IndexFindUnique oFDX# rel_file# rel_field# 0 to rel_index#
+              if rel_index# begin
+                get FDX_AttrValue_FIELD oFDX# DF_FIELD_INDEX rel_file# rel_field# to rel_index#
+                if rel_index# begin
+
+                  // Retrieve fields in related index:
+                  get FDX_IndexAsFields oFDX# rel_file# rel_index# to rel_index_fields#
+                  get FDX_FieldsTranslateOverlaps oFDX# rel_file# rel_index_fields# to rel_index_fields#
+                  get FDX_FieldsRemoveDublettes rel_index_fields# to rel_index_fields#
+
+
+                  get FDX_FieldsTranslateOverlaps oFDX# rel_file# rel_field# to rel_fields#
+                  get FDX_FieldsRemoveDublettes rel_fields# to rel_fields#
+                  move (length(rel_fields#)/4) to max_pos#
+                  for pos# from 1 to max_pos#
+                    move (mid(rel_fields#,4,pos#-1*4+1)) to index_field#
+                    move (replace(index_field#,rel_index_fields#,"")) to rel_index_fields#
+                  loop
+                  if rel_index_fields# ne "" send add_error TDERROR_REL_FIELD_WRONG_MAIN_INDEX field# rel_file# rel_field# ""
+                end
+                else send add_error TDERROR_REL_FIELD_NO_MAIN_INDEX field# rel_file# rel_field# ""
+              end
+              else send add_error TDERROR_REL_FIELD_NOT_UNIQUELY_INDEXED field# rel_file# rel_field# ""
+            end
+          end
+        end
+      end
+    loop
+  end_procedure
+
+  //> Reports errors/warnings if:
+  //>   Same field appears more than once in an index
+  //>   Recnum is part of an index while not being the last field
+  //>   Non-ASCII field marked as U/C in index
+  //>   Index file not found (DataFlex only)
+  //>   Superfluous index (One index is a sub-ordering of another or is identical)
+  //>   Index on system file
+  procedure Check_Indices
+    integer oFDX#
+    integer file#
+    integer RealData#
+    integer index1#
+    integer index2#
+    integer field1#
+    integer field2#
+    integer DataFlex#
+    integer max_seg#
+    integer segment#
+    integer oCheckIndexSet#
+    integer fin#
+    integer case#
+    string  fn#
+    string  fields1#
+    string  fields2#
+    string  check_doubles#
+    string  field#
+
+    get piServer to oFDX#
+    get piFile to file#
+    get piRealData to RealData#
+    get piDataFlex to DataFlex#
+    move (oCheckIndexSet(self)) to oCheckIndexSet#
+    get psPhysicalName to fn#
+    for index1# from 1 to 16
+      get FDX_AttrValue_INDEX oFDX# DF_INDEX_NUMBER_SEGMENTS file# index1# to max_seg#
+      if max_seg# begin // If there's an index at all
+        if (DataFlex# and RealData#) begin
+          // Check if we can find index file
+          if (iFileExists(self,fn#+".K"+string(index1#))) ne SEQIT_FILE send add_error TDERROR_IDX_MISSING_FILE (fn#+".K"+string(index1#)) index1# "" ""
+        end
+
+        send delete_data to oCheckIndexSet#
+        get FDX_IndexAsFields oFDX# file# index1# to fields1#
+
+        move (length(fields1#)/4) to max_seg#
+        move "" to check_doubles#
+        for segment# from 1 to max_seg#
+          move (mid(fields1#,4,segment#-1*4+1)) to field#
+
+          // Check for dublettes:
+          ifnot field# in check_doubles# move (check_doubles#+field#) to check_doubles#
+          else send add_error TDERROR_IDX_SAME_FIELD (trim(field#)) index1# "" ""
+
+          // Recnum not at end?
+          if (not(field#) and segment#<>max_seg#) send add_error TDERROR_IDX_RECNUM_NOT_AT_END index1# "" "" ""
+
+          // Uppercase on non ASCII field?
+
+          if (integer(FDX_AttrValue_FIELD(oFDX#,DF_FIELD_TYPE,file#,integer(trim(field#))))) ne DF_ASCII begin
+            get FDX_AttrValue_IDXSEG oFDX# DF_INDEX_SEGMENT_CASE file# index1# segment# to case#
+            if case# eq DF_CASE_IGNORED send add_error TDERROR_IDX_UPPERCASE_ERROR field# index1# "" ""
+          end
+        loop
+
+        for index2# from (index1#+1) to 16 // Compare to all other indices:
+          if (integer(FDX_AttrValue_INDEX(oFDX#,DF_INDEX_NUMBER_SEGMENTS,file#,index2#))) begin
+            get FDX_IndexAsFields oFDX# file# index2# to fields2#
+            get FDX_FieldsTranslateOverlaps oFDX# file# fields2# to fields2#
+
+            move 0 to segment#
+            move 0 to fin#
+            repeat
+              move (segment#>15) to fin#
+              ifnot fin# begin
+                move (mid(fields1#,4,segment#*4+1)) to field1#
+                move (mid(fields2#,4,segment#*4+1)) to field2#
+                if field1# eq field2# increment segment#
+                else begin
+                  if (field1#=0 or field2#=0) send add_error TDERROR_IDX_SUPERFLUOUS (if(field1#<>0,index2#,index1#)) (if(field1#<>0,index1#,index2#)) "" ""
+                  move 1 to fin#
+                end
+              end
+            until fin#
+            if segment# eq 16 send add_error TDERROR_IDX_IDENTICAL index1# index2# "" ""
+          end
+        loop
+      end
+    loop
+  end_procedure
+
+  procedure Check_Table integer lhFDX integer liFile
+    integer lbDataFlex lbRealData
+    string lsRoot
+    move (DBMS_DriverNameToType(FDX_AttrValue_FILE(lhFDX,DF_FILE_DRIVER,liFile))=DBMS_DRIVER_DATAFLEX) to lbDataFlex
+    if lhFDX move (piDataOrigin(lhFDX)=FDX_REAL_WORLD) to lbRealData
+    else move 1 to lbRealData
+    set piFile to liFile
+    send AddItemIfNotAlready to (oFdxSetOfTables(self)) liFile 0
+    set psLogicalName  to (FDX_AttrValue_FILELIST(lhFDX,DF_FILE_LOGICAL_NAME,liFile))
+    move (FDX_AttrValue_FILELIST(lhFDX,DF_FILE_ROOT_NAME,liFile)) to lsRoot
+    set psPhysicalName to lsRoot
+    set piRealData to lbRealData
+    set piDataFlex to lbDataFlex
+    set piServer to lhFDX
+    if (liFile=207 and lsRoot<>"" and not(uppercase(lsRoot) contains "CODETYPE")) send add_error TDERROR_FILE_ENTRY_207 lsRoot "" "" ""
+    if (liFile=208 and lsRoot<>"" and not(uppercase(lsRoot) contains "CODEMAST")) send add_error TDERROR_FILE_ENTRY_208 lsRoot "" "" ""
+    send Check_FD_File
+    send Check_TAG_File
+    send Check_Missing_Files
+    send Check_Relations
+    send Check_Indices
+  end_procedure
+end_class // cFdxCheck
+
+desktop_section
+  object oFdxCheck is a cFdxCheck
+  end_object
+end_desktop_section
+
+//> Reset set the oFdxCheck object.
+procedure DoFdxCheckReset global
+  send reset to (oFdxCheck(self))
+end_procedure
+//> Send this message to have the oFdxCheck object check whatever conditions
+//> it checks for a given file.
+//> NOTE that oFDX# must be the same for all subsequent calls of this procedure.
+procedure DoFdxCheckTable global integer oFDX# integer file#
+  send Check_Table to (oFdxCheck(self)) oFDX# file#
+end_procedure
+//> Returns the object ID of the SetOfTables object inside global object
+//> oFdxCheck.
+function FdxCheck_SOT_Object global returns integer
+  function_return (oFdxSetOfTables(oFdxCheck(self)))
+end_function

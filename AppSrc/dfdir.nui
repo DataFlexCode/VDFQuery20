@@ -1,0 +1,24 @@
+// Use DfDir.nui    // Identify the location DF files and directories
+// OBSOLETE! Use AppFolders.nui instead
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+Use Files.nui    // Utilities for handling file related stuff (No User Interface)
+
+enumeration_list
+  define DFDIR_DFRUN_LOCATION
+  define DFDIR_VDF_ROOTDIR
+  define DFDIR_FILELIST_CFG
+end_enumeration_list
+
+function dfdir_location global integer liWhat returns string
+  string lsRval
+  if (liWhat=DFDIR_VDF_ROOTDIR) begin // VDF Root dir
+    Get_Profile_String "Defaults" "VdfRootDir" To lsRval
+  end
+  if (liWhat=DFDIR_FILELIST_CFG) begin // Filelist.cfg
+    get SEQ_FindFileAlongDFPath "filelist.cfg" to lsRval
+  end
+  if (right(lsRval,1)="\" and length(lsRval)>1) get StringLeftBut lsRval 1 to lsRval
+  function_return lsRval
+end_function

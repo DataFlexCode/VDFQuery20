@@ -1,0 +1,262 @@
+
+// Use Set.utl      // cArray, cSet and cStack classes
+
+// The only difference between a cArray and an Array object is that
+// a cArray reacts with normal delegation to messages that it does
+// not understand.
+
+Use VdfBase.pkg // Define FMAC_VERSION and FMAC_REVISION
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+class cArray is an Array
+  procedure construct_object integer liImg
+    forward send construct_object liImg
+    set delegation_mode to DELEGATE_TO_PARENT
+  end_procedure
+end_class // cArray
+
+class cArray2d is a cArray
+            function iObjectID.i integer liX returns integer
+              integer lhObj
+              get value item liX to lhObj
+              ifnot lhObj begin
+                object oArray2d is a cArray
+                  move self to lhObj
+                end_object
+                set value item liX to lhObj
+              end
+              function_return lhObj
+            end_function
+  procedure set Value.ii integer liX integer liY string lsValue
+    integer lhObj
+    get iObjectID.i liX to lhObj
+    set value of lhObj item liY to lsValue
+  end_procedure
+  function Value.ii integer liX integer liY returns string
+    integer lhObj
+    get value item liX to lhObj
+    If lhObj ;
+       Function_Return (value(lhObj,liY))
+    function_return 0
+  end_function
+  procedure reset
+    integer liItm liMax lhObj
+    get item_count to liMax
+    decrement liMax
+    for liItm from 0 to liMax
+      get value item liItm to lhObj
+      If lhObj ; 
+            Send request_destroy_object to lhObj
+    loop
+    send delete_data
+  end_procedure
+end_class // cArray2d
+
+class cArray3d is a cArray2d
+  function iObjectID.ii integer liX integer liY returns integer
+    integer lhObj
+    get Value.ii liX liY to lhObj
+    ifnot lhObj begin
+      object oArray3d is a cArray
+        move self to lhObj
+      end_object
+      set Value.ii liX liY to lhObj
+    end
+    function_return lhObj
+  end_function
+  procedure set Value.iii integer liX integer liY integer liZ string lsValue
+    integer lhObj
+    get iObjectID.ii liX liY to lhObj
+    set value of lhObj item liZ to lsValue
+  end_procedure
+  function Value.iii integer liX integer liY integer liZ returns string
+    integer lhObj
+    get value item liX to lhObj
+    if lhObj begin
+      get value of lhObj item liY to lhObj
+      If lhObj ;
+            Function_Return (value(lhObj,liZ))
+    end
+    function_return 0
+  end_function
+  procedure reset
+    integer liXmax liYmax liX liY lhYobj lhZobj
+    get item_count to liXmax
+    decrement liXmax
+    for liX from 0 to liXmax
+      get value item liX to lhYobj
+      if lhYobj begin
+        get item_count of lhYobj to liYmax
+        decrement liYmax
+        for liY from 0 to liYmax
+          get value of lhYobj item liY to lhZobj
+          If lhZobj ;
+                Send request_destroy_object to lhZobj
+        loop
+      end
+    loop
+    forward send reset
+  end_procedure
+end_class // cArray3d
+
+class cArray2dFixedWidth is a cArray
+  procedure construct_object integer liImg
+    forward send construct_object liImg
+    property integer private.piMaxColumn 0
+  end_procedure
+  function piMaxColumn returns integer
+    function_return (private.piMaxColumn(self))
+  end_function
+  procedure set piMaxColumn integer liMax
+    if (item_count(self)) error 666 "Can't set column index range while not empty"
+    else set private.piMaxColumn to liMax
+  end_procedure
+  procedure set value.ii integer liRow integer liColumn string lsValue
+    integer liItem liMaxColumn
+    get private.piMaxColumn to liMaxColumn
+    move (liRow*liMaxColumn+liColumn) to liItem
+    if liColumn ge liMaxColumn error 666 "Column index is out of range"
+    else set value item liItem to lsValue
+  end_procedure
+  function value.ii integer liRow integer liColumn returns string
+    integer liItem liMaxColumn
+    get private.piMaxColumn to liMaxColumn
+    move (liRow*liMaxColumn+liColumn) to liItem
+    if liColumn ge liMaxColumn error 666 "Column index is out of range"
+    else function_return (value(self,liItem))
+  end_function
+  function row_count returns integer
+    integer liMaxColumn
+    get private.piMaxColumn to liMaxColumn
+    function_return (liMaxColumn-1+item_count(self)/liMaxColumn)
+  end_function
+  function column_count returns integer
+    function_return (private.piMaxColumn(self))
+  end_function
+  procedure reset
+    send delete_data
+  end_procedure
+end_class // cArray2dFixedWidth
+
+class cSet is an cArray
+  function element_find string lsValue returns integer
+    integer liMax liItm
+    get item_count to liMax
+    move 0 to liItm
+    while liItm lt liMax
+      if lsValue eq (value(self,liItm)) function_return liItm // Dirty exit
+      increment liItm
+    end
+    function_return -1
+  end_function
+
+  procedure element_add string lsValue
+    if (element_find(self,lsValue)=-1) set value item (item_count(self)) to lsValue
+  end_procedure
+
+  procedure element_remove string lsValue
+    integer liItm
+    get element_find lsValue to liItm
+    if liItm ge 0 send delete_item liItm
+  end_procedure
+
+  function iAddOrFind_Element string lsValue returns integer
+    integer liRval
+    get element_find lsValue to liRval
+    if liRval eq -1 begin
+      get item_count to liRval
+      set value item liRval to lsValue
+    end
+    function_return liRval
+  end_function
+
+//// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+//// Original procedures (optimized) are mentioned for compatibility:
+//
+//function find_element string lsValue returns integer
+//  integer liMax liItm
+//  get item_count to liMax
+//  move 0 to liItm
+//  while liItm lt liMax
+//    if lsValue eq (value(self,liItm)) function_return liItm // Dirty exit
+//    increment liItm
+//  end
+//  function_return -1
+//end_function
+//
+//procedure Add_Element string lsValue returns integer
+//  integer liRval
+//  get find_element lsValue to liRval
+//  if liRval lt 0 get item_count to liRval
+//  set array_value item liRval to lsValue
+//  procedure_return liRval
+//end_procedure
+//
+//procedure Remove_Element string lsValue
+//  integer liItm
+//  get Find_Element item lsValue to liItm
+//  if liItm gt -1 send delete_item liItm
+//end_procedure
+//// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+end_class
+
+class cStack is an cArray
+  function Stack_Empty returns integer
+    function_return (item_count(self)=0)
+  end_function
+  // *** Integer interface **************************************
+  procedure Push.i integer liValue
+    set value item (item_count(self)) to liValue
+  end_procedure
+  function iPop returns integer
+    integer liRval liItm
+    move (item_count(self)-1) to liItm
+    get value item liItm to liRval
+    send delete_item liItm
+    function_return liRval
+  end_function
+  function iCopy returns integer
+    function_return (value(self,item_count(self)-1))
+  end_function
+  function bIsOnStack.i integer liValue returns integer
+    integer liMax liItm
+    get item_count to liMax
+    decrement liMax
+    for liItm from 0 to liMax
+      if (integer(value(self,liItm))=liValue) function_return 1
+    loop
+    function_return 0
+  end_function
+  // *** String interface ***************************************
+  procedure Push.s string lsValue
+    set value item (item_count(self)) to lsValue
+  end_procedure
+  function sPop returns string
+    integer liItm
+    string lsRval
+    move (item_count(self)-1) to liItm
+    get value item liItm to lsRval
+    send delete_item liItm
+    function_return lsRval
+  end_function
+  function sCopy returns string
+    function_return (value(self,item_count(self)-1))
+  end_function
+  procedure Drop
+    string lsGrb
+    get sPop to lsGrb
+  end_procedure
+  function bIsOnStack.s string lsValue returns integer
+    integer liMax liItm
+    get item_count to liMax
+    decrement liMax
+    for liItm from 0 to liMax
+      if (value(self,liItm)=lsValue) function_return 1
+    loop
+    function_return 0
+  end_function
+end_class
+

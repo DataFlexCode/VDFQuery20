@@ -1,0 +1,28 @@
+// Use ToolUtilities.pkg // aps.YellowBox class
+
+use aps.pkg
+Use strings.utl  // sTextFromDfImage
+Use Spec0012.utl // Read image to string (sTextDfFromImage function)
+use rgb.utl      // RGB_Brighten
+
+class aps.YellowBox is a aps.Edit
+  procedure construct_object
+    forward send construct_object
+    set object_shadow_state to true
+    set border_style to BORDER_NONE
+    set color to (RGB_Brighten(clYellow,75))
+    set scroll_bar_visible_state to false
+    property integer piTextSourceImage 0
+  end_procedure
+  procedure end_construct_object
+    integer liImg
+    string lsValue
+    forward send end_construct_object
+    get piTextSourceImage to liImg
+    if liImg begin
+      get sTextFromDfImage liImg to lsValue
+      send Text_SetEditObjectValue self lsValue
+    end
+  end_procedure
+end_class // aps.YellowBox
+

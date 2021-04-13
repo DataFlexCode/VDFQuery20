@@ -1,0 +1,517 @@
+// **********************************************************************
+// Use Dynamo.utl   // Dynamic creation of objects for VDF
+//
+// Version: 1.0
+// By Sture Andersen
+//
+// Create: Thu  03-04-1997 -
+// Update: Sat  10-05-1997 - Procedure push_data_fields added
+//         Thu  08-09-2005 - Maximum columns handled by dbGrid & dbList increased from 10 to 20
+//         Wed  14-09-2005 - Now also handles virtual fields (in dbGrids and dbLists, dbForms soon to come)
+// ***********************************************************************
+
+Use APS.pkg           // Auto Positioning and Sizing classes for VDF
+Use Set.utl       // cArray, cSet and cStack classes
+Use Classes.nui   // Class characteristics
+Use Createobj.nui // Function create_object_within_parent
+
+class dnm.Button is a aps.Button
+  procedure construct_object
+    forward send construct_object
+    property integer p_message 0
+  end_procedure
+  procedure OnClick
+    integer lhObj lhMsg
+    get p_message to lhMsg
+    get aux_value item 0 to lhObj
+    if lhObj send lhMsg to lhObj
+    else send lhMsg
+  end_procedure
+end_class
+class dnm.Multi_Button is a aps.Multi_Button
+  procedure construct_object
+    forward send construct_object
+    property integer p_message 0
+  end_procedure
+  procedure OnClick
+    integer lhObj lhMsg
+    get p_message to lhMsg
+    get aux_value item 0 to lhObj
+    if lhObj send lhMsg to lhObj
+    else send lhMsg
+  end_procedure
+end_class
+
+class dnm.virtual_field_columns is a cArray
+  item_property_list
+    item_property integer piFile.i
+    item_property integer piField.i
+  end_item_property_list dnm.virtual_field_columns
+end_class
+
+class dnm.dbForm is a aps.dbForm
+  procedure construct_object
+    forward send construct_object
+    object oVirtualFieldsColumns is a dnm.virtual_field_columns
+    end_object
+  end_procedure
+  procedure set_virtual_field_id integer liColumn integer liFile integer liField
+    set piFile.i of oVirtualFieldsColumns liColumn to liFile
+    set piField.i of oVirtualFieldsColumns liColumn to liField
+  end_procedure
+  function virtual_field_value integer liColumn returns string
+    integer liFile liField
+    get piFile.i of oVirtualFieldsColumns liColumn to liFile
+    get piField.i of oVirtualFieldsColumns liColumn to liField
+    function_return (FieldInf_FieldValue(liFile,liField))
+  end_function
+end_class
+
+class dnm.dbGrid is a aps.dbGrid
+  procedure construct_object
+    forward send construct_object
+    object oVirtualFieldsColumns is a dnm.virtual_field_columns
+    end_object
+  end_procedure
+  procedure set_virtual_field_id integer liColumn integer liFile integer liField
+    set piFile.i of oVirtualFieldsColumns liColumn to liFile
+    set piField.i of oVirtualFieldsColumns liColumn to liField
+  end_procedure
+  function virtual_field_value integer liColumn returns string
+    integer liFile liField
+    get piFile.i of oVirtualFieldsColumns liColumn to liFile
+    get piField.i of oVirtualFieldsColumns liColumn to liField
+    function_return (FieldInf_FieldValue(liFile,liField))
+  end_function
+end_class
+
+class dnm.dbList is a aps.dbList
+  procedure construct_object
+    forward send construct_object
+    object oVirtualFieldsColumns is a dnm.virtual_field_columns
+    end_object
+  end_procedure
+  procedure set_virtual_field_id integer liColumn integer liFile integer liField
+    set piFile.i of oVirtualFieldsColumns liColumn to liFile
+    set piField.i of oVirtualFieldsColumns liColumn to liField
+  end_procedure
+  function virtual_field_value integer liColumn returns string
+    integer liFile liField
+    get piFile.i of oVirtualFieldsColumns liColumn to liFile
+    get piField.i of oVirtualFieldsColumns liColumn to liField
+    function_return (FieldInf_FieldValue(liFile,liField))
+  end_function
+end_class
+
+class dynamo_message_dealer is a cStack
+  procedure deal_messages integer lhObj
+    integer liNumArg lhMsg liItem liBase liMax
+    string lsArg1 lsArg2 lsArg3 lsArg4 lsArg5
+    get item_count to liMax
+    move 0 to liBase
+    while liBase lt liMax
+      get value item liBase to lhMsg
+      get value item (liBase+1) to liNumArg
+
+      if liNumArg gt 1 get value item (liBase+2) to lsArg1
+      if liNumArg gt 2 get value item (liBase+3) to lsArg2
+      if liNumArg gt 3 get value item (liBase+4) to lsArg3
+      if liNumArg gt 4 get value item (liBase+5) to lsArg4
+      if liNumArg gt 5 get value item (liBase+6) to lsArg5
+
+      if liNumArg eq 6 send lhMsg to lhObj lsArg1 lsArg2 lsArg3 lsArg4 lsArg5
+      if liNumArg eq 5 send lhMsg to lhObj lsArg1 lsArg2 lsArg3 lsArg4
+      if liNumArg eq 4 send lhMsg to lhObj lsArg1 lsArg2 lsArg3
+      if liNumArg eq 3 send lhMsg to lhObj lsArg1 lsArg2
+      if liNumArg eq 2 send lhMsg to lhObj lsArg1
+      if liNumArg eq 1 send lhMsg to lhObj
+
+      move (liBase+liNumArg+1) to liBase
+    end
+    send delete_data
+  end_procedure
+end_class
+
+class dynamo_data_connect_settings is a cArray
+  item_property_list
+    item_property integer piFile.i
+    item_property integer piField.i
+    item_property string  psForcedLabel.i
+    item_property integer piForcedWidth.i
+  end_item_property_list dynamo_data_connect_settings
+  procedure add_data_connect_values integer liFile integer liField string lsLabel integer liWidth
+    integer liRow
+    get row_count to liRow
+    set piFile.i        liRow to liFile
+    set piField.i       liRow to liField
+    set psForcedLabel.i liRow to lsLabel
+    set piForcedWidth.i liRow to liWidth
+  end_procedure
+end_class // dynamo_data_connect_settings
+
+// Here comes the main actor for tonight: The aps_ObjectDynamo class.
+class aps_ObjectDynamo is a cStack
+  procedure construct_object
+    forward send construct_object
+    set value item class.View            to U_aps.View
+    set value item class.dbView          to U_aps.dbView
+    set value item class.ModalPanel      to U_aps.ModalPanel
+    set value item class.dbModalPanel    to U_aps.dbModalPanel
+    set value item class.Group           to U_aps.Group
+    set value item class.dbGroup         to U_aps.dbGroup
+    set value item class.Container3d     to U_aps.Container3d
+    set value item class.dbContainer3d   to U_aps.dbContainer3d
+    set value item class.TabDialog       to U_aps.TabDialog
+    set value item class.dbTabDialog     to U_aps.dbTabDialog
+    set value item class.TabPage         to U_aps.TabPage
+    set value item class.dbTabPage       to U_aps.dbTabPage
+    set value item class.RadioGroup      to U_aps.RadioGroup
+    set value item class.Form            to U_aps.Form
+    set value item class.dbForm          to U_dnm.dbForm
+    set value item class.ComboForm       to U_aps.ComboForm
+    set value item class.dbComboForm     to U_aps.dbComboForm
+    set value item class.SpinForm        to U_aps.dbSpinForm
+    set value item class.dbSpinForm      to U_aps.dbSpinForm
+    set value item class.CheckBox        to U_aps.CheckBox
+    set value item class.dbCheckBox      to U_aps.dbCheckBox
+    set value item class.Edit            to U_aps.Edit
+    set value item class.dbEdit          to U_aps.dbEdit
+    set value item class.TextBox         to U_aps.TextBox
+    set value item class.Button          to U_dnm.Button
+    set value item class.Radio           to U_aps.Radio
+    set value item class.List            to U_aps.List
+    set value item class.dbList          to U_dnm.dbList
+    set value item class.Grid            to U_aps.Grid
+    set value item class.dbGrid          to U_dnm.dbGrid
+    set value item class.Multi_Button    to U_dnm.Multi_Button
+    set value item class.BitmapContainer to U_aps.BitmapContainer
+    set value item class.ToolButton      to U_aps.ToolButton
+    set value item class.DataDictionary  to U_aps.DataDictionary
+
+    // When creating object structures we have to distinguish between
+    // containers and controls. Containers are pushed upon this stack
+    // to let the objects after it be created with the container as
+    // the parent. The property holds the value of the outmost parent:
+    property integer p_dynamo_desktop private (parent(self))
+    object container_stack is a cStack
+      send push.i (aps_ObjectDynamo.p_dynamo_desktop(self))
+    end_object
+
+    // This object marks the data aware classes that contains
+    // prototype entry objects:
+    object prototype_entry_based_array is a cArray
+      set value item class.dbList to DFTRUE
+      set value item class.dbGrid to DFTRUE
+    end_object
+
+    // If values are pushed upon this array they will be set as
+    // data_file and data_field on the item(s) of the object
+    object data_connect_array is a cStack
+    end_object
+
+    // The two objects
+    object top_code_messages is a dynamo_message_dealer
+    end_object
+    object bottom_code_messages is a dynamo_message_dealer
+    end_object
+  end_procedure
+
+  procedure set p_dynamo_desktop integer obj#
+    integer container_stack#
+    move (container_stack(self)) to container_stack#
+    send delete_data to container_stack# // Clean up previous desktop
+    send push.i to container_stack# obj#
+    set !$.p_dynamo_desktop to obj#
+  end_procedure
+
+  function p_dynamo_desktop returns integer
+    function_return (!$.p_dynamo_desktop(self))
+  end_function
+
+  function should_be_pushed integer class# returns integer
+    function_return (Cls_ClassIsContainer(class#))
+  end_function
+
+  function prototype_entry_based integer class# returns integer
+    function_return (value(prototype_entry_based_array(self),class#))
+  end_function
+
+  procedure push_object integer obj#
+    send push.i to (container_stack(self)) obj#
+  end_procedure
+
+  procedure pop_object
+    integer grb#
+    get ipop of (container_stack(self)) to grb#
+    // Make it size and locate:
+    send end_construct_object to grb# // Hold your breath!
+  end_procedure
+
+  procedure push_data_field integer liFile integer liField string lsForcedLabel integer liForcedWidth
+    integer lhDataConnect liItem liTmp
+    move (data_connect_array(self)) to lhDataConnect // procedure push_data_field
+    move (item_count(lhDataConnect)/2) to liItem
+    send push.i to lhDataConnect liFile
+    send push.i to lhDataConnect liField
+    if (num_arguments>2 and lsForcedLabel<>"") send add_bottom_message SET_Header_Label liItem lsForcedLabel
+
+    if (num_arguments>3) move liForcedWidth to liTmp
+    else move 0 to liTmp
+
+    if (liField>=256 and liTmp=0) begin
+      // If it's a virtual field, we have to calculate the default width of
+      // that field since APS is not capable of doing that:
+      move (FieldWidthMDU(liFile,liField)) to liTmp
+    end
+
+    if (liTmp<>0) send add_bottom_message SET_aps_fixed_column_width liItem liTmp
+  end_procedure
+
+  procedure push_data_fields string fields#
+    integer fld# max#
+    string str#
+    move (length(fields#)/8) to max#
+    for fld# from 0 to (max#-1)
+      move (mid(fields#,8,fld#*8+1)) to str#
+      send push_data_field (left(str#,4)) (right(str#,4))
+    loop
+  end_procedure
+
+  procedure creating_object_top_code integer object# integer class#
+    // This may be augmentet by descending classes
+  end_procedure
+  procedure creating_object_bottom_code integer object# integer class#
+    // This may be augmentet by descending classes
+  end_procedure
+
+  procedure load_filenumber_and_fieldindex integer lhDataConnect integer itm#
+    get value of lhDataConnect item (itm#*2) to filenumber
+    get value of lhDataConnect item (itm#*2+1) to fieldindex
+  end_procedure
+
+  #COMMAND DYNAMO$CREATE_ENTRY_ITEMS$HELP
+   #IF !e
+    send load_filenumber_and_fieldindex to self# lhDataConnect !f
+    if (fieldindex<256) begin // A normal field
+      entry$item indirect_file.recnum
+    end
+    else begin // A virtual field
+      send set_virtual_field_id of object# !f filenumber fieldindex
+      entry$item (virtual_field_value(self,!f))
+    end
+    #SET E$ (!e -1)
+    #SET F$ !F
+    DYNAMO$CREATE_ENTRY_ITEMS$HELP
+   #ENDIF
+  #ENDCOMMAND
+
+  #COMMAND DYNAMO$CREATE_ENTRY_ITEMS
+    if max# eq (!1 *2) begin
+      item_list
+        #PUSH !e
+        #PUSH !f
+        #SET E$ !1
+        #SET F$ 0
+        DYNAMO$CREATE_ENTRY_ITEMS$HELP
+        #POP E$
+        #POP F$
+      end_item_list
+    end
+  #ENDCOMMAND
+
+  // This procedure is rather complicated. I really could not create a
+  // dynamic number of columns. The procedure CASE's out.
+  procedure creating_object_data_connect integer object# integer class#
+    integer itm# max# lhDataConnect data_file# data_field#
+    integer prototype_entry_based# self#
+    move (data_connect_array(self)) to lhDataConnect // procedure creating_object_data_connect
+    get prototype_entry_based class# to prototype_entry_based#
+
+    get item_count of lhDataConnect to max#
+    if max# gt 40 move 40 to max# // Maximum 20 columns!
+    move 0 to itm#
+    if prototype_entry_based# begin // If dbList or dbGrid
+      #PUSH !Zb
+      #SET ZB$ -1
+      move self to self#
+      move object# to self
+//      object element is a prototype_entry 
+      object element is a CM_EntryList
+        DYNAMO$CREATE_ENTRY_ITEMS 1   // If object contains 1 column
+        DYNAMO$CREATE_ENTRY_ITEMS 2   // If object contains 2 columns
+        DYNAMO$CREATE_ENTRY_ITEMS 3   // If object contains 3 columns
+        DYNAMO$CREATE_ENTRY_ITEMS 4   // etc...
+        DYNAMO$CREATE_ENTRY_ITEMS 5
+        DYNAMO$CREATE_ENTRY_ITEMS 6
+        DYNAMO$CREATE_ENTRY_ITEMS 7
+        DYNAMO$CREATE_ENTRY_ITEMS 8
+        DYNAMO$CREATE_ENTRY_ITEMS 9
+        DYNAMO$CREATE_ENTRY_ITEMS 10
+        DYNAMO$CREATE_ENTRY_ITEMS 11
+        DYNAMO$CREATE_ENTRY_ITEMS 12
+        DYNAMO$CREATE_ENTRY_ITEMS 13
+        DYNAMO$CREATE_ENTRY_ITEMS 14
+        DYNAMO$CREATE_ENTRY_ITEMS 15
+        DYNAMO$CREATE_ENTRY_ITEMS 16
+        DYNAMO$CREATE_ENTRY_ITEMS 17
+        DYNAMO$CREATE_ENTRY_ITEMS 18
+        DYNAMO$CREATE_ENTRY_ITEMS 19
+        DYNAMO$CREATE_ENTRY_ITEMS 20  // If more than 20, they are ignored.
+
+        // "DYNAMO$CREATE_ENTRY_ITEMS 2" will expand like this:
+        // if max# eq (2*2) begin // 4 means 2!
+        //   item_list
+        //     get value of lhDataConnect item 0 to filenumber
+        //     get value of lhDataConnect item 1 to fieldindex
+        //     entry_item indirect_file.recnum
+        //     get value of lhDataConnect item 2 to filenumber
+        //     get value of lhDataConnect item 3 to fieldindex
+        //     entry_item indirect_file.recnum
+        //   end_item_list
+        // end
+
+      end_object
+      set item_limit to (item_count(element(self)))
+      set line_width to (item_count(element(self))) (displayable_rows(self))
+      set matrix_size to (item_count(element(self))) (displayable_rows(self))
+      move self# to self
+      #POP ZB$
+
+    end
+    else begin // Not prototype_entry:
+      while (itm#*2) lt max#
+        get value of lhDataConnect item (itm#*2) to data_file#
+        get value of lhDataConnect item (itm#*2+1) to data_field#
+        if max# eq 0 send bind_data to object# data_file# data_field#
+        else begin // This branch probably never gets called!
+          set data_file of object# item itm# to data_file#
+          set data_field of object# item itm# to data_field#
+        end
+        increment itm#
+      end
+    end
+    send delete_data to lhDataConnect
+  end_procedure
+
+  // This procedure creates an object nested inside the object currently
+  // on top of the container_stack.
+  function icreate_dynamo_object integer class_idx# returns integer
+    integer parent#           // Object_Id of nesting parent
+    integer container_stack#  // Stack identifier
+    integer self#             // Temporary holder of self
+    integer object#           // Object ID of the object that is created
+    integer class#            // Class ID of the object that is created
+    integer should_be_pushed# // Is the object a visual container?
+    integer p_auto_size_container_state# // For pushing
+    integer p_auto_locate_control_state# // For pushing
+    integer dm#                          // For pushing
+
+    move (container_stack(self)) to container_stack#
+
+    move (should_be_pushed(self,class_idx#)) to should_be_pushed#
+
+    // Class# is passed to this function as a pointer to the class array.
+    // Translate it to the actual class identifier:
+    get value item class_idx# to class#
+
+    get icopy of container_stack# to parent# // Get parent from stack.
+    name class# U_aps_class // Dig it again!
+
+    #PUSH !Zb   // Not sure this is needed
+    #SET ZB$ -1
+    move self to self#
+    move parent# to self
+    object dynamo_object is an aps_class
+      move self to object#
+      send creating_object_top_code     to self# object# class_idx#
+      send deal_messages to (top_code_messages(self#)) object#
+      send creating_object_data_connect to self# object# class_idx#
+      send deal_messages to (bottom_code_messages(self#)) object#
+      send creating_object_bottom_code  to self# object# class_idx#
+      // If visual container: postpone auto sizing and locating:
+      if should_be_pushed# begin
+        // If (db)View or (db)ModalPanel it does not understand the
+        // p_auto_locate_control_state. Therefore we make it quiet:
+        get delegation_mode to dm#
+        set delegation_mode to no_delegate_or_error
+        get p_auto_size_container_state to p_auto_size_container_state#
+        set p_auto_size_container_state to false
+        get p_auto_locate_control_state to p_auto_locate_control_state#
+        set p_auto_locate_control_state to false
+        set delegation_mode to dm#
+      end
+    end_object
+    #POP ZB$
+
+    move self# to self
+    if should_be_pushed# begin
+      send aps_init to object# // Undo the effect of a premature end_construct
+      get delegation_mode of object# to dm#
+      set delegation_mode of object# to no_delegate_or_error
+      set p_auto_size_container_state of object# to p_auto_size_container_state#
+      set p_auto_locate_control_state of object# to p_auto_locate_control_state#
+      set delegation_mode of object# to dm#
+      send push_object object#
+    end
+    function_return object#
+  end_function
+
+  // This procedure duplicates the function icreate_dynamo_object. Use it
+  // when the ID of the created object isn't needed.
+  procedure create_dynamo_object integer class#
+    integer grb#
+    get icreate_dynamo_object class# to grb#
+  end_procedure
+
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  //  Add top/bottom code messages
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+  procedure add_top_message integer msg# string arg1# string arg2# string arg3# string arg4# string arg5#
+    integer top_code_messages#
+    move (top_code_messages(self)) to top_code_messages#
+                          send push.i to top_code_messages# msg#
+                          send push.i to top_code_messages# num_arguments
+    if num_arguments gt 1 send push.s to top_code_messages# arg1#
+    if num_arguments gt 2 send push.s to top_code_messages# arg2#
+    if num_arguments gt 3 send push.s to top_code_messages# arg3#
+    if num_arguments gt 4 send push.s to top_code_messages# arg4#
+    if num_arguments gt 5 send push.s to top_code_messages# arg5#
+  end_procedure
+
+  procedure add_bottom_message integer msg# string arg1# string arg2# string arg3# string arg4# string arg5#
+    integer bottom_code_messages#
+    move (bottom_code_messages(self)) to bottom_code_messages#
+                          send push.i to bottom_code_messages# msg#
+                          send push.i to bottom_code_messages# num_arguments
+    if num_arguments gt 1 send push.s to bottom_code_messages# arg1#
+    if num_arguments gt 2 send push.s to bottom_code_messages# arg2#
+    if num_arguments gt 3 send push.s to bottom_code_messages# arg3#
+    if num_arguments gt 4 send push.s to bottom_code_messages# arg4#
+    if num_arguments gt 5 send push.s to bottom_code_messages# arg5#
+  end_procedure
+
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  //  Create customized DD-objects
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+  // This function creates a DSO for the file passed as an argument. If a
+  // specialized class has been registered for this file (fieldinf.pkg),
+  // that class will be instantiated, otherwise it creates a normal
+  // DataDictionary and set the main_file of that.
+  function icreate_dynamo_dso integer file# returns integer
+    integer parent# class# rval#
+    get DataDictionary_Class file# to Class#
+    if Class# begin // A class exists. We use it:
+      get icopy of (container_stack(self)) to parent# // Get parent from stack.
+      get create_object_within_parent class# parent# to rval#
+    end
+    else begin // A class did not exist. We create a DD and set main_file:
+      get icreate_dynamo_object class.DataDictionary to rval#
+      set main_file of rval# to file#
+    end
+    function_return rval#
+  end_function
+
+end_class
+

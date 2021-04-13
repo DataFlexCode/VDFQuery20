@@ -1,0 +1,876 @@
+//**********************************************************************
+// Use Files.utl    // Utilities for handling file related stuff
+//
+// By Sture Andersen
+//
+// Create: Wed  01-02-1998
+// Update: Sat  02-05-1998 - Functions SEQ_FindFileAlongPath, SEQ_FileLineCount
+//                           and SEQ_FindFileAlongDFPath added.
+//         Fri  08-05-1998 - Error in cChannelAdmin fixed. Something to do with
+//                           channel positions has changed between 3.0x and
+//                           3.1c. On_Error trick has been taken out and a
+//                           'sneak in' on the right position trick has been
+//                           introduced.
+//              09-07-1998 - Procedure SEQ_WriteRecordBuffer_LD added.
+//              14-07-1998 - Grave error fixed in SEQ_WriteRecordBuffer_LD
+//                           by Jõrgen Legin and Torsten Balslõw.
+//                         - SEQ_ReadRecordBuffer_LD added
+//              05-09-1998 - SEQ_ExtractPathFromFileName added
+//              06-09-1998 - SEQ_DfPath fixed
+//         Sun  07-02-1999 - Directory selector added. Based on work of
+//                           Dennis Piccioni and Torben Lund. Function
+//                           name is SEQ_SelectDirectory. Windows only!
+//                         - aps.SelectDirForm class added. Windows only!
+//         Fri  23-04-1999 - SEQ_DeleteFileToBin added. Based entirely on
+//                           upload from Andy Kaplan
+//                           (DAC NG user-contributed-files)
+//         Sun  02-05-1999 - Added function SEQ_FileModTime
+//         Mon  10-05-1999 - Fixes for VDF 6 (Vincent Oorsprong)
+//         Mon  30-08-1999 - Function SEQ_DirectInput and SEQ_DirectOutput added
+//         Wed  29-09-1999 - Function SEQ_SelectDirectory now converts to
+//                           OEM before returning its value.
+//         Sat  09-10-1999 - Procedures SEQ_CloseOutput, SEQ_CloseInput and
+//                           SEQ_AppendOutput added.
+//         Wed  01-12-1999 - Function SEQ_ReadLnProbe added.
+//         Sun  06-02-2000 - Save- and OpenDialogs are now created dynamically
+//                           in appropriate places
+//         Sat  11-03-2000 - Fix in SEQ_FileExists
+//         Wed  22-03-2000 - Function SEQ_FindFileAlongPath would cause an
+//                           "Access violation" if asked to locate a file
+//                           opened exclusive by an application (including the
+//                           current). Fixed.
+//         Mon  10-07-2000 - Function SEQ_FileSizeToString added
+//         Wed  01-11-2000 - Functions SEQ_EraseFile, SEQ_CopyFile and
+//                           SEQ_MoveFile added.
+//         Tue  07-11-2000 - Added function SEQ_ConvertToAbsoluteFileName
+//         Tue  02-01-2001 - Added procedures SEQ_AppendOutputImageClose and
+//                           SEQ_AppendLineClose.
+//         Thu  04-01-2001 - Added function SEQ_FindDataFileFromRootName
+//         Mon  15-04-2002 - aps.dbSelectDirForm added
+//         Mon  27-01-2003 - Function SEQ_SelectFileStartDir added
+//         Sat  06-09-2003 - Added function SEQ_ValidateFolder
+//         Thu  06-07-2006 - Fixed SEQ_SelectOutFile. It assumed work space
+//                           objects VDF 7 style.
+//
+//**********************************************************************
+use ui
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+Use Files.nui    // Utilities for handling file related stuff
+Use MsgBox.utl   // obs procedure
+Use Strings.nui  // String manipulation for VDF
+Use Dates.nui    // Date manipulation for VDF
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Version.nui
+Use Language
+
+Use wvaW32fh.pkg // Package by Wil van Antwerpen from www.vdf-guidance.com
+
+#IF LNG_DEFAULT=lng_dutch
+ #REPLACE t.files.Overwrite        "Overschrijven"
+ #REPLACE t.files.Append           "Toevoegen"
+ #REPLACE t.files.Warning          "Waarschuwing"
+ #REPLACE t.files.FileExists       "Bestandsnaam bestaat al! (#)"
+ #REPLACE t.files.SelectDrive      "Selecteer drive"
+ #REPLACE t.files.Directories      "Directories"
+ #REPLACE t.files.Files            "Bestanden"
+ #REPLACE t.files.IllegalFn        "Geen correcte bestandsnaam"
+ #REPLACE t.files.FileNotSpec      "Bestandsnaam niet ingevuld!"
+ #REPLACE t.files.StopRead         "Afbreken inlezen?"
+ #REPLACE t.files.FileNotFound     "# niet gevonden!"
+ #REPLACE t.files.SelectDir        "Selecteer directorie"
+ #REPLACE t.files.SelectFile       "Selecteer bestand"
+ #REPLACE t.files.PromptDirCreate1 "Directory bestaat niet!"                  // PvM
+ #REPLACE t.files.PromptDirCreate2 "Wilt u de directory aanmaken?"            // PvM
+ #REPLACE t.files.Error1           "Een bestand met deze naam bestaat al"     // PvM
+ #REPLACE t.files.Error2           "Directory kan niet aangemaakt worden"     // PvM
+ #REPLACE t.files.Error3           "Een directory moet aangegeven worden"     // PvM
+ #REPLACE t.files.Error5           "Pad niet gevonden"                        // PvM
+#ENDIF
+#IF LNG_DEFAULT=lng_spanish    // 03/10/2002 25/01/2004 Pepe Guimar∆es Moose Software  pg@moose-software.com
+ #REPLACE t.files.Overwrite        "Sobreescribir"
+ #REPLACE t.files.Append           "Agregar al final"
+ #REPLACE t.files.Warning          "Precauci¢n"
+ #REPLACE t.files.FileExists       "Archivo ya Existe"
+ #REPLACE t.files.SelectDrive      "Unidades"
+ #REPLACE t.files.Directories      "Directorios"
+ #REPLACE t.files.Files            "Archivos"
+ #REPLACE t.files.IllegalFn        "Nombre de Archivo no valido"
+ #REPLACE t.files.FileNotSpec      "No se especific¢ Archivo"
+ #REPLACE t.files.StopRead         "Parar lectura secuencial"
+ #REPLACE t.files.FileNotFound     "# no se encontr¢"
+ #REPLACE t.files.SelectDir        "Elegir directorio"
+ #REPLACE t.files.SelectFile       "Elegir Archivo"
+ #REPLACE t.files.PromptDirCreate1 "≠Carpeta inexistente!"
+ #REPLACE t.files.PromptDirCreate2 "®Desea crear la carpeta?"
+ #REPLACE t.files.Error1           "Ya existe un fichero con ese nombre"
+ #REPLACE t.files.Error2           "No se pudo crear carpeta"
+ #REPLACE t.files.Error3           "Tiene que especificar un nombre de carpeta"
+ #REPLACE t.files.Error5           "Ruta (path) no encontrada"
+#ENDIF
+#IF LNG_DEFAULT=lng_english
+ #REPLACE t.files.Overwrite        "Overwrite"
+ #REPLACE t.files.Append           "Append"
+ #REPLACE t.files.Warning          "Warning"
+ #REPLACE t.files.FileExists       "File name already exists! (#)"
+ #REPLACE t.files.SelectDrive      "Select drive"
+ #REPLACE t.files.Directories      "Directories"
+ #REPLACE t.files.Files            "Files"
+ #REPLACE t.files.IllegalFn        "Illegal file name"
+ #REPLACE t.files.FileNotSpec      "File name not specified!"
+ #REPLACE t.files.StopRead         "Stop sequential read?"
+ #REPLACE t.files.FileNotFound     "# not found!"
+ #REPLACE t.files.SelectDir        "Select directory"
+ #REPLACE t.files.SelectFile       "Select file"
+ #REPLACE t.files.PromptDirCreate1 "Folder does not exist!"
+ #REPLACE t.files.PromptDirCreate2 "Do you want to create the folder?"
+ #REPLACE t.files.Error1           "A file exists with the specified name"
+ #REPLACE t.files.Error2           "Folder could not be created"
+ #REPLACE t.files.Error3           "A folder name must be specified"
+ #REPLACE t.files.Error5           "Path not found"
+#ENDIF
+#IF LNG_DEFAULT=lng_danish
+ #REPLACE t.files.Overwrite        "Overskriv"
+ #REPLACE t.files.Append           "Tilfõj"
+ #REPLACE t.files.Warning          "Advarsel"
+ #REPLACE t.files.FileExists       "Filnavn eksisterer allerede! (#)"
+ #REPLACE t.files.SelectDrive      "Vëlg drev"
+ #REPLACE t.files.Directories      "Mapper"
+ #REPLACE t.files.Files            "Filer"
+ #REPLACE t.files.IllegalFn        "Illegal file name"
+ #REPLACE t.files.FileNotSpec      "Filnavn ikke specificeret!"
+ #REPLACE t.files.StopRead         "Afbryd indlësningen?"
+ #REPLACE t.files.FileNotFound     "# findes ikke!"
+ #REPLACE t.files.SelectDir        "Vëlg bibliotek"
+ #REPLACE t.files.SelectFile       "Vëlg fil"
+ #REPLACE t.files.PromptDirCreate1 "Mappen findes ikke!"
+ #REPLACE t.files.PromptDirCreate2 "Skal mappen oprettes?"
+ #REPLACE t.files.Error1           "Der findes en fil med det angivne navn"
+ #REPLACE t.files.Error2           "Mappen kunne ikke oprettes"
+ #REPLACE t.files.Error3           "Der skal angives et mappenavn"
+ #REPLACE t.files.Error5           "Sti ikke fundet"
+#ENDIF
+#IF LNG_DEFAULT=lng_swedish
+ #REPLACE t.files.Overwrite        "Skriv îver"
+ #REPLACE t.files.Append           "LÑgg till"
+ #REPLACE t.files.Warning          "Advarsel"
+ #REPLACE t.files.FileExists       "Filnavn eksisterer allerede! (#)"
+ #REPLACE t.files.SelectDrive      "Select drive"
+ #REPLACE t.files.Directories      "Directories"
+ #REPLACE t.files.Files            "Files"
+ #REPLACE t.files.IllegalFn        "Illegal file name"
+ #REPLACE t.files.FileNotSpec      "Filnamn ej angivet!"
+ #REPLACE t.files.StopRead         "Avbryt inlÑsningen?"
+ #REPLACE t.files.FileNotFound     "# finns ej!"
+ #REPLACE t.files.SelectDir        "VÑlg bibliotek"
+ #REPLACE t.files.SelectFile       "VÑlg fil"
+ #REPLACE t.files.PromptDirCreate1 "Folder does not exist!"
+ #REPLACE t.files.PromptDirCreate2 "Do you want to create the folder?"
+ #REPLACE t.files.Error1           "A file exists with the specified name"
+ #REPLACE t.files.Error2           "Folder could not be created"
+ #REPLACE t.files.Error3           "A folder name must be specified"
+ #REPLACE t.files.Error5           "Path not found"
+#ENDIF
+#IF LNG_DEFAULT=lng_norwegian   // 22.04.1999 torkild.resheim@emmaedb.no
+ #REPLACE t.files.Overwrite        "Overskriv"
+ #REPLACE t.files.Append           "Tilfõy"
+ #REPLACE t.files.Warning          "Advarsel"
+ #REPLACE t.files.FileExists       "Filnavn eksisterer allerede! (#)"
+ #REPLACE t.files.SelectDrive      "Velg drev"
+ #REPLACE t.files.Directories      "Kataloger"
+ #REPLACE t.files.Files            "Filer"
+ #REPLACE t.files.IllegalFn        "Ulovlig filnavn"
+ #REPLACE t.files.FileNotSpec      "Filnavn ikke spesifisert!"
+ #REPLACE t.files.StopRead         "Avbryt innlesningen?"
+ #REPLACE t.files.FileNotFound     "# finnes ikke!"
+ #REPLACE t.files.SelectDir        "Velg katalog"
+ #REPLACE t.files.SelectFile       "Velg fil"
+ #REPLACE t.files.PromptDirCreate1 "Folder does not exist!"
+ #REPLACE t.files.PromptDirCreate2 "Do you want to create the folder?"
+ #REPLACE t.files.Error1           "A file exists with the specified name"
+ #REPLACE t.files.Error2           "Folder could not be created"
+ #REPLACE t.files.Error3           "A folder name must be specified"
+ #REPLACE t.files.Error5           "Path not found"
+#ENDIF
+#IF LNG_DEFAULT=lng_german
+ #REPLACE t.files.Overwrite        "öberschreiben"
+ #REPLACE t.files.Append           "AnhÑngen"
+ #REPLACE t.files.Warning          "Warnung"
+ #REPLACE t.files.FileExists       "Bestand existiert bereits! (#)"
+ #REPLACE t.files.SelectDrive      "Laufwerk auswÑhlen"
+ #REPLACE t.files.Directories      "Ordner"
+ #REPLACE t.files.Files            "Dateien"
+ #REPLACE t.files.IllegalFn        "UngÅltiger Dateiname"
+ #REPLACE t.files.FileNotSpec      "Kein Dateiname angegeben!"
+ #REPLACE t.files.StopRead         "Sequentielles Lesen abbrechen?"
+ #REPLACE t.files.FileNotFound     "# nicht gefunden!"
+ #REPLACE t.files.SelectDir        "Auswahl Ordner"
+ #REPLACE t.files.SelectFile       "Auswahl Datei"
+ #REPLACE t.files.PromptDirCreate1 "Folder does not exist!"
+ #REPLACE t.files.PromptDirCreate2 "Do you want to create the folder?"
+ #REPLACE t.files.Error1           "A file exists with the specified name"
+ #REPLACE t.files.Error2           "Folder could not be created"
+ #REPLACE t.files.Error3           "A folder name must be specified"
+ #REPLACE t.files.Error5           "Path not found"
+#ENDIF
+#IF LNG_DEFAULT=lng_portuguese  // by Claudio Rossoni (SP-Brasil)
+ #REPLACE t.files.Overwrite        "Regravar"
+ #REPLACE t.files.Append           "Acrescentar"
+ #REPLACE t.files.Warning          "Atená∆o"
+ #REPLACE t.files.FileExists       "Nome de arquivo j† existe! (#)"
+ #REPLACE t.files.SelectDrive      "Selecione o drive"
+ #REPLACE t.files.Directories      "Diret¢rios"
+ #REPLACE t.files.Files            "Arquivos"
+ #REPLACE t.files.IllegalFn        "Nome de arquivo inv†lido"
+ #REPLACE t.files.FileNotSpec      "Nome do arquivo n∆o especificado!"
+ #REPLACE t.files.StopRead         "Parar a leitura sequencial?"
+ #REPLACE t.files.FileNotFound     "# n∆o encontrado!"
+ #REPLACE t.files.SelectDir        "Selecione o diret¢rio"
+ #REPLACE t.files.SelectFile       "Selecione o arquivo"
+ #REPLACE t.files.PromptDirCreate1 "Folder does not exist!"
+ #REPLACE t.files.PromptDirCreate2 "Do you want to create the folder?"
+ #REPLACE t.files.Error1           "A file exists with the specified name"
+ #REPLACE t.files.Error2           "Folder could not be created"
+ #REPLACE t.files.Error3           "A folder name must be specified"
+ #REPLACE t.files.Error5           "Path not found"
+#ENDIF
+#If LNG_DEFAULT=lng_french
+ #Replace t.files.Overwrite        "Remplace"
+ #Replace t.files.Append           "Ajoute"
+ #Replace t.files.Warning          "Attention"
+ #Replace t.files.FileExists       "Le fichier existe dÇjÖ ! (#)"
+ #Replace t.files.SelectDrive      "SÇlection du disque"
+ #Replace t.files.Directories      "RÇpertoires"
+ #Replace t.files.Files            "Fichiers"
+ #Replace t.files.IllegalFn        "Nom de fichier incorrect"
+ #Replace t.files.FileNotSpec      "Nom de fichier manquant!"
+ #Replace t.files.StopRead         "Arràt de la lecture?"
+ #Replace t.files.FileNotFound     "# non trouvÇ!"
+ #Replace t.files.SelectDir        "SÇlection du rÇpertoire"
+ #Replace t.files.SelectFile       "SÇlection du fichier"
+ #REPLACE t.files.PromptDirCreate1 "Folder does not exist!"
+ #REPLACE t.files.PromptDirCreate2 "Do you want to create the folder?"
+ #REPLACE t.files.Error1           "A file exists with the specified name"
+ #REPLACE t.files.Error2           "Folder could not be created"
+ #REPLACE t.files.Error3           "A folder name must be specified"
+ #REPLACE t.files.Error5           "Path not found"
+#ENDIF
+#IF LNG_DEFAULT=lng_italian	// by Paolo Zanni (Italia)
+ #REPLACE t.files.Overwrite   	"Sovrascrive"
+ #REPLACE t.files.Append      	"Aggiunge"
+ #REPLACE t.files.Warning     	"Attenzione"
+ #REPLACE t.files.FileExists  	"Il File esiste gia'! (#)"
+ #REPLACE t.files.SelectDrive 	"Seleziona Drive"
+ #REPLACE t.files.Directories 	"Directory"
+ #REPLACE t.files.Files       	"File"
+ #REPLACE t.files.IllegalFn   	"Nome File non valido"
+ #REPLACE t.files.FileNotSpec  	"Nome File mancante!"
+ #REPLACE t.files.StopRead     	"Stop sequential read?"
+ #REPLACE t.files.FileNotFound 	"# non trovato!"
+ #REPLACE t.files.SelectDir    	"Seleziona directory"
+ #REPLACE t.files.SelectFile   	"Seleziona file"
+ #REPLACE t.files.PromptDirCreate1 "La cartella non esiste!"
+ #REPLACE t.files.PromptDirCreate2 "Vuoi creare la cartella?"
+ #REPLACE t.files.Error1           "File gia' esistente con questo nome"
+ #REPLACE t.files.Error2           "La cartella non puÚ essere creata"
+ #REPLACE t.files.Error3           "Indicare il nome della cartella"
+ #REPLACE t.files.Error5           "Percorso non trovato"
+#ENDIF
+
+Use File_Dlg   // DAC package
+integer oSEQ_OpenFlDlg# oSEQ_SaveFlDlg#
+//  move 0 to oSEQ_OpenFlDlg#
+//  move 0 to oSEQ_SaveFlDlg#
+//  class cSEQ_OpenFlDlg is a OpenDialog
+//    procedure construct_object
+//      forward send construct_object
+//      set NoChangeDir_State to true
+//      set HideReadOnly_State To True
+//      move self to oSEQ_OpenFlDlg#
+//    end_procedure
+//  end_class
+//  class cSEQ_SaveFlDlg is a SaveAsDialog
+//    procedure construct_object
+//      forward send construct_object
+//      set NoChangeDir_State to true
+//      set HideReadOnly_State To True
+//      move self to oSEQ_SaveFlDlg#
+//    end_procedure
+//    procedure set Dialog_Caption string lsCaption
+//      forward set Dialog_Caption to lsCaption
+//    end_procedure
+//  end_class
+//
+//  procedure SEQ_Prepare_OpenDialog global
+//    integer parent# self#
+//    move (focus(desktop)) to parent#
+//    ifnot parent# move desktop to parent#
+//    if oSEQ_OpenFlDlg# send destroy to oSEQ_OpenFlDlg#
+//    move self to self#
+//    move parent# to self
+//    object oSEQ_OpenFlDlg is a cSEQ_OpenFlDlg
+//    end_object
+//    move self# to self
+//  end_procedure
+//
+//  procedure SEQ_Prepare_SaveDialog global
+//    integer parent# self#
+//    move (focus(desktop)) to parent#
+//    ifnot parent# move desktop to parent#
+//    if oSEQ_SaveFlDlg# send destroy to oSEQ_SaveFlDlg#
+//    move self to self#
+//    move parent# to self
+//    object oSEQ_SaveFlDlg is a cSEQ_SaveFlDlg
+//    end_object
+//    move self# to self
+//  end_procedure
+
+object oSEQ_OpenFlDlg is a OpenDialog
+  move self to oSEQ_OpenFlDlg#
+end_object
+object oSEQ_SaveFlDlg is a SaveAsDialog
+  move self to oSEQ_SaveFlDlg#
+end_object
+
+procedure SEQ_Prepare_OpenDialog global
+  set NoChangeDir_State of oSEQ_OpenFlDlg# to True
+  set HideReadOnly_State of oSEQ_OpenFlDlg# To True
+end_procedure
+
+procedure SEQ_Prepare_SaveDialog global
+  set NoChangeDir_State of oSEQ_SaveFlDlg# to True
+  set HideReadOnly_State of oSEQ_SaveFlDlg# To True
+end_procedure
+
+//declare C structure struct_browseinfo
+//as documented in MSDN under Windows Shell API
+Type tFilesBrowseInfo
+  Field tFilesBrowseInfo.hWndOwner      as handle
+  Field tFilesBrowseInfo.pIDLRoot       as Pointer
+  Field tFilesBrowseInfo.pszDisplayName as Pointer
+  Field tFilesBrowseInfo.lpszTitle      as Pointer
+  Field tFilesBrowseInfo.ulFlags        as dWord
+  Field tFilesBrowseInfo.lpfnCallback   as Pointer
+  Field tFilesBrowseInfo.lParam         as dWord
+  Field tFilesBrowseInfo.iImage         as dWord
+End_Type  // tFilesBrowseInfo
+
+External_Function FilesSHBrowseForFolder   "SHBrowseForFolder"   shell32.dll pointer lpdWordx returns dWord
+External_Function FilesSHGetPathFromIDList "SHGetPathFromIDList" shell32.dll pointer pidList pointer lpBuffer returns dWord
+External_Function FilesCoTaskMemFree       "CoTaskMemFree"       ole32.dll   pointer pv returns Integer
+
+// If function ConvertChar is not already defined we define it here:
+#IFDEF get_ConvertChar
+#ELSE
+ Function ConvertChar Global integer bToAnsi String sString Returns String
+   Pointer psString
+   integer iVoid bIsCString
+   Move (ascii(Right(sString,1))=0) to bIsCString
+   If Not bISCString Append sString (character(0))
+   GetAddress Of sString To psString
+   if bToAnsi Move (OEMToANSI(psString,psString)) To iVoid
+   else       Move (ANSItoOEM(psString,psString)) To iVoid
+   Function_Return (if(bIsCString, sString, cstring(sString)))
+ End_Function
+#ENDIF
+
+// returns folder name if a folder was selected, otherwise returns ""
+function SEQ_SelectDirectory global string lsCaption returns string
+  string sFolder sBrowseInfo sTitle sRval
+  pointer lpItemIdList lpsFolder lpsBrowseInfo lpsTitle
+  integer iFolderSelected iObj iRetval
+
+  // fill string variable with null characters
+  ZeroType tFilesBrowseInfo to sBrowseInfo
+
+  if (lsCaption<>"") begin
+    move (ConvertChar(1,lsCaption)) to sTitle // toAnsi
+    GetAddress of sTitle to lpsTitle
+    put lpsTitle to sBrowseInfo at tFilesBrowseInfo.lpszTitle
+  end
+
+  put (window_handle(focus(desktop))) to sBrowseInfo at tFilesBrowseInfo.hWndOwner
+
+  GetAddress of sBrowseInfo to lpsBrowseInfo
+
+  // null 128 chars into var (make space)
+  move (repeat(character(0), 128)) to sFolder
+  GetAddress of sFolder to lpsFolder
+
+  // select folder
+  move (FilesSHBrowseForFolder(lpsBrowseInfo)) to lpItemIdList
+  // get selected folder name
+  move (FilesSHGetPathFromIDList(lpItemIdList, lpsFolder)) to iFolderSelected
+
+  // free memory and IDL
+  Move (FilesCoTaskMemFree(lpItemIdList)) To iRetval
+
+  if (iFolderSelected<>0) move (CString(sFolder)) to sRval
+  else move "" to sRval
+  function_return (ConvertChar(0,sRval))
+End_Function  // GetSelectFolder
+
+class aps.SelectDirForm is a aps.Form
+  procedure construct_object
+    forward send construct_object
+    property string pSelectDialogCaption t.files.SelectDir
+    set form_button item 0 to 1           // Manually add a prompt button
+    set form_button_value item 0 to "..." //              "
+    on_key kprompt send prompt
+  end_procedure
+  procedure OnDirectorySelected
+  end_procedure
+  Procedure Prompt
+    string sDir
+    move (SEQ_SelectDirectory(pSelectDialogCaption(self))) to sDir
+    if sDir ne "" begin
+      set Value item 0 to sDir
+      send OnDirectorySelected
+    end
+  End_Procedure
+  procedure form_button_notification integer itm#
+    send prompt
+  end_procedure
+end_class
+class aps.dbSelectDirForm is a aps.dbForm
+  procedure construct_object
+    forward send construct_object
+    property string pSelectDialogCaption t.files.SelectDir
+//   set form_button item 0 to 1           // Manually add a prompt button
+//   set form_button_value item 0 to "..." //              "
+    set prompt_button_mode to PB_PromptOn
+    on_key kprompt send prompt
+  end_procedure
+  procedure OnDirectorySelected
+  end_procedure
+  Procedure Prompt
+    string sDir
+    move (SEQ_SelectDirectory(pSelectDialogCaption(self))) to sDir
+    if sDir ne "" begin
+      set changed_value item 0 to sDir
+      send OnDirectorySelected
+    end
+  End_Procedure
+  procedure form_button_notification integer itm#
+    send prompt
+  end_procedure
+end_class
+class aps.SelectFileForm is a aps.Form
+  procedure construct_object
+    forward send construct_object
+    property string psFileMask ""
+    property string pSelectDialogCaption t.files.SelectFile
+    set form_button item 0 to 1           // Manually add a prompt button
+    set form_button_value item 0 to "..." //              "
+    on_key kprompt send prompt
+  end_procedure
+  Procedure Prompt
+    string fn#
+    get SEQ_SelectInFile (pSelectDialogCaption(self)) (psFileMask(self)) to fn#
+    if fn# ne ""  set Value item 0 to fn#
+  End_Procedure
+  procedure form_button_notification integer itm#
+    send prompt
+  end_procedure
+end_class
+
+function SEQ_SelectOutFile global string lsCaption string filter# returns string
+  string fn#
+  send SEQ_Prepare_SaveDialog
+  #IFDEF ghoWorkSpace // If VDF5 and using workspaces
+   If (ghoWorkSpace AND NoChangeDir_State(oSEQ_SaveFlDlg#) AND Initial_Folder(oSEQ_SaveFlDlg#)='') ; // if workspace exists
+       Set Initial_Folder of oSEQ_SaveFlDlg# to (psDataPath(phoWorkspace(ghoApplication)))
+       //Set Initial_Folder of oSEQ_SaveFlDlg# to (CurrentDataPath(ghoWorkSpace))
+   Else Set Initial_Folder of oSEQ_SaveFlDlg# to ''
+  #ENDIF
+  set NoChangeDir_State of oSEQ_SaveFlDlg# to True
+  set Dialog_Caption of oSEQ_SaveFlDlg# to lsCaption
+  set Filter_String of oSEQ_SaveFlDlg# to filter#
+  if (Show_Dialog(oSEQ_SaveFlDlg#)) move (File_Name(oSEQ_SaveFlDlg#)) to fn#
+  else move "" to fn#
+  function_return fn#
+end_function
+
+// Example of filter# values for VDF program:   "Text files|*.txt|XML files|*.xml|All files|*.*"
+
+function SEQ_SelectOutFileStartDir global string lsCaption string filter# string lsStartDir returns string
+  string fn#
+  send SEQ_Prepare_SaveDialog
+  set Initial_Folder of oSEQ_SaveFlDlg# to lsStartDir
+  set NoChangeDir_State of oSEQ_SaveFlDlg# to True
+  set Dialog_Caption of oSEQ_SaveFlDlg# to lsCaption
+  set Filter_String of oSEQ_SaveFlDlg# to filter#
+  if (Show_Dialog(oSEQ_SaveFlDlg#)) move (File_Name(oSEQ_SaveFlDlg#)) to fn#
+  else move "" to fn#
+  function_return fn#
+end_function
+
+function SEQ_SelectInFile global string lsCaption string filter# returns string
+  string fn#
+  send SEQ_Prepare_OpenDialog
+  #IFDEF ghoWorkSpace // If VDF5+6+7 (not 8) and using workspaces
+    Set Initial_Folder of oSEQ_OpenFlDlg# to ''
+  #ENDIF
+  set NoChangeDir_State of oSEQ_OpenFlDlg# to True
+  set Dialog_Caption of oSEQ_OpenFlDlg# to lsCaption
+  set Filter_String of oSEQ_OpenFlDlg# to filter#
+  if (Show_Dialog(oSEQ_OpenFlDlg#)) move (File_Name(oSEQ_OpenFlDlg#)) to fn#
+  else move "" to fn#
+  function_return fn#
+end_function
+
+function SEQ_SelectFile global string lsCaption string filter# returns string
+  function_return (SEQ_SelectInFile(lsCaption,filter#))
+end_function
+
+function SEQ_SelectFileStartDir global string lsCaption string filter# string dir# returns string
+  string fn#
+  send SEQ_Prepare_OpenDialog
+  set Initial_Folder of oSEQ_OpenFlDlg# to dir#
+  set NoChangeDir_State of oSEQ_OpenFlDlg# to True //False
+  set Dialog_Caption of oSEQ_OpenFlDlg# to lsCaption
+  set Filter_String of oSEQ_OpenFlDlg# to filter#
+  if (Show_Dialog(oSEQ_OpenFlDlg#)) move (File_Name(oSEQ_OpenFlDlg#)) to fn#
+  else move "" to fn#
+  function_return fn#
+end_function
+
+//[found ~found] begin
+//  files$nothing: return
+//end
+
+use APS.pkg
+use Wait.utl
+object oFn_Exists is a aps.ModalPanel label t.files.Warning
+  on_key kCancel send fn_cancel
+  property integer pResult 0
+  object oMsg is a aps.TextBox
+    set p_fixed_width to 240
+    set justification_mode to (JMODE_CENTER+JMODE_WRAP+JMODE_VCENTER)
+  end_object
+  procedure fn_Append
+    set pResult to 1
+    send close_panel
+  end_procedure
+  procedure fn_OverWr
+    set pResult to 2
+    send close_panel
+  end_procedure
+  procedure fn_Cancel
+    set pResult to 3
+    send close_panel
+  end_procedure
+  object oBtn_Over is a aps.Multi_Button
+    on_item t.files.Overwrite send fn_overwr
+  end_object
+  object oBtn_Append is a aps.Multi_Button
+    on_item t.files.Append send fn_append
+  end_object
+  object oBtn_Cancel is a aps.Multi_Button
+    on_item t.btn.cancel send fn_cancel
+  end_object
+  send aps_locate_multi_buttons
+  function iRun.si string file_name# integer allow_append# returns integer
+    integer rval#
+    //set shadow_state of (Btn(self)) item 1 to (not(allow_append#))
+    set value of (oMsg(self)) to (replace("#",t.files.FileExists,file_name#))
+    send popup
+    get pResult to rval#
+    if rval# eq 3 move 0 to rval#
+    function_return rval#
+  end_function
+end_object
+
+//         Return value: 0=cancel, 1=append, 2=overwrite
+function SEQ_Filename_Exists_Action global string file_name# integer allow_append# returns integer
+  function_return (iRun.si(oFn_Exists(self),file_name#,allow_append#))
+end_function
+
+procedure SEQ_WriteGridItems global integer ch# integer obj#
+  integer itm# max# shadow# checkbox# select# aux# msg#
+  get item_count of obj# to max#
+  writeln channel ch# max#
+  for itm# from 0 to (max#-1)
+    writeln (value(obj#,itm#))
+    get checkbox_item_state of obj# item itm# to checkbox#
+    get select_state        of obj# item itm# to select#
+    get item_shadow_state  of obj# item itm# to shadow#
+    get aux_value of obj# item itm# to aux#
+    get message of obj# item itm# to msg#
+    writeln checkbox#
+    writeln select#
+    writeln shadow#
+    writeln aux#
+    writeln msg#
+  loop
+end_procedure
+
+procedure SEQ_ReadGridItems global integer ch# integer obj#
+  integer itm# max# shadow# checkbox# select# aux# msg#
+  string value#
+  send delete_data to obj#
+  readln channel ch# max#
+  for itm# from 0 to (max#-1)
+    readln value#
+    readln checkbox#
+    readln select#
+    readln shadow#
+    readln aux#
+    readln msg#
+    send add_item to obj# msg# value#
+    set checkbox_item_state of obj# item itm# to checkbox#
+    set select_state        of obj# item itm# to select#
+    set item_shadow_state of obj# item itm# to shadow#
+    set aux_value of obj# item itm# to aux#
+  loop
+  set dynamic_update_state of obj# to true
+end_procedure
+
+define xFO_MOVE               for |CI$0001
+define xFO_COPY               for |CI$0002
+define xFO_DELETE             for |CI$0003
+define xFO_RENAME             for |CI$0004
+
+define xFOF_MULTIDESTFILES    for |CI$0001
+define xFOF_CONFIRMMOUSE      for |CI$0002
+define xFOF_SILENT            for |CI$0004  // don't create progress/report
+define xFOF_RENAMEONCOLLISION for |CI$0008
+define xFOF_NOCONFIRMATION    for |CI$0010  // Don't prompt the user.
+define xFOF_WANTMAPPINGHANDLE for |CI$0020  // Fill in SHFILEOPSTRUCT.hNameMappings
+                                           // Must be freed using SHFreeNameMappings
+define xFOF_ALLOWUNDO         for |CI$0040
+define xFOF_FILESONLY         for |CI$0080  // on *.*, do only files
+define xFOF_SIMPLEPROGRESS    for |CI$0100  // means don't show names of files
+define xFOF_NOCONFIRMMKDIR    for |CI$0200  // don't confirm making any needed dirs
+
+Type tFILES_SHFILEOPSTRUCT
+  Field files_hWnd                   as Handle
+  Field files_wFunc                  as Integer
+  Field files_pFrom                  as Pointer
+  Field files_pTo                    as Pointer
+  Field files_fFlags                 as Short
+  Field files_fAnyOperationsAborted  as Short
+  Field files_hNameMappings          as Pointer
+  Field files_lpszProgressTitle      as Pointer // only used if xFOF_SIMPLEPROGRESS
+End_Type
+
+External_Function FILES_SHFileOperation "SHFileOperationA" Shell32.dll ;
+        pointer lpFileOp returns integer
+
+procedure SEQ_DeleteFileToBin global string fn#
+  string  strFileOpt
+  Pointer lpFileOpt lpFileName
+  ZeroType tFILES_SHFILEOPSTRUCT to strFileOpt
+  Put xFO_DELETE to strFileOpt at files_wFunc
+  GetAddress of fn# to lpFileName
+  Put lpFileName to strFileOpt at files_pFrom
+  Put (xFOF_SILENT ior xFOF_NOCONFIRMATION ior xFOF_ALLOWUNDO) to strFileOpt at files_fFlags
+  GetAddress of strFileOpt to lpFileOpt
+  Move (FILES_SHFileOperation(lpFileOpt)) to strmark
+end_procedure
+
+class cSEQ_FileReader is a TS_TimeEstimator
+  procedure construct_object integer img#
+    forward send construct_object img#
+
+    property integer pReadCount      0  // record counter (lines or records)
+    property string  pFileName       "" // name of input file
+    property integer pChannel        0  // input channel
+    property integer pPrevPos        0  // last record was read starting
+                                               // in this channel position
+    property integer pRejectRecord   0  //
+
+    property date    pReadDate       0  // Date and time of read
+    property string  pReadTime       "" // initialization
+
+    property integer pOkToCancel     1  // Ok to interrupt?
+    property string  pCancelQuestion t.files.StopRead
+
+    property integer piInterrupted   0
+  end_procedure
+
+  procedure display_init
+  end_procedure
+  procedure display_update
+  end_procedure
+
+  function iPreconditions_Direct_Input returns integer
+    integer fn_ok# file_size# ch# itm#
+    string fn#
+
+    get pChannel to ch#
+    get pFileName to fn#
+    trim fn# to fn#
+    if fn# eq "" send obs t.files.FileNotSpec
+    direct_input channel ch# fn#
+    [ SeqEof] move 0 to fn_ok#
+    [~SeqEof] move 1 to fn_ok#
+    close_input
+    ifnot fn_ok# begin
+      send obs (replace("#",t.files.FileNotFound,fn#))
+      function_return 0
+    end
+    else begin
+      append_output channel ch# fn#
+      get_channel_position ch# to file_size#
+      set piMin to 0
+      set piMax to file_size#
+      close_output channel ch#
+    end
+
+    set piInterrupted to 0
+    function_return 1
+  end_function
+
+  function iDirect_Input returns integer
+    integer ch#
+    string fn#
+    if (iPreconditions_Direct_Input(self)) begin
+      send display_init
+      get pChannel to ch#
+      get pFileName to fn#
+      direct_input channel ch# fn#
+      set pReadCount to 0 // initialize counter
+      set pReadDate to (dSysDate())
+      set pReadTime to (sSysTime())
+      set pPrevPos to 0
+      function_return 1
+    end
+    function_return 0
+  end_function
+
+  procedure read_reset
+    set_channel_position (pChannel(self)) to (pPrevPos(self))
+  end_procedure
+
+  procedure read_header returns integer // augment this
+    procedure_return 0
+  end_procedure
+
+  procedure read_one returns integer // augment this
+    procedure_return 1
+  end_procedure
+
+  function iUserInterrupt returns integer
+  end_function
+
+  procedure roll_back // augment this to undo the effect
+  end_procedure       // of a interrupted read
+
+  procedure read_begin
+  end_procedure
+  procedure read_end
+  end_procedure
+
+  procedure run string fn#
+    integer finish# ch# PrevPos#
+    if Num_Arguments gt 0 set pFileName to fn#
+    if (iDirect_Input(self)) begin
+      get pChannel to ch#
+      send read_begin
+      get msg_read_header to finish#
+      ifnot finish# begin
+        repeat
+          set pRejectRecord to false
+          get msg_read_one to finish#
+          ifnot finish# begin
+            get_channel_position ch# to PrevPos#
+            set pPrevPos to PrevPos#
+            set pReadCount to (pReadCount(self)+1)
+            send display_update
+          end
+          if (iUserInterrupt(self)) move 1 to finish# // keypress
+          if (piInterrupted(self))  move 1 to finish# // program interrupt
+        until finish#
+      end
+      close_input channel ch#
+      send read_end
+      if (piInterrupted(self)) send roll_back
+    end
+  end_procedure
+end_class // cSEQ_FileReader
+
+define xMAX_PATH for 200
+External_function Files_GetWindowsDirectory "GetWindowsDirectoryA" kernel32.dll Pointer lpBuffer Integer nSize returns integer
+function SEQ_WindowsDirectory global returns string
+  string sVal
+  integer iGrb
+  pointer pVal
+  ZeroString xMAX_PATH to sVal
+  GetAddress of sVal to pVal
+  move (Files_GetWindowsDirectory(pVal, xMAX_PATH)) to iGrb
+ function_return sVal
+end_function
+
+enumeration_list
+  define VALIDFOLDER_CREATE_FALSE
+  define VALIDFOLDER_CREATE_PROMPT
+  define VALIDFOLDER_CREATE_QUIET
+end_enumeration_list
+enumeration_list
+  define VALIDFOLDER_EXISTS                // The folder exists
+  define VALIDFOLDER_NAME_IS_FILE          // The specified name points to a file
+  define VALIDFOLDER_CREATION_FAILED       // Folder could not be created
+  define VALIDFOLDER_NO_FOLDER_SPECIFIED   // Folder not specified
+  define VALIDFOLDER_USER_CANCEL           // User cancelled directory create
+  define VALIDFOLDER_PARENT_PATH_NOT_FOUND // Path to parent folder not found
+  define VALIDFOLDER_PATH_NOT_FOUND        // Path to parent folder not found
+end_enumeration_list
+
+function SEQ_ValidateFolder_ErrorText global integer liError returns string
+  if (liError=VALIDFOLDER_EXISTS)                function_return ""
+  if (liError=VALIDFOLDER_NAME_IS_FILE)          function_return t.files.Error1
+  if (liError=VALIDFOLDER_CREATION_FAILED)       function_return t.files.Error2
+  if (liError=VALIDFOLDER_NO_FOLDER_SPECIFIED)   function_return t.files.Error3
+  if (liError=VALIDFOLDER_PATH_NOT_FOUND)        function_return t.files.Error5
+  if (liError=VALIDFOLDER_PARENT_PATH_NOT_FOUND) function_return t.files.Error5
+end_function
+
+function SEQ_ValidateFolder global string lsFolder integer liAllowCreate integer lbNoErrorMsg returns integer
+  integer liError liExists lbCreate liGarbage
+  string lsParentFolder lsError
+  move (trim(lsFolder)) to lsFolder
+  if (lsFolder="") move VALIDFOLDER_NO_FOLDER_SPECIFIED to liError // Error: No folder specified
+  else begin
+    if (length(lsFolder)>1 and right(lsFolder,2)=(":"+sysconf(SYSCONF_DIR_SEPARATOR))) ;
+                                               move (StringLeftBut(lsFolder,1)) to lsFolder
+    get SEQ_FileExists lsFolder to liExists
+    if (liExists=SEQIT_FILE) move VALIDFOLDER_NAME_IS_FILE to liError // Error: it's a file
+    else begin
+      if (liExists=SEQIT_DIRECTORY) move VALIDFOLDER_EXISTS to liError // All is well!
+      else begin
+        if (liAllowCreate<>VALIDFOLDER_CREATE_FALSE) begin
+          get SEQ_ExtractPathFromFileName lsFolder to lsParentFolder
+          get SEQ_FileExists lsParentFolder to liExists // Does parent folder exist?
+          if (liExists=SEQIT_DIRECTORY) begin
+            if (liAllowCreate=VALIDFOLDER_CREATE_PROMPT) get MB_Verify4 t.files.PromptDirCreate1 ("("+lsFolder+")") t.files.PromptDirCreate2 "" 1 to lbCreate
+            else move 1 to lbCreate
+            if lbCreate begin
+              get wvaWin32_CreateDirectory (ToAnsi(lsFolder)) to liGarbage
+              get SEQ_FileExists lsFolder to liExists // Does the folder exist now?
+              if (liExists=SEQIT_DIRECTORY) move VALIDFOLDER_EXISTS to liError
+              else move VALIDFOLDER_CREATION_FAILED to liError
+            end
+            else move VALIDFOLDER_USER_CANCEL to liError
+          end
+          else move VALIDFOLDER_PARENT_PATH_NOT_FOUND to liError
+        end
+        else move VALIDFOLDER_PATH_NOT_FOUND to liError
+      end
+    end
+  end
+  ifnot lbNoErrorMsg begin
+    get SEQ_ValidateFolder_ErrorText liError to lsError
+    if (liError=VALIDFOLDER_NAME_IS_FILE)          send obs lsError lsFolder
+    if (liError=VALIDFOLDER_CREATION_FAILED)       send obs lsError lsFolder
+    if (liError=VALIDFOLDER_NO_FOLDER_SPECIFIED)   send obs lsError
+    if (liError=VALIDFOLDER_PARENT_PATH_NOT_FOUND) send obs lsError lsParentFolder
+    if (liError=VALIDFOLDER_PATH_NOT_FOUND)        send obs lsError lsFolder
+  end
+  function_return liError
+end_function // SEQ_ValidateFolder
+
+

@@ -1,0 +1,331 @@
+// Use FdxSet.pkg   // cFdxSetOfFieldsList class
+Use Strings.nui  // String manipulation for VDF
+Use GridUtil.utl // Grid and List utilities
+Use FdxField.nui // FDX Field things
+Use FdxIndex.utl // Index analysing functions
+
+class cFdxSetOfTablesList is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piFDX_Server 0
+    property integer piSOT_Server 0 // SOF = SetOfTables
+    set line_width to 4 0
+    send GridPrepare_AddColumn "#"            AFT_ASCII4
+    send GridPrepare_AddColumn "Display name" AFT_ASCII40
+    send GridPrepare_AddColumn "DF name"      AFT_ASCII10
+    send GridPrepare_AddColumn "Root name"    AFT_ASCII32
+    send GridPrepare_Apply self
+    set select_mode to NO_SELECT
+    on_key KNEXT_ITEM send switch
+    on_key KPREVIOUS_ITEM send switch_back
+    on_key KENTER send next
+    on_key KDELETE_RECORD send delete_table
+    property integer piAllowDelete dfFalse
+    on_key KEY_CTRL+KEY_R send sort_data
+    on_key KEY_CTRL+KEY_W send DoWriteToFile
+  end_procedure
+
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+
+  function iSpecialSortValueOnColumn.i integer column# returns integer
+    if column# eq 0 function_Return 1
+  end_function
+
+  function sSortValue.ii integer column# integer itm# returns string
+    if column# eq 0 function_return (IntToStrR(value(self,itm#),4))
+  end_function
+
+  procedure sort_data.i integer column#
+    send Grid_SortByColumn self column#
+  end_procedure
+
+  procedure sort_data
+    integer cc#
+    get Grid_CurrentColumn self to cc#
+    send sort_data.i cc#
+  end_procedure
+  procedure header_mouse_click integer itm#
+    send sort_data.i itm#
+    forward send header_mouse_click itm#
+  end_procedure
+  function iNumberOfFiles returns integer
+    function_return (iNumberOfFiles(piSOT_Server(self)))
+  end_function
+  procedure delete_table
+    integer base# file# field# row# oSOF#
+    if (piAllowDelete(self) and item_count(self)) begin
+      get Grid_BaseItem self to base#
+      get aux_value item base# to file#
+      get value item (base#+1) to field#
+      get piSOT_Server to oSOF#
+      get iFindItem.ii of oSOF# file# field# to row#
+      if row# ne -1 send delete_row to oSOF# row#
+      get Grid_CurrentRow self to row#
+      send Grid_DeleteRow self row#
+      send update_display_counter (iNumberOfFiles(self))
+    end
+  end_procedure
+  procedure fill_list.i integer oSOT#
+    integer file# itm# max# oFDX#
+    set dynamic_update_state to DFFALSE
+    send delete_data
+    set piSOT_Server to oSOT#
+    get piFDX_Server of oSOT# to oFDX#
+    set piFDX_Server to oFDX#
+    get row_count of oSOT# to max#
+    for itm# from 0 to (max#-1)
+      get piFile.i of oSOT# item itm# to file#
+      send add_item msg_none (string(file#))
+      send add_item msg_none (FDX_AttrValue_FILELIST(oFDX#,DF_FILE_DISPLAY_NAME,file#))
+      send add_item msg_none (FDX_AttrValue_FILELIST(oFDX#,DF_FILE_LOGICAL_NAME,file#))
+      send add_item msg_none (FDX_AttrValue_FILELIST(oFDX#,DF_FILE_ROOT_NAME,file#))
+    loop
+    send Grid_SetEntryState self DFFALSE
+    send update_display_counter (iNumberOfFiles(self))
+    set dynamic_update_state to DFTRUE
+  end_procedure
+  procedure fill_list.ii integer oSOT# integer oFDX#
+    set piFDX_Server of oSOT# to oFDX#
+    send fill_list.i oSOT#
+  end_procedure
+  procedure update_display_counter integer files#
+  end_procedure
+end_class // cFdxSetOfTablesList
+
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+class cFdxSetOfFieldsList is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piFDX_Server 0
+    property integer piSOF_Server 0 // SOF = SetOfFields
+    property integer piAllowDelete dfFalse
+    set line_width to 8 0
+
+    send GridPrepare_AddColumn "Table"    AFT_ASCII10
+    send GridPrepare_AddColumn "#"        AFT_ASCII2
+    send GridPrepare_AddColumn "Name"     AFT_ASCII15
+    send GridPrepare_AddColumn "Type"     AFT_ASCII4
+    send GridPrepare_AddColumn "Len"      AFT_ASCII5
+    send GridPrepare_AddColumn "Offset"   AFT_ASCII5
+    send GridPrepare_AddColumn "Idx"      AFT_ASCII3
+    send GridPrepare_AddColumn "Relation" AFT_ASCII30
+    send GridPrepare_Apply self
+    set select_mode to NO_SELECT
+    on_key knext_item send switch
+    on_key kprevious_item send switch_back
+    on_key kenter send next
+    on_key kdelete_record send delete_field
+    on_key key_ctrl+key_r send sort_data
+    on_key key_ctrl+key_w send DoWriteToFile
+  end_procedure
+
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+
+  function iSpecialSortValueOnColumn.i integer liColumn returns integer
+    if liColumn eq 1 function_Return 1
+    if liColumn eq 4 function_Return 1
+    if liColumn eq 5 function_Return 1
+    if liColumn eq 6 function_Return 1
+  end_function
+
+  function sSortValue.ii integer liColumn integer liItem returns string
+    string lsValue lsSep
+    if liColumn eq 1 function_return (IntToStrR(value(self,liItem),4))
+    if liColumn eq 4 begin
+      get value item liItem to lsValue
+      get CurrentDecimalSeparator to lsSep
+      replace "." in lsValue with lsSep
+      replace "," in lsValue with lsSep
+      function_return (NumToStrR(lsValue,2,8))
+    end
+    if liColumn eq 5 function_return (IntToStrR(value(self,liItem),5))
+    if liColumn eq 6 function_return (IntToStrR(value(self,liItem),2))
+  end_function
+
+  procedure sort_data.i integer liColumn
+    send Grid_SortByColumn self liColumn
+  end_procedure
+
+  procedure sort_data
+    integer liColumn
+    get Grid_CurrentColumn self to liColumn
+    send sort_data.i liColumn
+  end_procedure
+
+  procedure header_mouse_click integer liItem
+    send sort_data.i liItem
+    forward send header_mouse_click liItem
+  end_procedure
+
+  function sRelFieldName.ii integer liFile integer liField returns string
+    integer lhFDX
+    get piFDX_Server to lhFDX
+    function_return (FDX_FieldName(lhFDX,liFile,liField,1))
+  end_function
+  function iNumberOfFiles returns integer
+    function_return (iNumberOfFiles(piSOF_Server(self)))
+  end_function
+  function iNumberOfFields returns integer
+    function_return (row_count(piSOF_Server(self)))
+  end_function
+  procedure delete_field
+    integer liBase liFile liField liRow lhSOF
+    if (piAllowDelete(self) and item_count(self)) begin
+      get Grid_BaseItem self to liBase
+      get aux_value item liBase to liFile
+      get value item (liBase+1) to liField
+      get piSOF_Server to lhSOF
+      get iFindItem.ii of lhSOF liFile liField to liRow
+      if liRow ne -1 send delete_row to lhSOF liRow
+      get Grid_CurrentRow self to liRow
+      send Grid_DeleteRow self liRow
+      send update_display_counter (iNumberOfFiles(self)) (iNumberOfFields(self))
+    end
+  end_procedure
+  procedure fill_list.i integer lhSOF
+    integer lhFDX liRow liMax liFile liField liType liLen liDec liIdx
+    set dynamic_update_state to DFFALSE
+    send delete_data
+    set piSOF_Server to lhSOF
+    get piFDX_Server of lhSOF to lhFDX
+    set piFDX_Server to lhFDX
+    get row_count of lhSOF to liMax
+    for liRow from 0 to (liMax-1)
+      get piFile.i  of lhSOF liRow to liFile
+      get piItem.i of lhSOF liRow to liField
+      send add_item msg_none (FDX_AttrValue_FILELIST(lhFDX,DF_FILE_LOGICAL_NAME,liFile))
+      set aux_value item (item_count(self)-1) to liFile
+      send add_item msg_none (string(liField))
+      send add_item msg_none (FDX_AttrValue_FIELD(lhFDX,DF_FIELD_NAME,liFile,liField))
+
+      move (FDX_AttrValue_FIELD(lhFDX,DF_FIELD_TYPE,liFile,liField)) to liType
+      send add_item msg_none (API_ShortFieldTypeName(liType))
+      move (FDX_AttrValue_FIELD(lhFDX,DF_FIELD_LENGTH,liFile,liField)) to liLen
+      if liType eq DF_BCD begin
+        move (FDX_AttrValue_FIELD(lhFDX,DF_FIELD_PRECISION,liFile,liField)) to liDec
+        send add_item msg_none (string(liLen-liDec)+"."+string(liDec))
+      end
+      else send add_item msg_none (string(liLen))
+      send add_item msg_none (FDX_AttrValue_FIELD(lhFDX,DF_FIELD_OFFSET,liFile,liField))
+      move (FDX_AttrValue_FIELD(lhFDX,DF_FIELD_INDEX,liFile,liField)) to liIdx
+      if liIdx send add_item msg_none (string(liIdx))
+      else    send add_item msg_none ""
+      send add_item msg_none (sRelFieldName.ii(self,FDX_AttrValue_FIELD(lhFDX,DF_FIELD_RELATED_FILE,liFile,liField),FDX_AttrValue_FIELD(lhFDX,DF_FIELD_RELATED_FIELD,liFile,liField)))
+    loop
+    send Grid_SetEntryState self false
+    send update_display_counter (iNumberOfFiles(self)) (iNumberOfFields(self))
+    set dynamic_update_state to DFTRUE
+  end_procedure
+  procedure update_display_counter integer liFiles integer liFields
+  end_procedure
+  function row_file.i integer liRow returns integer
+    integer liBase
+    if (item_count(self)) begin
+      get Grid_RowBaseItem self liRow to liBase
+      function_return (aux_value(self,liBase))
+    end
+    // function_return 0
+  end_function
+  function row_field.i integer liRow returns integer
+    integer liBase
+    if (item_count(self)) begin
+      get Grid_RowBaseItem self liRow to liBase
+      function_return (value(self,liBase+1))
+    end
+    // function_return 0
+  end_function
+  function row_field_name.i integer liRow returns string
+    integer liBase
+    if (item_count(self)) begin
+      get Grid_RowBaseItem self liRow to liBase
+      function_return (value(self,liBase+2))
+    end
+    function_return ""
+  end_function
+end_class // cFdxSetOfFieldsList
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+class cFdxSetOfIndicesList is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piFDX_Server 0
+    property integer piSOF_Server 0 // SOF = SetOfIndices
+    set line_width to 3 0
+    send GridPrepare_AddColumn "Table"  AFT_ASCII10
+    send GridPrepare_AddColumn "Idx"    AFT_ASCII3
+    send GridPrepare_AddColumn "Fields" AFT_ASCII50
+    send GridPrepare_Apply self
+    set select_mode to NO_SELECT
+    on_key knext_item send switch
+    on_key kprevious_item send switch_back
+    on_key kenter send next
+    on_key kdelete_record send delete_index
+    on_key key_ctrl+key_w send DoWriteToFile
+    property integer piAllowDelete dfFalse
+  end_procedure
+
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+
+  function iNumberOfFiles returns integer
+    function_return (iNumberOfFiles(piSOF_Server(self)))
+  end_function
+  function iNumberOfIndices returns integer
+    function_return (row_count(piSOF_Server(self)))
+  end_function
+  procedure delete_index
+    integer base# file# index# row# oSOF#
+    if (piAllowDelete(self) and item_count(self)) begin
+      get Grid_BaseItem self to base#
+      get aux_value item base# to file#
+      get value item (base#+1) to index#
+      get piSOF_Server to oSOF#
+      get iFindItem.ii of oSOF# file# index# to row#
+      if row# ne -1 send delete_row to oSOF# row#
+      get Grid_CurrentRow self to row#
+      send Grid_DeleteRow self row#
+      send update_display_counter (iNumberOfFiles(self)) (iNumberOfIndices(self))
+    end
+  end_procedure
+  procedure fill_list.i integer oSOF#
+    integer oFDX# row# max# file# index# type# len# dec# idx# itm# itm_max#
+    string IdxAsStr# lf#
+    set dynamic_update_state to DFFALSE
+    send delete_data
+    move (character(10)) to lf#
+    set piSOF_Server to oSOF#
+    get piFDX_Server of oSOF# to oFDX#
+    set piFDX_Server to oFDX#
+    get row_count of oSOF# to max#
+    for row# from 0 to (max#-1)
+      get piFile.i of oSOF# row# to file#
+      get piItem.i of oSOF# row# to index#
+      send add_item msg_none (FDX_AttrValue_FILELIST(oFDX#,DF_FILE_LOGICAL_NAME,file#))
+      set aux_value item (item_count(self)-1) to file#
+      send add_item msg_none (string(index#))
+      move (FDX_IndexAsFieldNames(oFDX#,file#,index#,50)) to IdxAsStr#
+      move (HowManyWords(IdxAsStr#,lf#)) to itm_max#
+      for itm# from 1 to itm_max#
+        if itm# eq 1 send add_item msg_none (ExtractWord(IdxAsStr#,lf#,itm#))
+        else begin
+          send add_item msg_none ""
+          set aux_value item (item_count(self)-1) to file#
+          send add_item msg_none ""
+          send add_item msg_none (ExtractWord(IdxAsStr#,lf#,itm#))
+        end
+      loop
+    loop
+    send Grid_SetEntryState self false
+    send update_display_counter (iNumberOfFiles(self)) (iNumberOfIndices(self))
+    set dynamic_update_state to DFTRUE
+  end_procedure
+  procedure update_display_counter integer files# integer Indices#
+  end_procedure
+end_class // cFdxSetOfIndicesList
+

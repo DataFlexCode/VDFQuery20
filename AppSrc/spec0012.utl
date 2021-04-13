@@ -1,0 +1,15 @@
+// Use Spec0012.utl // Read image to string (sTextDfFromImage function)
+
+Use Files.nui    // Utilities for handling file related stuff
+
+function sTextFromDfImage global integer iImg returns string
+  function_return (SEQ_TextFromSeqInput("image:"+string(iImg)))
+end_function
+function sTextFromFile global string sFile returns string
+  function_return (SEQ_TextFromSeqInput(sFile))
+end_function
+function sTextFromDfField global integer iFile integer iField returns string
+  // I have no idea whether this will work
+  function_return (SEQ_TextFromSeqInput("dbms:"+string(iFile)+" "+string(iField)))
+end_function
+

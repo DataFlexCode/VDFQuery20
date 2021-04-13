@@ -1,0 +1,321 @@
+// Use dbd.pkg // Database Documentation, Ability to create tables and control a cDBD_System object
+
+Use DBD.nui       // cDBD_System, cDBD_TableAccess and cDBD_Updater classes
+Use FTSData.nui   // cFTS_TableAccess class.
+Use TblCreate.pkg // cTableCreator class
+Use FList.nui     // A lot of FLIST- procedures and functions
+
+object oDBD_TablePrefix is a aps.ModalPanel label "Create DBD tables" // "Root name prefix"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult DFFALSE
+  object oFrm is a aps.Form abstract AFT_ASCII2 label "Root name prefix (enter two letters)"
+    set enabled_state to false
+  end_object
+  function iValidateValue returns integer
+    integer liRval
+    string lsValue
+    move 1 to liRval
+    get value of oFrm item 0 to lsValue
+    move (trim(lowercase(lsValue))) to lsValue
+    set value of oFrm item 0 to lsValue
+    ifnot (length(lsValue)=2) move 0 to liRval
+    ifnot ("abcdefghijklmnopqrstuvwxyz" contains left(lsValue,1)) move 0 to liRval
+    ifnot ("abcdefghijklmnopqrstuvwxyz0123456789" contains right(lsValue,1)) move 0 to liRval
+    ifnot liRval error 534 "Value must be two letters!"
+    function_return liRval
+  end_function
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    if (iValidateValue(self)) begin
+      set piResult to DFTRUE
+      send close_panel
+    end
+  end_procedure
+  function sPopup.s string lsValue returns string
+    set piResult to DFFALSE
+    set value of oFrm item 0 to lsValue
+    send popup
+    if (piResult(self)) function_return (value(oFrm(self),0))
+    function_return ""
+  end_procedure
+end_object // oDBD_TablePrefix
+
+object oDBD_TableDefinitions is a cArray
+
+  object oTable_System is a cTableCreator
+    set pbUpdateFilelist to true
+    procedure OnDefine
+      set piMaxRecords to 1
+      send DoAddField "NAME"               DF_ASCII    50
+      send DoAddField "DESCRIPTION"        DF_TEXT  12288
+      send DoAddField "PREV_UPD_METHOD"    DF_BCD       2 // 0=Current DB, 1=XML, 2=FDX
+      send DoAddField "PREV_UPD_FILE"      DF_ASCII   255
+      send DoAddField "PREV_VDFQ_OUT"      DF_ASCII   255
+      send DoAddField "PREV_XML_OUT"       DF_ASCII   255
+      send DoAddField "DEF_LAST_UPD_DT"    DF_DATE      0 // Date and time, when the DB's were last updated
+      send DoAddField "DEF_LAST_UPD_TM"    DF_ASCII     8 //
+    end_procedure
+  end_object
+
+  object oTable_Table is a cTableCreator
+    set pbUpdateFilelist to true
+    procedure OnDefine
+      set piMaxRecords to 10000
+      send DoAddField "TBL_ID"             DF_BCD       6 //  1
+      send DoAddField "TBL_NAME"           DF_ASCII    40 //  2
+      send DoAddField "TBL_LOGIC_NAME"     DF_ASCII    12 //  3
+      send DoAddField "TBL_PHYSIC_NAME"    DF_ASCII    80 //  4
+      send DoAddField "TBL_NOT_FOUND"      DF_BCD       2 //  5
+      send DoAddField "TBL_OPENAS_PATH"    DF_ASCII   255 //  6
+      send DoAddField "TBL_DESCRIPTION"    DF_TEXT  12288 //  7
+      send DoAddField "TBL_OBSOLETE"       DF_BCD       2 //  8
+      send DoAddField "CRE_DATE"           DF_DATE      0 //
+      send DoAddField "CRE_TIME"           DF_ASCII     5 //
+      send DoAddField "CRE_USER"           DF_ASCII    30 //
+      send DoAddField "REV_DATE"           DF_DATE      0 //
+      send DoAddField "REV_TIME"           DF_ASCII     5 //
+      send DoAddField "REV_USER"           DF_ASCII    30 //
+      send DoAddOnlineIndex 1 "tbl_id"
+      send DoAddOnlineIndex 2 "TBL_PHYSIC_NAME recnum" // Uppercase = Ignore case
+    end_procedure
+  end_object
+
+  object oTable_Field is a cTableCreator
+    set pbUpdateFilelist to true
+    procedure OnDefine
+      set piMaxRecords to 100000
+      send DoAddField "TBL_ID"             DF_BCD       6 //  1
+      send DoAddField "FLD_POS"            DF_BCD       4 //  2
+      send DoAddField "FLD_NAME"           DF_ASCII    15 //  3
+      send DoAddField "FLD_NOT_FOUND"      DF_BCD       2 //  4
+      send DoAddField "FLD_DESCRIPTION"    DF_TEXT  12288 //  5
+      send DoAddField "SUGGESTED_LABEL"    DF_ASCII    20 //  6
+      send DoAddField "FLD_DEFINITION"     DF_ASCII    20 //  7
+      send DoAddField "FLD_OBSOLETE"       DF_BCD       2 //  8
+      send DoAddField "FLD_CALCULATED"     DF_BCD       2 //  9
+      send DoAddField "FLD_CREATE_DATE"    DF_DATE      0 // 10
+      send DoAddField "FLD_CREATE_TIME"    DF_ASCII     8 // 11
+      send DoAddField "FLD_EDIT_DATE"      DF_DATE      0 // 12
+      send DoAddField "FLD_EDIT_TIME"      DF_ASCII     8 // 13
+      send DoAddField "CRE_DATE"           DF_DATE      0 //
+      send DoAddField "CRE_TIME"           DF_ASCII     5 //
+      send DoAddField "CRE_USER"           DF_ASCII    30 //
+      send DoAddField "REV_DATE"           DF_DATE      0 //
+      send DoAddField "REV_TIME"           DF_ASCII     5 //
+      send DoAddField "REV_USER"           DF_ASCII    30 //
+      send DoAddOnlineIndex 1 "tbl_id FLD_NAME"
+      send DoAddOnlineIndex 2 "tbl_id fld_not_found fld_pos recnum"
+    end_procedure
+  end_object
+
+  object oTable_Index is a cTableCreator
+    set pbUpdateFilelist to true
+    procedure OnDefine
+      set piMaxRecords to 10000
+      send DoAddField "TBL_ID"             DF_BCD       6
+      send DoAddField "IDX_POS"            DF_BCD       2
+      send DoAddField "IDX_NAME"           DF_ASCII    35
+      send DoAddField "IDX_DESCRIPTION"    DF_TEXT  12288
+      send DoAddField "IDX_NOT_FOUND"      DF_BCD       2
+      send DoAddField "CRE_DATE"           DF_DATE      0 //
+      send DoAddField "CRE_TIME"           DF_ASCII     5 //
+      send DoAddField "CRE_USER"           DF_ASCII    30 //
+      send DoAddField "REV_DATE"           DF_DATE      0 //
+      send DoAddField "REV_TIME"           DF_ASCII     5 //
+      send DoAddField "REV_USER"           DF_ASCII    30 //
+      send DoAddOnlineIndex 1 "tbl_id idx_pos"
+    end_procedure
+  end_object
+
+  procedure DoCreateTables integer lhTableAccess
+    integer liFile lhAppDbTable lbSuccess
+    string lsRoot lsLogical lsDisplay
+
+    get piFile.i        of lhTableAccess DBDTABLE_SYSTEM to liFile
+    get psRootname.i    of lhTableAccess DBDTABLE_SYSTEM to lsRoot
+    get psLogicalName.i of lhTableAccess DBDTABLE_SYSTEM to lsLogical
+    get psUserName.i    of lhTableAccess DBDTABLE_SYSTEM to lsDisplay
+    set FileListValues of oTable_System to liFile lsRoot lsLogical lsDisplay
+    send DoDefine of oTable_System
+    send CreateTable of oTable_System
+
+    get piFile.i        of lhTableAccess DBDTABLE_TABLE to liFile
+    get psRootname.i    of lhTableAccess DBDTABLE_TABLE to lsRoot
+    get psLogicalName.i of lhTableAccess DBDTABLE_TABLE to lsLogical
+    get psUserName.i    of lhTableAccess DBDTABLE_TABLE to lsDisplay
+    set FileListValues of oTable_Table to liFile lsRoot lsLogical lsDisplay
+    send DoDefine of oTable_Table
+    send CreateTable of oTable_Table
+
+    get piFile.i        of lhTableAccess DBDTABLE_FIELD to liFile
+    get psRootname.i    of lhTableAccess DBDTABLE_FIELD to lsRoot
+    get psLogicalName.i of lhTableAccess DBDTABLE_FIELD to lsLogical
+    get psUserName.i    of lhTableAccess DBDTABLE_FIELD to lsDisplay
+    set FileListValues of oTable_Field to liFile lsRoot lsLogical lsDisplay
+    send DoDefine of oTable_Field
+    send CreateTable of oTable_Field
+
+    get piFile.i        of lhTableAccess DBDTABLE_INDEX to liFile
+    get psRootname.i    of lhTableAccess DBDTABLE_INDEX to lsRoot
+    get psLogicalName.i of lhTableAccess DBDTABLE_INDEX to lsLogical
+    get psUserName.i    of lhTableAccess DBDTABLE_INDEX to lsDisplay
+    set FileListValues of oTable_Index to liFile lsRoot lsLogical lsDisplay
+    send DoDefine of oTable_Index
+    send CreateTable of oTable_Index
+  end_procedure
+end_object // oDBD_TableDefinitions
+
+procedure DBD_CreateTables global integer lhTableAccess
+  send DoCreateTables of oDBD_TableDefinitions lhTableAccess
+end_procedure
+
+
+object oDBDControlPanel is a aps.ModalPanel label "DBD - Control Panel"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key KCANCEL send close_panel
+  property integer phDbdSystem
+  property integer pbNewTablesSelected
+
+  procedure Write_XML_Output
+    string lsFileName lsDataPath
+    get psDataPath of (phoWorkspace(ghoApplication)) to lsDataPath
+    //get CurrentDataPath of ghoWorkSpace to lsDataPath // VDF 7
+    get SEQ_SelectOutFileStartDir "Select XML output filename" "XML files|*.xml|All files|*.*" lsDataPath to lsFileName
+    if (lsFileName<>"") send DoProcess_FileName of dbDocBPOXML_Write lsFileName (phDbdSystem(self))
+  end_procedure
+
+  procedure Read_XML_Input
+    string lsFileName lsDataPath
+    get psDataPath of (phoWorkspace(ghoApplication)) to lsDataPath
+    //get CurrentDataPath of ghoWorkSpace to lsDataPath // VDF 7
+    get SEQ_SelectFileStartDir "Select XML input filename" "XML filer|*.xml|Alle filer|*.*" lsDataPath to lsFileName
+    if (lsFileName<>"") send DoProcess_FileName of dbDocBPOXML_Read lsFileName (phDbdSystem(self))
+  end_procedure
+
+  procedure UpdateDefinitions
+    integer lhUpdater
+    move (phTableUpdater(phDbdSystem(self))) to lhUpdater
+    send DoUpdateDatabase of lhUpdater
+  end_procedure
+
+  procedure DoZeroData
+    integer lhTableAccess
+    string lsTableFn lsFieldFn lsIndexFn
+
+    move (phTableAccessObject(integer(phDbdSystem(self)))) to lhTableAccess
+
+    get DBMS_TablePath (piFile.i(lhTableAccess,DBDTABLE_TABLE)) to lsTableFn
+    get DBMS_TablePath (piFile.i(lhTableAccess,DBDTABLE_FIELD)) to lsFieldFn
+    get DBMS_TablePath (piFile.i(lhTableAccess,DBDTABLE_INDEX)) to lsIndexFn
+
+    if (MB_Verify4("Delete ALL descriptions of your database from the tables below?",lsTableFn,lsFieldFn,lsIndexFn,0)) begin
+      move (phTableAccessObject(phDbdSystem(self))) to lhTableAccess
+      if (DoZerofileAllTables(lhTableAccess)) send obs "Data in tables have been deleted" //send request_clear_all
+    end
+  end_procedure
+  procedure UpdateFDX
+    send obs "Not implemented yet!"
+  end_procedure
+
+  procedure CreateNewTables
+    string lsPrefix lsOldPrefix
+    integer lhTableAccess lbSuccess
+    integer liBaseFile // this one is used to figure out file numbers were changed as a result of calling this procedure
+
+    move (phTableAccessObject(phDbdSystem(self))) to lhTableAccess
+    get psRootNamePrefix of lhTableAccess to lsOldPrefix
+    get sPopup.s of oDBD_TablePrefix lsOldPrefix to lsPrefix
+
+    get piFile.i of lhTableAccess DBDTABLE_SYSTEM to liBaseFile
+
+    if (lsPrefix<>"") begin
+      set psRootNamePrefix of lhTableAccess to lsPrefix
+      send DoCloseTables of lhTableAccess
+      get DoOpenTables of lhTableAccess to lbSuccess
+      ifnot lbSuccess begin
+        if (MB_Verify4("Tables not found!","Do you want to create","a new set of tables?","(with prefix: "+lsPrefix+")",0)) begin
+          send DBD_CreateTables lhTableAccess
+          send DoCloseTables of lhTableAccess
+          get DoOpenTables of lhTableAccess to lbSuccess
+          ifnot lbSuccess send obs "The program was not able to create a new set of tables."
+        end
+        ifnot lbSuccess begin // OK! We try to open the previous ones
+          set psRootNamePrefix of lhTableAccess to lsPrefix
+          get DoOpenTables of lhTableAccess to lbSuccess
+          ifnot lbSuccess begin
+            send obs "The program failed re-open the previous set of tables." "The program will now terminate!"
+            system
+          end
+        end
+      end
+      set pbNewTablesSelected to (liBaseFile<>piFile.i(lhTableAccess,DBDTABLE_SYSTEM))
+      send close_panel
+    end
+  end_procedure
+  procedure DoRelocateFilelistEntries
+
+  end_procedure
+//object oBtn1 is a aps.Button
+//  set size to 16 200
+//  on_item "Open new set of tables" send CreateNewTables
+//end_object
+//object oBtn2 is a aps.Button // snap SL_DOWN
+//  set size to 16 200
+//  on_item "Update tables according to current DB" send UpdateDefinitions
+//end_object
+//object oBtn3 is a aps.Button snap SL_DOWN
+//  set size to 16 200
+//  on_item "Update tables according to FDX file" send UpdateFDX
+//end_object
+  object oBtn4 is a aps.Button // snap SL_DOWN
+    set size to 16 200
+    on_item "Delete all data in the description tables!" send DoZeroData
+  end_object
+  object oBtn5 is a aps.Button snap SL_DOWN
+    set size to 16 200
+    on_item "Export DB descriptions to XML" send Write_XML_Output
+  end_object
+  object oBtn6 is a aps.Button snap SL_DOWN
+    set size to 16 200
+    on_item "Import DB descriptions from XML" send Read_XML_Input
+  end_object
+  object oBtn7 is a aps.Button snap SL_DOWN
+    set size to 16 200
+    on_item "Relocate filelist entries" send DoRelocateFilelistEntries
+  end_object
+  send aps_goto_max_row
+  send aps_make_row_space 10
+  object oBtnCancel is a aps.Button
+    set size to 16 200
+    on_item "Cancel" send close_panel
+  end_object
+end_object // oDBDControlPanel
+
+procedure Popup_DbdCreateTablesPanel integer lhDbdSystem
+  set pbNewTablesSelected of oDBDControlPanel to false
+  set phDbdSystem of oDBDControlPanel to lhDbdSystem
+  send CreateNewTables of oDBDControlPanel
+end_function
+
+procedure Popup_DbdControlPanel integer lhDbdSystem
+  set pbNewTablesSelected of oDBDControlPanel to false
+  set phDbdSystem of oDBDControlPanel to lhDbdSystem
+  send popup to oDBDControlPanel
+end_procedure
+
+function DbdControl_NewTablesSelected global returns integer
+  function_return (pbNewTablesSelected(oDBDControlPanel(self)))
+end_function
+
+procedure DbdControl_ReadDatabaseDefinitions integer lhDbdSystem
+  set phDbdSystem of oDBDControlPanel to lhDbdSystem
+  send UpdateDefinitions to oDBDControlPanel
+end_procedure

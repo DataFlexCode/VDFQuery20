@@ -1,0 +1,389 @@
+// Use Compare.nui  // Abstract class for comparing item based information
+// From the VDFQuery download by Sture ApS
+
+//> pkgdoc.begin
+//> Class for comparing item based information. This class may be used when you have random access to
+//> the data that you want to compare (ie. when the data resides in arrays).
+//> pkgdoc.end
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+
+// ===========================================================================
+//    cItemBasedCompare class
+// ===========================================================================
+
+define COMPARE_ORDERED   for 0 // Formerly: COMPARE_SYNCHRONIZED
+define COMPARE_UNORDERED for 1 // Formerly: COMPARE_SINGLE_SEQUENTIAL
+
+
+class cItemBasedCompare is an cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+
+    //> Setting piStrategy to COMPARE_UNORDERED will perform the comparison
+    //> assuming no particular ordering sequence of the items to be compared. Could be
+    //> used for creating any kind of map for matching for example field names in a
+    //> table with column names in a CSV file.
+    //>
+    //> On the other hand, setting piStrategy to COMPARE_ORDERED will assume that the
+    //> items are to occur in identical order on the two sides. Using this strategy you will
+    //> not be able to detect if entries have been switched. It could be used for comparing
+    //> two text files (if loaded into arrays).
+    property integer piStrategy  COMPARE_ORDERED
+
+    //> This property defines how how far the object will search
+    //> in order to re-syncronize.
+    //> Setting it to 0 (its default value) means there is no limit.
+    property integer piSyncLimit 0 // 0 means no limit
+
+    property integer pItemStart1 0 //> Lowest index on the primary side.
+    property integer pItemStop1  0 //> Highest index on the primary side.
+    property integer pItemStart2 0 //> Lowest index on the secondary side.
+    property integer pItemStop2  0 //> Highest index on the secondary side.
+  end_procedure
+  //> Return TRUE if the items match. Must be augmented.
+  function iCompareItems.ii integer itm1# integer itm2# returns integer
+  end_function
+  //> This is sent when items are found to be identical. Should be augmented.
+  procedure items_matched integer itm1# integer itm2#
+  end_procedure
+  //> This is sent when an item cannot be matched.
+  //> Means itm# on the left side couldn't be matched. The info parameter
+  //> gives a little extra information.
+  //>    -2: The item is missing in the end of the sequence
+  //>    -1: Sync limit exceeded. Missing somewhere in the middle of things.
+  //>   >=0: Missing from the right side at position info#
+  //> Should be augmented.
+  procedure item_not_matched1 integer itm# integer info#
+  end_procedure
+  //> This is sent when an item cannot be matched
+  //> Means itm# on the right side couldn't be matched. The info parameter
+  //> gives a little extra information.
+  //>    -2: The item is missing in the end of the sequence
+  //>    -1: Sync limit exceeded. Missing somewhere in the middle of things.
+  //>   >=0: Missing from the left side at position info#
+  //> Should be augmented.
+  procedure item_not_matched2 integer itm# integer info#
+  end_procedure
+  // This algorithm will not be able to detect if entries have been switched. It could be used
+  // for comparing two text files.
+  procedure run_synchronized
+    integer current1# current2#
+    integer stop1# stop2#
+    integer tmp_offset# fin# SyncLimit# itm#
+    get pItemStart1 to current1#  // Give us where to start and where to
+    get pItemStart2 to current2#  // stop on left and right side.
+    get pItemStop1 to stop1#      //
+    get pItemStop2 to stop2#      //
+    get piSyncLimit to SyncLimit# // Is there a limit
+    repeat
+      ifnot (current1#>stop1# or current2#>stop2#) begin // There are still items to compare
+        if (iCompareItems.ii(self,current1#,current2#)) begin // And the next ones in line do match
+          send items_matched current1# current2#
+          increment current1#
+          increment current2#
+        end
+        else begin // Didn't match
+          move 1 to tmp_offset#
+          move 0 to fin#
+          repeat
+            if ((current2#+tmp_offset#<=stop2#) and iCompareItems.ii(self,current1#,current2#+tmp_offset#)) begin
+              for itm# from current2# to (current2#+tmp_offset#-1)
+                send item_not_matched2 itm# current1#
+              loop
+              send items_matched current1# (current2#+tmp_offset#)
+              increment current1#
+              move (current2#+tmp_offset#+1) to current2#
+              move 1 to fin#
+            end
+            else begin
+              if ((current1#+tmp_offset#<=stop1#) and iCompareItems.ii(self,current1#+tmp_offset#,current2#)) begin
+                for itm# from current1# to (current1#+tmp_offset#-1)
+                  send item_not_matched1 itm# current2#
+                loop
+                send items_matched (current1#+tmp_offset#) current2#
+                move (current1#+tmp_offset#+1) to current1#
+                increment current2#
+                move 1 to fin#
+              end
+            end
+            ifnot fin# begin
+              increment tmp_offset#
+              if ((SyncLimit# and (tmp_offset#>SyncLimit#)) or (((current1#+tmp_offset#)>stop1#) and ((current2#+tmp_offset#)>stop2#))) begin
+                // Either sync-limit has been broken, or incrementing the
+                // tmp_offset# variable means that we are about to break the
+                // the stop item limit on one of the sides.
+                // NOTE! It is very important that the two next messages are sent
+                // in this order (first 2 then 1):
+                send item_not_matched2 current2# -1 // means: missing in the middle
+                send item_not_matched1 current1# -1 // means: missing in the middle
+                increment current1#
+                increment current2#
+                move 1 to fin#
+              end
+            end
+          until fin#
+        end
+      end
+    until (current1#>stop1# or current2#>stop2#)
+    for itm# from current1# to stop1#
+      send item_not_matched1 itm# -2 // means: missing in the end
+    loop
+    for itm# from current2# to stop2#
+      send item_not_matched2 itm# -2 // means: missing in the end
+    loop
+  end_procedure
+
+            procedure private.register_matched integer itm#
+              set value item itm# to 1
+            end_procedure
+            function private.is_matched integer itm# returns integer
+              function_return (value(self,itm#))
+            end_function
+
+  // This one assumes no particular sequence of items in either of the objects
+  // to be compared. Could be used for creating any kind of map for matching
+  // for example field names in a table with column names in a CSV file.
+  procedure run_single_sequential
+    integer current1# current2#
+    integer start1# start2#
+    integer stop1# stop2#
+    integer matched#
+    get pItemStart1 to start1#
+    get pItemStart2 to start2#
+    get pItemStop1 to stop1#
+    get pItemStop2 to stop2#
+    send delete_data
+    for current1# from start1# to stop1#
+      move start2# to current2#
+      move 0 to matched#
+      repeat
+        if (not(private.is_matched(self,current2#)) and iCompareItems.ii(self,current1#,current2#)) begin
+          send private.register_matched current2#
+          send items_matched current1# current2#
+          move 1 to matched#
+        end
+        else increment current2#
+      until (matched# or current2#>stop2#)
+      ifnot matched# send item_not_matched1 current1#
+    loop
+    for current2# from start2# to stop2#
+      ifnot (private.is_matched(self,current2#)) send item_not_matched2 current2#
+    loop
+  end_procedure
+  procedure run
+    integer liStrategy
+    get piStrategy to liStrategy
+    if liStrategy eq COMPARE_ORDERED      send run_synchronized
+    if liStrategy eq COMPARE_UNORDERED send run_single_sequential
+  end_procedure
+end_class // cItemBasedCompare
+
+//> Class for comparing sorted data that are not item based. Values are not
+//> retrieved by item numbers but rather by specifying how to get this next value
+//> ("find ge" on one side and "readln" on the other for example)
+//>
+//> Using this class you indicate the ordering of values (like: this value is
+//> >=, = or <= than this other value) rather than indicating if they match or
+//> not (like in the cItemBasedCompare class)
+//>
+//> This strategy would be good if comparing records sorted by uniform indices in
+//> two different tables.
+//>
+//> It is also good when you know your in-data are sorted (could be sorted arrays) and you
+//> need the output from the compare to be sorted as well (like when comparing the list of
+//> filenames in two directories)
+//>
+//> The terminology of the methods and their parameters reflects that the
+//> values that are compared are not retrieved from an array (are not item
+//> based) but rather these values are retrieved by running sequentially
+//> through the records of a table by some index.
+//>
+//> The name cDoubleOrderedCompare indicates that both the left side and
+//> the right side are presumed to be ordered.
+class cDoubleOrderedCompare is an cArray
+
+  //> Augment this function in order to seed the left buffer (1). Return TRUE
+  //> if the seeding was succesful. For example:
+  //> <code>
+  //> function iSeed1 returns integer
+  //>   clear Customer
+  //>   function_Return TRUE
+  //> end_function
+  //> </code>
+  function iSeed1 returns integer
+  end_function
+  //> Augment this function in order to seed the right buffer (2). Return TRUE
+  //> if the seeding was succesful.
+  function iSeed2 returns integer
+  end_function
+  //> The function should be augmented to return the value for the left buffer (1) to be used for comparing. For example:
+  //> <code>
+  //> function sValue1 returns string
+  //>   function_return Customer.Name
+  //> end_function
+  //> </code>
+  function sValue1 returns string
+  end_procedure
+  //> The function should be augmented to return the value for the right buffer (2) to be used for comparing.
+  //> <code>
+  //> function sValue2 returns string
+  //>   function_return Vendor.Vendor_Name
+  //> end_function
+  //> </code>
+  function sValue2 returns string
+  end_procedure
+  //> Augment to "advance" the left buffer. Return TRUE if advancing was succesful. Could be:
+  //> <code>
+  //> function iAdvance1 returns integer
+  //>   find gt Customer by index.2 // Name is most significant in index.2
+  //>   function_return (found)
+  //> end_function
+  //> </code>
+  function iAdvance1 returns integer
+  end_function
+  //> Augment to "advance" the right buffer. Return TRUE if advancing was succesful.
+  //> <code>
+  //> function iAdvance2 returns integer
+  //>   find gt Vendor by index.2
+  //>   function_return (found)
+  //> end_function
+  //> </code>
+  function iAdvance2 returns integer
+  end_function
+  //> This is sent when items are found to be identical.
+  //> <code>
+  //>   procedure Match string lsVal1 string lsVal2
+  //>     showln "Both in Customer and Vendor tables: " lsVal1
+  //>   end_procedure
+  //> </code>
+  procedure Match string lsVal1 string lsVal2
+  end_procedure
+  //> This is sent when a left side (1) item cannot be matched.
+  //> <code>
+  //> procedure NotMatched1 string lsVal
+  //>   showln "Only found in Customer table: " lsVal
+  //> end_procedure
+  //> </code>
+  procedure NotMatched1 string lsVal
+  end_procedure
+  //> This is sent when a right side (2) item cannot be matched.
+  //> <code>
+  //> procedure NotMatched2 string lsVal
+  //>   showln "Only found in Vendor table: " lsVal
+  //> end_procedure
+  //> </code>
+  procedure NotMatched2 string lsVal
+  end_procedure
+  function iCompare.ss string lsVal1 string lsVal2 returns integer
+    if (lsVal1=lsVal2) function_return 0  // Match
+    if (lsVal1<lsVal2) function_return -1 // Left value is smaller
+    function_return 1                       // Right value is smaller
+  end_function
+  procedure run
+    integer lbOk1 lbOk2 liCompRes
+    string lsVal1 lsVal2
+    get iSeed1 to lbOk1
+    get iSeed2 to lbOk2
+    while (lbOk1 or lbOk2)
+      if lbOk1 get sValue1 to lsVal1
+      if lbOk2 get sValue2 to lsVal2
+      if (lbOk1 and lbOk2) begin //
+        get iCompare.ss lsVal1 lsVal2 to liCompRes
+        if liCompRes eq 0 begin
+          send match lsVal1 lsVal2
+          get iAdvance1 to lbOk1
+          get iAdvance2 to lbOk2
+        end
+        if liCompRes eq -1 begin // Value 1 is lesser
+          send NotMatched1 lsVal1
+          get iAdvance1 to lbOk1
+        end
+        if liCompRes eq 1 begin // Value 2 is lesser
+          send NotMatched2 lsVal2
+          get iAdvance2 to lbOk2
+        end
+      end
+      else begin
+        if lbOk1 begin
+          send NotMatched1 lsVal1
+          get iAdvance1 to lbOk1
+        end
+        else begin
+          send NotMatched2 lsVal2
+          get iAdvance2 to lbOk2
+        end
+      end
+    end
+  end_procedure
+end_class // cDoubleOrderedCompare
+
+// class cForwardOnlySynchronizedCompare is a cArray
+//   procedure construct_object integer img#
+//     forward send construct_object img#
+//     property integer piSyncLimit 0 // 0 means no limit
+//     object oStackedValues1 is a cArray
+//     end_object
+//     object oStackedValues2 is a cArray
+//     end_object
+//   end_procedure
+//   function iSeed1 returns integer
+//   end_function
+//   function iSeed2 returns integer
+//   end_function
+//   function sValue1 returns string
+//   end_procedure
+//   function sValue2 returns string
+//   end_procedure
+//   function iAdvance1 returns integer
+//   end_function
+//   function iAdvance2 returns integer
+//   end_function
+//   //> This is sent when items are found to be identical
+//   procedure Match string value1# string value2#
+//   end_procedure
+//   //> This is sent when a left side (1) item cannot be matched
+//   procedure NotMatched1 string value#
+//   end_procedure
+//   //> This is sent when a right side (2) item cannot be matched
+//   procedure NotMatched2 string value#
+//   end_procedure
+//   function iCompare.ss string value1# string value2# returns integer
+//     if value1# eq value2# function_return 1
+//     //function_return 0
+//   end_function
+//   procedure run
+//     integer ok1# ok2# comp_res# oStackedValues1# oStackedValues2#
+//     string value1# value2#
+//     move (oStackedValues1(self)) to oStackedValues1#
+//     move (oStackedValues2(self)) to oStackedValues2#
+//     send delete_data to oStackedValues1#
+//     send delete_data to oStackedValues2#
+//     get iSeed1 to ok1#
+//     get iSeed2 to ok2#
+//     while (ok1# or ok2#)
+//       if ok1# get sValue1 to value1#
+//       if ok2# get sValue2 to value2#
+//       if (ok1# and ok2#) begin //
+//         get iCompare.ss value1# value2# to comp_res#
+//         if comp_res# begin // Match
+//           send match value1# value2#
+//           get iAdvance1 to ok1#
+//           get iAdvance2 to ok2#
+//         end
+//         else begin // No match
+//         end
+//       end
+//       else begin
+//         if ok1# begin
+//           send NotMatched1 value1#
+//           get iAdvance1 to ok1#
+//         end
+//         else begin
+//           send NotMatched2 value2#
+//           get iAdvance2 to ok2#
+//         end
+//       end
+//     end
+//   end_procedure
+// end_class // cDoubleOrderedCompare

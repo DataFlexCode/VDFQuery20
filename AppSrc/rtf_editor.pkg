@@ -1,0 +1,235 @@
+// Use RTF_Editor.pkg // Procedure RTF_EditText (edit an RTF value)
+
+use Aps.pkg
+use RichEdit.utl
+
+object oRTFEditor is a aps.ModalPanel
+  set locate_mode to CENTER_ON_SCREEN
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  set p_auto_column to 0
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+
+  property integer pbAutoFont
+  property string  psDefaultFont
+  property integer piDefaultFontSize
+
+  property integer piResult         DFFALSE
+  property string  psPlainTextValue DFFALSE
+
+  object oTb is a cRTF_ToolBar
+    set size to 12 400
+    set pbNoDivider to TRUE
+  end_object
+  send aps_auto_locate_control (oTb(self)) 0
+
+  object oEdit is a cRTF_RichEdit snap SL_DOWN
+    set size to 200 400
+    set peAnchors to (anTop+anLeft+anRight+anBottom)
+    set piToolbar to (oTb(self))
+
+    procedure StorePlainTextValue
+      string lsRval
+      send select_all
+      get seltext to lsRval
+      set psPlainTextValue to lsRval
+    end_procedure
+
+    procedure Clean
+      set value to (RTF_Clean(value(self)))
+    end_procedure
+    on_key KUSER send Clean
+
+    procedure DoAutoFont
+      integer liFontSize
+      string lsFont
+      get psDefaultFont     to lsFont
+      get piDefaultFontSize to liFontSize
+      if (lsFont<>"" and liFontSize<>0) begin
+        send select_all
+        set psTypeFace to lsFont
+        set piFontSize to (liFontSize*20)
+        send Beginning_of_Data
+      end
+    end_procedure
+  end_object
+  set phRichEdit of oTb to (oEdit(self))
+
+  procedure DoAutoFont
+    send DoAutoFont of oEdit
+  end_procedure
+
+  object oBtn1 is a aps.Multi_Button
+    on_item T.BTN.OK send close_panel_ok
+    set peAnchors to (anBottom+anRight)
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    set size to 14 100
+    on_item "Skift til uformatteret" send close_panel_switch
+    set peAnchors to (anBottom+anRight)
+  end_object
+  object oBtn3 is a aps.Multi_Button
+    on_item T.BTN.CANCEL send close_panel
+    set peAnchors to (anBottom+anRight)
+  end_object
+  send aps_locate_multi_buttons
+
+  procedure close_panel_switch
+    set piResult to 2
+    send StorePlainTextValue of oEdit
+    send close_panel
+  end_procedure
+  procedure close_panel_ok
+    set piResult to DFTRUE
+    send StorePlainTextValue of oEdit
+    send close_panel
+  end_procedure
+  function iEditText.ss string lsCaption string lsValue returns integer
+    set label to lsCaption
+    set value of oEdit to lsValue
+    set piResult to DFFALSE
+    if (pbAutoFont(self)) send deferred_message MSG_DoAutoFont
+    send popup
+    function_return (piResult(self))
+  end_function
+end_object // oRTFEditor
+send aps_SetMinimumDialogSize (oRTFEditor(self)) // Set minimum size
+
+//> Edit the text passed in lsValue parameter. If the function
+//> returns 0 the dialog was cancelled.
+function RTF_EditText global string lsCaption string lsValue returns integer
+  integer liRval
+  get iEditText.ss of oRTFEditor lsCaption lsValue to liRval
+  function_return liRval
+end_function
+
+function RTF_NewTextValue global returns string
+  string lsValue
+  get value of (oEdit(oRTFEditor(self))) to lsValue
+  function_return lsValue
+end_function
+
+function RTF_NewTextValuePlain global returns string
+  string lsValue
+  get psPlainTextValue of (oRTFEditor(self)) to lsValue
+  function_return lsValue
+end_function
+
+object oPlainTextEditor is a aps.ModalPanel
+  set locate_mode to CENTER_ON_SCREEN
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  set p_auto_column to 0
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+
+  property integer piResult DFFALSE
+
+  object oEdit is a aps.TextEdit
+    set size to 200 400
+    set peAnchors to (anTop+anLeft+anRight+anBottom)
+  end_object
+
+  object oBtn1 is a aps.Multi_Button
+    on_item T.BTN.OK send close_panel_ok
+    set peAnchors to (anBottom+anRight)
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    set size to 14 100
+    on_item "Skift til formatteret" send close_panel_switch
+    set peAnchors to (anBottom+anRight)
+  end_object
+  object oBtn3 is a aps.Multi_Button
+    on_item T.BTN.CANCEL send close_panel
+    set peAnchors to (anBottom+anRight)
+  end_object
+  send aps_locate_multi_buttons
+
+  procedure close_panel_switch
+    set piResult to 2
+    send close_panel
+  end_procedure
+  procedure close_panel_ok
+    set piResult to DFTRUE
+    send close_panel
+  end_procedure
+  function iEditText.ss string lsCaption string lsValue returns integer
+    set label to lsCaption
+    set value of oEdit to lsValue
+    set piResult to DFFALSE
+    send popup
+    function_return (piResult(self))
+  end_function
+end_object // oPlainTextEditor
+send aps_SetMinimumDialogSize (oPlainTextEditor(self)) // Set minimum size
+
+//> Edit the text passed in lsValue parameter. If the function
+//> returns 0 the dialog was cancelled.
+function Plain_EditText global string lsCaption string lsValue returns integer
+  integer liRval
+  get iEditText.ss of oPlainTextEditor lsCaption lsValue to liRval
+  function_return liRval
+end_function
+
+function Plain_NewTextValue global returns string
+  string lsValue
+  get value of (oEdit(oPlainTextEditor(self))) to lsValue
+  function_return lsValue
+end_function
+
+
+object oPlainOrRTFHelp is a cObject
+  property integer piCurrentEditMode 0    // 0=Plain  1=RTF
+end_object
+
+function PlainOrRTF_EditText global integer lbRTF string lsCaption string lsValue returns integer
+  integer liRval           // Return value from edit, 0=cancel  1=ok   2=toggle edit mode (plain/RTF)
+
+  move 0 to liRval
+  repeat
+    if lbRTF begin
+
+      set pbAutoFont of oRTFEditor to (lsValue="" or liRval=2)
+
+      get RTF_EditText lsCaption lsValue to liRval // <<
+      get RTF_NewTextValue to lsValue
+      if (liRval=2) begin
+        get RTF_NewTextValuePlain to lsValue
+        move 0 to lbRTF // Switch to plain
+      end
+    end
+    else begin
+      get Plain_EditText lsCaption lsValue to liRval
+      get Plain_NewTextValue to lsValue
+      if (liRval=2) move 1 to lbRTF // Switch to RTF
+    end
+  until (liRval<>2)
+  set piCurrentEditMode of oPlainOrRTFHelp to lbRTF
+
+  set psDefaultFont     of oRTFEditor to ""
+  set piDefaultFontSize of oRTFEditor to 0
+
+  function_return liRval // 0: edit cancelled, 1=ok
+end_function
+
+function PlainOrRTF_EditText2 global string lsCaption string lsRTF_Value string lsPlain_Value returns integer
+  integer liRval
+  if (lsRTF_Value<>"") get PlainOrRTF_EditText TRUE lsCaption lsRTF_Value to liRval
+  else get PlainOrRTF_EditText FALSE lsCaption lsPlain_Value to liRval
+  function_return liRval
+end_function
+
+function PlainOrRTF_NewTextValueIsRTF global returns integer
+  function_return (piCurrentEditMode(oPlainOrRTFHelp)=1)
+end_function
+
+function PlainOrRTF_NewTextValue global returns string
+  string lsValue
+  if (piCurrentEditMode(oPlainOrRTFHelp)=0) get Plain_NewTextValue to lsValue
+  else get RTF_NewTextValue to lsValue
+  function_return lsValue
+end_function
+
+procedure PlainOrRTF_SetDefaultFont global string lsFont integer liSize
+  set psDefaultFont     of oRTFEditor to lsFont
+  set piDefaultFontSize of oRTFEditor to liSize
+end_procedure

@@ -1,0 +1,66 @@
+// Use TimedMessage.pkg // send TimedObs 7 "Seven seconds"
+
+use aps.pkg
+use msgbox.utl
+use buttons.utl
+use dftimer.pkg
+
+desktop_section
+  object oTimedObs is a aps.ModalPanel label t.MsgBox.Message
+    property integer priv.Seconds
+
+    register_procedure UpdateButtonText
+
+    object oTimer is a DFTimer
+      set Auto_Start_State to TRUE //<- If this is set to TRUE to timer is activated when
+      set Auto_Stop_State to TRUE  //   the applications start regardless of the oTimedObs "activeness".
+      set Timer_Message to msg_UpdateButtonText
+      set Timer_Object to self
+      set Timeout to 1000 // Every second
+      //set Timer_Active_State to TRUE
+    end_object
+
+    object oText is a aps.TextEdit
+      set size to 80 278
+      set enabled_state to FALSE
+      set border_style to BORDER_NONE
+      set piFontSize to 220
+    end_object    // oTextEdit1
+
+    object oBtn is a aps.Multi_Button
+      on_item T.BTN.OK send close_panel
+    end_object
+    send aps_locate_multi_buttons
+
+              procedure UpdateButtonText
+                integer liSeconds
+                string lsValue
+                get priv.Seconds to liSeconds
+                set value of oBtn to (T.BTN.OK+" ["+string(liSeconds-1) +"]")
+                move (liSeconds-1) to liSeconds
+                if (liSeconds<0) send close_panel
+                set priv.Seconds to liSeconds
+              end_procedure
+
+    procedure popup.is integer liSeconds string lsValue
+      set priv.Seconds to liSeconds
+      set value of oText to lsValue
+      send popup
+    end_procedure
+  end_object // oTimedObs
+end_desktop_section
+
+
+procedure TimedObs global integer liSeconds string lsVal1 string lsVal2 string lsVal3 string lsVal4 string lsVal5
+  string lsValue
+  move lsVal1 to lsValue
+  if (NUM_ARGUMENTS>1) begin
+    if (NUM_ARGUMENTS>2) move (lsValue+string(character(10))+lsVal2) to lsValue
+    if (NUM_ARGUMENTS>3) move (lsValue+string(character(10))+lsVal3) to lsValue
+    if (NUM_ARGUMENTS>4) move (lsValue+string(character(10))+lsVal4) to lsValue
+    if (NUM_ARGUMENTS>5) move (lsValue+string(character(10))+lsVal5) to lsValue
+  end
+  send popup.is of oTimedObs liSeconds lsValue
+end_procedure
+
+//send TimedObs 5 "Helli hallo"

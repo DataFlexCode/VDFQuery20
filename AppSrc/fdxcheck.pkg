@@ -1,0 +1,153 @@
+// Use FdxCheck.pkg // Classes for displaying validity check of table definitions
+// NOTE: This view only works within the DFMatrix framework
+Use FdxCheck.utl // Check validity of table definitions
+Use FdxSet.pkg   // cFdxSetOfFieldsList class
+
+Use RGB.utl      // Some color functions
+class cFdxCheckErrorList is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piServer 0 // SOF = SetOfTables
+    property integer piDetailLevel TDINFO_WARNING
+    set line_width to 4 0
+    send GridPrepare_AddColumn "#"          AFT_ASCII4
+    send GridPrepare_AddColumn "Root name"  AFT_ASCII32
+    send GridPrepare_AddColumn "Err#"       AFT_ASCII4
+    send GridPrepare_AddColumn "Error text" AFT_ASCII40
+    send GridPrepare_Apply self
+    //set current_item_color of obj# to clBlue
+    set select_mode to no_select
+    on_key KNEXT_ITEM send switch
+    on_key KPREVIOUS_ITEM send switch_back
+    on_key KENTER send NEXT
+    on_key KEY_CTRL+KEY_R send sort_data
+    on_key KEY_CTRL+KEY_C send Toggle_DetailLevel
+    on_key KEY_CTRL+KEY_W send DoWriteToFile
+  end_procedure
+
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+
+  procedure Toggle_DetailLevel
+    integer iDtlLvl
+    get piDetailLevel to iDtlLvl
+    if iDtlLvl eq TDINFO_INFO move TDINFO_WARNING to iDtlLvl
+    else if iDtlLvl eq TDINFO_WARNING move TDINFO_ERROR to iDtlLvl
+    else if iDtlLvl eq TDINFO_ERROR move TDINFO_INFO to iDtlLvl
+    set piDetailLevel to iDtlLvl
+    send fill_list.i (piServer(self))
+  end_procedure
+
+  function sErrorClassText.i integer cls# returns string
+    if cls# eq TDINFO_INFO    function_return "Info"
+    if cls# eq TDINFO_WARNING function_return "Warning"
+    if cls# eq TDINFO_ERROR   function_return "Error"
+  end_function
+
+  function Row_File integer row# returns integer
+    integer columns#
+    get Grid_Columns self to columns#
+    function_return (value(self,row#*columns#))
+  end_function
+  procedure OnChangeFile integer row#
+    if (item_count(self)) begin
+      //if (Row_Shadow_State(self,row#)) send DFMatrix_NewFileInSelector 0
+      send DFMatrix_NewFileInSelector (Row_File(self,row#))
+    end
+  end_procedure
+  procedure OnErrorChange string full_error_text# integer error_class#
+  end_procedure
+  procedure row_change integer row_from# integer row_to#
+    integer row# srv# base#
+    send OnChangeFile row_to#
+    get Grid_RowBaseItem self row_to# to base#
+    get piServer to srv#
+    get aux_value item base# to row#
+    send OnErrorChange (sErrorText2.i(srv#,row#)) (iErrorClass.i(srv#,row#))
+  end_procedure
+  procedure item_change integer i1# integer i2# returns integer
+    integer rval# row_from# row_to# columns#
+    get Grid_Columns self to columns#
+    forward get msg_item_change i1# i2# to rval#
+    if (i1#/columns#) ne (i2#/columns#) send row_change (i1#/columns#) (i2#/columns#)
+    procedure_return rval#
+  end_procedure
+
+  function iSpecialSortValueOnColumn.i integer column# returns integer
+    if column# eq 0 function_Return 1
+    if column# eq 2 function_Return 2
+  end_function
+
+  function sSortValue.ii integer column# integer itm# returns string
+    if column# eq 0 function_return (IntToStrR(value(self,itm#),4))
+    if column# eq 2 function_return (IntToStrR(value(self,itm#),4))
+  end_function
+
+  procedure sort_data.i integer column#
+    send Grid_SortByColumn self column#
+  end_procedure
+
+  procedure sort_data
+    integer cc#
+    get Grid_CurrentColumn self to cc#
+    send sort_data.i cc#
+  end_procedure
+  procedure header_mouse_click integer itm#
+    send sort_data.i itm#
+    forward send header_mouse_click itm#
+  end_procedure
+  function iClassColor.i integer iCls returns integer
+    integer iClr
+    if iCls eq TDINFO_INFO    function_return (RGB_Brighten(clGreen,75))
+    if iCls eq TDINFO_WARNING function_return (RGB_Brighten(clYellow,75))
+    if iCls eq TDINFO_ERROR   function_return (RGB_Brighten(clRed,75))
+  end_function
+  function sDetail_Level_Text.i integer lvl# returns string
+    if lvl# eq TDINFO_INFO    function_return "All"
+    if lvl# eq TDINFO_WARNING function_return "Warnings and Errors"
+    if lvl# eq TDINFO_ERROR   function_return "Errors only"
+  end_function
+  procedure fill_list.i integer oFdxCheck#
+    integer error_count# warning_count# err# err_class# iBase srv#
+    integer color# file# row# max# iDtlLvl oFDX#
+    move 0 to error_count#
+    move 0 to warning_count#
+    send delete_data
+    if oFdxCheck# eq 0 procedure_return
+    set dynamic_update_state to DFFALSE
+    get piDetailLevel to iDtlLvl
+    get row_count of oFdxCheck# to max#
+    set piServer to oFdxCheck#
+    get piServer of oFdxCheck# to oFDX#
+    decrement max#
+    for row# from 0 to max#
+      get iErrorClass.i of oFdxCheck# row# to err_class#
+      if err_class# ge iDtlLvl begin
+        get piFile.i      of oFdxCheck# row# to file#
+        get piError.i     of oFdxCheck# row# to err#
+        get item_count to iBase
+        send add_item msg_none (string(file#))
+        send add_item msg_none (FDX_AttrValue_FILELIST(oFDX#,DF_FILE_ROOT_NAME,file#))
+        send add_item msg_none (string(err#))
+        send add_item msg_none (sErrorText1.i(oFdxCheck#,row#))
+        set aux_value item iBase to row#
+        get iClassColor.i err_class# to color#
+        set ItemColor item (iBase+3) to color#
+      end
+      if err_class# eq TDINFO_ERROR   increment error_count#
+      if err_class# eq TDINFO_WARNING increment warning_count#
+    loop
+    send Grid_SetEntryState self DFFALSE
+    send update_display_counter error_count# warning_count# (sDetail_Level_Text.i(self,iDtlLvl))
+    set dynamic_update_state to DFTRUE
+    if (item_count(self)) begin
+      get piServer to srv#
+      send OnErrorChange (sErrorText2.i(srv#,0)) (iErrorClass.i(srv#,0))
+    end
+    else send OnErrorChange "" ""
+  end_procedure
+  procedure update_display_counter integer errors# integer warnings# string detail_level_text#
+  end_procedure
+end_class // cFdxCheckErrorList
+

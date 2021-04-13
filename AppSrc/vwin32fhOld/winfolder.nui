@@ -1,0 +1,148 @@
+// use WinFolder.nui // WinFolder_ReadFolder message
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Files.nui    // Utilities for handling file related stuff (No User Interface)
+Use Dates.nui    // Date routines (No User Interface)
+Use vWin32fh.pkg // Win API functions by Wil van Antwerpen of VDF-GuiDance
+
+#IFDEF FILE_ATTRIBUTE_DIRECTORY
+#ELSE
+ Define FILE_ATTRIBUTE_READONLY     for |CI$00000001
+ Define FILE_ATTRIBUTE_HIDDEN       for |CI$00000002
+ Define FILE_ATTRIBUTE_SYSTEM       for |CI$00000004
+ Define FILE_ATTRIBUTE_DIRECTORY    for |CI$00000010
+ Define FILE_ATTRIBUTE_ARCHIVE      for |CI$00000020
+ Define FILE_ATTRIBUTE_ENCRYPTED    for |CI$00000040
+ Define FILE_ATTRIBUTE_NORMAL       for |CI$00000080
+ Define FILE_ATTRIBUTE_TEMPORARY    for |CI$00000100
+ Define FILE_ATTRIBUTE_SPARSEFILE   for |CI$00000200
+ Define FILE_ATTRIBUTE_REPARSEPOINT for |CI$00000400
+ Define FILE_ATTRIBUTE_COMPRESSED   for |CI$00000800
+ Define FILE_ATTRIBUTE_OFFLINE      for |CI$00001000
+#ENDIF
+
+desktop_section
+object oWinFolderEntries is a cArray
+  property integer piFileCount
+  property integer piFolderCount
+  property string  psFolder
+  item_property_list
+    item_property integer pbFolder.i
+    item_property string  psFileName.i
+    item_property string  psAlternateFileName.i
+    item_property number  pnFileSz.i
+    item_property number  pnCreated.i
+    item_property number  pnLastWrite.i
+    item_property number  pnLastAccessed.i
+    item_property integer piAttributes.i
+  end_item_property_list
+
+  function nFileTimeTS dword ldwHi dword ldwLo returns number
+    integer liYear liMonth liDay liHour liMinute liSecond
+    integer lbSuccess
+    pointer lpsftTime lpsSystemTime
+    date    ldDate
+    string  lsftTime lsSystemTime
+    number  lnRval
+
+    ZeroType vFileTime to lsftTime
+    Put ldwLo to lsftTime at vFileTime.dwLowDateTime
+    Put ldwHi to lsftTime at vFileTime.dwHighDateTime
+    GetAddress of lsftTime to lpsftTime
+
+    ZeroType vSystemTime to lsSystemTime
+    GetAddress of lsSystemTime to lpsSystemTime
+
+    move (vWin32_FileTimeToSystemTime(lpsftTime,lpsSystemTime)) to lbSuccess
+    if lbSuccess begin
+      GetBuff from lsSystemTime at vSystemTime.wYear   to liYear
+      GetBuff from lsSystemTime at vSystemTime.wMonth  to liMonth
+      GetBuff from lsSystemTime at vSystemTime.wDay    to liDay
+      GetBuff from lsSystemTime at vSystemTime.wHour   to liHour
+      GetBuff from lsSystemTime at vSystemTime.wMinute to liMinute
+      GetBuff from lsSystemTime at vSystemTime.wSecond to liSecond
+
+      get DateCompose liDay liMonth liYear to ldDate
+      get TS_Compose2 ldDate liHour liMinute liSecond to lnRval
+      function_return lnRval
+    end
+    function_return 0
+  end_function
+
+  procedure DoLoad string lsFolderPath
+    handle  lhImportFile
+    pointer lpsPath lps32Data
+    dword   ldwFileAtt ldwHi ldwLo
+    integer liVoid liRow liFileCount liFolderCount
+    boolean lbRetval lbFolder
+    number  lnTS
+    string  lsWin32FindData lsFileName
+
+    move 0 to liFileCount
+    move 0 to liFolderCount
+    set psFolder to lsFolderPath
+
+    send delete_data
+
+    ifnot (pos("*",lsFolderPath) or pos("?",lsFolderPath)) ;
+        get Files_AppendPath lsFolderPath "*" to lsFolderPath
+
+    move (ToAnsi(lsFolderPath)) to lsFolderPath
+
+    GetAddress of lsFolderPath to lpsPath
+    ZeroType vWin32_Find_Data to lsWin32FindData
+    GetAddress of lsWin32FindData to lps32Data
+    move (vWin32_FindFirstFile(lpsPath,lps32Data)) to lhImportFile
+    if (lhImportFile <> INVALID_HANDLE_VALUE) begin
+      repeat
+        get row_count to liRow
+
+        GetBuff_String From lsWin32FindData at vWin32_Find_Data.cFileName to lsFileName
+
+        if (lsFileName<>"." and lsFileName<>"..") begin
+          set psFileName.i liRow to (ToOem(lsFileName))
+
+          GetBuff From lsWin32FindData at vWin32_Find_Data.dwFileAttributes to ldwFileAtt
+          set piAttributes.i liRow to ldwFileAtt
+
+          move (ldwFileAtt iand FILE_ATTRIBUTE_DIRECTORY) to lbFolder
+          set pbFolder.i liRow to lbFolder
+
+          if lbFolder increment liFolderCount
+          else increment liFileCount
+
+          GetBuff_String From lsWin32FindData at vWin32_Find_Data.cAlternateFileName to lsFileName    // get attribute
+          set psAlternateFileName.i liRow to lsFileName
+
+          GetBuff From lsWin32FindData at vWin32_Find_Data.nFileSizeHigh to ldwHi
+          GetBuff From lsWin32FindData at vWin32_Find_Data.nFileSizeLow  to ldwLo
+          set pnFileSz.i liRow to (ldwHi*4294967296+ldwLo)
+
+          GetBuff From lsWin32FindData at vWin32_Find_Data.ftCreationHighDateTime to ldwHi
+          GetBuff From lsWin32FindData at vWin32_Find_Data.ftCreationLowDateTime  to ldwLo
+          get nFileTimeTS ldwHi ldwLo to lnTS
+          set pnCreated.i liRow to lnTS
+
+          GetBuff From lsWin32FindData at vWin32_Find_Data.ftLastWriteHighDateTime to ldwHi
+          GetBuff From lsWin32FindData at vWin32_Find_Data.ftLastWriteLowDateTime  to ldwLo
+          get nFileTimeTS ldwHi ldwLo to lnTS
+          set pnLastWrite.i liRow to lnTS
+
+          GetBuff From lsWin32FindData at vWin32_Find_Data.ftLastAccessHighDateTime to ldwHi
+          GetBuff From lsWin32FindData at vWin32_Find_Data.ftLastAccessLowDateTime  to ldwLo
+          get nFileTimeTS ldwHi ldwLo to lnTS
+          set pnLastAccessed.i liRow to lnTS
+        end
+        Move (vWin32_FindNextFile(lhImportFile,lps32Data)) to lbRetval        // get next file in directory
+      Until (lbRetval = False)
+      Move (vWin32_FindClose(lhImportFile)) to liVoid //
+    end
+    set piFileCount    to liFileCount
+    set piFolderCount  to liFolderCount
+  end_procedure
+end_object // oWinFolderEntries
+end_desktop_section
+
+procedure WinFolder_ReadFolder global string lsFolder
+  send DoLoad of oWinFolderEntries lsFolder
+end_procedure

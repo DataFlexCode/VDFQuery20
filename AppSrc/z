@@ -1,0 +1,1513 @@
+Comparing files vWin32fh.pkg and VWIN32FH\VWIN32FH.PKG
+***** vWin32fh.pkg
+//                   Removed the local keyword in the variable declarations
+// 10-17-2003 **WvA: Cleaned up function vSelect_File and added code to destroy the dynamically 
+//                   created file-open dialog
+***** VWIN32FH\VWIN32FH.PKG
+//                   Removed the local keyword in the variable declarations
+// 10-17-2003 **WvA: Cleaned up function vSelect_File and added code to destroy the dynamically
+//                   created file-open dialog
+*****
+
+***** vWin32fh.pkg
+//                   One can however restore to the old way of handling by simply calling the
+//                   vWin32fhCompatibilityMode procedure ONE time before accessing any of the 
+//                   filehandling operations
+***** VWIN32FH\VWIN32FH.PKG
+//                   One can however restore to the old way of handling by simply calling the
+//                   vWin32fhCompatibilityMode procedure ONE time before accessing any of the
+//                   filehandling operations
+*****
+
+***** vWin32fh.pkg
+//                   Added vParentPath function to retrieve the parent "node" of a path
+//                   
+Use Case.mac
+#IFNDEF Is$WebApp
+***** VWIN32FH\VWIN32FH.PKG
+//                   Added vParentPath function to retrieve the parent "node" of a path
+// 01-04-2008 **WvA: Fixed vCreateTempFileInPath as the function wasn't working
+// 10-04-2009 **WvA: Added vshCreateDirectoryEx from Micheal Mullan, moved filedialogs to cvFileDialogs.pkg
+// 01-11-2010 **WvA: Added vWin32_APIFilesize as supplied by Renato Villa, to get the filesize of the specified file. See http:
+//support.dataaccess.com/forums/showthread.php?t=41982
+// 10-02-2011 **WvA: Added vCSIDL_SYSTEMX86, courtesy of Ola Eldoy for pointing this out and providing the define statement.
+// 20-12-2012 **WvA: Default behavior on copy/move is now to autocreate subfolders, tip by Frank Cheng
+// 29-09-2014 **WvA: Added function vFolderFileCount to count the number of files in a folder, add vCSIDL_PROGRAM_FILESx86
+// 04-10-2014 **WvA: Added extra checks on vFilePathExists and vFolderExists courtesy of Nils Svedmyr
+
+#IFNDEF Is$WebApp
+*****
+
+***** vWin32fh.pkg
+Use File_Dlg.pkg      // Contains OpenDialog class definition
+#ENDIF
+***** VWIN32FH\VWIN32FH.PKG
+Use File_Dlg.pkg      // Contains OpenDialog class definition
+Use cvFileDialogs.pkg
+#ENDIF
+*****
+
+***** vWin32fh.pkg
+
+Use windows
+Use Dferror
+Use Dll
+Use vWin32fh.h       // Header file with WinAPI declarations
+***** VWIN32FH\VWIN32FH.PKG
+
+Use windows.pkg
+Use Dll.pkg
+Use vWin32fh.h       // Header file with WinAPI declarations
+*****
+
+***** vWin32fh.pkg
+
+
+***** VWIN32FH\VWIN32FH.PKG
+
+#IF (!@ < 191)
+  // This is the one function that keeps DataFlex versions from before DF19.1 from using
+  // modern syntax, so we declare it instead.
+  Function ZeroString Global Integer iSize Returns String
+    String sRetVal
+    Move (Repeat(character(0), iSize)) to sRetVal
+    Function_Return sRetVal
+  End_Function
+#ENDIF
+
+*****
+
+***** vWin32fh.pkg
+
+#IFNDEF Is$WebApp
+// *WvA: 13-01-1999 Created
+// The Class cSelectFile_Dialog is created to support the function Select_File
+// This function opens the Windows standard file open dialog and returns the selected
+// file_name.
+Class cvSelectFile_Dialog Is An OpenDialog
+
+  Procedure Construct_Object Integer iImage_Id
+    Forward Send Construct_Object iImage_Id
+    Set HideReadOnly_State To True
+  End_Procedure // Construct_Object
+
+  Function SelectedFileName Returns String
+    String sFileName
+    Move "" To sFileName
+    If (Show_Dialog(Self)) Begin
+      Move (RTrim(File_Name(Self))) To sFileName
+    End
+    Function_Return sFileName
+  End_Function // SelectedFileName
+End_Class // cvSelectFile_Dialog
+
+***** VWIN32FH\VWIN32FH.PKG
+
+
+*****
+
+***** vWin32fh.pkg
+
+// *WvA: 13-01-1999 Created
+// This function opens the Windows standard file open dialog and returns the selected
+// file_name. Returns '' if the user didn't make a selection.
+// **WvA: 17-10-2003 Cleaned up and added code to destroy the dynamically created
+//                   file-open dialog
+Function vSelect_File Global String sSupportedFileTypes String sCaptionText ;
+                                  String sInitialFolder Returns String
+  String sSelectedFile
+  Integer hoOpenFileDialog
+  
+  Object oOpenFileDialog Is A cvSelectFile_Dialog 
+    Set Dialog_Caption    To sCaptionText
+    Set Filter_String     To sSupportedFileTypes
+    Set Initial_Folder    To sInitialFolder
+    
+    Move Self       To hoOpenFileDialog
+  End_Object // oOpenFileDialog         
+  
+  Get SelectedFileName Of hoOpenFileDialog To sSelectedFile
+  Send Destroy_Object To hoOpenFileDialog
+  Function_Return sSelectedFile
+End_Function // vSelect_File   
+
+Class cvSaveAsDialog Is An SaveAsDialog
+
+  Procedure Construct_Object
+    Forward Send Construct_Object
+    Set HideReadOnly_State To True
+  End_Procedure // Construct_Object
+
+  Function SelectedFileName Returns String
+    String sFileName
+    Move "" To sFileName
+    If (Show_Dialog(Self)) Begin
+      Move (RTrim(File_Name(Self))) To sFileName
+    End
+    Function_Return sFileName
+  End_Function // SelectedFileName
+End_Class // cvSaveAsDialog
+
+***** VWIN32FH\VWIN32FH.PKG
+
+//
+// Gets the string from the right of the last sStopChar in sFrom
+// If sStopChar has no occurences in the string an empty string is
+// returned.
+Function StringFromRightOfChar Global String sFrom String sStopChar Returns String
+  String  sRetVal
+  String  sChar
+  Integer iLength
+  Integer iPos
+  Boolean bStopChar
+  Move "" To sRetval
+  Move (Length(sFrom)) To iLength
+  If ((iLength>0) And (Pos(sStopChar,sFrom) <> 0)) Begin
+    Move iLength   To iPos
+    Move (False)   To bStopChar
+    While Not bStopChar
+      Move (Mid(sFrom,1,iPos)) To sChar
+      Decrement iPos
+      If ((sChar=sStopChar) Or (iPos<1)) Begin
+        Move (True) To bStopChar
+      End
+      Else Begin
+        Move (sChar+sRetVal) To sRetVal
+      End
+    Loop
+  End
+  Function_Return sRetVal
+End_Function // StringFromRightOfChar
+
+*****
+
+***** vWin32fh.pkg
+
+Function vSelectSaveFile Global String sSupportedFileTypes String sCaptionText String sInitialFolder Returns String
+  String sSelectedFile
+  Integer hoDialog
+  
+  Move "" To sSelectedFile
+  Get Create U_cvSaveAsDialog To hoDialog
+  If (hoDialog) Begin
+    //Set NoChangeDir_State Of hoDialog To True
+    Set Dialog_Caption    Of hoDialog To sCaptionText
+    Set Filter_String     Of hoDialog To sSupportedFileTypes
+    Set Initial_Folder    Of hoDialog To sInitialFolder
+    Get SelectedFileName  Of hoDialog To sSelectedFile
+    Send Destroy Of hoDialog
+  End
+  Function_Return sSelectedFile
+End_Function // vSelectSaveFile
+#ENDIF              
+
+//            
+// Gets the string from the right of the last sStopChar in sFrom
+// If sStopChar has no occurences in the string an empty string is
+// returned.
+Function StringFromRightOfChar Global String sFrom String sStopChar Returns String
+  String  sRetVal
+  String  sChar
+  Integer iLength
+  Integer iPos
+  Boolean bStopChar
+  Move "" To sRetval
+  Move (Length(sFrom)) To iLength
+  If ((iLength>0) And (Pos(sStopChar,sFrom) <> 0)) Begin
+    Move iLength   To iPos
+    Move (False)   To bStopChar
+    While Not bStopChar
+      Move (Mid(sFrom,1,iPos)) To sChar
+      Decrement iPos
+      If ((sChar=sStopChar) Or (iPos<1)) Begin
+        Move (True) To bStopChar
+      End
+      Else Begin
+        Move (sChar+sRetVal) To sRetVal
+      End
+    Loop 
+  End
+  Function_Return sRetVal
+End_Function // StringFromRightOfChar
+
+***** VWIN32FH\VWIN32FH.PKG
+
+// Pre:  sFileName contains the complete path of the file.
+// Post: returns the complete path of the file.
+// This function is inspired on function SEQ_ExtractPathFromFileName of Sture Andersen.
+Function ParseFolderName Global String sFileName Returns String
+  String sFile
+  String sFolderName
+  String sDirSep // this is "\" for windows, or "/" for unix
+  MOve "" To sFolderName
+  Move (sysconf(SYSCONF_DIR_SEPARATOR)) To sDirSep
+  If sDirSep In sFileName Begin
+    Move (StringFromRightOfChar(sFileName,sDirSep)) To sFile
+    Move (Left(sFileName,Length(sFileName)-Length(sFile))) to sFolderName
+  End
+  Else If ":" In sFileName Begin
+    Move (StringFromRightOfChar(sFileName,":")) To sFile
+    Move (Replace(sFile,sFileName,"")) To sFolderName
+  End
+  Function_Return sFolderName
+End_Function // ParseFolderName
+
+*****
+
+***** vWin32fh.pkg
+// Pre:  sFileName contains the complete path of the file.
+// Post: returns the complete path of the file.
+// This function is inspired on function SEQ_ExtractPathFromFileName of Sture Andersen.
+Function ParseFolderName Global String sFileName Returns String
+  String sFile
+  String sFolderName
+***** VWIN32FH\VWIN32FH.PKG
+// Pre:  sFileName contains the complete path of the file.
+// post: The returned filename has it's path removed, but will have a extension
+Function ParseFileName Global String sFileName Returns String
+  String sFolderName
+*****
+
+***** vWin32fh.pkg
+  String sDirSep // this is "\" for windows, or "/" for unix
+  MOve "" To sFolderName
+  Move (sysconf(SYSCONF_DIR_SEPARATOR)) To sDirSep
+  If sDirSep In sFileName Begin
+    Move (StringFromRightOfChar(sFileName,sDirSep)) To sFile
+    Move (Replace(sFile,sFileName,"")) To sFolderName
+  End  
+  Else If ":" In sFileName Begin
+    Move (StringFromRightOfChar(sFileName,":")) To sFile
+    Move (Replace(sFile,sFileName,"")) To sFolderName
+  End  
+  Function_Return sFolderName
+End_Function // ParseFolderName
+
+***** VWIN32FH\VWIN32FH.PKG
+  String sDirSep // this is "\" for windows, or "/" for unix
+
+  Move (sysconf(SYSCONF_DIR_SEPARATOR)) To sDirSep
+  Get ParseFolderName sFileName To sFolderName
+  If (sFolderName <> "") ;
+    Move (Replace(sFolderName,sFileName,"")) To sFileName
+  Move (Replace(sDirSep,sFileName,"")) To sFileName
+  Function_Return sFilename
+End_Function // ParseFileName
+
+*****
+
+***** vWin32fh.pkg
+
+// Pre:  sFileName contains the complete path of the file.
+// post: The returned filename has it's path removed, but will have a extension
+Function ParseFileName Global String sFileName Returns String
+  String sFolderName
+  String sDirSep // this is "\" for windows, or "/" for unix
+  Move (sysconf(SYSCONF_DIR_SEPARATOR)) To sDirSep
+  Get ParseFolderName sFileName To sFolderName
+  If (sFolderName <> "") Move (Replace(sFolderName,sFileName,"")) To sFileName
+  Move (Replace(sDirSep,sFileName,"")) To sFileName
+  Function_Return sFilename
+End_Function // ParseFileName
+
+***** VWIN32FH\VWIN32FH.PKG
+
+// Pre:  sFileName may contain the complete path of the file.
+//       or contain multiple dots in the filename, so temp.gif.bak will
+//       return "bak" as the extension and not "gif"
+// Post: returns the extension only, this extension can be a valid unixlike extension
+//       such as "html" or "java"
+Function ParseFileExtension Global String sFileName Returns String
+  String  sFileExtension
+  Get ParseFileName sFileName To sFileName // takes care of corner case with path containing a ".". eg. c:\frank.cheng\hello
+  Get StringFromRightOfChar sFileName "." To sFileExtension
+  Function_Return sFileExtension
+End_Function // ParseFileExtension
+
+*****
+
+***** vWin32fh.pkg
+
+// Pre:  sFileName may contain the complete path of the file.
+//       or contain multiple dots in the filename, so temp.gif.bak will
+//       return "bak" as the extension and not "gif"
+// Post: returns the extension only, this extension can be a valid unixlike extension
+//       such as "html" or "java"
+Function ParseFileExtension Global String sFileName Returns String
+  String  sFileExtension
+  Get StringFromRightOfChar sFileName "." To sFileExtension
+  Function_Return sFileExtension
+End_Function // ParseFileExtension
+
+***** VWIN32FH\VWIN32FH.PKG
+
+Define CS_DDE_ERR_UNKNOWN_LINE2   For ".\n"
+
+*****
+
+***** vWin32fh.pkg
+
+Define CS_DDE_ERR_UNKNOWN_LINE2   For ".\n"
+
+
+Function DDE_Error_To_String Integer iErrorID Returns String
+***** VWIN32FH\VWIN32FH.PKG
+
+Function DDE_Error_To_String Integer iErrorID Returns String
+*****
+
+***** vWin32fh.pkg
+    Case (iErrorID = vERROR_BAD_FORMAT)
+      Move CS_DDE_ERR_BAD_FORMAT To sMessage 
+      Case Break
+***** VWIN32FH\VWIN32FH.PKG
+    Case (iErrorID = vERROR_BAD_FORMAT)
+      Move CS_DDE_ERR_BAD_FORMAT To sMessage
+      Case Break
+*****
+
+***** vWin32fh.pkg
+
+// Does the directory exist? - No = 0, Yes = 1
+// This also works with UNC path encoding and wildcards
+Function vFolderExists Global String sFolderName Returns Integer
+  String  sFolder sTmp
+  Integer bFolderExists iCh
+
+  Move dfTrue To bFolderExists
+  Move "dir:" To sFolder
+***** VWIN32FH\VWIN32FH.PKG
+
+// Does the directory exist? - No = false, Yes = True
+// This also works with UNC path encoding and wildcards
+Function vFolderExists Global String sFolderName Returns Boolean
+  Boolean bFolderExists
+  Boolean bStop
+  String  sFolder sTmp
+  Integer iCh
+
+  // 2013-09-29 NGS Check for empty folder name and convert to ANSI
+  Move (ToANSI(Trim(sFolderName))) to sFolderName
+  If (sFolderName = "") Begin
+    Function_Return False
+  End
+
+  Move True  To bFolderExists
+  Move False To bStop
+  Move "dir:" To sFolder
+*****
+
+***** vWin32fh.pkg
+      Readln Channel iCh sTmp
+      If (Trim(sTmp)="") Move dfFalse To bFolderExists
+      Else Begin
+        Move dfTrue To bFolderExists
+        Indicate seqeof True  // end loop
+        End
+    Until (seqeof)
+  Close_Input Channel iCh
+***** VWIN32FH\VWIN32FH.PKG
+      Readln Channel iCh sTmp
+      Move (SeqEof) To bStop
+      If (Trim(sTmp)="") Begin
+        Move False To bFolderExists
+      End
+      Else Begin
+        Move True To bFolderExists
+        Move True To bStop
+      End
+    Until (bStop)
+  Close_Input Channel iCh
+*****
+
+***** vWin32fh.pkg
+Function vSHBrowseForFolder Global String sDialogTitle Returns String
+  String sFolder sBrowseInfo sTitle
+  Pointer lpItemIdList lpsFolder lpsBrowseInfo lpsTitle
+  Integer iFolderSelected iRetval
+
+  // fill string variable with null characters
+  ZeroType vtBrowseInfo To sBrowseInfo
+
+  If (sDialogTitle<>"") Begin
+***** VWIN32FH\VWIN32FH.PKG
+Function vSHBrowseForFolder Global String sDialogTitle Returns String
+  String sFolder sTitle sPath
+  Pointer lpItemIdList
+  Integer iFolderSelected iRetval
+  tvBrowseInfo BrowseInfo
+
+  Move "" To sPath
+  If (sDialogTitle<>"") Begin
+*****
+
+***** vWin32fh.pkg
+    // selected it will always be valid.
+    GetAddress Of sTitle To lpsTitle
+    Put lpsTitle To sBrowseInfo At vtBrowseInfo.lpszTitle
+  End
+***** VWIN32FH\VWIN32FH.PKG
+    // selected it will always be valid.
+    Move (AddressOf(sTitle)) to BrowseInfo.lpszTitle
+  End
+*****
+
+***** vWin32fh.pkg
+
+  Put vBIF_RETURNONLYFSDIRS To sBrowseInfo At vtBrowseInfo.ulFlags
+
+***** VWIN32FH\VWIN32FH.PKG
+
+  Move vBIF_RETURNONLYFSDIRS to BrowseInfo.ulFlags
+
+*****
+
+***** vWin32fh.pkg
+  // calling function. Otherwise, the folderdialog will be started as a seperate task.
+  Put (window_handle(focus(desktop))) To sBrowseInfo At vtBrowseInfo.hWndOwner
+
+  GetAddress Of sBrowseInfo To lpsBrowseInfo
+
+***** VWIN32FH\VWIN32FH.PKG
+  // calling function. Otherwise, the folderdialog will be started as a seperate task.
+  Move (window_handle(focus(desktop))) to BrowseInfo.hWndOwner
+
+*****
+
+***** vWin32fh.pkg
+  Move (Repeat(Character(0), vMAX_PATH)) To sFolder
+  GetAddress Of sFolder To lpsFolder
+
+***** VWIN32FH\VWIN32FH.PKG
+  Move (Repeat(Character(0), vMAX_PATH)) To sFolder
+
+*****
+
+***** vWin32fh.pkg
+  // select folder
+  Move (vWin32_SHBrowseForFolder(lpsBrowseInfo)) To lpItemIdList
+  // get selected folder name
+  Move (vWin32_SHGetPathFromIDList(lpItemIdList, lpsFolder)) To iFolderSelected
+
+***** VWIN32FH\VWIN32FH.PKG
+  // select folder
+  Move (vWin32_SHBrowseForFolder(AddressOf(BrowseInfo))) to lpItemIdList
+  // get selected folder name
+  Move (vWin32_SHGetPathFromIDList(lpItemIdList, AddressOf(sFolder))) to iFolderSelected
+
+*****
+
+***** vWin32fh.pkg
+
+  If (iFolderSelected<>0) Function_Return (CString(sFolder))
+  Else Function_Return ""
+End_Function // vSHBrowseForFolder
+***** VWIN32FH\VWIN32FH.PKG
+
+  If (iFolderSelected<>0) Begin
+    Move (CString(sFolder)) To sPath
+  End
+  Function_Return  sPath
+End_Function // vSHBrowseForFolder
+*****
+
+***** vWin32fh.pkg
+Function vCreateDirectory Global String sNewFolder Returns Integer
+  String  sFolder sSA
+  Pointer lpsFolder lpsSecurity_Attributes lpDescriptor
+  Integer iRetval bFolderCreated bInheritHandle
+
+  Move (False) To bFolderCreated
+  // fill string variable with null characters
+  ZeroType vtSecurity_attributes To sSA
+
+***** VWIN32FH\VWIN32FH.PKG
+Function vCreateDirectory Global String sNewFolder Returns Integer
+  String  sFolder
+  Integer iRetval bFolderCreated
+  tvSecurity_attributes SA
+
+  Move False to bFolderCreated
+
+*****
+
+***** vWin32fh.pkg
+
+    Move dfTrue To  bInheritHandle
+    // Setting this to NULL is already done by the zerotype command
+    // Move NULL   To  lpDescriptor
+    Put (length(sSA))   To sSA At vtSecurity_attributes.nLength
+    //Put lpDescriptor To sSA at vtSecurity_attributes.lpDescriptor
+    Put bInheritHandle To sSA At vtSecurity_attributes.bInheritHandle
+
+    GetAddress Of sSA To lpsSecurity_Attributes
+
+***** VWIN32FH\VWIN32FH.PKG
+
+    Move (SizeOfType(tvSecurity_attributes)) To SA.nLength
+    Move  0  To SA.lpDescriptor
+    Move  1  To SA.bInheritHandle
+
+*****
+
+***** vWin32fh.pkg
+    //
+    Move sNewFolder To sFolder
+    GetAddress Of sFolder To lpsFolder
+    Move (vWin32_CreateDirectory(lpsFolder, lpsSecurity_Attributes)) To bFolderCreated
+  End
+***** VWIN32FH\VWIN32FH.PKG
+    //
+    Move (sNewFolder+"") to sFolder
+    Move (vWin32_CreateDirectory(AddressOf(sFolder), AddressOf(SA))) to bFolderCreated
+  End
+*****
+
+***** vWin32fh.pkg
+
+  Ifnot bFolderCreated Move 1 To iRetVal
+  Function_Return iRetVal
+***** VWIN32FH\VWIN32FH.PKG
+
+  If (bFolderCreated=false) Begin
+     Move 1 to iRetVal
+  End
+  Function_Return iRetVal
+*****
+
+***** vWin32fh.pkg
+Function vRemoveDirectory Global String sFolder Returns Integer
+  String  sPath
+  Pointer lpsPath
+  Integer iRetval bRemoved bExists
+
+  Move (False) To bRemoved
+  Move 0 To iRetVal
+  Move (Trim(sFolder)) To sFolder
+***** VWIN32FH\VWIN32FH.PKG
+Function vRemoveDirectory Global String sFolder Returns Integer
+  Boolean bRemoved bExists
+  String  sPath
+  Integer iRetval
+
+  Move 0     To iRetVal
+  Move False To bRemoved
+  Move (Trim(sFolder)) To sFolder
+*****
+
+***** vWin32fh.pkg
+    Move (Insert(sFolder,sPath,1)) To sPath
+    GetAddress Of sPath To lpsPath
+    Move (vWin32_RemoveDirectory(lpsPath)) To bRemoved
+  End
+***** VWIN32FH\VWIN32FH.PKG
+    Move (Insert(sFolder,sPath,1)) To sPath
+    Move (vWin32_RemoveDirectory(AddressOf(sPath))) To bRemoved
+  End
+*****
+
+***** vWin32fh.pkg
+
+  If ((iRetVal=0) And (bRemoved=False)) Begin
+    Move 1 To iRetVal
+***** VWIN32FH\VWIN32FH.PKG
+
+  If (iRetVal=0 And bRemoved=False) Begin
+    Move 1 To iRetVal
+*****
+
+***** vWin32fh.pkg
+  Handle  hInstance hWnd
+  Pointer lpsOperation
+  Pointer lpsDocument
+  Pointer lpsParameters
+  Pointer lpsPath
+  // remove any leading/trailing spaces in the string
+***** VWIN32FH\VWIN32FH.PKG
+  Handle  hInstance hWnd
+  // remove any leading/trailing spaces in the string
+*****
+
+***** vWin32fh.pkg
+  Append sPath        (Character(0))
+  // Connect the corresponding pointers to the strings
+  GetAddress Of sOperation  To lpsOperation
+  GetAddress Of sDocument   To lpsDocument
+  GetAddress Of sParameters To lpsParameters
+  GetAddress Of sPath       To lpsPath
+
+***** VWIN32FH\VWIN32FH.PKG
+  Append sPath        (Character(0))
+
+*****
+
+***** vWin32fh.pkg
+  Get Window_Handle To hWnd
+  Move (vWin32_ShellExecute (hWnd, lpsOperation, lpsDocument, lpsParameters, lpsPath, 1)) To hInstance
+  If (hInstance <= 32) Begin
+***** VWIN32FH\VWIN32FH.PKG
+  Get Window_Handle To hWnd
+  Move (vWin32_ShellExecute (hWnd, AddressOf(sOperation), AddressOf(sDocument), ;
+             AddressOf(sParameters), AddressOf(sPath), 1)) To hInstance
+  If (hInstance <= 32) Begin
+*****
+
+***** vWin32fh.pkg
+    Property Integer piRenameFlags        0
+    
+    Set piCopyFlags   To (vFOF_NOCONFIRMMKDIR Ior vFOF_NOCONFIRMATION)
+    Set piMoveFlags   To (vFOF_NOCONFIRMMKDIR Ior vFOF_NOCONFIRMATION)
+    Set piDeleteFlags To (vFOF_SILENT Ior vFOF_NOCONFIRMATION)
+    Set piRenameFlags To (vFOF_SILENT Ior vFOF_NOCONFIRMATION)
+***** VWIN32FH\VWIN32FH.PKG
+    Property Integer piRenameFlags        0
+
+    Set piDeleteFlags To (vFOF_SILENT Ior vFOF_NOCONFIRMATION)
+    Set piCopyFlags   To (vFOF_SILENT iOr vFOF_NOCONFIRMMKDIR Ior vFOF_NOCONFIRMATION)
+    Set piMoveFlags   To (vFOF_SILENT iOr vFOF_NOCONFIRMMKDIR iOr vFOF_NOCONFIRMATION)
+    Set piRenameFlags To (vFOF_SILENT Ior vFOF_NOCONFIRMATION)
+*****
+
+***** vWin32fh.pkg
+  End_Procedure // Construct_Object
+  
+  
+  // This function uses the shell API to perform a file operation on the
+***** VWIN32FH\VWIN32FH.PKG
+  End_Procedure // Construct_Object
+
+
+  // This function uses the shell API to perform a file operation on the
+*****
+
+***** vWin32fh.pkg
+  //
+  Function FileOperation String sSource String sDestination Integer iOperation Integer iFlags Returns Integer
+    String   sShFileOp
+    Pointer  lpShFileOp
+    Pointer  lpsSource
+    Pointer  lpsDestination
+    Integer  iRetVal
+    Integer  bUserAbort
+             
+    ZeroType vtShFileOpStruct To sShFileOp
+    Move (ToAnsi(sSource)+Character(0)+Character(0))      To sSource
+***** VWIN32FH\VWIN32FH.PKG
+  //
+  Function FileOperation String sSource String sDestination Integer eOperation Integer iFlags Returns Integer
+    Integer  iRetVal
+    Integer  iUserAbort
+    tvShFileOpStruct FOS
+
+    Move (ToAnsi(sSource)+Character(0)+Character(0))      To sSource
+*****
+
+***** vWin32fh.pkg
+    Move (ToAnsi(sDestination)+Character(0)+Character(0)) To sDestination
+    GetAddress Of sSource    To lpsSource
+    If iOperation Ne vFO_DELETE Begin
+      GetAddress Of sDestination      To lpsDestination
+      Put lpsDestination To sShFileOp At vtShFileOpStruct.pTo
+    End  
+  
+    Put iOperation     To sShFileOp At vtShFileOpStruct.wFunc
+    Put lpsSource      To sShFileOp At vtShFileOpStruct.pFrom
+    Put iFlags         To sShFileOp At vtShFileOpStruct.fFlags
+  
+    GetAddress Of sShFileOp To lpShFileOp
+  
+    Move (vWin32_SHFileOperation(lpShFileOp)) To iRetVal
+    GetBuff From sShFileOp At vtShFileOpStruct.fAnyOperationsAborted To bUserAbort
+    If (bUserAbort <> 0) Begin
+      Move 80 To iRetVal  // file Operation Aborted by USER
+***** VWIN32FH\VWIN32FH.PKG
+    Move (ToAnsi(sDestination)+Character(0)+Character(0)) To sDestination
+
+    If (eOperation <> vFO_DELETE) Begin
+      Move (AddressOf(sDestination)) To FOS.pTo
+    End
+
+    Move eOperation           To FOS.wFunc
+    Move (AddressOf(sSource)) To FOS.pFrom
+    Move iFlags               To FOS.fFlags
+
+    Move (vWin32_SHFileOperation(AddressOf(FOS))) To iRetVal
+    Move FOS.fAnyOperationsAborted To iUserAbort
+    If (iUserAbort <> 0) Begin
+      Move 80 To iRetVal  // file Operation Aborted by USER
+*****
+
+***** vWin32fh.pkg
+  End_Function // FileOperation
+    
+  
+  Function sfoDeleteFile String sFileName Returns Integer
+***** VWIN32FH\VWIN32FH.PKG
+  End_Function // FileOperation
+
+
+  Function sfoDeleteFile String sFileName Returns Integer
+*****
+
+***** vWin32fh.pkg
+    Integer  iFlags
+    
+    Get piDeleteFlags To iFlags
+***** VWIN32FH\VWIN32FH.PKG
+    Integer  iFlags
+
+    Get piDeleteFlags To iFlags
+*****
+
+***** vWin32fh.pkg
+  End_Function // sfoDeleteFile
+  
+  
+  Function sfoCopyFile String sSource String sDestination Returns Integer
+***** VWIN32FH\VWIN32FH.PKG
+  End_Function // sfoDeleteFile
+
+
+  Function sfoCopyFile String sSource String sDestination Returns Integer
+*****
+
+***** vWin32fh.pkg
+    Integer  iFlags
+    
+    Get piCopyFlags To iFlags
+***** VWIN32FH\VWIN32FH.PKG
+    Integer  iFlags
+
+    Get piCopyFlags To iFlags
+*****
+
+***** vWin32fh.pkg
+  End_Function // sfoCopyFile
+  
+  
+  Function sfoMoveFile String sSource String sDestination Returns Integer
+***** VWIN32FH\VWIN32FH.PKG
+  End_Function // sfoCopyFile
+
+
+  Function sfoMoveFile String sSource String sDestination Returns Integer
+*****
+
+***** vWin32fh.pkg
+    Integer  iFlags
+    
+    Get piMoveFlags To iFlags
+***** VWIN32FH\VWIN32FH.PKG
+    Integer  iFlags
+
+    Get piMoveFlags To iFlags
+*****
+
+***** vWin32fh.pkg
+  End_Function // sfoMoveFile
+  
+  
+  // Rename a file or folder
+***** VWIN32FH\VWIN32FH.PKG
+  End_Function // sfoMoveFile
+
+
+  // Rename a file or folder
+*****
+
+***** vWin32fh.pkg
+    Integer  iFlags
+    
+    Get piRenameFlags To iFlags
+***** VWIN32FH\VWIN32FH.PKG
+    Integer  iFlags
+
+    Get piRenameFlags To iFlags
+*****
+
+***** vWin32fh.pkg
+  //
+  // The format is controlled by the dialog interface. 
+  // That is, the user must click the OK button To actually Begin the format
+***** VWIN32FH\VWIN32FH.PKG
+  //
+  // The format is controlled by the dialog interface.
+  // That is, the user must click the OK button To actually Begin the format
+*****
+
+***** vWin32fh.pkg
+  //
+  // iOptions = Format options.  
+  //  SHFMT_OPT_DEFAULT = Quick format
+***** VWIN32FH\VWIN32FH.PKG
+  //
+  // iOptions = Format options.
+  //  SHFMT_OPT_DEFAULT = Quick format
+*****
+
+***** vWin32fh.pkg
+  //  SHFMT_NOFORMAT = Drive is not formatable.
+  //                 
+  //
+***** VWIN32FH\VWIN32FH.PKG
+  //  SHFMT_NOFORMAT = Drive is not formatable.
+  //
+  //
+*****
+
+***** vWin32fh.pkg
+  // *** ATTENTION: This function has been disabled as it doesn't
+  //                seem to work, i must have made a silly mistake 
+  //                somewhere.
+***** VWIN32FH\VWIN32FH.PKG
+  // *** ATTENTION: This function has been disabled as it doesn't
+  //                seem to work, i must have made a silly mistake
+  //                somewhere.
+*****
+
+***** vWin32fh.pkg
+
+    Function_Return (1) // STOP HERE
+    
+    Move (Trim(sDrive)) To sDrive
+***** VWIN32FH\VWIN32FH.PKG
+
+    Function_Return 1 // STOP HERE
+
+    Move (Trim(sDrive)) To sDrive
+*****
+
+***** vWin32fh.pkg
+    If ( sDrive <> '' ) Begin
+      If ( sDrive Contains ':' ) Move (Replace(':',sDrive,'')) To sDrive
+      If (Not( 'AB' Contains sDrive )) Function_Return (SHFMT_NOFORMAT)
+      If ( sDrive = 'A' ) Move 0 To iDrive
+      Else If ( sDrive = 'B' ) Move 1 To iDrive
+      // Window_Handle Of Desktop equals to 0
+      
+      Get focus Of desktop To iObj
+***** VWIN32FH\VWIN32FH.PKG
+    If ( sDrive <> '' ) Begin
+      If ( sDrive Contains ':' ) ;
+        Move (Replace(':',sDrive,'')) To sDrive
+      If (Not( 'AB' Contains sDrive )) ;
+        Function_Return (SHFMT_NOFORMAT)
+      If ( sDrive = 'A' ) ;
+        Move 0 To iDrive
+      Else If ( sDrive = 'B' ) ;
+        Move 1 To iDrive
+      // Window_Handle Of Desktop equals to 0
+
+      Get focus Of desktop To iObj
+*****
+
+***** vWin32fh.pkg
+          Get Container_Handle Of iObj To hWnd
+      End
+                      
+      //Showln "hWnd = " hWnd " iDrive " iDrive " iOptions " iOptions
+***** VWIN32FH\VWIN32FH.PKG
+          Get Container_Handle Of iObj To hWnd
+      Loop
+
+      //Showln "hWnd = " hWnd " iDrive " iDrive " iOptions " iOptions
+*****
+
+***** vWin32fh.pkg
+      Move (SHFMT_ERROR) To dwReturnVal
+    End  
+    Function_Return dwReturnVal
+***** VWIN32FH\VWIN32FH.PKG
+      Move (SHFMT_ERROR) To dwReturnVal
+    End
+    Function_Return dwReturnVal
+*****
+
+***** vWin32fh.pkg
+  End_Function // sfoFormatDisk
+ 
+  //Example:
+***** VWIN32FH\VWIN32FH.PKG
+  End_Function // sfoFormatDisk
+
+  //Example:
+*****
+
+***** vWin32fh.pkg
+  //                                          mode.
+  
+End_Class // cShellFileOperations 
+
+***** VWIN32FH\VWIN32FH.PKG
+  //                                          mode.
+
+End_Class // cShellFileOperations
+
+*****
+
+***** vWin32fh.pkg
+End_Object // oShellFileOperations
+  
+                                                     
+// Restore to the old way of working with the shell file operations.
+***** VWIN32FH\VWIN32FH.PKG
+End_Object // oShellFileOperations
+
+
+// Restore to the old way of working with the shell file operations.
+*****
+
+***** vWin32fh.pkg
+// or.. to put lay man terms, allow any of the operations vDeleteFile
+// vCopyFile/vMoveFile/vRenameFile to have an UNDO                                                     
+Procedure vWin32fhCompatibilityMode 
+  Integer hoSFO
+***** VWIN32FH\VWIN32FH.PKG
+// or.. to put lay man terms, allow any of the operations vDeleteFile
+// vCopyFile/vMoveFile/vRenameFile to have an UNDO
+Procedure vWin32fhCompatibilityMode
+  Integer hoSFO
+*****
+
+***** vWin32fh.pkg
+  Integer iFlags
+  
+  Move (vFOF_SILENT Ior vFOF_NOCONFIRMATION Ior vFOF_ALLOWUNDO) To iFlags
+***** VWIN32FH\VWIN32FH.PKG
+  Integer iFlags
+
+  Move (vFOF_SILENT Ior vFOF_NOCONFIRMATION Ior vFOF_ALLOWUNDO) To iFlags
+*****
+
+***** vWin32fh.pkg
+  Move (oShellFileOperations(Self)) To hoSFO
+  
+  Set piDeleteFlags Of hoSFO To iFlags
+***** VWIN32FH\VWIN32FH.PKG
+  Move (oShellFileOperations(Self)) To hoSFO
+
+  Set piDeleteFlags Of hoSFO To iFlags
+*****
+
+***** vWin32fh.pkg
+  Set piRenameFlags Of hoSFO To iFlags
+End_Procedure // vWin32fhCompatibilityMode 
+
+
+Function vDeleteFile Global String sFileName Returns Integer
+***** VWIN32FH\VWIN32FH.PKG
+  Set piRenameFlags Of hoSFO To iFlags
+End_Procedure // vWin32fhCompatibilityMode
+
+// Delete a file or folder
+// Returns a nonzero value if the operation failed.
+Function vDeleteFile Global String sFileName Returns Integer
+*****
+
+***** vWin32fh.pkg
+
+
+Function vCopyFile Global String sSource String sDestination Returns Integer
+***** VWIN32FH\VWIN32FH.PKG
+
+// Copy a file or folder
+// Returns a nonzero value if the operation failed.
+Function vCopyFile Global String sSource String sDestination Returns Integer
+*****
+
+***** vWin32fh.pkg
+  Integer  iRetVal
+  
+  Get sfoCopyFile Of (oShellFileOperations(Self)) sSource sDestination To iRetVal
+***** VWIN32FH\VWIN32FH.PKG
+  Integer  iRetVal
+
+  Get sfoCopyFile Of (oShellFileOperations(Self)) sSource sDestination To iRetVal
+*****
+
+***** vWin32fh.pkg
+
+Function vMoveFile Global String sSource String sDestination Returns Integer
+***** VWIN32FH\VWIN32FH.PKG
+
+// Move a file or folder
+// Returns a nonzero value if the operation failed.
+Function vMoveFile Global String sSource String sDestination Returns Integer
+*****
+
+***** vWin32fh.pkg
+  Integer  iRetVal
+  
+  Get sfoMoveFile Of (oShellFileOperations(Self)) sSource sDestination To iRetVal
+***** VWIN32FH\VWIN32FH.PKG
+  Integer  iRetVal
+
+  Get sfoMoveFile Of (oShellFileOperations(Self)) sSource sDestination To iRetVal
+*****
+
+***** vWin32fh.pkg
+  Integer  iRetVal
+  
+  Get sfoRenameFile Of (oShellFileOperations(Self)) sSource sDestination To iRetVal
+***** VWIN32FH\VWIN32FH.PKG
+  Integer  iRetVal
+
+  Get sfoRenameFile Of (oShellFileOperations(Self)) sSource sDestination To iRetVal
+*****
+
+***** vWin32fh.pkg
+  String  sDirectory
+  Pointer lpDirectory
+  Integer iVoid
+***** VWIN32FH\VWIN32FH.PKG
+  String  sDirectory
+  Integer iVoid
+*****
+
+***** vWin32fh.pkg
+
+  ZeroString vMAX_PATH To sDirectory
+  GetAddress Of sDirectory To lpDirectory
+
+  Move (vWin32_GetWindowsDirectory(lpDirectory, vMAX_PATH)) To iVoid
+  Function_Return (CString(sDirectory))  // **WvA: Changed to CString()
+End_Function // vGetWindowsDirectory
+***** VWIN32FH\VWIN32FH.PKG
+
+  Move (ZeroString(vMAX_PATH)) To sDirectory
+  Move (vWin32_GetWindowsDirectory(AddressOf(sDirectory), vMAX_PATH)) To iVoid
+  Function_Return (CString(sDirectory))
+End_Function // vGetWindowsDirectory
+*****
+
+***** vWin32fh.pkg
+
+
+***** VWIN32FH\VWIN32FH.PKG
+
+Function vGetTempPath Returns String
+  Integer iRetval
+  String  sTempPath
+
+  Move (ZeroString(vMAX_PATH)) to sTempPath
+  Move (vWin32_GetTempPath (vMAX_PATH, AddressOf(sTempPath))) to iRetVal
+  Function_Return (Cstring(sTempPath))
+End_Function // vGetTempPath
+
+*****
+
+***** vWin32fh.pkg
+
+
+// Courtesy of Marco Kuipers
+***** VWIN32FH\VWIN32FH.PKG
+
+// Courtesy of Marco Kuipers
+*****
+
+***** vWin32fh.pkg
+    Integer iRetval
+    String  sTempPath sTempFileName sPrefixString
+    Pointer lpTempPath lpTempFileName lpPrefixString
+
+    Move (Repeat (Character (0), 255)) To sTempPath
+    GetAddress Of sTempPath To lpTempPath
+    Move (vWin32_GetTempPath (255, lpTempPath)) To iRetVal
+
+***** VWIN32FH\VWIN32FH.PKG
+    Integer iRetval
+    String  sTempPath
+    String  sTempFileName
+    String  sPrefixString
+
+    Get vGetTempPath to sTempPath
+    If (sTempPath = "") Begin
+      Get vGetWindowsDirectory to sTempPath  // first fallback
+      If (sTempPath<>"") ;
+        Move (sTempPath+"\Temp\") to sTempPath
+    End
+
+*****
+
+***** vWin32fh.pkg
+    If (sTempPath = "") Begin
+       Get_Current_Directory To sTempPath
+    End
+    Move (pad(sTempPath,vMax_Path-14)) To sTempPath // *WvA: 28-04-2005 Quote from msdn: The string cannot be longer than MAX_P
+ATH-14 characters.
+    Move (Repeat (Character (0), 255)) To sTempFileName
+    GetAddress Of sTempFileName To lpTempFileName
+    Move ("tmp"+character(0)) To sPrefixString // **WvA: 28-04-2005 Added a null
+    GetAddress Of sPrefixString To lpPrefixString
+    GetAddress Of sTempPath To lpTempPath
+    Move (vWin32_GetTempFileName (lpTempPath, lpPrefixString, 0, lpTempFileName)) To iRetval
+    If (iRetval = 0) Begin  // **WvA: 28-04-2005 Changed condition, the api call returns 0 if an error occurs
+        Move "" To sTempFileName
+    End
+***** VWIN32FH\VWIN32FH.PKG
+    If (sTempPath = "") Begin
+      // second fallback we really do not want to get here as to be fair using current folder as temp
+      // makes little sense. Leaving this in as it was old behavior.
+      Get_Current_Directory to sTempPath
+    End
+*****
+
+***** vWin32fh.pkg
+
+    Function_Return (Cstring(sTempFileName)) // **WvA: 28-04-2005 Cstring added
+***** VWIN32FH\VWIN32FH.PKG
+
+    Move (Trim(sTempPath)+Character(0)) to sTempPath
+    If (Length(sTempPath)>(vMax_Path-14)) Begin
+      Error DFERR_PROGRAM ("Temporary path"+sTempPath+"is too long, cannot create temporary files.")
+    End
+
+    Move (ZeroString(vMax_Path)) to sTempFileName
+    Move ("tmp"+character(0)) to sPrefixString // **WvA: 28-04-2005 Added a null
+    Move (vWin32_GetTempFileName (AddressOf(sTempPath), AddressOf(sPrefixString), 0, AddressOf(sTempFileName))) to iRetval
+    If (iRetval = 0) Begin  // **WvA: 28-04-2005 Changed condition, the api call returns 0 if an error occurs
+      //Get ShowLastError to iRetval
+      Move "" to sTempFileName
+    End
+
+    Function_Return (Cstring(sTempFileName)) // **WvA: 28-04-2005 Cstring added
+*****
+
+***** vWin32fh.pkg
+Function vCreateTempFileInPath String sPath String sPrefix Returns String
+    String sTempFileName
+    Integer iCnt iRetVal
+    Pointer lpTempFileName
+
+***** VWIN32FH\VWIN32FH.PKG
+Function vCreateTempFileInPath String sPath String sPrefix Returns String
+    Integer iCnt
+    Integer iRetVal
+    String sTempFileName
+
+*****
+
+***** vWin32fh.pkg
+    Move (pad("", vMAX_PATH)) To sTempFileName
+    GetAddress Of sTempFileName To lpTempFileName
+
+    Move (vWin32_GetTempFileName(sPath, sPrefix, 0, lpTempFileName)) To iRetVal
+    Move (Trim(Cstring(sTempFileName))) To sTempFileName
+***** VWIN32FH\VWIN32FH.PKG
+    Move (pad("", vMAX_PATH)) To sTempFileName
+
+    Move (vWin32_GetTempFileName(AddressOf(sPath), AddressOf(sPrefix), 0, ;
+                                    AddressOf(sTempFileName))) To iRetVal
+    Move (Trim(Cstring(sTempFileName))) To sTempFileName
+*****
+
+***** vWin32fh.pkg
+  Integer iVoid
+  Pointer lpsFolder
+  Handle  hWnd
+  Move (Window_Handle(focus(desktop))) To hWnd
+
+  Move (Repeat(Character(0), vMAX_PATH)) To sFolder
+  GetAddress Of sFolder To lpsFolder
+
+  Move (vWin32_SHGetFolderPath(hWnd,eFolder, 0, 0,lpsFolder)) To iVoid
+  Function_Return (CString(sFolder))
+***** VWIN32FH\VWIN32FH.PKG
+  Integer iVoid
+  Handle  hWnd
+
+  Move (Window_Handle(focus(desktop))) To hWnd
+  Move (Repeat(Character(0), vMAX_PATH)) To sFolder
+  Move (vWin32_SHGetFolderPath(hWnd,eFolder, 0, 0,AddressOf(sFolder))) To iVoid
+  Function_Return (CString(sFolder))
+*****
+
+***** vWin32fh.pkg
+Function vConvertFileDateTime Global Dword dwLowDateTime Dword dwHighDateTime Returns String
+  String  sftTime sSystemTime sFormattedTime sFormattedDate
+  Pointer lpsftTime lpsSystemTime lpsFormattedTime lpsFormattedDate
+  Integer iSuccess iLenCcTime iDataLength iLenCcDate
+
+  ZeroType vFileTime  To sftTime
+  Put dwLowDateTime  To sftTime At vFileTime.dwLowDateTime
+  Put dwHighDateTime To sftTime At vFileTime.dwHighDateTime
+  GetAddress Of sftTime To lpsftTime
+
+  ZeroType vSystemTime To sSystemTime
+  GetAddress Of sSystemTime To lpsSystemTime
+
+  Moveint (vWin32_FileTimeToSystemTime (lpsftTime, lpsSystemTime)) To iSuccess
+  If iSuccess Eq DfTrue Begin
+    ZeroString 255 To sFormattedTime
+    GetAddress Of sFormattedTime To lpsFormattedTime
+    Length sFormattedTime To iLenCcTime
+    Moveint (vWin32_GetTimeFormat (LOCALE_USER_DEFAULT, 0, lpsSystemTime, 0, ;
+                             lpsFormattedTime, iLenCcTime)) To iDataLength
+    ZeroString 255 To sFormattedDate
+    GetAddress Of sFormattedDate To lpsFormattedDate
+    Length sFormattedDate To iLenCcDate
+    Moveint (vWin32_GetDateFormat (LOCALE_USER_DEFAULT, 0, lpsSystemTime, 0, ;
+                             lpsFormattedDate, iLenCcDate)) To iDataLength
+    Function_Return (Cstring (sFormattedDate)  * Cstring (sFormattedTime))
+  End // iSuccess
+End_Function // vConvertFileDateTime
+***** VWIN32FH\VWIN32FH.PKG
+Function vConvertFileDateTime Global Dword dwLowDateTime Dword dwHighDateTime Returns String
+  String  sFormattedTime sFormattedDate
+  String  sFileDateTime
+  Integer iSuccess iLenCcTime iDataLength iLenCcDate
+  tvFileTime   FileTime
+  tvSystemTime SystemTime
+
+  Move "" To sFileDateTime
+  Move dwLowDateTime  To FileTime.dwLowDateTime
+  Move dwHighDateTime To FileTime.dwHighDateTime
+
+  Move 0 To SystemTime.wYear
+
+  Move (vWin32_FileTimeToSystemTime (AddressOf(FileTime), AddressOf(SystemTime))) To iSuccess
+  If (iSuccess = 1) Begin
+    Move (ZeroString(255))        To sFormattedTime
+    Move (Length(sFormattedTime)) To iLenCcTime
+    Move (vWin32_GetTimeFormat (LOCALE_USER_DEFAULT, 0, AddressOf(SystemTime), 0, ;
+                             AddressOf(sFormattedTime), iLenCcTime)) To iDataLength
+    Move (ZeroString(255))        To sFormattedDate
+    Move (Length(sFormattedDate)) To iLenCcDate
+    Move (vWin32_GetDateFormat (LOCALE_USER_DEFAULT, 0, AddressOf(SystemTime), 0, ;
+                             AddressOf(sFormattedDate), iLenCcDate)) To iDataLength
+    Move (Cstring (sFormattedDate)  * Cstring (sFormattedTime)) To sFileDateTime
+  End // iSuccess
+  Function_Return sFileDateTime
+End_Function // vConvertFileDateTime
+*****
+
+***** vWin32fh.pkg
+
+// **WvA Removed, See the cFileSet class for an alternative
+//Procedure DoBrowseDir String sFilePath
+//End_Procedure // DoBrowseDir
+
+// **WvA:
+***** VWIN32FH\VWIN32FH.PKG
+
+// **WvA:
+*****
+
+***** vWin32fh.pkg
+Function vFilePathExists Global String sFilePathMask Returns Integer
+  String  sWin32FindData
+  String  sLongFileName
+  Pointer lpsFilePathMask lpsWin32FindData
+  Handle  hFindFile
+  Integer iVoid iRetval bFound
+
+  GetAddress Of sFilePathMask To lpsFilePathMask
+  ZeroType vWin32_Find_Data To sWin32FindData
+  GetAddress Of sWin32FindData To lpswin32FindData
+  Move (vWin32_FindFirstFile (lpsFilePathMask, lpsWin32FindData)) To hFindFile
+  Move (vWin32_FindClose (hFindFile)) To iVoid
+  Function_Return (hFindFile <> vINVALID_HANDLE_VALUE)
+***** VWIN32FH\VWIN32FH.PKG
+Function vFilePathExists Global String sFilePathMask Returns Integer
+  String  sDirSep
+  Handle  hFindFile
+  Integer iVoid
+  tvWin32FindData FindData
+
+  Move vINVALID_HANDLE_VALUE To hFindFile
+  Move (ToANSI(trim(sFilePathMask))) To sFilePathMask
+
+  If (length(sFilePathMask)>0) Begin
+    // 2014-09-29 NGS Remove any trailing dir separators, as they make the function fail.
+    Move (sysconf(SYSCONF_DIR_SEPARATOR)) to sDirSep
+    While (Right(sFilePathMask, 1) = sDirSep)
+      Move (Left(sFilePathMask, Length(sFilePathMask) -1)) to sFilePathMask
+    Loop
+
+    Move 0 To FindData.dwReserved0        // initialize the variable so we can get an address from it.
+    Move (vWin32_FindFirstFile (AddressOf(sFilePathMask), AddressOf(FindData))) To hFindFile
+    Move (vWin32_FindClose (hFindFile)) To iVoid
+  End
+  Function_Return (hFindFile <> vINVALID_HANDLE_VALUE)
+*****
+
+***** vWin32fh.pkg
+
+
+***** VWIN32FH\VWIN32FH.PKG
+
+//
+// WideChar version of the function, do not use, it's an experiment
+//
+Function vWFilePathExists Global String sFilePathMask Returns Integer
+  Handle  hFindFile
+  Integer iVoid
+  tvWin32FindData FindData
+
+  Move vINVALID_HANDLE_VALUE To hFindFile
+
+  If (length(sFilePathMask)>0) Begin
+
+    Move 0 To FindData.dwReserved0        // initialize the variable so we can get an address from it.
+    Move (vWin32W_FindFirstFile (AddressOf(sFilePathMask), AddressOf(FindData))) To hFindFile
+    Move (vWin32_FindClose (hFindFile)) To iVoid
+  End
+  Function_Return (hFindFile <> vINVALID_HANDLE_VALUE)
+End_Function // vWFilePathExists
+
+
+
+*****
+
+***** vWin32fh.pkg
+  Function_Return sFolderName
+End_Function // vFolderFormat   
+
+***** VWIN32FH\VWIN32FH.PKG
+  Function_Return sFolderName
+End_Function // vFolderFormat
+
+*****
+
+***** vWin32fh.pkg
+//
+// Gets the parent path of the currently supplied path
+// Returns "" when we are at the root folder.
+//
+Function vParentPath Global String sPath Returns String 
+  String sStrip
+  
+  If (Right(sPath,1)="\") Begin
+    Move (Left(sPath,Length(sPath)-1)) To sPath
+  End
+  If (Pos("\",sPath)) Begin
+    Move (StringFromRightOfChar(sPath,"\")) To sStrip
+    Move (Replace(sStrip,sPath,"")) To sPath
+  End
+  Else Begin
+    Move "" To sPath
+  End
+  Function_Return sPath
+End_Function // vParentPath
+
+***** VWIN32FH\VWIN32FH.PKG
+//
+// Returns the amount of files in the folder (if it exists)
+// Returns -1 if folder doesn't exist.
+// The files "." and ".." are not counted.
+//
+Function vFolderFileCount Global String sFolderName Returns Integer
+  Boolean bFound
+  Handle  hFindFile
+  Integer iCount  iVoid
+  Integer iSuccess
+  String  sFileName
+  tvWin32FindData FindData
+
+*****
+
+Resync Failed.  Files are too different.
+***** vWin32fh.pkg
+***** VWIN32FH\VWIN32FH.PKG
+  Move -1 To iCount
+  Get vFolderFormat sFolderName To sFolderName
+  Move (sFolderName+"*") To sFolderName // match any filename in the folder
+  Move 0 To FindData.dwReserved0        // initialize the variable so we can get an address from it.
+  Move (vWin32_FindFirstFile (AddressOf(sFolderName), AddressOf(FindData))) To hFindFile
+  Move (hFindFile<>vINVALID_HANDLE_VALUE) To bFound
+  If (bFound) Begin
+    Move 0 To iCount
+  End
+  While (bFound)
+    Increment iCount
+    Move (UCharArrayToString(FindData.cFileName)) To sFileName
+    If (sFileName="." or sFileName="..") ;
+       Decrement iCount
+    Move (vWin32_FindNextFile(hFindFile, AddressOf(FindData))) To iSuccess
+    Move (iSuccess<>0) To bFound
+  Loop
+  Move (vWin32_FindClose (hFindFile)) To iVoid
+  Function_Return iCount
+End_Function // vFolderFileCount
+
+
+//
+// Gets the parent path of the currently supplied path
+// Returns "" when we are at the root folder.
+//
+Function vParentPath Global String sPath Returns String
+  String sStrip
+
+  Move (Trim(sPath)) To sPath
+  If (Right(sPath,1)="\") Begin
+    Move (Left(sPath,Length(sPath)-1)) To sPath
+  End
+  If (Pos("\",sPath)) Begin
+    Move (StringFromRightOfChar(sPath,"\")) To sStrip
+    Move (Left(sPath,Length(sPath)-Length(sStrip))) to sPath
+  End
+  Else Begin
+    Move "" To sPath
+  End
+  Function_Return sPath
+End_Function // vParentPath
+
+// Create the folder, including intermediate directories.
+// Don't panic if the folder already exists.
+// Michael Mullan June 2009.
+Function vshCreateDirectoryEX Global String sNewFolder Returns Integer
+  String  sFolder sSA
+  Integer iRetval iFolderCreated
+  tvSecurity_attributes SA
+
+  Move 0 to iFolderCreated
+
+  // null MAX_PATH chars into var (make space)
+  Move (Repeat(Character(0), vMAX_PATH)) to sFolder
+  If (sNewFolder <> "") Begin
+
+    Move (SizeOfType(tvSecurity_attributes)) To SA.nLength
+    Move  0  To SA.lpDescriptor
+    Move  1  To SA.bInheritHandle
+
+    //
+    Move (sNewFolder+"") to sFolder
+    Move (vWin32_SHCreateDirectoryEx(0,AddressOf(sFolder), AddressOf(SA))) to iFolderCreated
+  End
+
+  If (iFolderCreated <> 0) Begin
+    Move 1 to iRetVal
+    Case Begin
+      Case (iFolderCreated = 161)
+        Error DFERR_OPERATOR ("Path " + sNewFolder + " is Not Valid (ERROR_BAD_PATHNAME)")
+        Case Break
+      Case (iFolderCreated = 206)
+        Error DFERR_OPERATOR ("Path " + sNewFolder + " is Not Valid (ERROR_FILENAME_EXCED_RANGE)")
+        Case Break
+      Case (iFolderCreated = 3)
+        Error DFERR_OPERATOR ("Path " + sNewFolder + " is Not Valid (ERROR_PATH_NOT_FOUND)")
+        Case Break
+      Case (iFolderCreated = 80)
+        Move 0 to iRetval // "ERROR_FILE_EXISTS"     not really an error
+        Case Break
+      Case (iFolderCreated = 183)
+        Move 0 to iRetval //  "ERROR_ALREADY_EXISTS"     not really an error
+        Case Break
+      Case (iFolderCreated = 1223)
+        Error DFERR_OPERATOR ("Path " + sNewFolder + " is Not Valid (ERROR_CANCELLED)")
+        Case Break
+      Case Else
+        Error DFERR_OPERATOR ("Folder Creation Error # " + String(ifoldercreated) + "\n" + sNewFolder + "(FILE_CREATION_ERROR)"
+)
+    Case End
+  End
+  Function_Return iRetVal
+End_Function // vshCreateDirectoryEX
+
+
+Function vWin32_APIFileSize Global string sFileName returns integer
+  DWord   dwFileSizeHigh dwFileSizeLow
+  Integer iFileSize iVoid
+  Handle  hFindFile
+*****
+

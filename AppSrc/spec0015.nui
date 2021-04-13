@@ -1,0 +1,112 @@
+// Use Spec0015.nui // Functions StringIsDate and StringIsDateTime
+Use Strings.nui  // String manipulation for VDF and 3.1 (No User Interface)
+Use Dates.nui    // Date routines (No User Interface)
+
+// Function returns DFTRUE if the string contains a legal date.
+function StringIsDate global string lsValue integer liDateSep integer liFormat returns integer
+  integer liCurrentDF liCurrentSep liLen
+  string lsDateSep lsYear lsMonth lsDay
+  move (trim(lsValue)) to lsValue
+  move (length(lsValue)) to liLen
+  if liLen eq 0 function_return DFTRUE
+
+  ifnot liDateSep begin
+    if (length(lsValue)=7) begin 
+      move (append("0",lsValue)) to lsValue
+    end
+    if (liFormat=DF_DATE_MILITARY) begin // YMD 05061962
+      move (insert("#",lsValue,7)) to lsValue // insert "#" in lsValue at 7
+      move (insert("#",lsValue,5)) to lsValue // insert "#" in lsValue at 5
+    end
+    else begin
+      move (insert("#",lsValue,5)) to lsValue // insert "#" in lsValue at 5
+      move (insert("#",lsValue,3)) to lsValue // insert "#" in lsValue at 3
+    end
+    move "#" to lsDateSep
+    if (liLen<7 or liLen>8) begin
+      function_return DFFALSE
+    end
+  end
+  else begin
+    move (character(liDateSep)) to lsDateSep
+    if (liLen<5 or liLen>10) begin
+      function_return DFFALSE
+    end
+  end
+  if (HowManyWords(lsValue,lsDateSep)<>3) begin
+    function_return DFFALSE
+  end
+
+  if (liFormat=DF_DATE_EUROPEAN) begin // DMY
+    move (ExtractWord(lsValue,lsDateSep,1)) to lsDay
+    move (ExtractWord(lsValue,lsDateSep,2)) to lsMonth
+    move (ExtractWord(lsValue,lsDateSep,3)) to lsYear
+  end
+  if (liFormat=DF_DATE_USA) begin      // MDY
+    move (ExtractWord(lsValue,lsDateSep,1)) to lsMonth
+    move (ExtractWord(lsValue,lsDateSep,2)) to lsDay
+    move (ExtractWord(lsValue,lsDateSep,3)) to lsYear
+  end
+  if (liFormat=DF_DATE_MILITARY) begin // YMD
+    move (ExtractWord(lsValue,lsDateSep,1)) to lsYear
+    move (ExtractWord(lsValue,lsDateSep,2)) to lsMonth
+    move (ExtractWord(lsValue,lsDateSep,3)) to lsDay
+  end
+  ifnot (StringIsInteger(lsDay)) begin 
+    function_return DFFALSE
+  end
+  ifnot (StringIsInteger(lsMonth)) begin
+    function_return DFFALSE
+  end
+  ifnot (StringIsInteger(lsYear)) begin
+    function_return DFFALSE
+  end
+  function_return (DateIsLegalComponents(lsDay,lsMonth,lsYear))
+end_function
+
+function StringFormatToDate global string lsValue integer liDateSep integer liFormat returns date
+  integer liDay liMonth liYear
+  if (liFormat=DF_DATE_EUROPEAN) begin // DMY
+    move (ExtractInteger(lsValue,1)) to liDay
+    move (ExtractInteger(lsValue,2)) to liMonth
+    move (ExtractInteger(lsValue,3)) to liYear
+  end
+  if (liFormat=DF_DATE_USA) begin      // MDY
+    move (ExtractInteger(lsValue,1)) to liMonth
+    move (ExtractInteger(lsValue,2)) to liDay
+    move (ExtractInteger(lsValue,3)) to liYear
+  end
+  if (liFormat=DF_DATE_MILITARY) begin // YMD
+    move (ExtractInteger(lsValue,1)) to liYear
+    move (ExtractInteger(lsValue,2)) to liMonth
+    move (ExtractInteger(lsValue,3)) to liDay
+  end
+  function_return (DateCompose(liDay,liMonth,liYear))
+end_function
+
+function StringIsDateCurrentFormat global string lsValue returns boolean
+  integer liDateFormat liSep
+  get_attribute DF_DATE_SEPARATOR to liSep
+  get_attribute DF_DATE_FORMAT to liDateFormat
+  function_return (StringIsDate(lsValue,liSep,liDateFormat))
+end_function
+
+function StringIsDateTime global string lsValue integer liDateSep integer liFormat returns integer
+  string lsDate lsTime lsHour lsMinute lsSecond
+  if (trim(lsValue)="") function_return DFTRUE
+  if (HowManyWords(lsValue," ")=2) begin
+    move (ExtractWord(lsValue," ",1)) to lsDate
+    move (ExtractWord(lsValue," ",2)) to lsTime
+    if (HowManyWords(lsTime,":")=3) begin
+      move (ExtractWord(lsTime,":",1)) to lsHour
+      move (ExtractWord(lsTime,":",2)) to lsMinute
+      move (ExtractWord(lsTime,":",3)) to lsSecond
+      ifnot (StringIsInteger(lsHour)) function_return DFFALSE
+      ifnot (StringIsInteger(lsMinute)) function_return DFFALSE
+      ifnot (StringIsInteger(lsSecond)) function_return DFFALSE
+      if (integer(lsHour)<24 and integer(lsMinute)<60 and integer(lsSecond)<60) function_return (StringIsDate(lsDate,liDateSep,liFormat))
+    end
+  end
+  function_return DFFALSE
+end_function
+

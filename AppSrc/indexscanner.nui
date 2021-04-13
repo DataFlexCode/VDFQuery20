@@ -1,0 +1,673 @@
+// Use IndexScanner.nui // cIndexScanner class
+
+//
+// object oTest is a cIndexScanner
+//   set piMainFile to OrderDtl.File_Number
+//   set piOrdering to 1
+//   send add_constrain_relation OrderHdr.File_Number
+// end_object
+//
+// send DoReadTableBasedConstraints of oTest // Read OrderHdr constraint values
+// send DoScan of oTest 0 0 // 0:Record number to start with, 0: Find first
+//
+//
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+Use Dates.nui    // Date routines (No User Interface)
+Use DBMS.nui     // Basic DBMS functions (No User Interface)
+
+      class cIndexScannerFieldMapper is a cArray
+        item_property_list
+          item_property integer piField.i
+          item_property integer piParentFile.i
+          item_property integer piParentField.i
+          item_property integer piFieldType.i   // DF_BCD, DF_ASCII or DF_DATE
+          item_property string  psValue.i
+          item_property integer pbInIndex.i     // Is this constrain part of the jump-in/jump-out?
+        end_item_property_list cIndexScannerFieldMapper
+                  procedure set_inindex_values string lsFields
+                    integer liRow liMax liField
+                    string lsField
+                    get row_count to liMax
+                    decrement liMax
+                    for liRow from 0 to liMax
+                      get piField.i liRow to liField
+                      move (pad(liField,4)) to lsField
+                      set pbInIndex.i liRow to (lsFields contains lsField)
+                    loop
+                  end_procedure
+                  function find_field integer liFile integer liField returns integer
+                    integer liRow liMax liMainFile
+                    get piMainFile to liMainFile
+                    if (liFile<>liMainFile) error 813 "Constrain on other than main file"
+                    get row_count to liMax
+                    decrement liMax
+                    for liRow from 0 to liMax
+                      if (liFile=liMainFile and liField=piField.i(self,liRow)) function_return liRow
+                    loop
+                    function_return (liMax+1)
+                  end_function
+        procedure add_constrain_field integer liFile integer liField integer liParentFile integer liParentField
+          integer liRow
+          // if (liFile=liParentFile) error 814 "This is not good"
+          get find_field liFile liField to liRow
+          set piField.i       liRow to liField
+          set piParentFile.i  liRow to liParentFile
+          set piParentField.i liRow to liParentField
+          set piFieldType.i   liRow to (FDX_AttrValue_FIELD(0,DF_FIELD_TYPE,liFile,liField))
+        end_procedure
+        procedure add_constrain_constant integer liFile integer liField string lsConstant
+          integer liRow
+          get find_field liFile liField to liRow
+          set piField.i       liRow to liField
+          set piParentFile.i  liRow to 0
+          set piParentField.i liRow to 0
+          set piFieldType.i   liRow to (FDX_AttrValue_FIELD(0,DF_FIELD_TYPE,liFile,liField))
+          set psValue.i       liRow to lsConstant
+        end_procedure
+        function bEvaluate integer lbInIndex returns integer // Evaluate criteria not used for jump-in/jump-out
+          integer liRow liMax liType liFile lbConst
+          date    ldFieldValue ldConstrainValue
+          number  lnFieldValue lnConstrainValue
+          string  lsFieldValue lsConstrainValue
+          get piMainFile to liFile
+          get row_count to liMax
+          decrement liMax
+          for liRow from 0 to liMax
+            if (pbInIndex.i(self,liRow)=lbInIndex) begin
+              get piFieldType.i liRow to liType
+              if (liType=DF_ASCII) begin
+                get_field_value liFile (piField.i(self,liRow)) to lsFieldValue
+                get psValue.i liRow to lsConstrainValue
+                if (lsConstrainValue<>lsFieldValue) function_return 0
+              end
+              if (liType=DF_DATE) begin
+                get_field_value liFile (piField.i(self,liRow)) to ldFieldValue
+                get psValue.i liRow to ldConstrainValue
+                if (ldConstrainValue<>ldFieldValue) function_return 0
+              end
+              if (liType=DF_BCD) begin
+                get_field_value liFile (piField.i(self,liRow)) to lnFieldValue
+                get psValue.i liRow to lnConstrainValue
+                if (lnConstrainValue<>lnFieldValue) function_return 0
+              end
+            end
+          loop
+          function_return 1 // OK
+        end_function // bEvaluate
+        function bEvaluateIndex returns integer // Evaluate criteria used for jump-in/jump-out
+          integer lbRval
+          get bEvaluate 1 to lbRval
+          function_return lbRval
+        end_function
+        function bEvaluateNotIndex returns integer // Evaluate criteria not used for jump-in/jump-out
+          integer lbRval
+          get bEvaluate 0 to lbRval
+          function_return lbRval
+        end_function
+        procedure DoSeedIndexConstrainValues //> Seed main file with constrain values
+          integer liMax liRow liFieldType liMainFile
+          date   ldValue
+          number lnValue
+          string lsValue
+          get piMainFile to liMainFile
+          get row_count to liMax
+          decrement liMax
+          for liRow from 0 to liMax
+            if (pbInIndex.i(self,liRow)) begin // Only the ones we actually use for seeding
+              get piFieldType.i liRow to liFieldType
+              if (liFieldType=DF_BCD) begin
+                get psValue.i liRow to lnValue
+                set_field_value liMainFile (piField.i(self,liRow)) to lnValue
+              end
+              if (liFieldType=DF_DATE) begin
+                get psValue.i liRow to ldValue
+                set_field_value liMainFile (piField.i(self,liRow)) to ldValue
+              end
+              if (liFieldType=DF_ASCII) begin
+                get psValue.i liRow to lsValue
+                set_field_value liMainFile (piField.i(self,liRow)) to lsValue
+              end
+            end
+          loop
+        end_procedure
+        procedure DoReadTableBasedConstraints //> Read constrain values from parent record buffers
+          integer liMax liRow liFieldType liFile liField
+          date   ldValue
+          number lnValue
+          string lsValue
+          get row_count to liMax
+          decrement liMax
+          for liRow from 0 to liMax
+            get piParentFile.i  liRow to liFile
+            if liFile begin
+              get piFieldType.i   liRow to liFieldType
+              get piParentField.i liRow to liField
+
+              if (liFieldType=DF_BCD) begin
+                get_field_value liFile liField to lnValue
+                set psValue.i liRow to lnValue
+              end
+              if (liFieldType=DF_DATE) begin
+                get_field_value liFile liField to ldValue
+                set psValue.i liRow to ldValue
+              end
+              if (liFieldType=DF_ASCII) begin
+                get_field_value liFile liField to lsValue
+                set psValue.i liRow to lsValue
+              end
+            end
+          loop
+        end_procedure
+      end_class // cIndexScannerFieldMapper
+
+      class cIndexScannerParentFiles is a cArray
+        item_property_list
+          item_property integer piFile.i
+          item_property integer piRecnum.i
+        end_item_property_list cIndexScannerParentFiles
+                  function find_file.i integer liFile returns integer
+                    integer liMax liRow
+                    get row_count to liMax
+                    decrement liMax
+                    for liRow from 0 to liMax
+                      if (piFile.i(self,liRow)=liFile) function_return liRow
+                    loop
+                    function_return -1
+                  end_function
+        procedure add_file integer liFile
+          integer liRow
+          get find_file.i liFile to liRow
+          if (liRow=-1) begin
+            get row_count to liRow
+            set piFile.i liRow to liFile
+          end
+        end_procedure
+        procedure Refind_Records
+          integer liMax liRow liFile liRecnum liCurrentRecnum
+          get row_count to liMax
+          decrement liMax
+          for liRow from 0 to liMax
+            get piFile.i liRow to liFile
+            get piRecnum.i liRow to liRecnum
+            get_field_value liFile 0 to liCurrentRecnum
+            if (liRecnum<>liCurrentRecnum) begin
+              clear liFile
+              if liRecnum begin
+                set_field_value liFile 0 to liRecnum
+                vfind liFile 0 EQ
+              end
+            end
+          loop
+        end_procedure
+        procedure Read_Recnums
+          integer liMax liRow liFile liRecnum
+          get row_count to liMax
+          decrement liMax
+          for liRow from 0 to liMax
+            get piFile.i liRow to liFile
+            get_field_value liFile 0 to liRecnum
+            set piRecnum.i liRow to liRecnum
+          loop
+        end_procedure
+      end_class // cIndexScannerParentFiles
+
+class cIndexScanner is a cArray
+  procedure construct_object
+    forward send construct_object
+    property integer piMainFile        0  //
+    property integer phServer          0  //
+    property integer piOrdering        0  //
+    property integer piRecordsPerPage  10 // 0 means that all records go in one page
+
+    object oFieldMap is a cIndexScannerFieldMapper
+    end_object
+    object oTrailingIndexSegments is a cArray // Segments to be "max-seeded" when going to end_of_data
+    end_object
+    object oRecordStack is a cStack // For displaying records in reverse (or rather: when found in reverse order)
+    end_object
+    object oParentFiles is a cIndexScannerParentFiles // Parent tables used for constraining
+    end_object
+    property integer piFirstRecnum 0
+    property integer piLastRecnum  0
+  end_procedure
+
+  //> Completely reset all constrain information. After this the table is un-constrained.
+  procedure reset_constraints
+    send delete_data of oFieldMap
+  end_procedure
+
+  //> Add a constrain to the table based on a constant value.
+  procedure add_constrain_constant integer liFile integer liField string lsConstant
+    if (liFile<>piMainFile(self)) error 815 "piMainFile must be set prior to calling Add_Constrain_Constant"
+    send add_constrain_constant of oFieldMap liFile liField lsConstant
+  end_procedure
+  //> Add a contrain to the table based on the value of a field in a (most likely parent) table. The
+  //> actual constrain value will be read from the (parent) record buffer at the time of sending
+  //> the DoReadTableBasedConstraints message.
+  procedure add_constrain_field integer liFile integer liField integer liParentFile integer liParentField
+    if (liFile<>piMainFile(self)) error 816 "piMainFile must be set prior to calling Add_Constrain_Field"
+    send add_constrain_field of oFieldMap liFile liField liParentFile liParentField
+  end_procedure
+  //> This automatically sends a add_constrain_field for every field relating file liParentFile
+  procedure add_constrain_relation integer liParentFile
+    integer liMax liField liRelFile liRelField lbIdentical liFile
+    integer liParentField liPos liMaxPos liChildField
+    string lsChildFields lsParentFields
+    get piMainFile to liFile
+    ifnot liFile error 817 "piMainFile must be set prior to calling Add_Constrain_Relation"
+    get FDX_AttrValue_FILE 0 DF_FILE_NUMBER_FIELDS liFile to liMax
+    for liField from 1 to liMax
+      get FDX_AttrValue_FIELD 0 DF_FIELD_RELATED_FILE  liFile liField to liRelFile
+      if (liRelFile=liParentFile) begin // We have a hit!
+        get FDX_AttrValue_FIELD 0 DF_FIELD_RELATED_FIELD liFile liField to liRelField
+        // FDX_FieldIdenticalOverlapStructures checks correctly even if fields passed are not overlaps:
+        get FDX_FieldIdenticalOverlapStructures 0 liFile liField liRelFile liRelField to lbIdentical
+        if lbIdentical begin
+
+          get FDX_FieldsTranslateOverlaps 0 liFile liField to lsChildFields
+          get FDX_FieldsTranslateOverlaps 0 liRelFile liRelField to lsParentFields
+
+          move (length(lsChildFields)+3/4) to liMaxPos
+          for liPos from 1 to liMaxPos
+            move (mid(lsChildFields,4,liPos-1*4+1)) to liChildField
+            move (mid(lsParentFields,4,liPos-1*4+1)) to liParentField
+            send add_constrain_field liFile liChildField liParentFile liParentField
+          loop
+
+        end
+        else error 812 "Mismatch in relating field definitions"
+      end
+    loop
+  end_procedure
+
+            function fields_good_for_seeding string lsIndex string lsFields returns string
+              integer liMaxPos liPos
+              string lsRval lsField
+              move "" to lsRval
+              move (length(lsIndex)+3/4) to liMaxPos
+              for liPos from 1 to liMaxPos
+                move (mid(lsIndex,4,liPos-1*4+1)) to lsField
+                if (lsFields contains lsField) move (lsRval+lsField) to lsRval
+                else function_return lsRval // Dirty! If one segment fails, we can't use the rest
+              loop
+              function_return lsRval
+            end_function
+
+  // Set up field mapping. Should be called everytime constrain values have been added or reset.
+  // Is called automatically from end_construct_object.
+  procedure DoSetupIndexMapping
+    integer liFile liOrdering liField liRow liMax liParentFile
+    integer lhFieldMap lhTrailingIndexSegments lhParentFiles liPos liMaxPos
+    string  lsConstrainedFields lsIndexFields lsFieldsGoodForSeeding lsFieldsNotGoodForSeeding
+
+    move oFieldMap              to lhFieldMap
+    move oTrailingIndexSegments to lhTrailingIndexSegments
+    move oParentFiles           to lhParentFiles
+
+    send delete_data of lhTrailingIndexSegments
+    send delete_data of lhParentFiles
+
+    get piMainFile to liFile
+    get piOrdering to liOrdering
+
+    if liFile begin
+      move "" to lsConstrainedFields
+      get row_count of lhFieldMap to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        get piField.i of lhFieldMap liRow to liField
+        move (lsConstrainedFields+pad(liField,4)) to lsConstrainedFields
+        // While we're here, we might as well inform oParentFiles:
+        get piParentFile.i of lhFieldMap liRow to liParentFile
+        if liParentFile send add_file of lhParentFiles liParentFile
+      loop
+
+      get FDX_IndexAsFields 0 liFile liOrdering to lsIndexFields
+      get FDX_FieldsTranslateOverlaps 0 liFile lsIndexFields to lsIndexFields
+      get FDX_FieldsRemoveDublettes lsIndexFields to lsIndexFields
+
+      get fields_good_for_seeding lsIndexFields lsConstrainedFields to lsFieldsGoodForSeeding
+      move (replace(lsFieldsGoodForSeeding,lsIndexFields,"")) to lsFieldsNotGoodForSeeding
+
+      send set_inindex_values of lhFieldMap lsFieldsGoodForSeeding
+
+      // Set up oTrailingIndexSegments (segments to be "max-seeded" when going to end_of_data):
+      move (length(lsFieldsNotGoodForSeeding)+3/4) to liMaxPos
+      for liPos from 1 to liMaxPos
+        move (mid(lsFieldsNotGoodForSeeding,4,liPos-1*4+1)) to liField
+        set value of lhTrailingIndexSegments item (liPos-1) to liField
+      loop
+
+    end
+    else error 810 "piMainFile not set in cIndexScanner object"
+  end_procedure
+
+  procedure IncrementSeeding
+    integer lhTrailingIndexSegments liMax liItm liFile liField
+    move oTrailingIndexSegments to lhTrailingIndexSegments
+
+    get piMainFile to liFile
+
+    get item_count of lhTrailingIndexSegments to liMax
+    decrement liMax
+    for liItm from 0 to liMax
+      get value of lhTrailingIndexSegments item liItm to liField
+      send DBMS_SetFieldValueMax liFile liField
+    loop
+  end_procedure
+
+  function bSelect returns integer
+    integer lbRval
+    get bEvaluateNotIndex of oFieldMap to lbRval
+    function_return lbRval
+  end_function
+
+  procedure OnSelected // Obs. Records in related files are not found at the time of calling this.
+  end_procedure
+
+  procedure OnFiller // May be used to write empty rows (to maintain a constant list height)
+  end_procedure
+
+  procedure OnProtectedSelect // Private
+    integer liFile liRecnum
+    get piMainFile to liFile
+    get_field_value liFile 0 to liRecnum
+
+    ifnot (piFirstRecnum(self)) set piFirstRecnum to liRecnum
+    set piLastRecnum to liRecnum
+
+    send OnSelected
+
+    send Refind_Record liFile liRecnum // Restore record buffer, if necesary (I'll bet it'll never happen)
+  end_procedure
+
+            procedure Refind_Record integer liFile integer liRecnum
+              integer liCurrentRecord
+              if liFile begin
+                if liRecnum begin
+                  get_field_value liFile 0 to liCurrentRecord
+                  if (liCurrentRecord<>liRecnum) begin
+                    clear liFile
+                    set_field_value liFile 0 to liRecnum
+                    vfind liFile 0 EQ
+                  end
+                end
+                else clear liFile
+              end
+            end_procedure
+
+  procedure DoReadTableBasedConstraints // Private
+    send DoReadTableBasedConstraints of oFieldMap
+  end_procedure
+
+  // liFindDirection: 0:find first, 1:find backwards, 2:find forward, 3:find last
+  procedure DoScanHelp integer liChildRecord integer liFindDirection
+    integer liFile liRecordsPerPage lhRecordStack liOrdering lbFound lbSelect liRecnum
+    integer liRecDownCount lhFieldMap lhServer
+
+    set piFirstRecnum to 0
+    set piLastRecnum  to 0
+
+    get phServer to lhServer
+
+    move oFieldMap to lhFieldMap
+
+    move oRecordStack to lhRecordStack
+    send delete_data of lhRecordStack
+
+    get piMainFile to liFile
+    get piOrdering to liOrdering
+    get piRecordsPerPage to liRecordsPerPage
+
+    move liRecordsPerPage to liRecDownCount
+
+    ifnot liRecordsPerPage move 0 to liFindDirection
+
+    if (liFindDirection=2 and liChildRecord=0) move 0 to liFindDirection
+
+//  send Refind_Records of oParentFiles
+//  send DoReadConstrainValues of lhFieldMap
+    send DoReadTableBasedConstraints
+
+    if (liFindDirection=0) begin // Find first
+      ifnot lhServer begin
+        clear liFile
+        send DoSeedIndexConstrainValues of lhFieldMap
+        move 1 to lbFound
+        while (lbFound and (liRecDownCount or not(liRecordsPerPage)))
+          vfind liFile liOrdering GT
+          move (found) to lbFound
+          if lbFound get bEvaluateIndex of lhFieldMap to lbFound
+          if lbFound begin
+            get bSelect to lbSelect
+            if lbSelect begin
+              decrement liRecDownCount
+              send OnProtectedSelect
+            end
+          end
+        end // While
+      end
+      else begin
+        send request_read of lhServer FIRST_RECORD liFile liOrdering
+        move (found) to lbFound
+        while (lbFound and (liRecDownCount or not(liRecordsPerPage)))
+          get bSelect to lbSelect
+          if lbSelect begin
+            decrement liRecDownCount
+            send OnProtectedSelect
+            send request_read of lhServer GT liFile liOrdering
+            move (found) to lbFound
+          end
+        end // While
+      end
+    end
+
+    if (liFindDirection=1) begin // Find backwards
+      ifnot lhServer begin
+        send Refind_Record liFile liChildRecord // This is the first (or last if you will) record not supposed to be in the list
+        // If it's no longer in the list, we go to beginning_of_data instead. Maybe a bit surprising, but better than displaying a wrong record.
+        ifnot (bEvaluateIndex(lhFieldMap)) begin
+          send DoScanHelp 0 0
+          move 0 to liRecDownCount
+        end
+        else begin
+          // First we try to find as many records as possible (according to recs per page) in backwards direction
+          vfind liFile liOrdering LE
+          move (found) to lbFound
+          repeat
+            if lbFound get bEvaluateIndex of lhFieldMap to lbFound
+            if lbFound begin
+              get bSelect to lbSelect
+              if lbSelect begin
+                decrement liRecDownCount
+                get_field_value liFile 0 to liRecnum
+                send push.i of lhRecordStack liRecnum
+              end
+              vfind liFile liOrdering LT
+              move (found) to lbFound
+            end
+          until (not(lbFound) or (liRecordsPerPage<>0 and liRecDownCount=0))
+          // Then we find them again in the correct order
+          while (item_count(lhRecordStack))
+            clear liFile
+            get iPop of lhRecordStack to liRecnum
+            set_field_value liFile 0 to liRecnum
+            vfind liFile 0 EQ
+            if (found) send OnProtectedSelect
+          end
+          // Finally, we have to find additional records if recs per page wasn't met.
+          move 1 to lbFound
+          while (lbFound and liRecDownCount)
+            vfind liFile liOrdering GT
+            move (found) to lbFound
+            if lbFound get bEvaluateIndex of lhFieldMap to lbFound
+            if lbFound begin
+              get bSelect to lbSelect
+              if lbSelect begin
+                decrement liRecDownCount
+                send OnProtectedSelect
+              end
+            end
+          end // While
+
+        end
+      end
+      else begin // Use lhServer
+        send read_by_recnum of lhServer liFile liChildRecord // This is the first (or last if you will) record not supposed to be in the list
+        // If it's no longer in the list, we go to beginning_of_data instead. Maybe a bit surprising, but better than displaying a wrong record.
+        move (found) to lbFound
+        ifnot lbFound begin
+          send DoScanHelp 0 0
+          move 0 to liRecDownCount
+        end
+        else begin
+          // First we try to find as many records as possible (according to recs per page) in backwards direction
+          repeat
+            get bSelect to lbSelect
+            if lbSelect begin
+              decrement liRecDownCount
+              get_field_value liFile 0 to liRecnum
+              send push.i of lhRecordStack liRecnum
+            end
+            send request_read of lhServer LT liFile liOrdering
+            move (found) to lbFound
+          until (not(lbFound) or (liRecordsPerPage<>0 and liRecDownCount=0))
+          // Then we find them again in the correct order
+          while (item_count(lhRecordStack))
+            clear liFile
+            get iPop of lhRecordStack to liRecnum
+            set_field_value liFile 0 to liRecnum
+            vfind liFile 0 EQ
+            if (found) send OnProtectedSelect
+          end
+          // Finally, we have to find additional records if recs per page wasn't met.
+          move 1 to lbFound
+          while (lbFound and liRecDownCount)
+            send request_read of lhServer GT liFile liOrdering
+            move (found) to lbFound
+            if lbFound begin
+              get bSelect to lbSelect
+              if lbSelect begin
+                decrement liRecDownCount
+                send OnProtectedSelect
+              end
+            end
+          end // While
+
+        end
+      end
+    end
+
+    if (liFindDirection=2) begin // Find forward
+      ifnot lhServer begin
+        send Refind_Record liFile liChildRecord
+        // If it's no longer in the list, we go to beginning_of_data instead. Maybe a bit surprising, but better than displaying a wrong record.
+        ifnot (bEvaluateIndex(lhFieldMap)) begin
+          send DoScanHelp 0 0
+          move 0 to liRecDownCount
+        end
+        else begin
+          move 1 to lbFound
+          while (lbFound and liRecDownCount)
+            if lbFound get bEvaluateIndex of lhFieldMap to lbFound
+            if lbFound begin
+              get bSelect to lbSelect
+              if lbSelect begin
+                decrement liRecDownCount
+                send OnProtectedSelect
+              end
+              vfind liFile liOrdering GT
+              move (found) to lbFound
+            end
+          end // While
+        end
+      end
+      else begin // Use server:
+        send read_by_recnum of lhServer liFile liChildRecord // This is the first (or last if you will) record not supposed to be in the list
+        // If it's no longer in the list, we go to beginning_of_data instead. Maybe a bit surprising, but better than displaying a wrong record.
+        move (found) to lbFound
+        ifnot lbFound begin
+          send DoScanHelp 0 0
+          move 0 to liRecDownCount
+        end
+        else begin
+          move 1 to lbFound
+          while (lbFound and liRecDownCount)
+            get bSelect to lbSelect
+            if lbSelect begin
+              decrement liRecDownCount
+              send OnProtectedSelect
+            end
+            send request_read of lhServer GT liFile liOrdering
+            move (found) to lbFound
+          end // While
+        end
+      end
+    end
+
+    if (liFindDirection=3) begin // Find last
+      ifnot lhServer begin
+        clear liFile
+        send DoSeedIndexConstrainValues of lhFieldMap
+        send IncrementSeeding
+        move 1 to lbFound
+        while (lbFound and liRecDownCount)
+          vfind liFile liOrdering LT
+          move (found) to lbFound
+          if lbFound get bEvaluateIndex of lhFieldMap to lbFound
+          if lbFound begin
+            get bSelect to lbSelect
+            if lbSelect begin
+              decrement liRecDownCount
+              get_field_value liFile 0 to liRecnum
+              send push.i of lhRecordStack liRecnum
+            end
+          end
+        end // While
+        while (item_count(lhRecordStack))
+          clear liFile
+          get iPop of lhRecordStack to liRecnum
+          set_field_value liFile 0 to liRecnum
+          vfind liFile 0 EQ
+          if (found) send OnProtectedSelect
+        end
+      end
+      else begin // use server:
+        send request_read of lhServer LAST_RECORD liFile liOrdering
+        move (found) to lbFound
+        while (lbFound and liRecDownCount)
+          get bSelect to lbSelect
+          if lbSelect begin
+            decrement liRecDownCount
+            get_field_value liFile 0 to liRecnum
+            send push.i of lhRecordStack liRecnum
+          end
+          send request_read of lhServer LT liFile liOrdering
+        end // while
+
+        while (item_count(lhRecordStack))
+          clear liFile
+          get iPop of lhRecordStack to liRecnum
+          set_field_value liFile 0 to liRecnum
+          vfind liFile 0 EQ
+          if (found) send OnProtectedSelect
+        end
+      end
+    end
+
+    while (liRecDownCount>0)
+      decrement liRecDownCount
+      send OnFiller
+    end
+  end_procedure // DoScanHelp
+
+  procedure DoScan integer liChildRecord integer liFindDirection
+    send DoScanHelp liChildRecord liFindDirection
+  end_procedure
+
+  procedure end_construct_object
+    forward send end_construct_object
+    send DoSetupIndexMapping
+  end_procedure
+end_class // cIndexScanner

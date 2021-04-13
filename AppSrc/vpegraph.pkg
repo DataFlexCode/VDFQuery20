@@ -1,0 +1,391 @@
+Use VpeBase6.pkg
+Use VdfGraph.utl // Graphics for Visual DataFlex
+use base.nui
+
+integer grtempx grtempy
+
+[found ~found] begin
+  vpegraph$Update_GDI_Objects:
+    if gr$PenDirty begin
+      send vpe_SetPen to oVPE# gr$PenWidth gr$PenStyle gr$PenColor
+      move 0 to gr$PenDirty
+    end
+    if gr$BrushDirty begin
+      send vpe_SetTransparentMode to oVPE# 0
+      send vpe_SetBkgColor to oVPE# gr$FillColor
+      send vpe_SetHatchStyle to oVPE# gr$HatchStyle
+      send vpe_SetHatchColor to oVPE# gr$FillColor
+      move 0 to gr$BrushDirty
+    end
+  return
+  vpegraph$PreparePoint:
+    gosub vpegraph$Update_GDI_Objects
+    get value of gr$CPU$RAM item gr$CPU$PC to gr$CoordXY1#
+    gosub vdfgraph$ConvertToGUI1
+    increment gr$CPU$PC
+  return
+  vpegraph$Prepare2Points:
+    gosub vpegraph$Update_GDI_Objects
+    get value of gr$CPU$RAM item gr$CPU$PC to gr$CoordXY1#
+    gosub vdfgraph$ConvertToGUI1
+    increment gr$CPU$PC
+    get value of gr$CPU$RAM item gr$CPU$PC to gr$CoordXY2#
+    increment gr$CPU$PC
+    gosub vdfgraph$ConvertToGUI2
+  return
+end
+
+class VpeGraphicArea is a GraphicArea
+  procedure construct_object
+    forward send construct_object
+    property integer pExternalPaintState    false
+    property integer pExternalPaintLocation private (100*65536+100)
+    property integer pExternalPaintSize     private (500*65536+800)
+    property integer pCurrentTextAlign      (VDFGR_TA_LEFT+VDFGR_TA_TOP)
+  end_procedure
+  procedure set pExternalPaintSize integer x# integer y#
+    set !$.pExternalPaintSize to (x#*65536+y#)
+  end_procedure
+  procedure set pExternalPaintLocation integer x# integer y#
+    set !$.pExternalPaintLocation to (x#*65536+y#)
+  end_procedure
+  procedure mthd_SetTextAlign
+    dword tAlign#
+    get value of gr$CPU$RAM item gr$CPU$PC to tAlign#
+    increment gr$CPU$PC
+    set pCurrentTextAlign to tAlign#
+  end_procedure
+  procedure mthd_SetTextColor
+    dword tColor#
+    get value of gr$CPU$RAM item gr$CPU$PC to tColor#
+    increment gr$CPU$PC
+    send vpe_SetTextColor to oVPE# tColor#
+  end_procedure
+  procedure mthd_SetStockFont // Stock fonts have no equivalent in VPE
+    increment gr$CPU$PC
+  end_procedure
+  procedure mthd_SetTTFont
+    handle hFont#
+    integer pitch# angle# bold# italic# underline#
+    string name#
+    get value of gr$CPU$RAM item (gr$CPU$PC) to name#
+    get value of gr$CPU$RAM item (gr$CPU$PC+1) to pitch#
+    get value of gr$CPU$RAM item (gr$CPU$PC+2) to angle#
+    get value of gr$CPU$RAM item (gr$CPU$PC+3) to bold#
+    get value of gr$CPU$RAM item (gr$CPU$PC+4) to italic#
+    get value of gr$CPU$RAM item (gr$CPU$PC+5) to underline#
+    move (gr$CPU$PC+6) to gr$CPU$PC
+    send vpe_SelectFont to oVPE# name# pitch#
+  end_procedure
+  procedure mthd_AddDot
+    integer dsz# address# type# corr_x# corr_y# just# x# y#
+    string struct#
+    move gr$DotSize to dsz#
+    if type# eq DT_SQUARE move (dsz#/1.2) to dsz#
+    if dsz# lt 1 move 1 to dsz#
+    move gr$DotType to type#
+    gosub vpegraph$PreparePoint
+    if type# eq DT_PIXEL           begin
+      move 1 to dsz#
+      move DT_PLUS to type#
+    end
+
+    // Check for dot alignment
+    if type# ne DT_PIXEL begin
+      // Check for horizontal alignment
+      if type# ne DT_VERTICAL begin
+        move (gr$DotAlign iand 7) to just#       // 1:left 2:center 3:right
+        if just# eq 1 move (dsz#*2) to corr_y#
+        if just# eq 2 move dsz#  to corr_y#
+        if just# eq 4 move (-dsz#) to corr_y#
+        if just# eq 5 move (-dsz#*2) to corr_y#
+      end
+      // Check for vertical alignment
+      if type# ne DT_HORIZONTAL begin
+        move ((gr$DotAlign iand 56)/8) to just#  // 1:top 2:vcenter 3:bottom
+        if just# eq 1 move (-dsz#*2) to corr_x#
+        if just# eq 2 move (-dsz#) to corr_x#
+        if just# eq 4 move dsz# to corr_x#
+        if just# eq 5 move (dsz#*2) to corr_x#
+      end
+    end
+    move (low(gr$CoordXY1#)+corr_y#) to y#
+    move (hi(gr$CoordXY1#)+corr_x#)  to x#
+    if type# eq DT_CROSS           begin
+      send vpe_Line to oVPE# (y#-dsz#) (x#-dsz#) (y#+dsz#) (x#+dsz#)
+      send vpe_Line to oVPE# (y#-dsz#) (x#+dsz#) (y#+dsz#) (x#-dsz#)
+    end
+    if type# eq DT_PLUS            begin
+      send vpe_Line to oVPE# (y#-dsz#)  x#  (y#+dsz#)  x#
+      send vpe_Line to oVPE#  y#  (x#+dsz#)  y#  (x#-dsz#)
+    end
+    if type# eq DT_HORIZONTAL      begin
+      send vpe_Line to oVPE# (y#-dsz#)  x#  (y#+dsz#)  x#
+    end
+    if type# eq DT_VERTICAL        begin
+      send vpe_Line to oVPE#  y#  (x#+dsz#)  y#  (x#-dsz#)
+    end
+    if type# eq DT_CIRCLE          begin
+      send vpe_Ellipse to oVPE# (y#-dsz#) (x#-dsz#) (y#+dsz#) (x#+dsz#)
+    end
+    if type# eq DT_TRIANGLE_UP     begin
+      zerotype tPOINTS3 to struct#
+      put (y#+dsz#) to struct# at tPOINTS3.x1
+      put (x#+dsz#) to struct# at tPOINTS3.y1
+      put  y#       to struct# at tPOINTS3.x2
+      put (x#-dsz#) to struct# at tPOINTS3.y2
+      put (y#-dsz#) to struct# at tPOINTS3.x3
+      put (x#+dsz#) to struct# at tPOINTS3.y3
+      getaddress of struct# to address#
+      send vpe_Polygon to oVPE# address# 3
+    end
+    if type# eq DT_TRIANGLE_DOWN   begin
+      zerotype tPOINTS3 to struct#
+      put (y#-dsz#) to struct# at tPOINTS3.x1
+      put (x#-dsz#) to struct# at tPOINTS3.y1
+      put  y#       to struct# at tPOINTS3.x2
+      put (x#+dsz#) to struct# at tPOINTS3.y2
+      put (y#+dsz#) to struct# at tPOINTS3.x3
+      put (x#-dsz#) to struct# at tPOINTS3.y3
+      getaddress of struct# to address#
+      send vpe_Polygon to oVPE# address# 3
+    end
+    if type# eq DT_TRIANGLE_RIGHT  begin
+      zerotype tPOINTS3 to struct#
+      put (y#-dsz#) to struct# at tPOINTS3.x1
+      put (x#-dsz#) to struct# at tPOINTS3.y1
+      put (y#+dsz#) to struct# at tPOINTS3.x2
+      put  x#       to struct# at tPOINTS3.y2
+      put (y#-dsz#) to struct# at tPOINTS3.x3
+      put (x#+dsz#) to struct# at tPOINTS3.y3
+      getaddress of struct# to address#
+      send vpe_Polygon to oVPE# address# 3
+    end
+    if type# eq DT_TRIANGLE_LEFT   begin
+      zerotype tPOINTS3 to struct#
+      put (y#+dsz#) to struct# at tPOINTS3.x1
+      put (x#+dsz#) to struct# at tPOINTS3.y1
+      put (y#-dsz#) to struct# at tPOINTS3.x2
+      put  x#       to struct# at tPOINTS3.y2
+      put (y#+dsz#) to struct# at tPOINTS3.x3
+      put (x#-dsz#) to struct# at tPOINTS3.y3
+      getaddress of struct# to address#
+      send vpe_Polygon to oVPE# address# 3
+    end
+    if type# eq DT_SQUARE          begin
+      zerotype tPOINTS4 to struct#
+      put (y#-dsz#) to struct# at tPOINTS4.x1
+      put (x#-dsz#) to struct# at tPOINTS4.y1
+      put (y#-dsz#) to struct# at tPOINTS4.x2
+      put (x#+dsz#) to struct# at tPOINTS4.y2
+      put (y#+dsz#) to struct# at tPOINTS4.x3
+      put (x#+dsz#) to struct# at tPOINTS4.y3
+      put (y#+dsz#) to struct# at tPOINTS4.x4
+      put (x#-dsz#) to struct# at tPOINTS4.y4
+      getaddress of struct# to address#
+      send vpe_Polygon to oVPE# address# 4
+    end
+    if type# eq DT_DIAMOND         begin
+      zerotype tPOINTS4 to struct#
+      put (y#-dsz#) to struct# at tPOINTS4.x1
+      put  x#       to struct# at tPOINTS4.y1
+      put  y#       to struct# at tPOINTS4.x2
+      put (x#+dsz#) to struct# at tPOINTS4.y2
+      put (y#+dsz#) to struct# at tPOINTS4.x3
+      put  x#       to struct# at tPOINTS4.y3
+      put  y#       to struct# at tPOINTS4.x4
+      put (x#-dsz#) to struct# at tPOINTS4.y4
+      getaddress of struct# to address#
+      send vpe_Polygon to oVPE# address# 4
+    end
+  end_procedure
+  procedure mthd_Rectangle
+    gosub vpegraph$Prepare2Points
+    send vpe_Box to oVPE# (low(gr$CoordXY1#)) (hi(gr$CoordXY1#)) (low(gr$CoordXY2#)) (hi(gr$CoordXY2#))
+  end_procedure
+  procedure mthd_RectangleBackground
+    gosub vpegraph$Prepare2Points // Eat the arguments but don't draw the box
+  end_procedure
+  procedure mthd_Ellipse
+    gosub vpegraph$Prepare2Points
+    send vpe_Ellipse to oVPE# (low(gr$CoordXY1#)) (hi(gr$CoordXY1#)) (Low(gr$CoordXY2#)) (Hi(gr$CoordXY2#))
+  end_procedure
+  procedure mthd_RoundRect
+    gosub vpegraph$Prepare2Points
+    send vpe_Box to oVPE# (low(gr$CoordXY1#)) (hi(gr$CoordXY1#)) (Low(gr$CoordXY2#)) (Hi(gr$CoordXY2#))
+  end_procedure
+  procedure mthd_LineTo
+    gosub vpegraph$PreparePoint
+    send vpe_Line to oVPE# grtempx grtempy (low(gr$CoordXY1#)) (hi(gr$CoordXY1#))
+    move (hi(gr$CoordXY1#)) to grtempy
+    move (low(gr$CoordXY1#)) to grtempx
+  end_procedure
+  procedure mthd_MoveTo
+    gosub vpegraph$PreparePoint
+    move (hi(gr$CoordXY1#)) to grtempy
+    move (low(gr$CoordXY1#)) to grtempx
+  end_procedure
+  procedure mthd_TextOut
+    integer x1# y1# x2# y2# pCurrentTextAlign# vert# horz# height#
+    string str#
+    get value of gr$CPU$RAM item gr$CPU$PC to str#
+    if (pOemToAnsi_State(self)) move (Grph_OemToChar(str#)) to str#
+    increment gr$CPU$PC     //
+    gosub vpegraph$PreparePoint
+    send vpe_SetTransparentMode to oVPE# 1
+    if str# eq "" procedure_return
+    get pCurrentTextAlign to pCurrentTextAlign#
+
+    move (pCurrentTextAlign# iand 3) to horz#       // 1:left 2:center 3:right
+    move ((pCurrentTextAlign# iand 12)/4) to vert#  // 1:top 2:vcenter 3:bottom
+
+    if horz# eq 1 send vpe_SetAlign to oVPE# ALIGN_LEFT
+    if horz# eq 2 send vpe_SetAlign to oVPE# ALIGN_CENTER
+    if horz# eq 3 send vpe_SetAlign to oVPE# ALIGN_RIGHT
+
+    if horz# eq 1 begin
+      move (low(gr$CoordXY1#)) to x1#
+      move (hi(gr$CoordXY1#)) to y1#
+      move (x1#+1000) to x2#
+      move (y1#+100) to y2#
+    end
+    if horz# eq 2 begin
+      move (low(gr$CoordXY1#)*2) to x2#
+      move (hi(gr$CoordXY1#)) to y1#
+      move 0 to x1#
+      move (y1#+100) to y2#
+    end
+    if horz# eq 3 begin
+      move (low(gr$CoordXY1#)) to x2#
+      move (hi(gr$CoordXY1#)) to y1#
+      move 0 to x1#
+      move (y1#+100) to y2#
+    end
+    if vert# eq 2 begin // vcenter
+      get iTextHeight.is of oVPE# (x2#-x1#) str# to height#
+      move (height#/2) to height#
+      move (y1#-height#) to y1#
+      move (y2#-height#) to y2#
+    end
+    if vert# eq 3 begin // bottom
+      get iTextHeight.is of oVPE# (x2#-x1#) str# to height#
+      move (y1#-height#) to y1#
+      move (y2#-height#) to y2#
+    end
+//    showln ("GenericWrite: "+string(x1#)+" "+string(y1#)+" "+string(x2#)+" "+string(y2#)+" "+str#)
+    send vpe_Write to oVPE# x1# y1# x2# y2# str#
+    send vpe_SetTransparentMode to oVPE# 0
+  end_procedure
+
+  procedure do_polygonline integer line#
+    // Creates a string of (x,y) points and returns a pointer to the string
+    // This value can then be used as the array argument to the Polygon WinGDI
+    // function
+    Pointer address#
+    Integer Points# iPoint argument_size# size_needed#
+    string gr$Polygon_Points#
+    gosub VpeGraph$Update_GDI_Objects
+    get value of gr$CPU$RAM item gr$CPU$PC to Points#
+    increment gr$CPU$PC
+    move (Points#*8) to size_needed#
+    get_argument_size to argument_size#
+    if argument_size# lt size_needed# set_argument_size size_needed#
+    ZeroType tPOINT To gr$Point
+    move (repeat(character(0),Points#*8)) to gr$Polygon_Points#
+    For iPoint From 0 To (Points#-1)
+      get value of gr$CPU$RAM item gr$CPU$PC to gr$CoordXY1#
+      increment gr$CPU$PC
+      gosub vdfgraph$ConvertToGUI1
+      Put (low(gr$CoordXY1#)) To gr$Point at tPOINT.X
+      Put (hi(gr$CoordXY1#)) To gr$Point at tPOINT.Y
+      move (overstrike(gr$Point,gr$Polygon_Points#,iPoint*8+1)) to gr$Polygon_Points#
+    Loop
+    Append gr$Polygon_Points# (character(0)) // Add a null-terminator character to end of the string/array
+    GetAddress Of gr$Polygon_Points# To address#
+
+    if line# send vpe_Polyline to oVPE# address# points#
+    else     send vpe_Polygon  to oVPE# address# points#
+    set_argument_size argument_size#
+  end_procedure
+
+  procedure mthd_PolyLine
+    send do_polygonline 1
+  end_procedure
+
+  procedure mthd_PolyGon
+//    Move (GrphSetPolyFillMode(gr$hCurrentDC,gr$PolyGonFillMode)) To gr$Void
+    send do_polygonline 0
+  end_procedure
+
+  procedure copy_array.ii integer source# integer target#
+    integer max# itm#
+    if source# ne target# begin
+      send delete_data to target#
+      get item_count of source# to max#
+      for itm# from 0 to (max#-1)
+        set value of target# item itm# to (value(source#,itm#))
+      loop
+    end
+  end_procedure
+  procedure PrintArea integer obj#
+    set pPenColor        to (pPenColor(obj#))
+    set pPenWidth        to (pPenWidth(obj#))
+    set pFillColor       to (pFillColor(obj#))
+    set pPenStyle        to (pPenStyle(obj#))
+    set pBackColor       to (pBackColor(obj#))
+    set pRoundRectFactor to (pRoundRectFactor(obj#))
+    set pHatchStyle      to (pHatchStyle(obj#))
+    set pTitle           to (pTitle(obj#))
+
+    send copy_array.ii (oHatches(obj#))    (oHatches(self))
+    send copy_array.ii (oColors(obj#))     (oColors(self))
+    send copy_array.ii (program_RAM(obj#)) (program_RAM(self))
+
+    send vpe_SelectFont to oVPE# "Arial" 10
+
+    move (program_RAM(self)) to gr$CPU$RAM  // Array of instructions
+    move 0                             to gr$CPU$PC   // Program counter
+    get pPenColor                      to gr$PenColor
+    get pPenWidth                      to gr$PenWidth
+    get pFillColor                     to gr$FillColor
+    get pHatchStyle                    to gr$HatchStyle
+    get pPenStyle                      to gr$PenStyle
+    get pRoundRectFactor               to gr$RoundRectFactor
+    get pBackColor                     to gr$BackColor
+    set pCurrentTextAlign              to (VDFGR_TA_LEFT+VDFGR_TA_TOP)
+
+    move (hi(!$.pExternalPaintSize(self)))  to gr$GuiSizeX#
+    move (low(!$.pExternalPaintSize(self))) to gr$GuiSizeY#
+    move (hi(!$.pExternalPaintLocation(self)))  to gr$GuiOffsetX#
+    move (low(!$.pExternalPaintLocation(self))) to gr$GuiOffsetY#
+
+    move 1 to gr$PenDirty
+    move 1 to gr$BrushDirty
+
+    send paintarea
+    move 0 to gr$GuiOffsetX#
+    move 0 to gr$GuiOffsetY#
+    send delete_data to (oHatches(self))
+    send delete_data to (oColors(self))
+    send delete_data to (program_RAM(self))
+  end_procedure
+end_class
+
+desktop_section
+object oVpeGraphicArea is a aps.ModalPanel
+  object oVpeGraphicArea is a VpeGraphicArea
+    set pOemToAnsi_State to false
+    set popup_state to true
+    set focus_mode to no_activate
+    set visible_state to false
+  end_object
+end_object
+end_desktop_section
+
+procedure print_graphic_area global integer obj# integer lx# integer ly# integer sx# integer sy#
+  integer oVpeGraphicArea#
+  move (oVpeGraphicArea(oVpeGraphicArea(self))) to oVpeGraphicArea#
+  set pExternalPaintLocation of oVpeGraphicArea# to lx# ly#
+  set pExternalPaintSize of oVpeGraphicArea#     to sx# sy#
+  send PrintArea to oVpeGraphicArea# obj#
+end_procedure

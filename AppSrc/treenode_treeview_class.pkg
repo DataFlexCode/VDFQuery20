@@ -1,0 +1,122 @@
+// use treenode_treeview_class.pkg // cTreeNodeView class
+
+use DfAllEnt.pkg
+Use Dftreevw.pkg
+use treenode.nui // Defines the cTreeNode class.
+
+class cTreeNodeView is a TreeView
+  procedure construct_object
+    forward send construct_object
+    property integer phTreeNode
+  end_procedure
+
+            function iImageItems integer lhData returns integer // complex hi: "Image" low: "Selected Image"
+              function_return 0
+            end_function
+            procedure DoAddNode integer lhNode integer lhParentItem
+              integer lhItem lhData lhImage lhSelImage liMax liItem lhChildNode
+              string lsLabel
+              get phDataObject of lhNode to lhData
+              if lhData begin
+                get TreeViewLabel of lhData to lsLabel
+                get iImageItems lhData to lhImage
+                move (low(lhImage)) to lhSelImage
+                move (hi(lhImage)) to lhSelImage
+              end
+              else begin
+                move "" to lsLabel
+                move 0 to lhImage
+                move 0 to lhSelImage
+              end
+              get AddTreeItem lsLabel lhParentItem lhNode lhImage lhSelImage to lhItem
+              get ChildCount of lhNode to liMax
+              decrement liMax
+              for liItem from 0 to liMax
+                get ChildNodeObject of lhNode liItem to lhChildNode
+                send DoAddNode lhChildNode lhItem
+              loop
+            end_procedure
+  function ItemVisibleState integer lhItem returns integer
+    integer lhRoot
+    get RootItem to lhRoot
+    while (lhItem<>lhRoot)
+      get ParentItem lhItem to lhItem
+      if lhItem begin
+        ifnot (ItemExpandedState(self,lhItem)) function_return FALSE
+      end
+      else function_return TRUE
+    end
+    function_return TRUE
+  end_function
+  procedure DoAddTreeItems
+    integer lhNode
+    get phTreeNode to lhNode
+    send DoAddNode lhNode 0
+    send DoExpandItem (RootItem(self))
+  end_procedure
+
+  procedure OnCreateTree
+    send DoAddTreeItems
+    send DoExpandAll
+  end_procedure
+end_class // cTreeNodeView
+
+use aps.pkg
+class aps.TreeNodeView is a cTreeNodeView startmac APS.STARTMAC_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_auto_size_control_state to false
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class // aps.TreeNodeView
+
+class cTreeNodeViewEdit is a cTreeNodeView
+  procedure construct_object
+    forward send construct_object
+    on_key KEY_CTRL+KEY_UP_ARROW   send MoveItemUp
+    on_key KEY_CTRL+KEY_DOWN_ARROW send MoveItemDown
+  end_procedure
+
+            procedure MoveItemUp.h handle lhItem
+              integer lhNode lbSuccess
+              get ItemData lhItem to lhNode
+              get Request_SwitchUp of lhNode to lbSuccess
+              if lbSuccess begin
+              end
+            end_procedure
+            procedure MoveItemDown.h handle lhItem
+          //    send obs "WayOdown" lhItem
+            end_procedure
+
+  procedure MoveItemUp
+    handle lhItem
+    get CurrentTreeItem to lhItem
+    if (lhItem<>0) send MoveItemUp.h lhItem
+  end_procedure
+  procedure MoveItemDown
+    handle lhItem
+    get CurrentTreeItem to lhItem
+    if (lhItem<>0) send MoveItemDown.h lhItem
+  end_procedure
+
+end_class // cTreeNodeViewEdit
+
+class aps.TreeNodeViewEdit is a cTreeNodeViewEdit startmac APS.STARTMAC_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_auto_size_control_state to false
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class // aps.TreeNodeView
+
+

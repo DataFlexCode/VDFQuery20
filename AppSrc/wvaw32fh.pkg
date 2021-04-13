@@ -1,0 +1,79 @@
+// this package serves as a buffer between VDFQuery packages and
+// the Win32 file handling of Wil v. Antwherpen.
+
+use wvasymb.pkg
+
+#IFDEF wva_default
+#ELSE
+ // define wva_default for WVA$FILE_HANDLING_1999
+    define wva_default for WVA$FILE_HANDLING_2002
+#ENDIF
+
+//#IF wva_default=WVA$FILE_HANDLING_1999
+  //use vsWin32fh.pkg
+  //Function wvaSelect_File Global String sSupportedFileTypes String sCaptionText String sInitial_Folder Returns String
+    //function_return (vsSelect_File(sSupportedFileTypes,sCaptionText,sInitial_Folder))
+  //End_Function
+  //Function wvaFolderExists Global String sFolderName returns Integer
+    //function_return (vsFolderExists(sFolderName))
+  //End_Function
+  //Function wvaWin32_SHBrowseForFolder Global String sDialogTitle returns String
+    //function_return (vsWin32_SHBrowseForFolder(sDialogTitle))
+  //End_Function
+  //Function wvaWin32_CreateDirectory Global String sNewFolder Returns Integer
+    //function_return (vsWin32_CreateDirectory(sNewFolder))
+  //End_Function
+  //Function wvaVerifyNewFolder Global String sFolderName Returns Integer
+    //function_return (vsVerifyNewFolder(sFolderName))
+  //End_Function
+  //Function wvaWin32_ShDeleteFile Global String sFileName Returns Integer
+    //function_return (vsWin32_ShDeleteFile(sFileName))
+  //End_Function
+  //Function wvaWin32_ShCopyFile Global String sSource String sDestination returns Integer
+    //function_return (vsWin32_ShCopyFile(sSource,sDestination))
+  //End_Function
+  //Function wvaWin32_ShMoveFile Global String sSource String sDestination returns Integer
+    //function_return (vsWin32_ShMoveFile(sSource,sDestination))
+  //End_Function
+  //Function wvaWin32_ShRenameFile Global String sSource String sDestination returns Integer
+    //function_return (vsWin32_ShRenameFile(sSource,sDestination))
+  //End_Function
+  //Procedure wvaWin32_ShellExecute global String sOperation String sDocument String sParameters String sPath
+    //send vsWin32_ShellExecute sOperation sDocument sParameters sPath
+  //end_procedure
+//#ENDIF
+#IF wva_default=WVA$FILE_HANDLING_2002
+  use vWin32fh.pkg
+  Function wvaSelect_File Global String sSupportedFileTypes String sCaptionText String sInitial_Folder Returns String
+#IFNDEF Is$WebApp
+    Function_Return (vSelect_File(sSupportedFileTypes,sCaptionText,sInitial_Folder))
+#ENDIF
+  End_Function
+  Function wvaFolderExists Global String sFolderName returns Integer
+    function_return (vFolderExists(sFolderName))
+  End_Function
+  Function wvaWin32_SHBrowseForFolder Global String sDialogTitle returns String
+    function_return (vSHBrowseForFolder(sDialogTitle))
+  End_Function
+  Function wvaWin32_CreateDirectory Global String sNewFolder Returns Integer
+    function_return (vCreateDirectory(sNewFolder))
+  End_Function
+  Function wvaVerifyNewFolder Global String sFolderName Returns Integer
+    function_return (vVerifyNewFolder(sFolderName))
+  End_Function
+  Function wvaWin32_ShDeleteFile Global String sFileName Returns Integer
+    function_return (vDeleteFile(sFileName))
+  End_Function
+  Function wvaWin32_ShCopyFile Global String sSource String sDestination returns Integer
+    function_return (vCopyFile(sSource,sDestination))
+  End_Function
+  Function wvaWin32_ShMoveFile Global String sSource String sDestination returns Integer
+    function_return (vMoveFile(sSource,sDestination))
+  End_Function
+  Function wvaWin32_ShRenameFile Global String sSource String sDestination returns Integer
+    function_return (vRenameFile(sSource,sDestination))
+  End_Function
+  Procedure wvaWin32_ShellExecute global String sOperation String sDocument String sParameters String sPath
+    send vShellExecute sOperation sDocument sParameters sPath
+  end_procedure
+#ENDIF

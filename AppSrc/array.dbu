@@ -1,0 +1,123 @@
+// Use ArrayExp.nui    // Export array to file (send Array_DoWriteToFile lhArray lsFileName)
+Use ItemProp.nui  // Sort values (No User Interface)
+Use Files.nui    // Utilities for handling file related stuff (No User Interface)
+
+enumeration_list
+  define ARR_FORMAT
+  define ARR_COMMA
+  define ARR_SEMICOLON
+  define ARR_TAB
+end_enumeration_list
+
+desktop_section
+  object Array_WriteToFileColumnWidthArray is a cArray
+    item_property_list
+      item_property integer piWidth.i
+      item_property integer piRightAlign.i
+    end_item_property_list
+    procedure DoReadArray integer lhArray
+      integer liRows liColumns liRow liColumn liWidth liDecSep
+      string lsValue
+      get_attribute DF_DECIMAL_SEPARATOR to liDecSep
+      send delete_data
+      get column_count of lhArray to liColumns
+      get row_count of lhArray to liRows
+      for liColumn from 0 to (liColumns-1)
+        set piRightAlign.i liColumn to DFTRUE
+      loop
+      for liRow from 0 to (liRows-1)
+        for liColumn from 0 to (liColumns-1)
+          get value of lhArray item (liRow*liColumns+liColumn) to lsValue
+          move (rtrim(lsValue)) to lsValue
+          move (length(lsValue)) to liWidth
+          if (liWidth>integer(piWidth.i(self,liColumn))) set piWidth.i liColumn to liWidth
+          ifnot (StringIsNumber(lsValue,liDecSep)) set piRightAlign.i liColumn to DFFALSE
+        loop
+      loop
+    end_procedure
+  end_object
+end_desktop_section
+
+function Array_DataWidth global integer lhArray integer liColumn returns integer
+  function_return (piWidth.i(Array_WriteToFileColumnWidthArray(self),liColumn))
+end_function
+
+procedure Array_DoReadDataWidth global integer lhArray
+  send DoReadArray to (Array_WriteToFileColumnWidthArray(self)) lhArray
+end_procedure
+
+function Array_WriteToFile_Help global integer liFormat string lsValue integer liWidth integer liRightAlign returns string
+  if (liFormat=ARR_FORMAT) begin
+    if (length(lsValue)>liWidth) move (left(lsValue,liWidth)) to lsValue
+    if liRightAlign move (RightShift(lsValue,liWidth)) to lsValue
+    else move (pad(lsValue,liWidth)) to lsValue
+  end
+  if (liFormat=ARR_COMMA) begin
+    if "," in lsValue begin
+      move (replaces('"',lsValue,"'")) to lsValue
+      move ('"'+lsValue+'"') to lsValue
+    end
+  end
+  if (liFormat=ARR_SEMICOLON) begin
+    if ";" in lsValue begin
+      move (replaces('"',lsValue,"'")) to lsValue
+      move ('"'+lsValue+'"') to lsValue
+    end
+  end
+  function_return lsValue
+end_function
+
+// This procedure will write the entire contents of the Grid passed as
+// object handle object to a
+// sequential
+procedure Array_WriteToFile global integer lhArray integer liChannel integer liFormat
+  integer liRows liColumns liRow liColumn liWidth liRightAlign
+  string lsValue
+  get column_count of lhArray to liColumns
+  get row_count of lhArray to liRows
+  send Array_DoReadDataWidth lhArray
+//  for liColumn from 0 to (liColumns-1)
+//    get header_label of lhArray liColumn to lsValue
+//    get Array_DataWidth lhArray liColumn to liWidth
+//    get piRightAlign.i of (Array_WriteToFileColumnWidthArray(self)) liColumn to liRightAlign
+//    get Array_WriteToFile_Help liFormat lsValue liWidth liRightAlign to lsValue
+//    write channel liChannel (ToAnsi(lsValue))
+//    if liColumn ne (liColumns-1) begin
+//      if (liFormat=ARR_FORMAT) write " "
+//      if (liFormat=ARR_COMMA ) write ","
+//      if (liFormat=ARR_TAB   ) write (character(8))
+//    end
+//  loop
+//  writeln channel liChannel ""
+  for liRow from 0 to (liRows-1)
+    for liColumn from 0 to (liColumns-1)
+      get value of lhArray item (liRow*liColumns+liColumn) to lsValue
+      get Array_DataWidth lhArray liColumn to liWidth
+      get piRightAlign.i of (Array_WriteToFileColumnWidthArray(self)) liColumn to liRightAlign
+      get Array_WriteToFile_Help liFormat lsValue liWidth liRightAlign to lsValue
+      write channel liChannel (ToAnsi(lsValue))
+      if liColumn ne (liColumns-1) begin
+        if (liFormat=ARR_FORMAT) write " "
+        if (liFormat=ARR_COMMA ) write ","
+        if (liFormat=ARR_SEMICOLON) write ";"
+        if (liFormat=ARR_TAB   ) write (character(8))
+      end
+    loop
+    writeln channel liChannel ""
+  loop
+end_procedure
+
+// NOTE. Using this function during a transaction (or a lock) will
+//       generate an error "Can't RUNPROGRAM during transaction".
+procedure Array_DoWriteToFile global integer lhArray string lsFileName
+  integer liChannel
+  string lsTempFileName
+  get SEQ_FirstDirInDfPath to lsTempFileName
+  get SEQ_ComposeAbsoluteFileName lsTempFileName lsFileName to lsTempFileName
+  get SEQ_DirectOutput lsTempFileName to liChannel
+  if liChannel ge 0 begin
+    send Array_WriteToFile lhArray liChannel ARR_FORMAT
+    send SEQ_CloseOutput liChannel
+    runprogram BACKGROUND ("notepad "+lsTempFileName)
+  end
+end_procedure

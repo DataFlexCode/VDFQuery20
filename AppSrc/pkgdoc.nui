@@ -1,0 +1,403 @@
+//> Package name: PkgDoc.nui
+//> Created:      12-06-2004
+//>
+//>
+//> Basic array structures
+//>
+//>   Array
+//>   Array2D
+//>   Array3D
+//>   Stack
+//>   Tree
+//>   Item_Property
+//>
+//> Global function libraries
+//>
+//>   Strings.nui
+//>   Dates.nui
+//>   Dates.utl
+//>   Files.nui
+//>   Files.utl
+//>   Rgb.nui
+//>
+//>
+//> XML Builder
+//>
+//>
+
+#HEADER
+Use dfallent.pkg
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Files.nui    // Utilities for handling file related stuff (No User Interface)
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+#ENDHEADER
+Use ExtendedItemProp.nui // cExtendedItemPropertyArray class
+Use XmlBuilder.nui // cXmlBuilder class (XML building made easy)
+//Use TextProcessor.nui // cTextProcessor class
+
+enumeration_list
+  define PKGDOC_ITEMTYPE_UNDEFINED
+  define PKGDOC_ITEMTYPE_COMMAND
+  define PKGDOC_ITEMTYPE_OBJECT
+  define PKGDOC_ITEMTYPE_CLASS
+  define PKGDOC_ITEMTYPE_METHOD
+  define PKGDOC_ITEMTYPE_PROPERTY
+  define PKGDOC_ITEMTYPE_FILE
+end_enumeration_list
+
+
+object cPkgReader is a cArray
+
+  property string psPackageName
+
+  property integer pbXmlDomMode false
+
+  item_property_list
+    item_property integer piGroupType.i  // 0 desktop level, 1=object, 2=class
+    item_property string  psGroupName.i  // Object or class name or blank if desktop
+    item_property integer piType.i       // File, class, object, method
+    item_property string  psSourceLine.i // Source line that flushed the documentation buffer
+    item_property string  psDocText.i    // Doc text
+  end_item_property_list
+
+  object oXmlBuilder is a cXmlBuilder
+  end_object
+
+  property integer piXmlChannel
+  property handle  phXmlDoc
+
+  procedure DoOpenXml string lsXmlFile
+    integer liChannel
+    handle hoXML
+    if (pbXmlDomMode(self)) begin
+      Get Create U_cXmlDomDocument to hoXML
+      Send AddChildProcessingInstruction to hoXML "xml" "version='1.0' encoding='iso-8859-1'"
+      set psDocumentName of hoXML to lsXmlFile
+      send begin_xml_add_to_dom of oXmlBuilder hoXML
+      set phXmlDoc to hoXML
+    end
+    else begin
+      get SEQ_DirectOutput lsXmlFile to liChannel
+      write channel liChannel '<?xml version="1.0" encoding="iso-8859-1"?>' // Manually write this
+      send begin_xml_write_seq of oXmlBuilder liChannel
+      set piXmlChannel to liChannel
+    end
+    send add_open_element of oXmlBuilder "sourcefilelist"
+  end_procedure
+
+  procedure DoCloseXml
+    integer liChannel lbError
+    handle hoXML
+    send close_element of oXmlBuilder // "sourcefilelist"
+    if (pbXmlDomMode(self)) begin
+      get phXmlDoc to hoXML
+      Get SaveXmlDocument of hoXML to lbError
+      if lbError error 721 ("Error saving XML to file: "+string(lbError))
+      Send Destroy of hoXML
+    end
+    else begin
+      get piXmlChannel to liChannel
+      send end_xml of oXmlBuilder
+      send SEQ_CloseOutput liChannel
+    end
+  end_procedure
+
+            function WriteXml_GroupElement integer liGroupType returns string
+              if (liGroupType=0) function_return "desktop"
+              if (liGroupType=1) function_return "object"
+              if (liGroupType=2) function_return "class"
+            end_function
+            function WriteXml_TypeElement integer liType returns string
+              if (liType=PKGDOC_ITEMTYPE_UNDEFINED) function_return "undefined"
+              if (liType=PKGDOC_ITEMTYPE_COMMAND  ) function_return "command"
+              if (liType=PKGDOC_ITEMTYPE_OBJECT   ) function_return "object"
+              if (liType=PKGDOC_ITEMTYPE_CLASS    ) function_return "class"
+              if (liType=PKGDOC_ITEMTYPE_METHOD   ) function_return "method"
+              if (liType=PKGDOC_ITEMTYPE_PROPERTY ) function_return "property"
+              if (liType=PKGDOC_ITEMTYPE_FILE     ) function_return "pkg"
+            end_function
+
+  procedure DoWriteXml
+    integer liMax liRow liType liGroupType lbFirst
+    string lsSourceFile lsCurrentGroup lsGroup lsLine lsText
+    string lsGroupElement lsTypeElement
+    move "--" to lsCurrentGroup
+    get psPackageName to lsSourceFile
+    get row_count to liMax
+    if liMax begin
+      send add_open_element of oXmlBuilder "sourcefile"
+      send add_attribute of oXmlBuilder "name" lsSourceFile
+      move true to lbFirst
+
+      decrement liMax
+      for liRow from 0 to liMax
+        get psGroupName.i  liRow to lsGroup
+        get piGroupType.i  liRow to liGroupType
+        get piType.i       liRow to liType
+        get psSourceLine.i liRow to lsLine
+        get psDocText.i    liRow to lsText
+
+        if (liRow=0 and liType=PKGDOC_ITEMTYPE_FILE) begin
+          send add_closed_element_cdata of oXmlBuilder "doc" lsText
+        end
+        else begin
+
+          if (lsGroup<>lsCurrentGroup) begin
+            ifnot lbFirst send close_element of oXmlBuilder // "?"
+            get WriteXml_GroupElement liGroupType to lsGroupElement
+            send add_open_element of oXmlBuilder lsGroupElement
+            if (liGroupType<>0) send add_attribute of oXmlBuilder "name" lsGroup
+            move lsGroup to lsCurrentGroup
+            move false to lbFirst
+          end
+          send add_open_element of oXmlBuilder "declaration"
+          get WriteXml_TypeElement liType to lsTypeElement
+          send add_attribute of oXmlBuilder "type" lsTypeElement
+
+          send add_closed_element of oXmlBuilder "line" lsLine
+
+          send add_closed_element_cdata of oXmlBuilder "doc" lsText
+          send close_element of oXmlBuilder // "declaration"
+        end
+
+      loop
+      ifnot lbFirst send close_element of oXmlBuilder // "?"
+      send close_element of oXmlBuilder // "sourcefile"
+      send delete_data
+    end
+  end_procedure
+
+           object oCommentsBuilder is a cArray
+             procedure add_line string lsLine
+               if (left(lsLine,1)=" ") move (replace(" ",lsLine,"")) to lsLine
+               set value item (item_count(self)) to lsLine
+             end_procedure
+
+                      function sValue.ssi string lsOn string lsOff integer lbInitial returns string
+                        integer liMax liItm lbOn
+                        string lsRval lsValue
+                        move lbInitial to lbOn
+                        move "" to lsRval
+                        get item_count to liMax
+                        decrement liMax
+                        for liItm from 0 to liMax
+                          get value item liItm to lsValue
+                          if (lowercase(trim(replaces(" ",lsValue,"")))=lsOn) begin
+                            move 1 to lbOn
+                            move "" to lsValue // We will not include the "On" trigger
+                          end
+                          if (lowercase(trim(replaces(" ",lsValue,"")))=lsOff) move 0 to lbOn
+                          if lbOn begin
+                            if (lsRval="") move lsValue to lsRval
+                            else move (lsRval+character(10)+lsValue) to lsRval
+                          end
+                        loop
+                        function_return lsRval
+                      end_function
+
+             function sHeaderValue returns string
+               string lsValue
+               get sValue.ssi "pkgdoc.begin" "pkgdoc.end" false to lsValue
+               function_return lsValue
+             end_function
+
+             function sValue returns string
+               string lsValue
+               get sValue.ssi "pkgdoc.end" "pkgdoc.begin" true to lsValue
+               send delete_data
+               function_return lsValue
+             end_function
+           end_object // oCommentsBuilder
+
+                    function sRemoveComment string lsLine returns string
+                      integer liPos
+                      string lsComment lsCommand
+                      move (pos("/"+"/",lsLine)) to liPos
+                      if liPos begin
+                        move (left(lsLine,liPos-1)) to lsCommand
+                        move (replace(lsCommand,lsLine,"")) to lsComment
+                        if (left(lsComment,3)="//>") begin
+                          get StringRightBut lsComment 3 to lsComment
+                          send add_line of oCommentsBuilder lsComment
+                        end
+                      end
+                      else move lsLine to lsCommand
+                      function_return (rtrim(lsCommand))
+                    end_function
+
+           function sReadSourceLine.ii integer liChannel integer lbInImage returns string
+             integer lbSeqEof
+             string lsValue lsComment lsReturnValue
+             move "" to lsReturnValue
+             move 0 to lbSeqEof
+             while (lbSeqEof=0 and lsReturnValue="")
+               repeat
+                 readln channel liChannel lsValue
+                 move (seqeof) to lbSeqEof
+               until (lbSeqEof<>0 or lsValue<>"")
+               ifnot lbInImage begin
+                 get sRemoveComment lsValue to lsValue
+               end
+               move lsValue to lsReturnValue
+               ifnot lbSeqEof begin
+                 ifnot lbInImage begin
+                   while (not(lbSeqEof) and right(lsReturnValue,1)=";")
+                     get StringLeftBut lsReturnValue 1 to lsReturnValue
+                     readln channel liChannel lsValue
+                     move (seqeof) to lbSeqEof
+                     ifnot lbSeqEof begin
+                       get sRemoveComment lsValue to lsValue
+                       move (lsReturnValue*lsValue) to lsReturnValue
+                     end
+                   end
+                 end
+               end
+             end
+             function_return (rtrim(lsReturnValue))
+           end_function
+
+  procedure DoReset
+    send delete_data
+  end_procedure
+
+            function sReadUntil_Value integer liChannel string lsValue returns integer
+              string lsLine
+              move (uppercase(lsValue)) to lsValue
+              repeat
+                get sReadSourceLine.ii liChannel false to lsLine
+                if (lsLine="") function_return 0
+                if (uppercase(trim(lsLine))=lsValue) function_return 1
+              loop
+            end_function
+
+            function sReadUntil_ImageEnd integer liChannel string lsValue returns integer
+              string lsLine
+              repeat
+                get sReadSourceLine.ii liChannel true to lsLine
+                if (lsLine="") function_return 0
+                if (lsLine=lsValue) function_return 1
+              loop
+            end_function
+
+  procedure add_to_doc integer liType integer liGroupType string lsGroup string lsLine
+    integer liRow
+    string lsComment
+    get sHeaderValue of oCommentsBuilder to lsComment
+    if (lsComment<>"") begin
+      get row_count to liRow
+      set piType.i       liRow to PKGDOC_ITEMTYPE_FILE
+      set piGroupType.i  liRow to 0
+      set psGroupName.i  liRow to 0
+      set psSourceLine.i liRow to ""
+      set psDocText.i    liRow to lsComment
+    end
+
+    get sValue of oCommentsBuilder to lsComment
+    if (lsComment<>"") begin
+      get row_count to liRow
+      set piType.i       liRow to liType
+      set piGroupType.i  liRow to liGroupType
+      set psGroupName.i  liRow to lsGroup
+      set psSourceLine.i liRow to lsLine
+      set psDocText.i    liRow to lsComment
+    end
+  end_procedure
+
+  procedure DoAddPkg string lsFile
+    integer liChannel lbOk lbInClass liObjectLevel liGroupType
+    integer lbIdentified
+    string lsCommand lsArg1 lsLine
+    string lsCurrentGroup // Class name or object name
+    set psPackageName to (SEQ_RemovePathFromFileName(lsFile))
+    send delete_data of oCommentsBuilder
+
+    get SEQ_DirectInput lsFile to liChannel
+    if (liChannel>=0) begin
+      move false to lbInClass
+      move 0     to liObjectLevel
+      move 0     to liGroupType // 0=defined at desktop level, 1=defined in object, 2 defined in class
+      repeat
+        get sReadSourceLine.ii liChannel false to lsLine
+        if (lsLine<>"") begin
+
+          if (left(lsLine,1)="/") get sReadUntil_ImageEnd liChannel ("/"+"*") to lbOk
+          else begin
+            move 0 to lbIdentified
+            get ExtractWord lsLine " " 1 to lsCommand
+            get ExtractWord lsLine " " 2 to lsArg1
+            move (uppercase(lsCommand)) to lsCommand
+            if (lsCommand="#COMMAND") begin
+              send add_to_doc PKGDOC_ITEMTYPE_COMMAND liGroupType lsCurrentGroup lsLine
+              get sReadUntil_Value liChannel "#ENDCOMMAND" to lbOk
+              move 1 to lbIdentified
+            end
+            ifnot lbInClass begin
+              if (lsCommand="OBJECT") begin
+                increment liObjectLevel
+                if (liObjectLevel=1) begin
+                  get ExtractWord lsLine " " 2 to lsCurrentGroup
+                  move 1 to liGroupType // 0=defined at desktop level, 1=defined in object, 2 defined in class
+                  send add_to_doc PKGDOC_ITEMTYPE_OBJECT liGroupType lsCurrentGroup lsLine
+                end
+                move 1 to lbIdentified
+              end
+              if (lsCommand="END_OBJECT") begin
+                decrement liObjectLevel
+                ifnot liObjectLevel move 0 to liGroupType // 0=defined at desktop level, 1=defined in object, 2 defined in class
+                move 1 to lbIdentified
+                move "" to lsCurrentGroup
+              end
+            end
+            if (lsCommand="CLASS") begin
+              move true to lbInClass
+              get ExtractWord lsLine " " 2 to lsCurrentGroup
+              move 2 to liGroupType // 0=defined at desktop level, 1=defined in object, 2 defined in class
+              send add_to_doc PKGDOC_ITEMTYPE_CLASS liGroupType lsCurrentGroup lsLine
+              move 1 to lbIdentified
+            end
+            if (lsCommand="END_CLASS") begin
+              move false to lbInClass
+              move 0 to liGroupType // 0=defined at desktop level, 1=defined in object, 2 defined in class
+              move 1 to lbIdentified
+              move "" to lsCurrentGroup
+            end
+            if (lsCommand="FUNCTION") begin
+              get sReadUntil_Value liChannel "END_FUNCTION" to lbOK
+              send add_to_doc PKGDOC_ITEMTYPE_METHOD liGroupType lsCurrentGroup lsLine
+              move 1 to lbIdentified
+            end
+            if (lsCommand="PROCEDURE" and lsArg1="CONSTRUCT_OBJECT") begin
+              move 1 to lbIdentified
+            end
+            else begin
+              if (lsCommand="PROCEDURE" or lsCommand="PROCEDURE_SECTION") begin
+                get sReadUntil_Value liChannel "END_PROCEDURE" to lbOK
+                send add_to_doc PKGDOC_ITEMTYPE_METHOD liGroupType lsCurrentGroup lsLine
+                move 1 to lbIdentified
+              end
+            end
+
+            if (lsCommand="PROPERTY") begin
+              send add_to_doc PKGDOC_ITEMTYPE_PROPERTY liGroupType lsCurrentGroup lsLine
+              move 1 to lbIdentified
+            end
+
+            ifnot lbIdentified begin
+              // Just in case of misplaced comments
+              send add_to_doc PKGDOC_ITEMTYPE_UNDEFINED liGroupType lsCurrentGroup lsLine
+            end
+          end
+        end
+      until (lsLine="")
+      send SEQ_CloseInput liChannel
+      send DoWriteXml
+    end
+  end_procedure
+
+//send DoOpenXml "xmltest.xml"
+//send DoAddPkg "c:\dfs\xmlbuilder.nui"
+//send DoAddPkg "c:\dfs\strings.nui"
+//send DoAddPkg "c:\dfs\dates.nui"
+//send DoAddPkg "c:\dfs\files.nui"
+//send DoCloseXml
+end_object

@@ -1,0 +1,328 @@
+// Use DataSamp.utl // Class for sampling data file values (Field statistics)
+
+// This purpose of this package is to relieve me of having to remember which
+// package exactly holds a particular command or class.
+
+Use Array.nui    // Item_Property command
+Use Macros.utl   // Various macros (FOR_EX...)
+Use Set.utl      // cArray, cSet and cStack classes
+Use Dates.utl    // Date manipulation for VDF
+Use SetOfFld.utl // cSetOfFields class
+Use API_Attr.utl // Functions for querying API attributes
+Use Strings.nui  // String manipulation for VDF
+
+class cDataSamplerSet is a cSet
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piDataType DF_ASCII
+  end_procedure
+  item_property_list
+    item_property integer piCount.i
+    item_property string  psValue.i
+  end_item_property_list cDataSamplerSet
+  function iFind.s string value# returns integer
+    integer row# max#
+    get row_count to max#
+    decrement max#
+    for row# from 0 to max#
+      if (psValue.i(self,row#)) eq value# function_return row#
+    loop
+    function_return -1
+  end_function
+  procedure seq_write integer ch#
+    integer row# max#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      writeln channel ch# (IntToStrR(piCount.i(self,row#),8)) " " (psValue.i(self,row#))
+    loop
+  end_procedure
+  procedure element_add string value#
+    integer row#
+    get iFind.s value# to row#
+    if row# eq -1 begin
+      get row_count to row#
+      set piCount.i row# to 1
+      set psValue.i row# to value#
+    end
+    else set piCount.i row# to (piCount.i(self,row#)+1)
+  end_procedure
+end_class // cDataSamplerSet
+
+class cDataSampler is a cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+    object oBatchCompanion is a cBatchCompanion
+    end_object
+  end_procedure
+  item_property_list
+    item_property integer piType.i      // Type of variable
+    item_property string  psName.i      // Name of variable
+    item_property integer piCount.i     // Number of samples
+    item_property integer piNullCount.i // Number of null values
+    item_property number  pnMin.i       // Lowest value (DF_BCD and DF_DATE)
+    item_property number  pnMax.i       // Highest value (DF_BCD and DF_DATE)
+    item_property integer piDiscrete.i  // Collect descrete values?
+    item_property integer piSet.i       // Set of values (piDiscrete.i only)
+    item_property integer piFile.i      // Data origin
+    item_property integer piField.i     // Data origin
+  end_item_property_list cDataSampler
+  procedure seq_write_discrete_set integer row# integer ch#
+    integer obj#
+    get piSet.i row# to obj#
+    if obj# send seq_write to obj# ch#
+  end_procedure
+  function sMinMax.is integer row# string value# returns string
+    integer type#
+    get piType.i row# to type#
+    if type# eq DF_DATE move (date(integer(value#))) to value#
+    if type# eq DF_BCD  move (trim(value#)) to value#
+    function_return value#
+  end_function
+  function sMin.i integer row# returns string
+    function_return (sMinMax.is(self,row#,pnMin.i(self,row#)))
+  end_function
+  function sMax.i integer row# returns string
+    function_return (sMinMax.is(self,row#,pnMax.i(self,row#)))
+  end_function
+  procedure add_variable string name# integer type# integer Discrete# integer file# integer field#
+    integer row#
+    get row_count to row#
+    set psName.i     row# to name#
+    set piType.i     row# to type#
+    set piDiscrete.i row# to Discrete#
+    set piFile.i     row# to file#
+    set piField.i    row# to field#
+  end_procedure
+  procedure reset
+    integer row# max# set#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      get piSet.i row# to set#
+      if set# send request_destroy_object to set#
+    loop
+    send delete_data
+  end_procedure
+  function iSetID.i integer row# returns integer
+    integer set#
+    get piSet.i row# to set#
+    ifnot set# begin
+      object oSet is a cDataSamplerSet
+        move self to set#
+      end_object
+      set piSet.i row# to set#
+      set piDataType of set# to (piType.i(self,row#))
+    end
+    function_return set#
+  end_function
+  procedure init
+    integer row# max# type#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      set piCount.i row# to 0
+      set piNullCount.i row# to 0
+      get piType.i row# to type#
+      if type# eq DF_BCD  begin
+        set pnMin.i row# to 99999999999999.99999999
+        set pnMax.i row# to -9999999999999.99999999
+      end
+      if type# eq DF_DATE begin
+        set pnMin.i row# to LargestPossibleDate
+        set pnMax.i row# to 0
+      end
+      if type# eq DF_ASCII begin
+      end
+      if (piDiscrete.i(self,row#)) set piSet.i row# to (iSetID.i(self,row#))
+    loop
+  end_procedure
+  procedure add_value integer row# string value#
+    integer type# ival#
+    number nval#
+    set piCount.i row# to (piCount.i(self,row#)+1)
+    get piType.i row# to type#
+    if (piDiscrete.i(self,row#)) send element_add to (piSet.i(self,row#)) value#
+    if type# eq DF_BCD begin
+      move value# to nval#
+      if nval# eq 0 set piNullCount.i row# to (piNullCount.i(self,row#)+1)
+      if nval# lt (pnMin.i(self,row#)) set pnMin.i row# to nval#
+      if nval# gt (pnMax.i(self,row#)) set pnMax.i row# to nval#
+    end
+    if type# eq DF_DATE begin
+      move value# to ival#
+      if ival# eq 0 set piNullCount.i row# to (piNullCount.i(self,row#)+1)
+      if ival# lt (pnMin.i(self,row#)) set pnMin.i row# to ival#
+      if ival# gt (pnMax.i(self,row#)) set pnMax.i row# to ival#
+    end
+    if type# eq DF_ASCII begin
+      if value# eq "" set piNullCount.i row# to (piNullCount.i(self,row#)+1)
+    end
+  end_procedure
+end_class // cDataSampler
+
+class cdbDataSampler is a cDataSampler
+  procedure add_field.ii integer file# integer field#
+    integer type# len# discrete#
+    move (API_AttrValue_FIELD(DF_FIELD_TYPE,file#,field#)) to type#
+    if (type#<>DF_OVERLAP and type#<>DF_BINARY and type#<>DF_TEXT) begin
+      move 0 to discrete#
+      move (API_AttrValue_FIELD(DF_FIELD_LENGTH,file#,field#)) to len#
+      if (type#=DF_ASCII and len#<=10) move 1 to discrete#
+      send add_variable (API_AttrValue_FIELD(DF_FIELD_NAME,file#,field#)) type# discrete# file# field#
+    end
+  end_procedure
+  procedure auto_add_all_fields integer file#
+    integer max# field#
+    move (API_AttrValue_FILE(DF_FILE_NUMBER_FIELDS,file#)) to max#
+    for field# from 1 to max#
+      send add_field.ii file# field#
+    loop
+    send init
+  end_procedure
+  function sValue.i integer row# returns string
+    function_return ""
+  end_function
+  procedure auto_add_values
+    integer row# max# file#
+    string value#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      get piFile.i row# to file#
+      if file# begin
+        get_field_value file# (piField.i(self,row#)) to value#
+      end
+      else get sValue.i row# to value#
+      send add_value row# value#
+    loop
+  end_procedure
+  function iDoRelate.i integer file# returns integer
+    integer row# max#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      if (piFile.i(self,row#) and piFile.i(self,row#)<>file#) function_return 1
+    loop
+    // function_return 0
+  end_function
+  procedure run.iii integer file# integer idx# integer display_wait#
+    integer relate# found# oBatchCompanion# rec#
+    if display_wait# begin
+      move (oBatchCompanion(self)) to oBatchCompanion#
+      send batch_on to oBatchCompanion# "Sampling data"
+      send batch_update to oBatchCompanion# ("Scanning "+API_AttrValue_FILE(DF_FILE_RECORDS_USED,file#))
+      send batch_update2 to oBatchCompanion# "0 records scanned"
+    end
+    send init
+    get iDoRelate.i file# to relate#
+    clear file#
+    move 0 to rec#
+    repeat
+      vfind file# idx# gt // Find next
+      move (found) to found#
+      if found# begin
+        if relate# relate file#
+        send auto_add_values
+        increment rec#
+        if ((rec#/25)*25) eq rec# begin
+          if display_wait# begin
+            send batch_update2 to oBatchCompanion# (string(rec#)+" records scanned")
+            if (batch_interrupt(oBatchCompanion#)) move 0 to found#
+          end
+        end
+      end
+    until (not(found#))
+    if display_wait# send batch_off to oBatchCompanion#
+  end_procedure
+end_class // cdbDataSampler
+
+//**********************************************************************
+// use DataSamp.utl // Data sampling objects
+//
+// By Sture Andersen
+//
+// Create: Tue  07-04-1997
+// Update:
+//
+//**********************************************************************
+//
+//    Strategies for calculating X offsets:
+//
+//    Symbol        Description             Remarks
+//    컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴
+//    DT_AUTO_X     Data items are stored   Memory consuming
+//                  sequentially as added.
+//
+//    DT_IDX_X      Data items are stored
+//                  and added according to
+//                  specified X. A minimum
+//                  and a maximum index is
+//                  given beforehand.
+//
+//    DT_ALPHA_X    The X value is given    Slow
+//                  by a string.
+//
+//    DT_XY         X and Y is given        Double memory consumption
+//                  explicitly with every
+//                  data item.
+//
+//  enumeration_list // data types
+//    //> Y values are specified with an indexed X
+//    define DT_AUTOX_Y
+//
+//    //> Un-ordered values with no X values
+//    define DT_NOX_Y
+//    define DT_X_Y      // X and Y are given explicitly with every data item
+//    define DT_SAMPLE   // Data are quantisized
+//    define DT_IDX_X
+//  end_enumeration_list
+//
+// class cBasicDataSeries is an array
+//   procedure construct_object integer img#
+//     forward send construct_object img#
+//     property integer private.pDataType DT_IDX_X
+//     set delegation_mode to delegate_to_parent
+//   end_procedure
+//   function pDataType returns integer
+//     function_return (private.pDataType(self))
+//   end_function
+//   procedure set pDataType integer value#
+//     ifnot (item_count(self)) set private.pDataType to value#
+//     else error 666 "Can't change type while containing data"
+//   end_procedure
+//   procedure reset_data
+//     send delete_data
+//   end_procedure
+//   procedure add_tick integer index#
+//     set value item index# to (value(self,index#)+1)
+//   end_procedure
+//   procedure add_auto_x_data number y#
+//     set value item (item_count(self)) to y#
+//   end_procedure
+//   procedure add_indexed_data integer index# number value#
+//     set value item index# to (value(self,index#)+value#)
+//   end_procedure
+//   procedure add_xy_data number x# number y#
+//     integer base#
+//     get item_count to base#
+//     set value item base# to x#
+//     set value item (base#+1) to y#
+//   end_procedure
+// end_class
+//
+//
+// // The cDataSampler class is used for collecting data
+//
+// Use Array.nui    // Item_Property command
+//
+// class cDataSampler is an array
+//   procedure construct_object integer img#
+//     forward send construct_object img#
+//     set delegation_mode to delegate_to_parent
+//     property number  pMinValue          0 // Lower limit of first interval
+//     property integer pNumberOfIntervals 0
+//     // The pQuantifier_State property determines whether an alpha numeric
+//     // value determines each interval (which in that case is not intervals).
+//     // Used for counting incedents on ...
+//     property integer pQuantifier_State  0
+//   end_procedure
+//   procedure reset
+//     send delete_data
+//   end_procedure
+// end_class

@@ -1,0 +1,113 @@
+// Use DfmFnc05.pkg // Import Export data
+Use DFMatrix.utl // DFMatrix application glue
+
+object oDfmFnc05 is a fdxrpt.ModalClient label "Import/Export data"
+  set location to 5 12 absolute
+  set p_auto_column to 1
+  object oCb1 is a aps.CheckBox label "Export"
+    set checked_state to true
+    set p_extra_external_width to 40
+  end_object
+  object oCb2 is a aps.CheckBox label "Zerofile (erase)"
+    set checked_state to false
+  end_object
+  object oCb3 is a aps.CheckBox label "Import"
+    set checked_state to false
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send DoReport
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send cancel
+  end_object
+  send aps_locate_multi_buttons
+  function iExport returns integer
+    function_return (select_state(oCb1(self),0))
+  end_function
+  function iZero returns integer
+    function_return (select_state(oCb2(self),0))
+  end_function
+  function iImport returns integer
+    function_return (select_state(oCb3(self),0))
+  end_function
+  set piDontRegister to DFTRUE // Don't register with the main menu
+  procedure Callback_Filelist_Entry integer file# integer selected# integer shaded#
+    integer oFDX# ch# found# seqeof#
+    string root#
+    if (selected# and not(shaded#)) begin
+      get piFDX_Server to oFDX#
+      move (FDX_AttrValue_FILELIST(oFDX#,DF_FILE_ROOT_NAME,file#)) to root#
+      move (DBMS_StripPathAndDriver(root#)) to root#
+      if (DBMS_OpenFile(file#,DF_SHARE,0)) begin
+
+        if (iExport(self)) begin
+          move (SEQ_DirectOutput(root#+".ASC")) to ch#
+          if ch# ge 0 begin
+            clear file#
+            repeat
+              vfind file# 0 gt // Find next
+              move (found) to found#
+              if found# send SEQ_WriteRecordBuffer_LD ch# file#
+            until (not(found#))
+            send SEQ_CloseOutput ch#
+          end
+        end
+
+        if (iZero(self)) zerofile file#
+
+        if (iImport(self)) begin
+          move (SEQ_DirectInput(root#+".ASC")) to ch#
+          if ch# ge 0 begin
+            lock
+              repeat
+                clear file#
+                send SEQ_ReadRecordBuffer_LD ch# file#
+                move (seqeof) to seqeof#
+                ifnot seqeof# saverecord file#
+              until seqeof#
+            unlock
+            send SEQ_CloseInput ch#
+          end
+        end
+
+        close file#
+      end
+      else send obs "Could not access table:" root#
+    end
+  end_procedure
+  procedure DoReport
+    integer select_count# oFDX# liInteger1 liInteger2 liInteger3
+    string filelist#
+    get File_Select_Count of (DFMatrix_SelectorObject()) to select_count#
+    get piFDX_Server to oFDX#
+    if (piDataOrigin(oFDX#)) ne FDX_REAL_WORLD send obs "Only works with real data"
+    else begin
+      ifnot select_count# send obs "No tables selected!"
+      else begin
+        send cursor_wait to (cursor_control(self))
+        get_attribute DF_DATE_FORMAT to liInteger1
+        get_attribute DF_DATE_SEPARATOR to liInteger2
+        get_attribute DF_DECIMAL_SEPARATOR to liInteger3
+        set_attribute DF_DATE_FORMAT to DF_DATE_EUROPEAN
+        set_attribute DF_DATE_SEPARATOR to 45     // -
+        set_attribute DF_DECIMAL_SEPARATOR to 46  // .
+        send Callback_Filelist_Entries 1 0 // This does the actual work!
+        set_attribute DF_DATE_FORMAT to liInteger1
+        set_attribute DF_DATE_SEPARATOR to liInteger2
+        set_attribute DF_DECIMAL_SEPARATOR to liInteger3
+        send cursor_ready to (cursor_control(self))
+        send obs "Done"
+      end
+    end
+  end_procedure
+end_object // oDfmFnc05
+
+procedure Popup_ImportExport
+  //if (DFMatrix_RealData_Check())
+  string lsVal1 lsVal2 lsVal3
+  move 'The "Import/Export data" function is only available for compatibility with earlier versions of DFMatrix and with' to lsVal1
+  move 'the character mode version.' to lsVal2
+  move 'If you are not using this function for any of these reasons you should use the "Dump/Load data" function instead' to lsVal3
+  send obs lsVal1 lsVal2 lsVal3
+  send popup to (oDfmFnc05(self))
+end_function

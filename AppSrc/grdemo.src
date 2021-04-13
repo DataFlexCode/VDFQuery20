@@ -1,0 +1,2672 @@
+﻿// Program for demoing the VdfGraph.utl package.
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>170) // If 17.1 or higher
+    Set_StrictEval to True // Make the runtime check for un-managed string eval's
+#ENDIF
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190) // If 19.1 or higher
+    Use OldFMACCommands.pkg
+    Use Dfdeomnu.pkg
+#ENDIF
+
+//Use array.nui
+//
+//Class cALotOfThese is a cArray 
+//
+//    item_property_list
+//      item_property String psGroup.i
+//      item_property array  phMembers.i
+//    end_item_property_list cALotOfThese
+//
+//    Procedure recursive_test Integer iLevels
+//        Integer hObj
+//        Set psGroup.i 0 to "Hello"
+//        Object Child1 is a cALotOfThese no_image
+//            Move Self to hObj
+//        End_Object
+//        Set phMembers.i 0 to hObj
+//        Showln "Created obj: " hObj
+//        If (iLevels>0) Begin
+//            Send recursive_test of hObj (iLevels-1)
+//        End
+//    End_Procedure
+//End_Class
+//
+//Object oTestNewArray is a cALotOfThese no_image
+//    Send recursive_test 123
+//End_Object
+//Send delete_rows of oTestNewArray
+//
+
+
+Use VdfGraph.utl // Graphics for Visual DataFlex
+Use msgbox.utl
+
+// Splash screen without a bitmap:
+object oSplash is a ToolPanel // A little splash screen to wet your appetite.
+  set size to 200 300
+  set caption_bar to false
+  set Border_Style to BORDER_DIALOG
+  object oGA is a GraphicArea
+    set location to 0 0
+    set size to 200 300
+    procedure draw_data
+      integer liCount liColor
+      forward send draw_data
+      // This command will land the seconds in the liColor variable:
+      sysdate liColor liColor liColor liColor
+      move (mod(liColor,5)) to liColor
+      if (liColor=0) move clRed to liColor
+      if (liColor=1) move clGreen to liColor
+      if (liColor=2) move clBlue to liColor
+      if (liColor=3) move clYellow to liColor
+      if (liColor=4) move clWhite to liColor
+      send SetPenStyle PS_NULL
+      send SetPenWidth 0
+      for liCount from 0 to 39
+        send SetFillColor liColor
+        send SetPenColor liColor
+        send AddRectangle (liCount*250) 0 (liCount+1*250+100) 10000
+        move (RGB_Darken(liColor,2)) to liColor // Darken by 2 percent
+      loop
+      send SetTTFont "Arial" 80 0 1 1 0
+      send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_VCENTER)
+      send AddText "VDFGraph" 2500 5000
+      send SetTTFont "Arial" 50 0 1 1 0
+      send AddText "for" 5000 5000
+      send AddText "Visual DataFlex" 7500 5000
+      send SetTTFont "Arial" 12 0 1 0 0
+      send SetTextAlign (VDFGR_TA_LEFT+VDFGR_TA_BOTTOM)
+      send AddText "Version 1.3" 9500 500
+      send SetTextAlign (VDFGR_TA_RIGHT+VDFGR_TA_BOTTOM)
+      send SetTextColor clWhite
+      send AddText "Public Domain package by Sture Andersen" 9500 9500
+    end_procedure
+    send draw_data
+  end_object
+end_object
+send activate to (oSplash(self))
+
+//Use VpeGraph.pkg     // Remove comment to include VPE printer interface
+
+Use ApsGraph.pkg     // GraphicArea class with APS mixed into it.
+Use dfAstbar.pkg     // AppStatusBar class (Standard DAC package)
+
+// Rundom function used by some of the samples.
+function grRandom global number min# number max# returns number
+  function_return (random(max#-min#)+min#)
+end_function
+
+// The dfAbout package is used only to provide the GetFreeSystemResources
+// function and its associated constants:
+Use cApplication.pkg
+Use dfAbout.pkg
+
+#IFDEF U_VpeGraphicArea // If VPE interface was included.
+ // This procedure prints the contents of a graphic area three
+ // times (three different sizes).
+ procedure print_graphics for GraphicArea
+   // set pOpenOptions of oVPE# to VPE_LANDSCAPE
+   send OpenDoc to oVPE#
+   send print_graphic_area self  100  100 1200 1700
+   send print_graphic_area self 1400  100 1200  800
+   send print_graphic_area self 1400 1000  600  800
+   send PreviewDoc to oVPE# VPE_SHOW_NORMAL
+ end_procedure
+#ENDIF
+
+Object Main is a Panel
+  Set Label to "Graphics for Visual DataFlex, Demo routines"
+  DFCreate_Menu Main_Menu
+    DFCreate_Menu "&File" FilePopupMenu is a ViewPopupMenu
+      DFCreate_Menu "&Test" TestPopupMenu is a ViewPopupMenu
+        On_Item "Minimize/maximize" send activate_MinimizeMaximize
+        On_Item "Empty area" Send run_test99
+        On_Item "Color dialog (not VdfGraph)" send run_test4
+        On_Item "Display splash screen" send Display_Splash
+        On_Item "Remove splash screen" send Remove_Splash
+      End_Pull_down
+      On_Item ""
+      On_Item "E&xit\aAlt+F4" send Exit_Application to desktop
+    End_Pull_down
+    DFCreate_Menu "&Samples" ViewPopupMenu is a ViewPopupMenu
+      DFCreate_Menu "&Basics" oBasics_Menu is a ViewPopupMenu
+        On_Item "Resizable graphic area" Send run_test1
+        On_Item "Display color array" Send run_test5
+        On_Item "Display hatch array" Send run_test6
+        On_Item "Dots" Send run_test16
+        On_Item "Dot alignment" Send run_test17
+        On_Item "Dot alignment (2)" Send run_test17_2
+        On_Item "Piece of cake" Send run_test23
+      End_Pull_down
+      DFCreate_Menu "&Text" oText_Menu is a ViewPopupMenu
+        On_Item "Text alignment" Send run_test11
+        On_Item "Rotated TT font" Send run_test13
+        On_Item "Font selector" Send run_test24
+      End_Pull_down
+      DFCreate_Menu "&Graphs" oGraphs_Menu is a ViewPopupMenu
+        On_Item "Test Auto Scaler" Send run_test2
+        On_Item "Tab dialog example" Send run_test3
+        On_Item "Bar chart" Send run_test8
+//        On_Item "Pie chart" Send run_test22
+      End_Pull_down
+      DFCreate_Menu "&Polygons and polylines" oPoly_Menu is a ViewPopupMenu
+        On_Item "Poly lines" Send run_test7
+        On_Item "Polygon (120 points)" Send run_test15
+      End_Pull_down
+      DFCreate_Menu "&Miscellaneous" oMisc_Menu is a ViewPopupMenu
+        On_Item "Guitar chords" Send run_test12
+        On_Item "Clickable graphic area" Send run_test18
+        On_Item "Trackable objects" Send run_test25
+        On_Item "Viewport experiment" Send run_test19
+        On_Item "Dragable objects" Send run_test31
+        On_Item "3D example" Send run_test52
+//      On_Item "Four areas" Send run_test32
+//      On_Item "Areas updated by timer" Send run_test33
+//      On_Item "Incremental updates" Send run_test34
+//        On_Item "Pre-fabricated graphic area" Send run_test21
+//        On_Item "DF Draw" Send run_test20
+      End_Pull_down
+      DFCreate_Menu "&Pixel based coordinates" oPixel_Menu is a ViewPopupMenu
+        On_Item "Pixel Paxel" Send run_test51
+      End_Pull_down
+      On_Item "" send none
+      On_Item "Open all" send Open_All
+
+//      On_Item "3D experiment" Send run_test14
+    End_Pull_down
+    #include Navi_pm.inc
+    #include win_PM.inc
+  End_Menu
+  Object Main_Client is an ClientArea
+
+    // *********************************************************************
+    // Resizable graphic area (1)
+    // *********************************************************************
+    activate_view run_test1 for oGraphExample1
+    object oGraphExample1 is a aps.view label "Resizable graphic area (1)"
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      on_key KCANCEL send close_panel
+      object oGraph is a aps.GraphicArea
+        set size to 200 200
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        procedure draw_data
+          forward send draw_data
+          send SetFillColor clRed
+          send AddRoundRect 0500 1000 1500 2500
+          send SetFillColor clBlue
+          send SetPenColor  clBlue
+          send AddRectangle 2500 1000 3500 2500
+          send SetFillColor clYellow
+          send SetPenColor  clYellow
+          send AddEllipse   4500 1000 5500 2500
+          send SetFillColor clGreen
+          send SetPenColor  clGreen
+          send AddRectangle 6500 1000 7500 2500
+          send SetFillColor clBlack
+          send SetPenColor  clBlack
+          send AddRoundRect 8500 1000 9500 2500
+          send SetFillColor clPurple
+          send SetPenColor  clBlack
+          send SetPenStyle  PS_DOT
+          send SetPenWidth  0
+          send AddLineMvTo  0 2000
+          send AddLineGoTo  10000 2000
+          send AddLineMvTo  2000 0
+          send AddLineGoTo  2000 10000
+          send SetTextAlign (VDFGR_TA_LEFT+VDFGR_TA_TOP)
+          send AddText "Hello World" 4000 2000
+          send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_TOP)
+          send SetTextColor clRed
+          send AddText      "Hello World" 5000 2000
+          send SetTextAlign (VDFGR_TA_RIGHT+VDFGR_TA_TOP)
+          send SetTextColor clBlue
+          send SetStockFont SYSTEM_FIXED_FONT
+          send AddText      "Hello World" 6000 2000
+          send SetTextColor clBlack
+          send SetStockFont OEM_FIXED_FONT
+          send AddText      "OEM_FIXED_FONT"        1000 9500
+          send SetStockFont ANSI_FIXED_FONT
+          send AddText      "ANSI_FIXED_FONT"       2000 9500
+          send SetStockFont ANSI_VAR_FONT
+          send AddText      "ANSI_VAR_FONT"         3000 9500
+          send SetStockFont SYSTEM_FONT
+          send AddText      "SYSTEM_FONT"           4000 9500
+          send SetStockFont DEVICE_DEFAULT_FONT
+          send AddText      "DEVICE_DEFAULT_FONT"   5000 9500
+          send SetStockFont SYSTEM_FIXED_FONT
+          send AddText      "SYSTEM_FIXED_FONT"     6000 9500
+        end_procedure
+        send draw_data
+      end_object
+
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample1(self)) // Set minimum size
+
+    // *********************************************************************
+    // Test cAutoScaler class (2)
+    // *********************************************************************
+    register_abstract_field_type AFT_NUMERIC8.8 17 8 // Length 8, 8 decimal points
+
+    activate_view run_test2 for oGraphExample2
+    object oGraphExample2 is a aps.View label "Test auto scaler (2)"
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      on_key KCANCEL send close_panel
+      object oCont is a aps.Container3D
+        set p_auto_column to false
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        object oGrp1 is a aps.Group Label "Y scale, input"
+          object oFrm1 is a aps.Form label "Minimum value:" abstract AFT_NUMERIC8.8
+            set value item 0 to 35
+            procedure OnChange
+              send calculate
+            end_procedure
+          end_object
+          object oFrm2 is a aps.Form label "Maximum value:" abstract AFT_NUMERIC8.8
+            set value item 0 to 256
+            procedure OnChange
+              send calculate
+            end_procedure
+          end_object
+          object oFrm3 is a aps.SpinForm label "Air, percent:" abstract AFT_NUMERIC2.0
+            set value item 0 to 0
+            procedure OnChange
+              send calculate
+            end_procedure
+          end_object
+          object oTxt is an aps.TextBox label "%" snap SL_RIGHT
+          end_object
+          object oFrm4 is a aps.SpinForm label "Minimum steps:" abstract AFT_NUMERIC2.0
+            set value item 0 to 5
+            procedure OnChange
+              send calculate
+            end_procedure
+          end_object
+          object oFrm5 is a aps.spinForm label "Max:" abstract AFT_NUMERIC2.0 snap SL_RIGHT
+            set value item 0 to 5
+            procedure OnChange
+              send calculate
+            end_procedure
+          end_object
+          object oCb1 is a aps.CheckBox label "Zero based"
+            procedure OnChange
+              send calculate
+            end_procedure
+          end_object
+        end_object
+        object oGrp2 is a aps.Group Label "Auto scale, result" snap SL_DOWN
+          object oFrm1 is a aps.Form label "Low value:" abstract AFT_NUMERIC8.8
+            set shadow_state item 0 to true
+          end_object
+          object oFrm2 is a aps.Form label "Step size:" abstract AFT_NUMERIC8.8
+            set shadow_state item 0 to true
+          end_object
+          object oFrm3 is a aps.Form label "Number of steps:" abstract AFT_NUMERIC2.0
+            set shadow_state item 0 to true
+          end_object
+          object oFrm4 is a aps.Form label "Axis value decs:" abstract AFT_NUMERIC2.0
+            set shadow_state item 0 to true
+          end_object
+        end_object
+        object oGraphicArea is a aps.GraphicArea snap SL_RIGHT relative_to (oGrp1(self))
+          set size to 0 300
+          set peAnchors to (anTop+anLeft+anRight+anBottom)
+          set delegation_mode to delegate_to_parent
+          object oCoordinateSystem is a cCoordinateSystem
+            set pColor to clWhite
+            procedure DrawGraph
+              number lnYmin lnYmax lnRange
+              send SetPenWidth 2
+              send SetPenColor clRed
+              get pyMinValue to lnYmin
+              get pyMaxValue to lnYmax
+              move (lnYmax-lnYmin) to lnRange
+              send AddLineMvTo 0   lnYmin
+              send AddLineGoTo 25  (lnRange/2+lnYmin)
+              send AddLineGoTo 50  (lnRange/3+lnYmin)
+              send AddLineGoTo 75  lnYmax
+              send AddLineGoTo 100 (lnRange/3+lnYmin)
+            end_procedure
+            procedure draw_data
+              set pyMinValue  to (value(oFrm1(oGrp1(self)),0))
+              set pyMaxValue  to (value(oFrm2(oGrp1(self)),0))
+              set pyAirPct    to (value(oFrm3(oGrp1(self)),0))
+              set pyMinSteps  to (value(oFrm4(oGrp1(self)),0))
+              set pyMaxSteps  to (value(oFrm5(oGrp1(self)),0))
+              set pyZeroBased to (select_state(oCb1(oGrp1(self)),0))
+              forward send draw_data
+              set value of (oFrm1(oGrp2(self))) item 0 to (pyLowValue(self))
+              set value of (oFrm2(oGrp2(self))) item 0 to (pyStepSize(self))
+              set value of (oFrm3(oGrp2(self))) item 0 to (pySteps(self))
+              set value of (oFrm4(oGrp2(self))) item 0 to (pyDecimals(self))
+            end_procedure
+          end_object
+
+          procedure draw_data
+            forward send draw_data
+            send SetTextAlign TA_CENTER
+            send SetTextColor clBlue
+            send SetStockFont SYSTEM_FONT
+            send AddText "Graph title" 500 5000
+          end_procedure
+          send draw_data
+        end_object
+        send aps_align_by_sizing (oGraphicArea(self)) (oGrp2(self)) sl_align_bottom
+        procedure calculate
+          send draw_data to (oGraphicArea(self))
+          send RePaintFull to (oGraphicArea(self))
+        end_procedure
+      end_object
+      object oBtn1 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Calculate" send calculate to (oCont(self))
+      end_object
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn2 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraphicArea(oCont(self)))
+       end_object
+      #ENDIF
+      object oBtn3 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+      procedure OnResize
+        send RePaintFull of (oGraphicArea(oCont(self)))
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample2(self)) // Set minimum size
+
+    // *********************************************************************
+    // Tab dialog example
+    // *********************************************************************
+    activate_view run_test3 for oGraphExample3
+    object oGraphExample3 is a aps.View label "Tab dialog example (3)"
+      on_key KCANCEL send close_panel
+      object oTabs is a aps.TabDialog
+        set Skip_Button_Mode to SBM_NEVER // Let the tab buttons take focus
+                                          // (Never trust the manual)
+        object oTab1 is a aps.TabPage label "Sine curve"
+          set p_auto_column to false // This is a setting for the APS system
+          object oGraphicArea is a aps.GraphicArea
+            set size to 150 225
+            set pTitle to "Nice Sine Curve"
+            set peAnchors to (anTop+anLeft+anRight+anBottom)
+            object oCoordinateSystem is a cCoordinateSystem
+              set pxMinValue  to 0     // Set minimum x
+              set pxMaxValue  to 10    // Set maximum x
+              set pxAirPct    to 0     // Set air on x-scale
+              set pxAutoScale to true
+              set pyMinValue  to -1    // Set minimum y
+              set pyMaxValue  to 1     // Set maximum y
+              set pyAirPct    to 5     // Set air on y-scale
+              set pyMinSteps  to 4     // Minimum number of scale steps
+              set pyMaxSteps  to 6     // Maximum number of scale steps
+              set pyZeroBased to false // Must y-scale be zero based?
+              procedure DrawGraph
+                integer liStep
+                send SetPenWidth 1
+                send SetPenColor clRed
+                send AddLineMvTo 0 0
+                for liStep from 0 to 100
+                  send AddLineGoTo (liStep*0.1) (sin(liStep/10.0))
+                loop
+              end_procedure
+            end_object
+            send draw_data
+          end_object
+        end_object
+        object oTab2 is a aps.TabPage label "Three graphs"
+          set p_auto_column to false
+          object oGraphicArea is a aps.GraphicArea
+            set size to 150 225
+            set pBackColor to clGreen //(RGB_Brighten(clBlue,50))
+            set pTitle to "Ugly stuff gone wrong"
+            set peAnchors to (anTop+anLeft+anRight+anBottom)
+            object oCoordinateSystem is a cCoordinateSystem
+              procedure draw_data
+                set pxMinValue  to 0     // Set minimum x
+                set pxMaxValue  to 5     // Set maximum x
+                set pxAirPct    to 0     // Set air on x-scale
+                set pyMinValue  to 6.75  // Set minimum y
+                set pyMaxValue  to 7.25  // Set maximum y
+                set pyAirPct    to 0     // Set air on y-scale
+                set pyMinSteps  to 4     // Minimum number of scale steps
+                set pyMaxSteps  to 6     // Maximum number of scale steps
+                set pyZeroBased to false // Must y-scale be zero based?
+                forward send draw_data
+              end_procedure
+              procedure DrawGraph
+                number lnYmin lnYmax
+                send SetPenWidth 2
+                send SetPenColor clPurple
+                send AddLineMvTo   0   4
+                send AddLineGoTo  25  16
+                send AddLineGoTo  15  18  // LOOP
+                send AddLineGoTo  12   8
+                send AddLineGoTo  35  10
+                send AddLineGoTo  75  14
+                send AddLineGoTo 100  15
+                send SetPenWidth 1
+                send SetPenColor clFuchsia
+                send AddLineMvTo   0   4
+                send AddLineGoTo  10  16
+                send AddLineGoTo  20  20
+                send AddLineGoTo  30  19
+                send AddLineGoTo  40  17
+                send AddLineGoTo  50  14
+                send AddLineGoTo  60  10
+                send AddLineGoTo  70   6
+                send AddLineGoTo  80   6
+                send AddLineGoTo  90  12
+                send AddLineGoTo 100  20
+              end_procedure
+            end_object
+            send draw_data
+          end_object
+        end_object
+        object oTab3 is a aps.TabPage label "Weight"
+          set p_auto_column to false
+          object oGraphicArea is a aps.GraphicArea
+            set size to 150 225
+            set peAnchors to (anTop+anLeft+anRight+anBottom)
+            object oCoordinateSystem is a cCoordinateSystem
+              procedure draw_data
+                set pxMinValue  to 0     // Set minimum x
+                set pxMaxValue  to 100   // Set maximum x
+                set pxAirPct    to 0     // Set air on x-scale
+                set pyMinValue  to 2     // Set minimum y
+                set pyMaxValue  to 20    // Set maximum y
+                set pyAirPct    to 5     // Set air on y-scale
+                set pyMinSteps  to 4     // Minimum number of scale steps
+                set pyMaxSteps  to 6     // Maximum number of scale steps
+                set pyZeroBased to false // Must y-scale be zrop based?
+                forward send draw_Data
+              end_procedure
+              procedure DrawGraph
+                number lnYmin lnYmax
+                send SetPenWidth 2
+                send SetPenColor clYellow
+                send AddLineMvTo   0   4
+                send AddLineGoTo  25  16
+                send AddLineGoTo  15  18  // LOOP
+                send AddLineGoTo  12   8
+                send AddLineGoTo  35  10
+                send AddLineGoTo  75  14
+                send AddLineGoTo 100  15
+                send SetPenWidth 1
+                send SetPenColor clGreen
+                send AddLineMvTo   0   4
+                send AddLineGoTo  10  16
+                send AddLineGoTo  20  20
+                send AddLineGoTo  30  19
+                send AddLineGoTo  40  17
+                send AddLineGoTo  50  14
+                send AddLineGoTo  60  10
+                send AddLineGoTo  70   6
+                send AddLineGoTo  80   6
+                send AddLineGoTo  90  12
+                send AddLineGoTo 100  20
+              end_procedure
+            end_object
+            procedure draw_data
+              forward send draw_data
+              send SetTextAlign TA_CENTER
+              send SetTextColor clBlue
+              send SetStockFont SYSTEM_FONT
+              send AddText      "Weight" 500 5000
+              //send Draw_data to (oCoordinateSystem(self))
+            end_procedure
+            send draw_data
+          end_object
+        end_object
+      end_object
+      object oBtn is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+    end_object
+
+    // *********************************************************************
+    // Choose color dialog
+    // *********************************************************************
+    Use Colr_Dlg.pkg // ColorDialog class
+
+    Object oColorDlg is a ColorDialog // Taken from the online documentation
+      Set SelectedColor To (RGB(255, 0, 0))
+
+      Procedure Choose_Color
+        integer rgbColor bOK
+        string sMessage
+        Get Show_Dialog To bOK
+        If bOK Begin
+          Get SelectedColor To rgbColor
+          Move 'COLOR SELECTED\n\n' To sMessage
+          Append sMessage 'Red='   (R_From_RGB(rgbColor)) '\n'
+          Append sMessage 'Green=' (G_From_RGB(rgbColor)) '\n'
+          Append sMessage 'Blue='  (B_From_RGB(rgbColor))
+          Send Info_Box sMessage
+        End
+      End_Procedure
+
+      Procedure ShowCustomColors
+        integer rgbColor iLoop iRed iGreen iBlue
+        string sMessage
+        Move 'CUSTOM COLORS\n\n' To sMessage
+        For iLoop From 0 To 15
+          Get Custom_Color iLoop To rgbColor
+          Move (R_From_RGB(rgbColor)) To iRed
+          Move (G_From_RGB(rgbColor)) To iGreen
+          Move (B_From_RGB(rgbColor)) To iBlue
+          Append sMessage 'Color ' iLoop
+          Append sMessage '= RGB(' iRed ',' iGreen ',' iBlue ')\n'
+        Loop
+        Send Info_Box sMessage
+      End_Procedure
+    End_Object
+
+    procedure run_test4
+      send Choose_Color to (oColorDlg(self))
+    end_procedure
+
+    // *********************************************************************
+    // Display color array
+    // *********************************************************************
+    activate_view run_test5 for oGraphExample5
+    object oGraphExample5 is a aps.view label "The color array (5)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGraph is a aps.GraphicArea
+        set size to 200 200
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        procedure draw_data
+          integer bright# liColor
+          forward send draw_data
+          for bright# from 0 to 3
+            for liColor from 0 to 7
+              send SetFillColor (icolor(self,bright#*8+liColor))
+              send AddRectangle (liColor+1*1000) (bright#*2500+100) (liColor+1*1000+900) (bright#*2500+2300)
+            loop
+          loop
+        end_procedure
+        send draw_data
+      end_object
+
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample5(self)) // Set minimum size
+
+
+    // Display hatch array
+    activate_view run_test6 for oGraphExample6
+    object oGraphExample6 is a aps.view label "Hatches (6)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGraph is a aps.GraphicArea
+        set size to 200 200
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        procedure draw_data
+          integer bright# liColor
+          forward send draw_data
+          for bright# from 0 to 3
+            for liColor from 0 to 6
+              send SetHatchStyle (liColor-1)
+              send SetFillColor (icolor(self,bright#*8))
+              send AddRectangle (liColor+1*1000) (bright#*2500+100) (liColor+1*1000+900) (bright#*2500+2300)
+            loop
+          loop
+        end_procedure
+        send draw_data
+      end_object
+
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample6(self)) // Set minimum size
+
+    // *********************************************************************
+    // Poly lines
+    // *********************************************************************
+    activate_view run_test7 for oGraphExample7
+    object oGraphExample7 is a aps.view label "Polylines (7)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGraph is a aps.GraphicArea
+        set size to 200 200
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        procedure draw_star integer offset_x# integer offset_y#
+          send AddPolyPoint (0500+offset_x#) (0500+offset_y#)
+          send AddPolyPoint (2500+offset_x#) (4750+offset_y#)
+          send AddPolyPoint (3750+offset_x#) (0500+offset_y#)
+          send AddPolyPoint (0250+offset_x#) (4250+offset_y#)
+          send AddPolyPoint (4500+offset_x#) (2250+offset_y#)
+          send AddPolyGon
+        end_procedure
+
+        send BeginDraw
+        send SetFillColor clBlue
+        send SetPolyGonFillMode FM_WINDING
+        send draw_star    0    0
+        send SetFillColor clRed
+        send draw_star 5000    0
+        send SetFillColor clGreen
+        send SetPolyGonFillMode FM_ALTERNATE
+        send draw_star    0 5000
+        send SetFillColor clYellow
+        send draw_star 5000 5000
+
+      end_object
+
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample7(self)) // Set minimum size
+
+    // *********************************************************************
+    // Bar chart
+    // *********************************************************************
+    activate_view run_test8 for oGraphExample8
+    object oGraphExample8 is a aps.View label "Bar chart (8)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 200 // Resize to no less than this!
+      object oGrp1 is a aps.Group
+        object oFrm1 is a aps.SpinForm label "Columns:" abstract AFT_NUMERIC2.0
+          set value item 0 to 5
+          procedure OnChange
+            send calculate
+          end_procedure
+        end_object
+        object oFrm2 is a aps.SpinForm label "Series:" abstract AFT_NUMERIC2.0
+          set value item 0 to 3
+          procedure OnChange
+            send calculate
+          end_procedure
+        end_object
+        object oFrm3 is a aps.SpinForm label "Stacks:" abstract AFT_NUMERIC2.0
+          set value item 0 to 2
+          procedure OnChange
+            send calculate
+          end_procedure
+        end_object
+        object oFrm4 is a aps.SpinForm label "Min:" abstract AFT_NUMERIC4.2
+          set value item 0 to 2
+          procedure OnChange
+            send calculate
+          end_procedure
+        end_object
+        object oFrm5 is a aps.SpinForm label "Max:" abstract AFT_NUMERIC4.2 snap SL_RIGHT_SPACE
+          set value item 0 to 12
+          procedure OnChange
+            send calculate
+          end_procedure
+        end_object
+      end_object
+      object oGrp2 is a aps.Group label "X-axis texts" snap SL_DOWN
+        object oFont is a aps.ComboForm label "Font:" abstract AFT_ASCII15
+          set combo_sort_state to false
+          set entry_state item 0 to false
+          send Combo_Add_Item "Stock Font"
+          send Combo_Add_Item "Arial"
+          send Combo_Add_Item "Courier New"
+          send Combo_Add_Item "Times New Roman"
+          set value item 0 to "Stock Font"
+          procedure OnChange
+            send calculate
+            send auto_shade
+          end_procedure
+        end_object
+        object oFontSize is a aps.ComboForm abstract AFT_NUMERIC2.0 snap SL_RIGHT
+          set combo_sort_state to false
+          set entry_state item 0 to false
+          send Combo_Add_Item "8"
+          send Combo_Add_Item "10"
+          send Combo_Add_Item "12"
+          send Combo_Add_Item "14"
+          send Combo_Add_Item "16"
+          send Combo_Add_Item "18"
+          send Combo_Add_Item "20"
+          set value item 0 to "12"
+          set object_shadow_state to true
+          procedure OnChange
+            send calculate
+          end_procedure
+        end_object
+        object oFontColor is a aps.ComboFormAux label "Color" abstract AFT_ASCII10
+          set combo_sort_state to false
+          set entry_state item 0 to false
+          send Combo_Add_Item "Black"  clBlack
+          send Combo_Add_Item "Blue"   clBlue
+          send Combo_Add_Item "Red"    clRed
+          send Combo_Add_Item "Green"  clGreen
+          send Combo_Add_Item "Yellow" clYellow
+          send Combo_Add_Item "White"  clWhite
+          set value item 0 to "Black"
+          procedure OnChange
+            send calculate
+          end_procedure
+        end_object
+        object oFontRotation is a aps.SpinForm label "Rotation:" abstract AFT_NUMERIC3.0
+          set value item 0 to 0
+          set object_shadow_state to true
+          procedure OnChange
+            send calculate
+          end_procedure
+        end_object
+        object oFontBold is a aps.CheckBox label "Bold" snap SL_RIGHT_SPACE
+          set object_shadow_state to true
+          procedure OnChange
+            send calculate
+          end_procedure
+        end_object
+        object oFontItalics is a aps.CheckBox label "Ital." snap SL_RIGHT_SPACE
+          set object_shadow_state to true
+          procedure OnChange
+            send calculate
+          end_procedure
+        end_object
+        procedure auto_shade
+          string font#
+          get value of (oFont(self)) item 0 to font#
+          set object_shadow_state of (oFontSize(self)) to (trim(font#)="Stock Font")
+          set object_shadow_state of (oFontRotation(self)) to (trim(font#)="Stock Font")
+          set object_shadow_state of (oFontBold(self)) to (trim(font#)="Stock Font")
+          set object_shadow_state of (oFontItalics(self)) to (trim(font#)="Stock Font")
+        end_procedure
+      end_object
+      object oGrp3 is a aps.Group label "Y-axis texts" snap SL_DOWN
+        object oFont is a aps.ComboForm label "Font:" abstract AFT_ASCII15
+          set combo_sort_state to false
+          set entry_state item 0 to false
+          send Combo_Add_Item "Stock Font"
+          send Combo_Add_Item "Arial"
+          send Combo_Add_Item "Courier New"
+          send Combo_Add_Item "Times New Roman"
+          set value item 0 to "Stock Font"
+          procedure OnChange
+            send auto_shade
+            send calculate
+          end_procedure
+        end_object
+        object oFontSize is a aps.ComboForm abstract AFT_NUMERIC2.0 snap SL_RIGHT
+          set combo_sort_state to false
+          set entry_state item 0 to false
+          set object_shadow_state to true
+          send Combo_Add_Item "8"
+          send Combo_Add_Item "10"
+          send Combo_Add_Item "12"
+          send Combo_Add_Item "14"
+          send Combo_Add_Item "16"
+          send Combo_Add_Item "18"
+          send Combo_Add_Item "20"
+          set value item 0 to "12"
+          procedure OnChange
+            send calculate
+          end_procedure
+        end_object
+        object oFontColor is a aps.ComboFormAux label "Color" abstract AFT_ASCII10
+          set combo_sort_state to false
+          set entry_state item 0 to false
+          send Combo_Add_Item "Black"  clBlack
+          send Combo_Add_Item "Blue"   clBlue
+          send Combo_Add_Item "Red"    clRed
+          send Combo_Add_Item "Green"  clGreen
+          send Combo_Add_Item "Yellow" clYellow
+          send Combo_Add_Item "White"  clWhite
+          set value item 0 to "Black"
+          procedure OnChange
+            send calculate
+          end_procedure
+        end_object
+        object oFontRotation is a aps.SpinForm label "Rotation:" abstract AFT_NUMERIC3.0
+          set value item 0 to 0
+          set object_shadow_state to true
+          procedure OnChange
+            send calculate
+          end_procedure
+        end_object
+        object oFontBold is a aps.CheckBox label "Bold" snap SL_RIGHT_SPACE
+          set object_shadow_state to true
+          procedure OnChange
+            send calculate
+          end_procedure
+        end_object
+        object oFontItalics is a aps.CheckBox label "Ital." snap SL_RIGHT_SPACE
+          set object_shadow_state to true
+          procedure OnChange
+            send calculate
+          end_procedure
+        end_object
+        procedure auto_shade
+          string font#
+          get value of (oFont(self)) item 0 to font#
+          set object_shadow_state of (oFontSize(self)) to (trim(font#)="Stock Font")
+          set object_shadow_state of (oFontRotation(self)) to (trim(font#)="Stock Font")
+          set object_shadow_state of (oFontBold(self)) to (trim(font#)="Stock Font")
+          set object_shadow_state of (oFontItalics(self)) to (trim(font#)="Stock Font")
+        end_procedure
+      end_object
+      send aps_size_identical_max (oGrp1(self)) (oGrp2(self)) SL_HORIZONTAL
+      object oGraph is a aps.GraphicArea snap SL_RIGHT relative_to (oGrp1(self))
+        set size to 250 275
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        object oCoordinateSystem is a cCoordinateSystem
+          set area_location to 1000 1000
+          set area_size to 7000 8000
+          send ApplyGridStyle GS_BARCHART1
+          object oBarChart is a cBarChart
+            procedure drawsomedots
+          //  integer liColumn liColumns
+          //  integer liSerie  liSeries
+          //  integer liStack  liStacks
+          //  number lnX lnY
+          //  get pStacks to liStacks
+          //  get pSeries to liSeries
+          //  get iColumns to liColumns
+          //
+          //  send SetDotStyle DT_CROSS
+          //  send SetDotSize 19
+          //  send SetDotAlign (VDFGR_dA_CENTER+VDFGR_DA_VCENTER)
+          //  for liColumn from 0 to (liColumns-1)
+          //    for liSerie from 0 to (liSeries-1)
+          //      for liStack from 0 to (liStacks-1)
+          //        get nBarCoordX liColumn liSerie 0 to lnX
+          //        get nBarCoordY liColumn liSerie liStack 0 to lnY
+          //        send AddDot lnX lnY
+          //        get nBarCoordY liColumn liSerie liStack 1 to lnY
+          //        send AddDot lnX lnY
+          //        get nBarCoordY liColumn liSerie liStack 2 to lnY
+          //        send AddDot lnX lnY
+          //        get nBarCoordX liColumn liSerie 1 to lnX
+          //        get nBarCoordY liColumn liSerie liStack 0 to lnY
+          //        send AddDot lnX lnY
+          //        get nBarCoordY liColumn liSerie liStack 1 to lnY
+          //        send AddDot lnX lnY
+          //        get nBarCoordY liColumn liSerie liStack 2 to lnY
+          //        send AddDot lnX lnY
+          //        get nBarCoordX liColumn liSerie 2 to lnX
+          //        get nBarCoordY liColumn liSerie liStack 0 to lnY
+          //        send AddDot lnX lnY
+          //        get nBarCoordY liColumn liSerie liStack 1 to lnY
+          //        send AddDot lnX lnY
+          //        get nBarCoordY liColumn liSerie liStack 2 to lnY
+          //        send AddDot lnX lnY
+          //      loop
+          //    loop
+          //  loop
+            end_procedure
+            procedure draw_data
+              forward send draw_data
+              send drawsomedots
+            end_procedure
+          end_object
+          Set AxisTextX 0 to  "January"
+          Set AxisTextX 1 to  "February"
+          Set AxisTextX 2 to  "March"
+          Set AxisTextX 3 to  "April"
+          Set AxisTextX 4 to  "May"
+          Set AxisTextX 5 to  "June"
+          Set AxisTextX 6 to  "July"
+          Set AxisTextX 7 to  "August"
+          Set AxisTextX 8 to  "September"
+          Set AxisTextX 9 to  "October"
+          Set AxisTextX 10 to "November"
+          Set AxisTextX 11 to "December"
+        end_object
+        procedure calculate
+          integer liColumns column# stack# liStacks serie# liSeries obj#
+          integer angle# fontsize# fontliColor bold# italics#
+          number min# max#
+          string font#
+          get value of (oFrm1(oGrp1(self))) item 0 to liColumns
+          get value of (oFrm2(oGrp1(self))) item 0 to liSeries
+          get value of (oFrm3(oGrp1(self))) item 0 to liStacks
+          get value of (oFrm4(oGrp1(self))) item 0 to min#
+          get value of (oFrm5(oGrp1(self))) item 0 to max#
+          move (oBarChart(oCoordinateSystem(self))) to obj#
+          send reset_data to obj#
+          set pStacks of obj# to liStacks
+          set pSeries of obj# to liSeries
+          for column# from 0 to (liColumns-1)
+            for serie# from 0 to (liSeries-1)
+              for stack# from 0 to (liStacks-1)
+                // The grRandom function is defined in GR.SRC
+                send sto_data to obj# (grRandom(min#,max#)) column# serie# stack#
+              loop
+            loop
+          loop
+
+          move (oCoordinateSystem(self)) to obj#
+
+          // X-axis:
+          get value of (oFont(oGrp2(self))) item 0 to font#
+          get value of (oFontSize(oGrp2(self))) item 0 to fontsize#
+          get Combo_Current_Aux_Value of (oFontColor(oGrp2(self))) to fontliColor
+          get value of (oFontRotation(oGrp2(self))) item 0 to angle#
+          get select_state of (oFontBold(oGrp2(self))) item 0 to bold#
+          get select_state of (oFontItalics(oGrp2(self))) item 0 to italics#
+          move (angle#*10) to angle#
+          if font# eq "Stock Font" set pxTextStockFont of obj# to ANSI_VAR_FONT
+          else set pxTextTTFontName of obj# to font#
+          set pxTextTTFontSize of obj# to fontsize#
+          set pxTextTTFontAngle of obj# to angle#
+          set pxTextTTFontBold  of obj# to bold#
+          set pxTextTTFontItalic of obj# to italics#
+          set pxTextColor of obj# to fontliColor
+
+          // Y-axis:
+          get value of (oFont(oGrp3(self))) item 0 to font#
+          get value of (oFontSize(oGrp3(self))) item 0 to fontsize#
+          get Combo_Current_Aux_Value of (oFontColor(oGrp3(self))) to fontliColor
+          get value of (oFontRotation(oGrp3(self))) item 0 to angle#
+          get select_state of (oFontBold(oGrp3(self))) item 0 to bold#
+          get select_state of (oFontItalics(oGrp3(self))) item 0 to italics#
+          move (angle#*10) to angle#
+          if font# eq "Stock Font" set pyTextStockFont of obj# to ANSI_VAR_FONT
+          else set pyTextTTFontName of obj# to font#
+          set pyTextTTFontSize of obj# to fontsize#
+          set pyTextTTFontAngle of obj# to angle#
+          set pyTextTTFontBold  of obj# to bold#
+          set pyTextTTFontItalic of obj# to italics#
+          set pyTextColor of obj# to fontliColor
+
+          send Draw_Data
+          send RePaintFull
+        end_procedure
+        send calculate
+      end_object
+      procedure calculate
+        send Calculate to (oGraph(self))
+      end_procedure
+
+      object oBtn1 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Calculate" send Calculate
+      end_object
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn2 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn3 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample8(self)) // Set minimum size
+
+    // *********************************************************************
+    // Text alignment
+    // *********************************************************************
+    activate_view run_test11 for oGraphExample11
+    object oGraphExample11 is a aps.view label "Text alignment (11)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGraph is a aps.GraphicArea
+        set size to 200 400
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        procedure draw_data
+          forward send draw_data
+          send SetPenColor  clBlack
+          send SetPenStyle  PS_DOT
+          send SetPenWidth  0
+          send AddLine 0 2500 10000 2500
+          send AddLine 0 5000 10000 5000
+          send AddLine 0 7500 10000 7500
+          send AddLine 2500 0 2500 10000
+          send AddLine 5000 0 5000 10000
+          send AddLine 7500 0 7500 10000
+          send SetTextColor clRed
+          send SetStockFont OEM_FIXED_FONT
+
+          send SetTextAlign (VDFGR_TA_LEFT+VDFGR_TA_TOP)
+          send AddText "left and top" 2500 2500
+          send SetTextAlign (VDFGR_TA_LEFT+VDFGR_TA_VCENTER)
+          send AddText "left and vcenter" 2500 5000
+          send SetTextAlign (VDFGR_TA_LEFT+VDFGR_TA_BOTTOM)
+          send AddText "left and bottom" 2500 7500
+
+          send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_TOP)
+          send AddText "center and top" 5000 2500
+          send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_VCENTER)
+          send AddText "center and vcenter" 5000 5000
+          send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_BOTTOM)
+          send AddText "center and bottom" 5000 7500
+
+          send SetTextAlign (VDFGR_TA_RIGHT+VDFGR_TA_TOP)
+          send AddText "right and top" 7500 2500
+          send SetTextAlign (VDFGR_TA_RIGHT+VDFGR_TA_VCENTER)
+          send AddText "right and vcenter" 7500 5000
+          send SetTextAlign (VDFGR_TA_RIGHT+VDFGR_TA_BOTTOM)
+          send AddText "right and bottom" 7500 7500
+
+        end_procedure
+        send draw_data
+      end_object
+
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample11(self)) // Set minimum size
+
+    // *********************************************************************
+    // Guitar chords
+    // *********************************************************************
+    Enumeration_List // Chord flavors
+      define CF_MAJOR
+      define CF_MAJOR7
+      define CF_MAJOR9
+      define CF_MINOR
+      define CF_MINOR7
+    End_Enumeration_List
+
+    Enumeration_List
+      define CF_KEY_A
+      define CF_KEY_A#
+      define CF_KEY_H
+      define CF_KEY_C
+      define CF_KEY_C#
+      define CF_KEY_D
+      define CF_KEY_D#
+      define CF_KEY_E
+      define CF_KEY_F
+      define CF_KEY_F#
+      define CF_KEY_G
+      define CF_KEY_G#
+    End_Enumeration_List
+
+    use Array.nui // Defines the item_property_list command structure.
+
+    object oAvailableChords is an array
+      item_property_list
+        item_property string  pItem_Name
+        item_property integer pItem_String1
+        item_property integer pItem_String2
+        item_property integer pItem_String3
+        item_property integer pItem_String4
+        item_property integer pItem_String5
+        item_property integer pItem_String6
+      end_item_property_list
+      procedure Define_Chord integer key# integer flavor# string name# integer s1# integer s2# integer s3# integer s4# integer s5# integer s6#
+        integer row#
+        move (key#*5+flavor#) to row#
+        set pItem_Name    row# to name#
+        set pItem_String1 row# to s1#
+        set pItem_String2 row# to s2#
+        set pItem_String3 row# to s3#
+        set pItem_String4 row# to s4#
+        set pItem_String5 row# to s5#
+        set pItem_String6 row# to s6#
+      end_procedure
+      send Define_Chord CF_KEY_H CF_MAJOR  "H"    -1  2  4  4  4  2
+      send Define_Chord CF_KEY_E CF_MAJOR  "E"     0  2  2  1  0  0
+      send Define_Chord CF_KEY_A CF_MAJOR  "A"    -1  0  2  2  2  0
+      send Define_Chord CF_KEY_D CF_MAJOR  "D"    -1 -1  0  2  3  2
+      send Define_Chord CF_KEY_G CF_MAJOR  "G"     3  2  0  0  0  3
+      send Define_Chord CF_KEY_C CF_MAJOR  "C"    -1  3  2  0  1  0
+      send Define_Chord CF_KEY_H CF_MAJOR7 "H7"   -1  2  1  2  0  2
+      send Define_Chord CF_KEY_E CF_MAJOR7 "E7"    0  2  0  1  3  0
+      send Define_Chord CF_KEY_A CF_MAJOR7 "A7"   -1  0  2  0  2  3
+      send Define_Chord CF_KEY_D CF_MAJOR7 "D7"   -1 -1  0  2  1  2
+      send Define_Chord CF_KEY_G CF_MAJOR7 "G7"    3  2  0  0  0  1
+      send Define_Chord CF_KEY_C CF_MAJOR7 "C7"   -1  3  2  3  1  0
+    end_object
+
+    activate_view run_test12 for oGraphExample12
+    object oGraphExample12 is a aps.view label "Guitar chords (12)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGraph is a aps.GraphicArea
+        set size to 200 400
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        procedure draw_chord_background integer key# integer flavor# integer x# integer y#
+          integer row#
+          string name#
+          move (key#*5+flavor#) to row#
+          get pItem_Name of (oAvailableChords(self)) row# to name#
+
+          send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_BOTTOM)
+          send SetTextColor clBlack
+          send SetStockFont SYSTEM_FIXED_FONT
+          send SetTTFont "Times New Roman" 20 0 1 0 0
+          send AddText      name# x# (y#+500)
+
+          send SetFillColor clWhite
+          send SetPenColor clWhite
+          send SetPenWidth 1
+          send SetPenStyle PS_SOLID
+          send AddRectangle (x#+200) y# (x#+3000) (y#+1000)
+
+          send SetPenColor clBlack
+          send AddLine (x#+200)  y#       (x#+3000)  y#
+          send AddLine (x#+200) (y#+200)  (x#+3000) (y#+200)
+          send AddLine (x#+200) (y#+400)  (x#+3000) (y#+400)
+          send AddLine (x#+200) (y#+600)  (x#+3000) (y#+600)
+          send AddLine (x#+200) (y#+800)  (x#+3000) (y#+800)
+          send AddLine (x#+200) (y#+1000) (x#+3000) (y#+1000)
+
+          send SetPenWidth 2
+          send AddLine (x#+200)  y#       (x#+200)  (y#+1000)
+          send AddLine (x#+800)  y#       (x#+800)  (y#+1000)
+          send AddLine (x#+1400) y#       (x#+1400) (y#+1000)
+          send AddLine (x#+2000) y#       (x#+2000) (y#+1000)
+          send AddLine (x#+2600) y#       (x#+2600) (y#+1000)
+        end_procedure
+        // Hah! First time I ever declared an integer with the name string!
+        procedure draw_chord_dot integer string# integer pos# integer x# integer y#
+          if pos# begin // Loose strings are not marked
+            if pos# eq -1 begin // Keep string quiet!
+              send SetDotStyle DT_CROSS
+              send AddDot (x#+500) (string#-1*200+y#)
+            end
+            else begin
+              send SetDotStyle DT_CIRCLE
+              send AddDot (pos#*600+x#-100) (string#-1*200+y#)
+            end
+          end
+        end_procedure
+        procedure draw_chord integer key# integer flavor# integer x# integer y#
+          integer row# obj#
+          move (key#*5+flavor#) to row#
+          send draw_chord_background key# flavor# x# y#
+          send SetPenWidth 1
+          send SetDotSize 7
+          send SetFillColor clRed
+          move (oAvailableChords(self)) to obj#
+          send draw_chord_dot 1 (pItem_String1(obj#,row#)) x# y#
+          send draw_chord_dot 2 (pItem_String2(obj#,row#)) x# y#
+          send draw_chord_dot 3 (pItem_String3(obj#,row#)) x# y#
+          send draw_chord_dot 4 (pItem_String4(obj#,row#)) x# y#
+          send draw_chord_dot 5 (pItem_String5(obj#,row#)) x# y#
+          send draw_chord_dot 6 (pItem_String6(obj#,row#)) x# y#
+        end_procedure
+        procedure draw_data
+          forward send draw_data
+          send draw_chord CF_KEY_H CF_MAJOR  1000  500
+          send draw_chord CF_KEY_E CF_MAJOR  1000 2000
+          send draw_chord CF_KEY_A CF_MAJOR  1000 3500
+          send draw_chord CF_KEY_D CF_MAJOR  1000 5000
+          send draw_chord CF_KEY_G CF_MAJOR  1000 6500
+          send draw_chord CF_KEY_C CF_MAJOR  1000 8000
+          send draw_chord CF_KEY_H CF_MAJOR7 6000  500
+          send draw_chord CF_KEY_E CF_MAJOR7 6000 2000
+          send draw_chord CF_KEY_A CF_MAJOR7 6000 3500
+          send draw_chord CF_KEY_D CF_MAJOR7 6000 5000
+          send draw_chord CF_KEY_G CF_MAJOR7 6000 6500
+          send draw_chord CF_KEY_C CF_MAJOR7 6000 8000
+        end_procedure
+        send draw_data
+      end_object
+
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample12(self)) // Set minimum size
+
+    // *********************************************************************
+    // Rotated TT font
+    // *********************************************************************
+    activate_view run_test13 for oGraphExample13
+    object oGraphExample13 is a aps.view label "True types, rotated (13)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGraph is a aps.GraphicArea
+        set size to 200 200
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        procedure draw_data
+          integer bright_idx# color_idx# liColor angle#
+          forward send draw_data
+          for bright_idx# from 0 to 3
+            for color_idx# from 0 to 3
+              move (icolor(self,bright_idx#*8+color_idx#)) to liColor
+              send SetFillColor liColor
+              send SetPenColor  liColor
+              send AddRectangle (color_idx#*2500) (bright_idx#*2500) (color_idx#+1*2500) (bright_idx#+1*2500)
+            loop
+          loop
+
+          send SetTextColor clRed
+          for angle# from 0 to 8
+            send SetTTFont "Times New Roman" 20 (angle#*400) 0 0 0
+            send AddText "Times New Roman" 5000 5000
+          loop
+        end_procedure
+        send draw_data
+      end_object
+
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample13(self)) // Set minimum size
+
+    // *********************************************************************
+    // Polygon (120 points)
+    // *********************************************************************
+    activate_view run_test15 for oGraphExample15
+    object oGraphExample15 is a aps.view label "Polygon (120 points) (15)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGraph is a aps.GraphicArea snap SL_RIGHT relative_to (oGrp1(self))
+        set size to 200 200
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        send BeginDraw
+        procedure Do_A_Circle
+          integer stp#
+          number angle#
+          for stp# from 0 to 120
+            move (stp#*2*3.1415926/120) to angle#
+            send AddPolyPoint (sin(angle#)*4000+5000) (cos(angle#)*4000+5000)
+          loop
+          send AddPolyGon
+        end_procedure
+        send Do_A_Circle
+      end_object
+
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample15(self)) // Set minimum size
+
+    // *********************************************************************
+    // Dots
+    // *********************************************************************
+    activate_view run_test16 for oGraphExample16
+    object oGraphExample16 is a aps.view label "Dots (16)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGraph is a aps.GraphicArea
+        set size to 200 400
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        procedure Do_Numbers
+          integer liCount size# y#
+          send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_BOTTOM)
+          for liCount from 1 to 19
+            move (liCount*500) to y#
+            send AddText (string(liCount)) 750 y#
+          loop
+        end_procedure
+        procedure Do_Dots integer style# integer x#
+          integer liCount size# y#
+
+          for liCount from 1 to 19
+            move (liCount*500) to y#
+            send SetDotStyle style#
+            send SetDotSize liCount
+            send AddDot x# y#
+          loop
+        end_procedure
+        procedure draw_data
+          forward send draw_data
+          send Do_Numbers
+          send SetFillColor clRed
+          send Do_Dots DT_PIXEL           800
+          send Do_Dots DT_CROSS          1600
+          send Do_Dots DT_PLUS           2400
+          send Do_Dots DT_HORIZONTAL     3200
+          send Do_Dots DT_VERTICAL       4000
+          send Do_Dots DT_CIRCLE         4800
+          send Do_Dots DT_TRIANGLE_UP    5600
+          send Do_Dots DT_TRIANGLE_DOWN  6400
+          send Do_Dots DT_TRIANGLE_LEFT  7200
+          send Do_Dots DT_TRIANGLE_RIGHT 8000
+          send Do_Dots DT_SQUARE         8800
+          send Do_Dots DT_DIAMOND        9600
+        end_procedure
+        send draw_data
+      end_object
+
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample16(self)) // Set minimum size
+
+    // *********************************************************************
+    // Dot alignment
+    // *********************************************************************
+    activate_view run_test17 for oGraphExample17
+    object oGraphExample17 is a aps.view label "Dot alignment (17)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGraph is a aps.GraphicArea
+        set size to 200 400
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+
+        procedure Do_Lines
+          integer liCount
+          send SetPenColor  clGray
+          send SetPenWidth  0
+          send SetPenStyle  PS_DOT
+          for liCount from 1 to 9
+            send AddLine (liCount*1000) 0 (liCount*1000) 10000
+          loop
+          for liCount from 1 to 12
+            send AddLine 0 (liCount*800-200) 10000 (liCount*800-200)
+          loop
+        end_procedure
+
+        procedure Do_Dot integer pos# integer type#
+          integer x# y#
+          move (pos#*800-200) to y#
+          send SetDotStyle type#
+          send SetDotAlign (VDFGR_DA_RIGHT+VDFGR_DA_BOTTOM)
+          send AddDot 1000 y#
+          send SetDotAlign (VDFGR_DA_RIGHT+VDFGR_DA_VCENTER)
+          send AddDot 2000 y#
+          send SetDotAlign (VDFGR_DA_RIGHT+VDFGR_DA_TOP)
+          send AddDot 3000 y#
+          send SetDotAlign (VDFGR_DA_CENTER+VDFGR_DA_BOTTOM)
+          send AddDot 4000 y#
+          send SetDotAlign (VDFGR_DA_CENTER+VDFGR_DA_VCENTER)
+          send AddDot 5000 y#
+          send SetDotAlign (VDFGR_DA_CENTER+VDFGR_DA_TOP)
+          send AddDot 6000 y#
+          send SetDotAlign (VDFGR_DA_LEFT+VDFGR_DA_BOTTOM)
+          send AddDot 7000 y#
+          send SetDotAlign (VDFGR_DA_LEFT+VDFGR_DA_VCENTER)
+          send AddDot 8000 y#
+          send SetDotAlign (VDFGR_DA_LEFT+VDFGR_DA_TOP)
+          send AddDot 9000 y#
+        end_procedure
+
+        procedure draw_data
+          forward send draw_data
+          send Do_Lines
+          send SetPenWidth  1
+          send SetPenStyle  PS_SOLID
+          send SetDotSize 10
+          send SetPenColor  clBlack
+          send SetFillColor clRed
+          send Do_Dot  1 DT_PIXEL
+          send Do_Dot  2 DT_CROSS
+          send Do_Dot  3 DT_PLUS
+          send Do_Dot  4 DT_HORIZONTAL
+          send Do_Dot  5 DT_VERTICAL
+          send Do_Dot  6 DT_CIRCLE
+          send Do_Dot  7 DT_TRIANGLE_UP
+          send Do_Dot  8 DT_TRIANGLE_DOWN
+          send Do_Dot  9 DT_TRIANGLE_RIGHT
+          send Do_Dot 10 DT_TRIANGLE_LEFT
+          send Do_Dot 11 DT_SQUARE
+          send Do_Dot 12 DT_DIAMOND
+        end_procedure
+        send draw_data
+      end_object
+
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample17(self)) // Set minimum size
+
+    // *********************************************************************
+    // Dot alignment /2
+    // *********************************************************************
+    activate_view run_test17_2 for oGraphExample17_2
+    object oGraphExample17_2 is a aps.view label "Dot alignment (17-2)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGraph is a aps.GraphicArea
+        set size to 200 400
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+
+        procedure Do_Lines
+          integer liCount
+          send SetPenColor  clGray
+          send SetPenWidth  0
+          send SetPenStyle  PS_DOT
+          for liCount from 1 to 25
+            send AddLine (liCount*385) 0 (liCount*385) 10000
+          loop
+          for liCount from 1 to 12
+            send AddLine 0 (liCount*800-200) 10000 (liCount*800-200)
+          loop
+        end_procedure
+
+        procedure Do_Dot integer pos# integer type#
+          integer x# y#
+          move (pos#*800-200) to y#
+          send SetDotStyle type#
+          send SetDotAlign (VDFGR_DA_RIGHT_SPACE+VDFGR_DA_BOTTOM_SPACE)
+          send AddDot  385 y#
+          send SetDotAlign (VDFGR_DA_RIGHT_SPACE+VDFGR_DA_BOTTOM)
+          send AddDot  770 y#
+          send SetDotAlign (VDFGR_DA_RIGHT_SPACE+VDFGR_DA_VCENTER)
+          send AddDot 1155 y#
+          send SetDotAlign (VDFGR_DA_RIGHT_SPACE+VDFGR_DA_TOP)
+          send AddDot 1540 y#
+          send SetDotAlign (VDFGR_DA_RIGHT_SPACE+VDFGR_DA_TOP_SPACE)
+          send AddDot 1925 y#
+          send SetDotAlign (VDFGR_DA_RIGHT      +VDFGR_DA_BOTTOM_SPACE)
+          send AddDot 2310 y#
+          send SetDotAlign (VDFGR_DA_RIGHT      +VDFGR_DA_BOTTOM)
+          send AddDot 2695 y#
+          send SetDotAlign (VDFGR_DA_RIGHT      +VDFGR_DA_VCENTER)
+          send AddDot 3080 y#
+          send SetDotAlign (VDFGR_DA_RIGHT      +VDFGR_DA_TOP)
+          send AddDot 3465 y#
+          send SetDotAlign (VDFGR_DA_RIGHT      +VDFGR_DA_TOP_SPACE)
+          send AddDot 3850 y#
+          send SetDotAlign (VDFGR_DA_CENTER     +VDFGR_DA_BOTTOM_SPACE)
+          send AddDot 4235 y#
+          send SetDotAlign (VDFGR_DA_CENTER     +VDFGR_DA_BOTTOM)
+          send AddDot 4620 y#
+          send SetDotAlign (VDFGR_DA_CENTER     +VDFGR_DA_VCENTER)
+          send AddDot 5005 y#
+          send SetDotAlign (VDFGR_DA_CENTER     +VDFGR_DA_TOP)
+          send AddDot 5390 y#
+          send SetDotAlign (VDFGR_DA_CENTER     +VDFGR_DA_TOP_SPACE)
+          send AddDot 5775 y#
+          send SetDotAlign (VDFGR_DA_LEFT       +VDFGR_DA_BOTTOM_SPACE)
+          send AddDot 6160 y#
+          send SetDotAlign (VDFGR_DA_LEFT       +VDFGR_DA_BOTTOM)
+          send AddDot 6545 y#
+          send SetDotAlign (VDFGR_DA_LEFT       +VDFGR_DA_VCENTER)
+          send AddDot 6930 y#
+          send SetDotAlign (VDFGR_DA_LEFT       +VDFGR_DA_TOP)
+          send AddDot 7315 y#
+          send SetDotAlign (VDFGR_DA_LEFT       +VDFGR_DA_TOP_SPACE)
+          send AddDot 7700 y#
+          send SetDotAlign (VDFGR_DA_LEFT_SPACE +VDFGR_DA_BOTTOM_SPACE)
+          send AddDot 8085 y#
+          send SetDotAlign (VDFGR_DA_LEFT_SPACE +VDFGR_DA_BOTTOM)
+          send AddDot 8470 y#
+          send SetDotAlign (VDFGR_DA_LEFT_SPACE +VDFGR_DA_VCENTER)
+          send AddDot 8855 y#
+          send SetDotAlign (VDFGR_DA_LEFT_SPACE +VDFGR_DA_TOP)
+          send AddDot 9240 y#
+          send SetDotAlign (VDFGR_DA_LEFT_SPACE +VDFGR_DA_TOP_SPACE)
+          send AddDot 9625 y#
+        end_procedure
+
+        procedure draw_data
+          forward send draw_data
+          send Do_Lines
+          send SetPenWidth  1
+          send SetPenStyle  PS_SOLID
+          send SetDotSize 10
+          send SetPenColor  clBlack
+          send SetFillColor clRed
+          send Do_Dot  1 DT_PIXEL
+          send Do_Dot  2 DT_CROSS
+          send Do_Dot  3 DT_PLUS
+          send Do_Dot  4 DT_HORIZONTAL
+          send Do_Dot  5 DT_VERTICAL
+          send Do_Dot  6 DT_CIRCLE
+          send Do_Dot  7 DT_TRIANGLE_UP
+          send Do_Dot  8 DT_TRIANGLE_DOWN
+          send Do_Dot  9 DT_TRIANGLE_RIGHT
+          send Do_Dot 10 DT_TRIANGLE_LEFT
+          send Do_Dot 11 DT_SQUARE
+          send Do_Dot 12 DT_DIAMOND
+        end_procedure
+        send draw_data
+      end_object
+
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample17_2(self)) // Set minimum size
+
+    // *********************************************************************
+    // Clickable graphic area
+    // *********************************************************************
+    activate_view run_test18 for oGraphExample18
+    object oGraphExample18 is a aps.view label "Clickable graphic area (18)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGrp is a aps.Group Label "Mouse location"
+        object oFrm1 is a aps.Form label "Mouse down:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+        object oFrm2 is a aps.Form label "Mouse move:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+        object oFrm3 is a aps.Form label "Mouse drag:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+        object oFrm4 is a aps.Form label "Mouse up:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+      end_object
+      object oGraph is a aps.GraphicArea
+        set size to 200 200
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        procedure draw_data
+          integer liCount
+          forward send draw_data
+          for liCount from 1 to 9
+            send AddLine (liCount*1000) 0 (liCount*1000) 10000
+            send AddLine 0 (liCount*1000) 10000 (liCount*1000)
+          loop
+        end_procedure
+        send draw_data
+
+        // These events are sent by the GraphicArea class:
+        procedure onMouseDown integer x# integer y#
+          set value of (oFrm1(oGrp(self))) item 0 to (string(x#)+","+string(y#))
+        end_procedure
+        procedure onMouseMove integer x# integer y#
+          set value of (oFrm2(oGrp(self))) item 0 to (string(x#)+","+string(y#))
+        end_procedure
+        procedure onMouseDrag integer x# integer y#
+          set value of (oFrm3(oGrp(self))) item 0 to (string(x#)+","+string(y#))
+        end_procedure
+        procedure onMouseUp   integer x# integer y#
+          set value of (oFrm4(oGrp(self))) item 0 to (string(x#)+","+string(y#))
+        end_procedure
+      end_object
+
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample18(self)) // Set minimum size
+
+    // *********************************************************************
+    // Viewport experiment
+    // *********************************************************************
+    activate_view run_test19 for oGraphExample19
+    object oGraphExample19 is a aps.view label "Viewport experiment (19)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGraph is a aps.GraphicArea
+        set size to 200 200
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        procedure draw_data
+          forward send draw_data // Must be forwarded (first thing)
+
+          // Draw yellow rectangle:
+          send SetFillColor clYellow
+          send SetPenColor  clBlack
+          send AddRectangle 1000 1000 7000 5000
+
+          // Print centered text (in blue):
+          send SetStockFont SYSTEM_FONT
+          send SetTextAlign VDFGR_TA_CENTER
+          send SetTextColor clBlue
+          send AddText      "Hello World" 4000 7500
+
+          // Draw solid red line:
+          send SetPenColor  clRed
+          send SetPenStyle  PS_SOLID // Solid pen
+          send SetPenWidth  2
+          send AddLineMvTo  8500 1000
+          send AddLineGoTo  8500 9000
+        end_procedure
+        send draw_data
+        procedure move_vp_left
+          set pViewPortY to (pViewPortY(self)-1)
+          send RePaintFull
+        end_procedure
+        procedure move_vp_right
+          set pViewPortY to (pViewPortY(self)+1)
+          send RePaintFull
+        end_procedure
+        procedure move_vp_up
+          set pViewPortX to (pViewPortX(self)-1)
+          send RePaintFull
+        end_procedure
+        procedure move_vp_down
+          set pViewPortX to (pViewPortX(self)+1)
+          send RePaintFull
+        end_procedure
+      end_object
+
+      set multi_button_size to 14 40
+      object oBtn1 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Left" send move_vp_left to (oGraph(self))
+      end_object
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Right" send move_vp_right to (oGraph(self))
+      end_object
+      object oBtn3 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Up" send move_vp_up to (oGraph(self))
+      end_object
+      object oBtn4 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Down" send move_vp_down to (oGraph(self))
+      end_object
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn5 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn6 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample18(self)) // Set minimum size
+
+    // *********************************************************************
+    // Pie chart
+    // *********************************************************************
+    use base.nui
+    class cPieChartData is a cArray
+      procedure construct_object integer img#
+        forward send construct_object img#
+        property string  psTitle       ""
+        property integer piBorderColor clBlack
+      end_procedure
+      item_property_list
+        item_property string  psElemTitle.i
+        item_property number  pnValue.i
+        item_property integer piEmph.i
+        item_property integer piColor.i
+        item_property integer piDegrees.i
+      end_item_property_list cPieChartData
+      function nSumOfValues returns number
+        integer max# row#
+        number rval#
+        move 0 to rval#
+        get row_count to max#
+        for row# from 0 to (max#-1)
+          move (rval#+pnValue.i(self,row#)) to rval#
+        loop
+        function_return rval#
+      end_function
+      procedure calc_degrees
+        integer max# row#
+        number sum#
+        get nSumOfValues to sum#
+        get row_count to max#
+        for row# from 0 to (max#-1)
+          set piDegrees.i row# to (pnValue.i(self,row#)/sum#)
+        loop
+      end_procedure
+      procedure draw_data
+        send calc_degrees
+
+      end_procedure
+    end_class // cPieChartData
+
+//    activate_view run_test22 for oGraphExample22
+//    object oGraphExample22 is a aps.view label "Pie chart (22)"
+//      on_key KCANCEL send close_panel
+//      set Border_Style to BORDER_THICK   // Make panel resizeable
+//      set Window_Style to WS_MAXIMIZEBOX 1
+//      set pMinimumSize to 50 130 // Resize to no less than this!
+//      object oGraph is a aps.GraphicArea
+//        set size to 200 200
+//        set peAnchors to (anTop+anLeft+anRight+anBottom)
+//
+//        procedure draw_data
+//          forward send draw_data
+//          send AddRoundRect 0500 1000 1500 2500
+//          send SetFillColor clBlue
+//          send SetPenColor  clBlue
+//          send AddRectangle 2500 1000 3500 2500
+//          send SetFillColor clYellow
+//          send SetPenColor  clYellow
+//          send AddEllipse   4500 1000 5500 2500
+//          send SetFillColor clGreen
+//          send SetPenColor  clGreen
+//          send AddRectangle 6500 1000 7500 2500
+//          send SetFillColor clBlack
+//          send SetPenColor  clBlack
+//          send AddRoundRect 8500 1000 9500 2500
+//          send SetFillColor clPurple
+//          send SetPenColor  clBlack
+//          send SetPenStyle  PS_DOT
+//          send SetPenWidth  0
+//          send AddLineMvTo  0 2000
+//          send AddLineGoTo  10000 2000
+//          send AddLineMvTo  2000 0
+//          send AddLineGoTo  2000 10000
+//          send SetTextAlign (VDFGR_TA_LEFT+VDFGR_TA_TOP)
+//          send AddText "Hello World" 4000 2000
+//          send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_TOP)
+//          send SetTextColor clRed
+//          send AddText      "Hello World" 5000 2000
+//          send SetTextAlign (VDFGR_TA_RIGHT+VDFGR_TA_TOP)
+//          send SetTextColor clBlue
+//          send SetStockFont SYSTEM_FIXED_FONT
+//          send AddText      "Hello World" 6000 2000
+//          send SetTextColor clBlack
+//          send SetStockFont OEM_FIXED_FONT
+//          send AddText      "OEM_FIXED_FONT"        1000 9500
+//          send SetStockFont ANSI_FIXED_FONT
+//          send AddText      "ANSI_FIXED_FONT"       2000 9500
+//          send SetStockFont ANSI_VAR_FONT
+//          send AddText      "ANSI_VAR_FONT"         3000 9500
+//          send SetStockFont SYSTEM_FONT
+//          send AddText      "SYSTEM_FONT"           4000 9500
+//          send SetStockFont DEVICE_DEFAULT_FONT
+//          send AddText      "DEVICE_DEFAULT_FONT"   5000 9500
+//          send SetStockFont SYSTEM_FIXED_FONT
+//          send AddText      "SYSTEM_FIXED_FONT"     6000 9500
+//        end_procedure
+//        send draw_data
+//      end_object
+//
+//      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+//       object oBtn1 is a aps.multi_button
+//         set peAnchors to (anBottom+anRight)
+//         on_item "Print" send print_graphics to (oGraph(self))
+//       end_object
+//      #ENDIF
+//      object oBtn2 is a aps.multi_button
+//        set peAnchors to (anBottom+anRight)
+//        on_item "Close" send close_panel
+//      end_object
+//      send aps_locate_multi_buttons
+//
+//      procedure OnResize
+//        send RePaintFull of oGraph
+//      end_procedure
+//    end_object
+//    send aps_SetMinimumDialogSize (oGraphExample22(self)) // Set minimum size
+
+    // *********************************************************************
+    // Piece of cake
+    // *********************************************************************
+    // The function that does all the work is called Draw_Piece_Of_Cake and
+    // it is defined like this:
+    //
+    // procedure Draw_Piece_Of_Cake integer center_x# integer center_y# ;
+    //       number rad_start# number rad_end# ;
+    //       integer radius# integer radius_offset#
+    //
+    // I'm sure you can figure out the center_x# and center_y# parameters.
+    // Parameters rad_start# and rad_end# are start and stop angle measured
+    // in radians (ranging from 0 to 2*pi). Parameter ra-dius# of course
+    // indicates the radius of the pie.
+    //
+    // The last parameter called radius_offset# should be 0. If a non zero
+    // value is passed the pie piece will appear off center which is
+    // sometimes used to put emphasis on a particular part of the pie chart.
+    // You can see the effect when running sample "Piece of cake (23)".
+
+    activate_view run_test23 for oGraphExample23
+    object oGraphExample23 is a aps.view label "Piece of cake (23)"
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      on_key KCANCEL send close_panel
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGraph is a aps.GraphicArea
+        set size to 200 200
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+
+        procedure Draw_Piece_Of_Cake integer center_x# integer center_y# number rad_start# number rad_end# integer radius# integer radius_offset#
+          integer stps# stp#
+          number stp_size# angle#
+          move (2*3.1415926/120) to stp_size#
+          move (rad_end#-rad_start#/stp_size#) to stps#
+          increment stps#
+          if radius_offset# begin
+            move (rad_end#+rad_start#/2) to angle#
+            move (-sin(angle#)*radius_offset#+center_x#) to center_x#
+            move (cos(angle#)*radius_offset#+center_y#) to center_y#
+          end
+          send AddPolyPoint center_x# center_y#
+          for stp# from 0 to stps#
+            move (stp_size#*stp#+rad_start#) to angle#
+            move (angle# min rad_end#) to angle#
+            send AddPolyPoint (-sin(angle#)*radius#+center_x#) (cos(angle#)*radius#+center_y#)
+          loop
+          send AddPolyGon
+        end_procedure
+        procedure draw_data
+          integer liCount
+          forward send draw_data
+          send SetPenColor clBlack
+          if dfTrue begin // Seashell on ecstasy
+            for liCount from 1 to 20
+              send SetFillColor (iColor(self,liCount))
+              send Draw_Piece_Of_Cake 5000 5000 (liCount/3.0) (liCount+1/3.0) (liCount*200) 000
+            loop
+          end
+          else begin // Sober pie chart
+            send SetFillColor clBlue
+            send Draw_Piece_Of_Cake 5000 5000 0 2 3000 0
+            send SetFillColor clRed
+            send Draw_Piece_Of_Cake 5000 5000 2 4 3000 500
+            send SetFillColor clYellow
+            send Draw_Piece_Of_Cake 5000 5000 4 6 3000 0
+            send SetFillColor clGreen
+            send Draw_Piece_Of_Cake 5000 5000 6 (2*3.1415926) 3000 0
+          end
+        end_procedure
+        send draw_data
+      end_object
+
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample23(self)) // Set minimum size
+
+    // *********************************************************************
+    // Font selector
+    // *********************************************************************
+    object oAvailableFonts is a cArray
+      item_property_list
+        item_property string  psFontName.i
+        item_property integer piFontSize.i
+      end_item_property_list
+    end_object
+
+    object oDummyFontButton is a Button
+      // It's all very strange. Look up user_fontname in the on-line help.
+      function user_fontname string name# integer height# returns integer
+        integer row# oAvailableFonts#
+        move (oAvailableFonts(self)) to oAvailableFonts#
+        if name# ne "" begin // Add font to the array
+          get row_count of oAvailableFonts# to row#
+          set psFontName.i of oAvailableFonts# row# to name#
+          set piFontSize.i of oAvailableFonts# row# to height#
+        end
+        //else send obs "AHA!"
+      end_function
+      send enumerate_fonts "" // Look up this one too.
+    end_object
+
+    class grtest.ComboFormFonts is a aps.ComboFormAux
+      procedure end_construct_object
+        integer oAvailableFonts# row# max#
+        forward send end_construct_object
+        move (oAvailableFonts(self)) to oAvailableFonts#
+        get row_count of oAvailableFonts# to max#
+        for row# from 0 to max#
+          if (psFontName.i(oAvailableFonts#,row#)) ne "" ;
+            send combo_add_item (psFontName.i(oAvailableFonts#,row#)) row#
+        loop
+        set entry_state item 0 to false
+      end_procedure
+    end_class
+
+    activate_view run_test24 for oGraphExample24
+    object oGraphExample24 is a aps.view label "Font selector (24)"
+      on_key KCANCEL send close_panel
+      register_object oLyrics_Font
+      object oGroup is a aps.Group label "Fonts"
+        set p_left_margin   to 15
+        set p_right_margin  to 15
+        set p_top_margin    to 15
+        set p_bottom_margin to 15
+        send aps_init // Take effect
+        send tab_column_define 1 40 35 jmode_right
+        object oTitle_Font is a grTest.ComboFormFonts abstract AFT_ASCII20 label "Title:"
+          set value item 0 to "Arial"
+          procedure onChange
+            send draw_sample
+          end_procedure
+        end_object
+        object oSamples is a aps.GraphicArea snap SL_RIGHT_SPACE
+          set size to 40 200
+          set peAnchors to (anTop+anLeft+anRight+anBottom)
+          procedure draw_data
+            string font#
+            integer size#
+            forward send draw_data
+            send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_VCENTER)
+            get value of (oTitle_Font(self)) item 0 to font#
+            send SetTTFont font# 20 0 0 0 0
+            send AddText "New York, New York" 2500 5000
+            get value of (oLyrics_Font(self)) item 0 to font#
+            send SetTTFont font# 20 0 0 0 0
+            send AddText "Start spreading the news" 7500 5000
+            send RePaintFull
+          end_procedure
+        end_object
+        send make_row_space 10
+        object oLyrics_Font is a grTest.ComboFormFonts abstract AFT_ASCII20 label "Body:"
+          set value item 0 to "Arial"
+          procedure onChange
+            send draw_sample
+          end_procedure
+        end_object
+        procedure draw_sample
+          send draw_data to (oSamples(self))
+        end_procedure
+        send draw_sample
+      end_object // oGroup
+      object oBtn is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample24(self)) // Set minimum size
+
+    // *********************************************************************
+    // Trackable objects
+    // *********************************************************************
+    activate_view run_test25 for oGraphExample25
+    object oGraphExample25 is a aps.view label "Trackable objects (25)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGrp1 is a aps.Group Label "Mouse location"
+        object oFrm1 is a aps.Form label "Mouse down:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+        object oFrm2 is a aps.Form label "Mouse up:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+        object oFrm3 is a aps.Form label "Mouse2 down:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+        object oFrm4 is a aps.Form label "Mouse2 up:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+        object oFrm5 is a aps.Form label "Mouse move:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+        object oFrm6 is a aps.Form label "Mouse drag:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+      end_object
+      object oGrp2 is a aps.Group Label "Track hit" snap SL_DOWN
+        object oFrm1 is a aps.Form label "Object hit:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+      end_object
+      object oGraph is a aps.GraphicArea snap SL_RIGHT relative_to (oGrp1(self))
+        set size to 200 200
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+
+        procedure onMouseDownTrack integer cb_value#
+          showln ("HIT: "+string(cb_value#))
+          set value of (oFrm1(oGrp2(self))) item 0 to ("Object: "+string(cb_value#))
+        end_procedure
+
+        procedure AddClickBox integer cb_val# integer liColor integer x1# integer y1# integer x2# integer y2#
+          send SetFillColor liColor
+          send AddRectangleTrack x1# y1# x2# y2# cb_val#
+          send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_VCENTER)
+          send AddText (string(cb_val#)) (x1#+x2#/2) (y1#+y2#/2)
+        end_procedure
+        procedure draw_data
+          integer liCount
+          forward send draw_data
+          for liCount from 1 to 9
+            send AddLine (liCount*1000) 0 (liCount*1000) 10000
+            send AddLine 0 (liCount*1000) 10000 (liCount*1000)
+          loop
+          send AddClickBox 1 clYellow    500  500 1500 1500
+          send AddClickBox 2 clRed      4000  500 4500 1000
+          send AddClickBox 3 clGreen    5000 5000 7000 7700
+          send AddClickBox 4 clBlue     6000 7000 8000 9700
+        end_procedure
+        send draw_data
+
+        // These events are sent by the GraphicArea class:
+        procedure onMouseDown integer x# integer y#
+          set value of (oFrm1(oGrp1(self))) item 0 to (string(x#)+","+string(y#))
+        end_procedure
+        procedure onMouseUp   integer x# integer y#
+          set value of (oFrm2(oGrp1(self))) item 0 to (string(x#)+","+string(y#))
+        end_procedure
+        procedure onMouse2Down integer x# integer y#
+          set value of (oFrm3(oGrp1(self))) item 0 to (string(x#)+","+string(y#))
+        end_procedure
+        procedure onMouse2Up   integer x# integer y#
+          set value of (oFrm4(oGrp1(self))) item 0 to (string(x#)+","+string(y#))
+        end_procedure
+        procedure onMouseMove integer x# integer y#
+          set value of (oFrm5(oGrp1(self))) item 0 to (string(x#)+","+string(y#))
+        end_procedure
+        procedure onMouseDrag integer x# integer y#
+          set value of (oFrm6(oGrp1(self))) item 0 to (string(x#)+","+string(y#))
+        end_procedure
+      end_object
+
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample25(self)) // Set minimum size
+
+    // *********************************************************************
+    // Dragable objects
+    // *********************************************************************
+    use diagram.nui
+    activate_view run_test31 for oGraphExample31
+    object oGraphExample31 is a aps.view label "Dragable objects (31)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGrp1 is a aps.Group Label "Mouse location"
+        object oFrm1 is a aps.Form label "Mouse down:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+        object oFrm2 is a aps.Form label "Mouse move:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+        object oFrm3 is a aps.Form label "Mouse drag:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+        object oFrm4 is a aps.Form label "Mouse up:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+      end_object
+      object oGrp2 is a aps.Group Label "Track hit" snap SL_DOWN
+        object oFrm1 is a aps.Form label "Object hit:" abstract AFT_ASCII15
+          set shadow_state item 0 to true
+        end_object
+      end_object
+      object oGraph is a aps.GraphicArea snap SL_RIGHT relative_to (oGrp1(self))
+        set size to 200 200
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+
+        object oDiagramObjectList is a cDiagramObjectList NO_IMAGE
+          object oDiagramObject1 is a cDiagramObject
+            set piX to 1000
+            set piY to 1000
+          end_object
+          send DoAddDiagramObject (oDiagramObject1(self))
+          object oDiagramObject2 is a cDiagramObject
+            set piX to 6000
+            set piY to 3000
+          end_object
+          send DoAddDiagramObject (oDiagramObject2(self))
+          object oDiagramObject3 is a cDiagramObject
+            set piX to 8000
+            set piY to 8000
+          end_object
+          send DoAddDiagramObject (oDiagramObject3(self))
+          object oDiagramObject4 is a cDiagramObject
+            set piType to DCLS_SIMPLECIRCLE
+            set piColor to clYellow
+            set piX to 4000
+            set piY to 8000
+          end_object
+          send DoAddDiagramObject (oDiagramObject4(self))
+        end_object
+
+        integer liCbValue##
+        procedure onMouseDownTrack integer liCbValue integer liLevel
+          integer lbSelected
+          if (liLevel=0) begin
+    //      get pbSelected.i of (oDiagramObjectList(self)) liCbValue to lbSelected
+    //      set pbSelected.i of (oDiagramObjectList(self)) liCbValue to (not(lbSelected))
+            set pbSelected.i of (oDiagramObjectList(self)) liCbValue to DFTRUE
+            move liCbValue to liCbValue##
+            send draw_data
+            send RePaintFull to (oDiagramObjectList(self))
+            set value of (oFrm1(oGrp2(self))) item 0 to ("Object: "+string(liCbValue))
+          end
+          //showln ("HIT: "+string(cb_value#)+" "+string(liLevel))
+
+        end_procedure
+
+        property integer pbOutLine 0
+
+        procedure draw_data
+          integer liCount
+          forward send draw_data
+        //for liCount from 1 to 9
+        //  send AddLine (liCount*1000) 0 (liCount*1000) 10000
+        //  send AddLine 0 (liCount*1000) 10000 (liCount*1000)
+        //loop
+          send DoDrawData to (oDiagramObjectList(self)) (pbOutLine(self))
+    //    send AddClickBox 1 clYellow    500  500 1500 1500
+    //    send AddClickBox 2 clRed      4000  500 4500 1000
+    //    send AddClickBox 3 clGreen    5000 5000 7000 7700
+    //    send AddClickBox 4 clBlue     6000 7000 8000 9700
+        end_procedure
+        send draw_data
+
+        // These events are sent by the GraphicArea class:
+        procedure onMouseDown integer x# integer y#
+          send DoDragBegin to (oDiagramObjectList(self)) x# y#
+          set value of (oFrm1(oGrp1(self))) item 0 to (string(x#)+","+string(y#))
+          set pbOutLine to DFTRUE
+        end_procedure
+        procedure onMouseMove integer x# integer y#
+          set value of (oFrm2(oGrp1(self))) item 0 to (string(x#)+","+string(y#))
+        end_procedure
+        procedure onMouseDrag integer x# integer y#
+          set value of (oFrm3(oGrp1(self))) item 0 to (string(x#)+","+string(y#))
+          send DoDrag to (oDiagramObjectList(self)) x# y#
+          send draw_data
+          send RePaintFull to (oDiagramObjectList(self))
+        end_procedure
+        procedure onMouseUp   integer x# integer y#
+          set value of (oFrm4(oGrp1(self))) item 0 to (string(x#)+","+string(y#))
+          set pbOutLine to DFFALSE
+          set pbSelected.i of (oDiagramObjectList(self)) liCbValue## to DFFALSE
+          send DoDragEnd to (oDiagramObjectList(self))
+            send draw_data
+            send RePaintFull to (oDiagramObjectList(self))
+        end_procedure
+      end_object //oGraph
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample31(self)) // Set minimum size
+
+
+    // *********************************************************************
+    // Pixel based coordinate system
+    // *********************************************************************
+
+    activate_view run_test51 for oGraphExample51
+    object oGraphExample51 is a aps.view label "Pixel based coordinate system (51)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+
+      object oGraph is a aps.GraphicArea snap SL_RIGHT
+        set guisize to 200 200
+        send adjust_logicals
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        set pbPixelScale to TRUE
+        procedure draw_data
+          integer liCount
+          forward send draw_data
+          send SetPenColor clBlack
+
+          for liCount from 25 to 75
+            send AddLine 10 (liCount*2) 350 (liCount*2)
+          loop
+
+          send SetTextAlign (VDFGR_TA_LEFT+VDFGR_TA_TOP)
+          send SetTextColor clRed
+          send AddText      "Hello World" 100 100
+
+        end_procedure
+        send draw_data
+
+      end_object //oGraph
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample51(self)) // Set minimum size
+
+    // *********************************************************************
+    // 3D Graphichs
+    // *********************************************************************
+
+    activate_view run_test52 for oGraphExample52
+    object oGraphExample52 is a aps.view label "3D example (52)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+
+      object oGraph is a aps.GraphicArea3D snap SL_RIGHT
+        set guisize to 200 200
+        send adjust_logicals
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        procedure draw_data
+          integer liCount
+          forward send draw_data
+          send SetPenColor clBlack
+          send SetFillColor clRed
+          send Add3dBox 4000 4000 4000 6000 6000 6000
+        end_procedure
+        send draw_data
+      end_object //oGraph
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample52(self)) // Set minimum size
+
+    // *********************************************************************
+    // Empty
+    // *********************************************************************
+    activate_view run_test99 for oGraphExample99
+    object oGraphExample99 is a aps.view label "Empty area (99)"
+      on_key KCANCEL send close_panel
+      set Border_Style to BORDER_THICK   // Make panel resizeable
+      set Window_Style to WS_MAXIMIZEBOX 1
+      set pMinimumSize to 50 130 // Resize to no less than this!
+      object oGraph is a aps.GraphicArea
+        set size to 200 200
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+    //  send BeginDraw
+      end_object
+
+      #IFDEF U_VpeGraphicArea // Only compile if VPE has been included!
+       object oBtn1 is a aps.multi_button
+         set peAnchors to (anBottom+anRight)
+         on_item "Print" send print_graphics to (oGraph(self))
+       end_object
+      #ENDIF
+      object oBtn2 is a aps.multi_button
+        set peAnchors to (anBottom+anRight)
+        on_item "Close" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+
+      procedure OnResize
+        send RePaintFull of oGraph
+      end_procedure
+    end_object
+    send aps_SetMinimumDialogSize (oGraphExample99(self)) // Set minimum size
+
+    procedure Display_Splash
+      send activate to (oSplash(self))
+    end_procedure
+
+    procedure Remove_Splash
+      send deactivate to (oSplash(self))
+    end_procedure
+
+    procedure Open_All
+      send Run_Test51
+      send Run_Test31
+      send Run_Test25
+      send Run_Test19
+      send Run_Test18
+      send Run_Test17
+      send Run_Test16
+      send Run_Test15
+      send Run_Test13
+      send Run_Test12
+      send Run_Test11
+      send Run_Test8
+      send Run_Test7
+      send Run_Test6
+      send Run_Test5
+      send Run_Test3
+      send Run_Test2
+      send Run_Test1
+      send Cascade_Windows
+    end_procedure
+
+//  use dftimer
+//  object oStatusBarTimer is a dftimer // This timer makes sure that the
+//    set timer_active_state to true    // status bar is updated at least
+//    procedure onTimer                 // every second.
+//      send update_status_line
+//    end_procedure
+//  end_object
+//
+//  // Here comes a feature that will minimize/maximize everything on
+//  // the desktop a number of times (in order to check for boring
+//  // leaks)
+//
+//  object oMinMaxTimer is a dftimer
+//    property integer pIterations 0
+//    procedure onTimer
+//      send minmaximize
+//    end_procedure
+//    procedure minmaximize
+//      integer iter#
+//      send Minimize_All_Windows
+//      send Restore_All_Windows
+//      get pIterations to iter#
+//      set pIterations to (iter#-1)
+//      send update_minmax_count iter#
+//      if iter# le 0 set timer_active_state to false
+//    end_procedure
+//    procedure go integer iter#
+//      set pIterations to (iter#-1)
+//      set timer_active_state to true
+//    end_procedure
+//  end_object
+
+    object oMinimizeMaximize is a aps.ModalPanel label "Check for resource leaks"
+      set locate_mode to CENTER_ON_SCREEN
+      object oFrm is a aps.Form label "Enter the number of times the dialogs should minimize/maximize:" abstract AFT_NUMERIC2.0
+        on_key kenter send next
+        set value item 0 to 10
+      end_object
+      procedure close_panel_ok
+        send close_panel
+//        send go to (oMinMaxTimer(self)) (value(oFrm(self),0))
+      end_procedure
+      object oBtn1 is a aps.Multi_Button
+        on_item "OK" send close_panel_ok
+      end_object
+      object oBtn2 is a aps.Multi_Button
+        on_item "Cancel" send close_panel
+      end_object
+      send aps_locate_multi_buttons
+    end_object
+    procedure activate_MinimizeMaximize
+      send popup to (oMinimizeMaximize(self))
+    end_procedure
+  End_Object // Main_Client
+
+  Object Status_Bar is a AppStatusBar // Modified status bar
+    Send Add_Item 0 ""                    // Item 0
+    Send Add_Item 60 "Memory:"            // Item 1
+    Set Item_Display_Style To sbNORMAL
+    Send Add_Item 100 ""                  // Item 2
+
+    Send Add_Item 65 "GDI Free:"          // Item 3
+    Set Item_Display_Style To sbNORMAL
+    Send Add_Item 50 ""                   // Item 4
+    Send Add_Item 70 "User Free:"         // Item 5
+    Set Item_Display_Style To sbNORMAL
+    Send Add_Item 50 ""                   // Item 6
+    Send Add_Item 90 "System Free:"       // Item 7
+    Set Item_Display_Style To sbNORMAL
+    Send Add_Item 50 ""                   // Item 8
+    Send Add_Item 10 ""                   // Item 9
+    Set Item_Display_Style To sbNORMAL
+    Send Add_Item 80 ""                   // Item 10
+    Set Item_Display_Style To sbNORMAL
+    Procedure Show_View_Name String sValue
+    End_Procedure
+    procedure update_status_line
+      ULongptr mem#
+      memory mem#
+      set pNumToStringConversionMode to NUMTOSTR_THOUSANDS_SEPARATOR_ON
+      set value item 2 to (NumToStr(mem#,0))
+      set pNumToStringConversionMode to NUMTOSTR_THOUSANDS_SEPARATOR_OFF
+      // This does not work with VDF 6, and therefore I have removed it:
+//    set value item 4 to (String(GetFreeSystemResources(GFSR_GDIRESOURCES))+"%")
+//    set value item 6 to (String(GetFreeSystemResources(GFSR_USERRESOURCES))+"%")
+//    set value item 8 to (String(GetFreeSystemResources(GFSR_SYSTEMRESOURCES))+"%")
+    end_procedure
+    Procedure Show_Status_Help string str#
+      forward send Show_Status_Help str#
+      send update_status_line
+    End_Procedure
+    procedure update_minmax_count integer liCount
+      if liCount gt 0 set value item 10 to ("Iterations left: "+string(liCount))
+      else set value item 10 to ""
+    end_procedure
+//    { MethodType=Event Visibility=Private }
+//    Procedure Notify Longptr wParam Longptr lParam
+//        Integer iVoid iCode
+//        Longptr iPane
+//        tWinNmMouse NmMouse
+//        
+//        Move (CopyMemory(AddressOf(NmMouse), lParam, SizeOfType(tWinNmMouse))) to iVoid
+//        
+//        Move NmMouse.hdr.code   to iCode
+//        Move NmMouse.dwItemSpec to iPane
+//        
+//        If (iCode = SBN_SIMPLEMODECHANGE) ;
+//            Send OnSimpleModeChange
+//        Else If (iCode = NM_CLICK) ;
+//            Send OnClick            iPane
+//        Else If (iCode = NM_DBLCLK) ;
+//            Send OnDoubleClick      iPane
+//        Else If (iCode = NM_RCLICK) ;
+//            Send OnRightClick       iPane
+//        Else If (iCode = NM_RDBLCLK) ;
+//            Send OnDoubleRightClick iPane
+//    End_Procedure
+  End_Object
+  procedure update_status_line
+    send update_status_line to (Status_Bar(self))
+  end_procedure
+  procedure update_minmax_count integer liCount
+    send update_minmax_count to (Status_Bar(self)) liCount
+  end_procedure
+End_Object
+
+//send Run_Test21 to (Main_Client(Main(self)))
+
+Send Deactivate to (oSplash(Self))
+Start_UI

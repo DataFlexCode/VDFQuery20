@@ -1,0 +1,209 @@
+// Use WsFunctions.pkg // Workspace functions encapsulated in WsFunctions object (VdfQuery)
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+Use VdfBase.pkg // DAW package, provides low level support expected of all VDF applications (windows and webapp)
+Use cRegistry.pkg // DAW package, provides access to the Windows system Registry
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+
+Desktop_Section
+
+    #IFNDEF Is$WebApp // If Windows application 
+        Object oWsSelector is a ModalPanel
+            Set Location to 4 13
+            Set size to 254 319
+            Set piMinSize to 254 319
+            Set label to "Work space selector"
+            Set Border_Style to Border_Thick
+            
+            Property Boolean pbAccept
+            On_Key kCancel Send close_panel
+            
+            Procedure AcceptPanel
+                Set pbAccept to True
+                Send close_panel
+            End_Procedure
+            
+            Object oTextBox is a TextBox
+                Set Size to 50 14
+                Set Location to 14 27
+                Set Label to "Currently selected workspace:"
+            End_Object
+            Object oForm is a Form
+                Set Size to 14 267
+                Set Location to 28 24
+                Set peAnchors to anTopLeftRight
+                Set Enabled_State to False
+            End_Object
+            Object oList is a List
+                Set Size to 156 267
+                Set Location to 46 24
+                Set peAnchors to anAll
+                Set Select_Mode to Auto_Select
+                On_Key kEnter Send AcceptPanel
+                Procedure DoFillList String[] aValues
+                    Integer iMax iItm
+                    Send delete_data
+                    Move (SizeOfArray(aValues)) to iMax
+                    Decrement iMax
+                    For iItm from 0 to iMax
+                        Send add_item MSG_None aValues[iItm]
+                    Loop
+                End_Procedure
+                Procedure Mouse_Click Integer iWindowNumber Integer iPosition // Sent on mouse double click.
+                    Send AcceptPanel
+                End_Procedure
+            End_Object
+            Object oButton1 is a Button
+                Set Location to 209 176
+                Set Label to "Select"
+                Set peAnchors to anBottomRight
+                Procedure OnClick
+                    Send AcceptPanel
+                End_Procedure
+            End_Object
+            Object oButton2 is a Button
+                Set Location to 209 240
+                Set Label to "Cancel"
+                Set peAnchors to anBottomRight
+                Procedure OnClick
+                    Send close_panel
+                End_Procedure
+            End_Object
+            
+            Function SelectSwsFile String[] aValues String sCurrent Returns String
+                String sRval
+                Set pbAccept to False
+                Set value of oForm to sCurrent
+                Send DoFillList of oList aValues
+                Send popup
+                If (pbAccept(Self)) Begin
+                    Get value of oList (Current_Item(oList)) to sRval
+                End
+                Function_Return sRval
+            End_Function
+        End_Object // oWsSelector
+    #ENDIF
+
+    Object WsFunctions is a cObject
+        Object oRecentWs is a cRegistry // Private
+            Set phRootKey to HKEY_CURRENT_USER
+        End_Object
+
+        //> The VDF studio stores its "Recent Workspaces" list in the Windows registry. Use the ReadRegistryRecentWorkSpaces
+        //> procedure to dig them out.
+        Procedure ReadRegistryRecentWorkSpaces String[] ByRef aValues
+            Boolean bOpen
+            Handle hoArray
+            Integer iMaxKey iKey
+            String sKey sVdfVer sVdfRev sVdfBuild sVdfKey
+
+            Version_Information sVdfVer sVdfRev sVdfBuild
+            Move (sVdfVer+"."+sVdfRev) to sVdfKey
+
+            Move (ResizeArray(aValues,0)) to aValues
+            Get OpenKey of oRecentWs ("Software\Data Access Worldwide\Visual DataFlex Tools\"+sVdfKey+"\Studio\RecentWorkspaces") to bOpen
+            If (bOpen) Begin
+                Get Create U_Array to hoArray // Create an array object
+                Get GetValues of oRecentWs hoArray to iMaxKey
+                Decrement iMaxKey
+                For iKey from 0 to iMaxKey
+                    Get value of hoArray iKey to sKey
+                    Get ReadString of oRecentWs sKey to aValues[iKey]
+                Loop
+                Send destroy of hoArray // Remove the array object from memory.
+            End
+        End_Procedure
+
+        //> Returns a handle to cWorkSpace object currently in action.
+        Function WorkSpaceObject Returns Handle
+            Handle hRval
+            Move 0 to hRval
+            If (ghoApplication>=0) Begin
+                Get phoWorkspace of ghoApplication to hRval
+            End
+            Function_Return hRval
+        End_Function
+
+        //> Returns the name (incl. full path) of the .ws file currently used.
+        Function WorkSpaceFile Returns String
+            Handle hoWs
+            String sFile
+            Get WorkSpaceObject to hoWs
+            If (hoWs>0) Begin
+                Get psWorkspaceWSFile of hoWs to sFile
+            End
+            Else Begin
+                Move "" to sFile
+            End
+            Function_Return sFile
+        End_Function
+
+        //> Use this function to calculate the absolute path of the .ws file corresponding 
+        //> to the abslute path of a .sws file given as parameter.
+        Function SwsFileToWsFile String sSwsFile Returns String
+            Boolean bStop
+            //Integer iChannel
+            Handle hoIniFile
+            String sWsFile sLine
+
+            Get Create U_cIniFile To hoIniFile
+
+            Set psFilename of hoIniFile To sSwsFile
+            Get ReadString of hoIniFile "WorkspacePaths" "ConfigFile" "" To sWsFile
+            Send Destroy of hoIniFile // destroy dynaically created inifile object
+
+            If (left(sWsFile,2)=".\") Begin // If that's not the case we assume that the path is absolute. (Maybe someday it is necessary to take "..\" into account also).
+                Move (Remove(swsFile,1,2)) to sWsFile // Remove the first two characters
+                
+                Get SEQ_ExtractPathFromFileName sSwsFile to sSwsFile // "C:\Apps\VdfQueryLib\VDFQueryLib.sws" -> "C:\Apps\VdfQueryLib"
+                Get Files_AppendPath sSwsFile sWsFile to sWsFile
+            End
+            Function_Return sWsFile
+        End_Function
+
+        //> Function OpenWorkspace takes a .sws or .ws file and calls the "OpenWorkSpaceFile" method of the current cWorkSpace object. The return
+        //> value is one of the following:
+        //>     -1                      : cWorkSpace object not found
+        //>     wsWorkspaceOpened       : WS opened ok
+        //>     wsWorkspaceNotFound     : the named WS was not found in the global list
+        //>     wsWorkspaceFileNotFound : the WS file was not found
+        //>     wsDataPathEmpty         : the DataPath entry was empty
+        //>     wsFileListEmpty         : The FileList entry was empty
+        //>     wsFileListNotExist      : The FileList.cfg file could not be found
+        Function OpenWorkspace String sFile Returns Integer
+            Handle hoWs
+            Integer iRval
+            Get WorkSpaceObject to hoWs
+            If (hoWs>=0) Begin
+                If (lowercase(right(sFile,4))=".sws") Get SwsFileToWsFile sFile to sFile
+                Get OpenWorkspaceFile of hoWs sFile to iRval
+            End
+            Function_Return iRval
+        End_Function
+
+        Function OpenWorkspaceErrorText integer iReturnValue returns string
+            if (iReturnValue=-1)                      function_return "cWorkSpace object not found"
+            if (iReturnValue=wsWorkspaceOpened)       function_return "WS opened ok"
+            if (iReturnValue=wsWorkspaceNotFound)     function_return "The named WS was not found in the global list"
+            if (iReturnValue=wsWorkspaceFileNotFound) function_return "The WS file was not found"
+            if (iReturnValue=wsDataPathEmpty)         function_return "The DataPath entry was empty"
+            if (iReturnValue=wsFileListEmpty)         function_return "The FileList entry was empty"
+            if (iReturnValue=wsFileListNotExist)      function_return "'FileList.cfg' file could not be found"
+            function_return ""
+        End_Function
+
+        #IFNDEF Is$WebApp // If Windows application
+            Function SelectRecentWorkspaceFile Returns String
+                String sSwsFile sWsFile
+                String[] aValues
+                Send ReadRegistryRecentWorkSpaces (&aValues)
+                Get SelectSwsFile of oWsSelector aValues (WorkSpaceFile(Self)) to sSwsFile
+                Function_Return sSwsFile
+            End_Function
+        #ENDIF
+    End_Object
+End_Desktop_Section

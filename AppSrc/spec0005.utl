@@ -1,0 +1,82 @@
+// Use Spec0005.utl // Datadictionary object procedures ("DDUTIL_" prefix)
+Use DataDict     // Standard VDF class
+Use Fdx_Attr.utl // FDX compatible attribute functions
+Use FdxIndex.utl // Index analysing functions
+
+//**********************************************************************
+// Useful pastry:
+//
+// class Customer_DD is a DataDictionary
+//   procedure define_fields
+//     forward send define_fields
+//     set main_file to Customer.file_number
+//     send DDUTIL_DoQuickSetup self
+//   end_procedure
+// end_class
+
+//> Set key_field_state of all fields in index# to true. Also
+//> sets protect_key_state to true.
+procedure DDUTIL_DoPrimaryIndex global integer ddo# integer index#
+  integer iFile iField iPos iMaxPos
+  string sFields
+  get main_file of ddo# to iFile
+  if index# begin
+    get FDX_IndexAsFields 0 iFile index# to sFields
+    // We have to substitute overlap fields with their underlying fields. It
+    // makes no sense to the DD object to set key_field_state of an overlap:
+    get FDX_FieldsTranslateOverlaps 0 iFile sFields to sFields
+    move (length(sFields)+3/4) to iMaxPos
+    for iPos from 0 to (iMaxPos-1)
+      move (mid(sFields,4,iPos*4+1)) to iField
+      set key_field_state of ddo# iField to DFTRUE
+      if iField eq iMaxPos set field_options of ddo# iField to DD_AUTOFIND
+    loop
+    set protect_key_state of ddo# to DFTRUE
+  end
+end_procedure
+
+//> Locates the primary index of main_file(DDO) and calls
+//> procedure DDUTIL_DoPrimaryIndex
+procedure DDUTIL_DoFindAndSetPrimaryIndex global integer ddo#
+  integer iIndex iFile
+  get main_file of ddo# to iFile
+  get FDX_IndexFindPrimary 0 iFile to iIndex
+  if iIndex send DDUTIL_DoPrimaryIndex ddo# iIndex
+end_procedure
+
+//> Does a reasonable setup of "foreign field options"
+procedure DDUTIL_DoForeignOptions global integer ddo#
+  set Foreign_Field_Options of ddo# DD_KEYFIELD   To DD_FINDREQ
+  set Foreign_Field_Options of ddo# DD_INDEXFIELD To DD_FINDREQ DD_AUTOFIND_GE
+  set Foreign_Field_Options of ddo# DD_DEFAULT    To DD_NOENTER
+end_procedure
+
+procedure DDUTIL_DoQuickSetup global integer ddo#
+  send DDUTIL_DoFindAndSetPrimaryIndex ddo#
+  send DDUTIL_DoForeignOptions ddo#
+end_procedure
+
+procedure DDUTIL_DoDefaultNextNumericUniqueID global integer ddo#
+  integer iIndex iFile iMaxSeg iField iRec iVal
+  get main_file of ddo# to iFile
+  get FDX_IndexFindPrimary 0 iFile to iIndex
+  if iIndex begin
+    get_attribute DF_INDEX_NUMBER_SEGMENTS of iFile iIndex to iMaxSeg
+    if iMaxSeg eq 1 begin
+      get_attribute DF_INDEX_SEGMENT_FIELD of iFile iIndex 1 to iField
+      get_field_value iFile 0 to iRec
+      clear iFile
+      vfind iFile iIndex lt // Find last
+      if (found) get_field_value iFile iField to iVal
+      else move 0 to iVal
+      increment iVal
+      clear iFile
+      if iRec begin
+        set_field_value iFile 0 to iRec
+        vfind iFile 0 eq
+      end
+      set field_changed_value of ddo# iField to iVal
+    end
+    else error 1051 "Index must be single segmented"
+  end
+end_procedure

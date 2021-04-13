@@ -1,0 +1,161 @@
+//**********************************************************************
+// Use Fdx1.utl     // FDX aware display global attributes (FDX_DisplayGlobalAttributes procedure)
+//
+// By Sture Andersen
+//
+// Create: Sun  16-01-2000
+// Update:
+//
+//**********************************************************************
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+Use Fdx_Attr.nui // FDX compatible attribute functions
+Use Strings.nui  // String manipulation for VDF
+Use GridUtil.utl // Grid and List utilities (not for dbGrid's or Table's)
+
+// This are only declared if FDX.UTL has been included by the program source:
+register_procedure AttrType_Callback integer attrtype# integer msg# integer obj#
+
+class cFdxGlobalAttrGrid is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    set line_width to 2 0
+    set aps_column_abstract 0 to 0 AFT_ASCII30
+    set aps_column_abstract 1 to 0 AFT_ASCII60
+    set header_label 0 to "Parameter"
+    set header_label 1 to "Value"
+    set highlight_row_state to true
+ // set highlight_row_color to (rgb(0,255,255))
+ // set current_item_color to (rgb(0,255,255))
+    set CurrentCellColor     to clHighlight
+    set CurrentCellTextColor to clHighlightText
+    set CurrentRowColor      to clHighlight
+    set CurrentRowTextColor  to clHighlightText
+    set select_mode to no_select
+    set size to 180 0
+    object oAttributeFilter is a cArray // Attributes that should not display
+    end_object
+    send IgnoreAttribute DF_TRAN_COUNT
+    send IgnoreAttribute DF_TRANSACTION_ABORT
+    send IgnoreAttribute DF_ALL_FILES_TOUCHED
+    on_key key_ctrl+key_w send DoWriteToFile
+  end_procedure
+
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+
+  function MakeTitleNice string title# returns string
+    function_return title#
+  end_function
+  procedure IgnoreAttribute integer attr#
+    integer arr#
+    move (oAttributeFilter(self)) to arr#
+    set value of arr# item (item_count(arr#)) to attr#
+  end_procedure
+  function iIgnoreAttribute integer attr# returns integer
+    integer arr# itm# max#
+    move (oAttributeFilter(self)) to arr#
+    get item_count of arr# to max#
+    for itm# from 0 to (max#-1)
+      if (integer(value(arr#,itm#))) eq attr# function_return 1
+    loop
+    function_return 0
+  end_function
+  procedure add_item integer msg# string value#
+    forward send add_item msg# value#
+    set entry_state item (item_count(self)-1) to false
+  end_procedure
+  procedure add_path_value string title# string path# string sep#
+    integer itm# max#
+    get MakeTitleNice title# to title#
+    move (HowManyWords(path#,sep#)) to max#
+    if max# begin
+      for itm# from 1 to max#
+        send add_item msg_none title#
+        send add_item msg_none (ExtractWord(path#,sep#,itm#))
+        move "" to title#
+      loop
+    end
+    else begin
+      send add_item msg_none title#
+      send add_item msg_none ""
+    end
+  end_procedure
+  procedure fill_list_fdx_help integer oFDX# integer attr#
+    ifnot (iIgnoreAttribute(self,attr#)) begin
+      if attr# eq DF_OPEN_PATH send add_path_value (API_Attr_DisplayName(attr#)) (API_Attr_DisplayValueName(attr#,AttrValue_GLOBAL(oFDX#,attr#))) (FDX_OtherAttr_Value(oFDX#,OA_PATH_SEPARATOR))
+      else begin
+        send add_item msg_none (MakeTitleNice(self,API_Attr_DisplayName(attr#)))
+        send add_item msg_none (API_Attr_DisplayValueName(attr#,AttrValue_GLOBAL(oFDX#,attr#)))
+      end
+    end
+  end_procedure
+  procedure fill_list_api_help integer attr#
+    ifnot (iIgnoreAttribute(self,attr#)) begin
+      if attr# eq DF_OPEN_PATH send add_path_value (API_Attr_DisplayName(attr#)) (API_Attr_DisplayValueName(attr#,API_AttrValue_GLOBAL(attr#))) (API_OtherAttr_Value(OA_PATH_SEPARATOR))
+      else begin
+        send add_item msg_none (MakeTitleNice(self,API_Attr_DisplayName(attr#)))
+        send add_item msg_none (API_Attr_DisplayValueName(attr#,API_AttrValue_GLOBAL(attr#)))
+      end
+    end
+  end_procedure
+  procedure fill_list.i integer oFDX#
+    integer attr# max#
+    send delete_data
+    for attr# from 0 to (OA_MAX-1)
+      if (attr#=OA_PATH) send add_path_value (OtherAttr_DisplayName(attr#)) (FDX_OtherAttr_Value(oFDX#,attr#)) (FDX_OtherAttr_Value(oFDX#,OA_PATH_SEPARATOR))
+      else begin
+        send add_item msg_none (MakeTitleNice(self,OtherAttr_DisplayName(attr#)))
+        send add_item msg_none (OtherAttr_ValueDisplayName(attr#,FDX_OtherAttr_Value(oFDX#,attr#)))
+      end
+    loop
+    if oFDX# send AttrType_Callback to oFDX# ATTRTYPE_GLOBAL msg_fill_list_fdx_help self
+    else send API_AttrType_Callback ATTRTYPE_GLOBAL msg_fill_list_api_help self
+  end_procedure
+end_class
+object oFdxModalDisplayGlobalAttributes is a aps.ModalPanel label "Global attributes"
+  on_key kcancel send close_panel
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  set Locate_Mode to CENTER_ON_SCREEN
+  object oLst is a cFdxGlobalAttrGrid
+  end_object
+  object oBtn is a aps.Multi_Button
+    on_item t.btn.close send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure run.i integer oFDX#
+    if oFDX# set label to ("Global attributes ("+psFileName(oFDX#)+")")
+    else set label     to "Global attributes (Current system)"
+    send fill_list.i to (oLst(self)) oFDX#
+    send popup
+  end_procedure
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oLst(self)) delta_rw# 0
+    send aps_register_multi_button (oBtn(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+end_object
+
+//> The FDX_DisplayGlobalAttributes procedure will display the global
+//> attribute settings either for the current runtime (if parameter
+//> oFDX# is 0) or as read from a FDX object (if oFDX# the object ID
+//> of an FDX object).
+procedure FDX_ModalDisplayGlobalAttributes global integer oFDX#
+  send run.i to (oFdxModalDisplayGlobalAttributes(self)) oFDX#
+end_procedure
+
+
+// *** TEST CODE ****************************************************************
+
+// Use FDX.nui      // cFDX class
+// set verbose_state of error_info_object to true // Always display line number!
+//
+// send FDX_ModalDisplayGlobalAttributes 0 // 0 Means without an FDX object
+//
+// object oFDX is a cFDX
+//  send Read_Current_Filelist FDX_ALL_FILES
+// end_object
+//
+// send FDX_ModalDisplayGlobalAttributes (oFDX(self))

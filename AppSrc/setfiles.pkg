@@ -1,0 +1,108 @@
+// Use SetFiles.pkg // Class for displaying the contents of a cSetOfFiles object
+Use SetFiles.utl // SetOfFiles class (for disk files)
+Use GridUtil.utl // Grid and List utilities
+
+class cSetOfFilesList is a aps.Grid
+  procedure SetupCheckBoxColumn
+  end_procedure
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piSetOfFilesObject 0
+    property string  psConstrainPath    ""
+    property integer piCheckBoxColumn   0
+    set select_mode to NO_SELECT
+    send SetupCheckBoxColumn
+    send GridPrepare_AddColumn "Filename"  AFT_ASCII12
+    send GridPrepare_AddColumn "Type"      AFT_ASCII4
+    send GridPrepare_AddColumn "Size"      AFT_ASCII6
+    send GridPrepare_AddColumn "Modified"  AFT_ASCII20
+    send GridPrepare_AddColumn "Directory" AFT_ASCII60
+    send GridPrepare_Apply self
+    set gridline_mode to GRID_VISIBLE_NONE
+    set highlight_row_state to true
+    on_key KNEXT_ITEM     send switch
+    on_key KPREVIOUS_ITEM send switch_back
+    on_key KEY_CTRL+KEY_R send user_sort
+    on_key KEY_CTRL+KEY_W send DoWriteToFile
+    on_key KEY_CTRL+KEY_C send DoCopyFiles
+  end_procedure
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+  procedure DoCopyFiles
+    string lsTargetDir
+    get SEQ_SelectDirectory "Select target directory" to lsTargetDir
+    if (lsTargetDir<>"") begin
+      if (SEQ_FileExists(lsTargetDir)=SEQIT_DIRECTORY) send DoCopyFiles to (piSetOfFilesObject(self)) lsTargetDir
+      else send obs "Illegal target directory"
+    end
+  end_procedure
+  procedure fill_list
+    integer obj# row# max# itm# file_count# base#
+    number total_bytes# file_size#
+    string ConstrainPath# path#
+    get psConstrainPath to ConstrainPath#
+    get piSetOfFilesObject to obj#
+    if obj# begin
+      move 0 to total_bytes#
+      move 0 to file_count#
+      get iFile_Count of obj# to max#
+      send delete_data
+      set dynamic_update_state to false
+      for itm# from 0 to (max#-1)
+        get iFile_Row.i of obj# itm# to row#
+        move (psFilePath.i(obj#,row#)) to path#
+        if (ConstrainPath#="" or ConstrainPath#=path#) begin
+          get item_count to base#
+          if (piCheckBoxColumn(self)) begin
+            send add_item msg_none ""
+            set checkbox_item_state item base# to true
+          end
+          send add_item msg_none (psFileName.i(obj#,row#))
+          set aux_value item base# to row#
+          send add_item msg_none (psFileType.i(obj#,row#))
+          move (piFileSize.i(obj#,row#)) to file_size#
+          send add_item msg_none (SEQ_FileSizeToString(file_size#))
+          send add_item msg_none (TS_ConvertToString(pnFileTime.i(obj#,row#)))
+          send add_item msg_none path#
+          move (total_bytes#+file_size#) to total_bytes#
+          increment file_count#
+        end
+      loop
+      send Grid_SetEntryState self dfFalse
+      set dynamic_update_state to true
+      send display_totals file_count# total_bytes#
+    end
+  end_procedure
+  procedure display_totals number file_count# number total_bytes#
+  end_procedure
+  procedure sort.i integer by#
+    set piOrdering of (piSetOfFilesObject(self)) to by#
+    send fill_list
+  end_procedure
+  procedure sort_by_column integer column#
+    if (piCheckBoxColumn(self)) decrement column#
+    if column# eq 0 send sort.i LF_ORDERING_NAME
+    if column# eq 1 send sort.i LF_ORDERING_TYPE
+    if column# eq 2 send sort.i LF_ORDERING_SIZE
+    if column# eq 3 send sort.i LF_ORDERING_TIME
+    if column# eq 4 send sort.i LF_ORDERING_PATH
+  end_procedure
+  procedure header_mouse_click integer itm#
+    send sort_by_column itm#
+    forward send header_mouse_click itm#
+  end_procedure
+  procedure user_sort
+    integer itm#
+    get current_item to itm#
+    send sort_by_column (itm#-((itm#/5)*5))
+  end_procedure
+end_class // cSetOfFilesList
+
+class cSetOfFilesListSelect is a cSetOfFilesList
+  procedure SetupCheckBoxColumn
+    set piCheckBoxColumn to true
+    set select_mode to MULTI_SELECT
+    send GridPrepare_AddColumn ""  AFT_ASCII3
+  end_procedure
+end_class

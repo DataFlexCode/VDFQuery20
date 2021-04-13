@@ -1,0 +1,228 @@
+Use DBMS.nui     // Basic DBMS functions (No User Interface)
+Use Files.nui    // Utilities for handling file related stuff (No User Interface)
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+Use API_Attr.nui // Functions for querying API attributes (No User Interface)
+Use OpenStat.nui // cTablesOpenStatus class (formely cFileAllFiles) (No User Interface)
+
+#IF LNG_DEFAULT=LNG_DUTCH
+ define t.STRUCT.Restart for "Het programma zal nu proberen opnieuw te starten"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SPANISH  // 03/10/2002 Pepe GuimarÆes Moose Software  jec@ieee.org
+ define t.STRUCT.Restart for "Programa se re-inicializar "
+#ENDIF
+#IF LNG_DEFAULT=LNG_ENGLISH
+ define t.STRUCT.Restart for "The program will now attempt to re-start"
+#ENDIF
+#IF LNG_DEFAULT=LNG_DANISH
+ define t.STRUCT.Restart for "Programmet vil fors›ge at genstarte"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SWEDISH
+ define t.STRUCT.Restart for "Programmet fors”ker nu att †terstarta"
+#ENDIF
+#IF LNG_DEFAULT=LNG_NORWEGIAN
+ define t.STRUCT.Restart for "Programmet vil fors›ke † starte om"
+#ENDIF
+#IF LNG_DEFAULT=LNG_GERMAN
+ define t.STRUCT.Restart for "Das Programm wird jetzt neu gestartet"
+#ENDIF
+#IF LNG_DEFAULT=LNG_PORTUGUESE
+ define t.STRUCT.Restart for "O programa tentar  re-come‡ar agora"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ITALIAN
+ define t.STRUCT.Restart for "Il programma provera' a riavviarsi"
+#ENDIF
+
+#IFDEF Struc$ErrDescr
+#ELSE
+ string Struc$ErrDescr
+#ENDIF
+
+integer cRestructurer#
+if dfFalse begin
+  cRestructurer_Error:
+    send structure_error to cRestructurer#
+  return
+end
+
+enumeration_list
+  define RSOP_BEGIN
+  define RSOP_CREATEFIELD
+  define RSOP_DELETEFIELD
+  define RSOP_DELETEINDEX
+  define RSOP_SETFILEATTR
+  define RSOP_SETFIELDATTR
+  define RSOP_SETINDEXATTR
+  define RSOP_SETINDEXSEGATTR
+  define RSOP_TRUNCATED
+  define RSOP_ERROR_OCCURRED
+  define RSOP_END
+end_enumeration_list
+
+enumeration_list
+  define ERRORTRAP_ATTRCHANGE
+  define ERRORTRAP_FIELDCREATE
+  define ERRORTRAP_FIELDDELETE
+  define ERRORTRAP_INDEXCREATE
+  define ERRORTRAP_INDEXDELETE
+end_enumeration_list
+
+object oStructureErrorInfo is a cArray
+  property string psLine1 ""
+  property string psLine2 ""
+  procedure DoPrepare
+    integer attr# attr_type# field# index# segment# ErrTrapType#
+    string line1# line2# value#
+    get value item 0 to ErrTrapType#
+    move "" to line1#
+    move "" to line2#
+    if ErrTrapType# eq ERRORTRAP_ATTRCHANGE  begin
+      get value item 1 to attr#
+      get API_AttrType attr# to attr_type#
+      if attr_type# eq ATTRTYPE_FILELIST begin
+        get value item 3 to value#
+        move "Set_Attribute # to #" to line1#
+        move (replace("#",line1#,API_Attr_Name(attr#)))             to line1#  // replace "#" in line1# with (API_Attr_Name(attr#))            
+        move (replace("#",line1#,API_Attr_ValueName(attr#,value#))) to line1#  // replace "#" in line1# with (API_Attr_ValueName(attr#,value#))        
+      end
+      if attr_type# eq ATTRTYPE_FILE begin
+        get value item 3 to value#
+        move "Set_Attribute # to #" to line1#
+        move (replace("#",line1#,API_Attr_Name(attr#)))             to line1# // replace "#" in line1# with (API_Attr_Name(attr#))            
+        move (replace("#",line1#,API_Attr_ValueName(attr#,value#))) to line1# // replace "#" in line1# with (API_Attr_ValueName(attr#,value#))
+      end
+      if attr_type# eq ATTRTYPE_FIELD begin
+        get value item 3 to field#
+        get value item 4 to value#
+        move "Set_Attribute # field #" to line1#
+        move "to #" to line2#
+        move (replace("#",line1#,API_Attr_Name(attr#)))             to line1# // replace "#" in line1# with (API_Attr_Name(attr#))            
+        move (replace("#",line1#,string(field#)))                   to line1# // replace "#" in line1# with (string(field#))                  
+        move (replace("#",line2#,API_Attr_ValueName(attr#,value#))) to line2# // replace "#" in line2# with (API_Attr_ValueName(attr#,value#))
+      end
+      if attr_type# eq ATTRTYPE_INDEX begin
+        get value item 3 to index#
+        get value item 4 to value#
+        move "Set_Attribute # index #" to line1#
+        move "to #" to line2#
+        move (replace("#",line1#,API_Attr_Name(attr#)))             to line1# // replace "#" in line1# with (API_Attr_Name(attr#))             
+        move (replace("#",line1#,string(index#)))                   to line1# // replace "#" in line1# with (string(index#))                   
+        move (replace("#",line2#,API_Attr_ValueName(attr#,value#))) to line2# // replace "#" in line2# with (API_Attr_ValueName(attr#,value#)) 
+      end
+      if attr_type# eq ATTRTYPE_IDXSEG begin
+        get value item 3 to index#
+        get value item 4 to segment#
+        get value item 5 to value#
+        move "Set_Attribute # index # segment #" to line1#
+        move "to #" to line2#
+        move (replace("#",line1#,API_Attr_Name(attr#))) to line1#             // replace "#" in line1# with (API_Attr_Name(attr#))            
+        move (replace("#",line1#,string(index#)))       to line1#             // replace "#" in line1# with (string(index#))                  
+        move (replace("#",line1#,string(segment#)))     to line1#             // replace "#" in line1# with (string(segment#))                
+        move (replace("#",line2#,API_Attr_ValueName(attr#,value#))) to line2# // replace "#" in line2# with (API_Attr_ValueName(attr#,value#))
+      end
+    end
+    if ErrTrapType# eq ERRORTRAP_FIELDCREATE begin
+      move "Create_Field # at #" to line1#
+      move (replace("#",line1#,string(value(self,1)))) to line1#
+      move (replace("#",line1#,string(value(self,2)))) to line1#
+    end
+    if ErrTrapType# eq ERRORTRAP_FIELDDELETE begin
+      move "Delete_Field #" to line1#
+      move (replace("#",line1#,string(value(self,1)))) to line1#
+    end
+    if ErrTrapType# eq ERRORTRAP_INDEXCREATE begin
+      move "Create_Index # at #" to line1#
+      move (replace("#",line1#,string(value(self,1)))) to line1#
+      move (replace("#",line1#,string(value(self,2)))) to line1#
+    end
+    if ErrTrapType# eq ERRORTRAP_INDEXDELETE begin
+      move "Delete_Index #" to line1#
+      move (replace("#",line1#,string(value(self,1)))) to line1#
+    end
+    set psLine1 to line1#
+    set psLine2 to line2#
+    send NotifyTracer to cRestructurer# RSOP_ERROR_OCCURRED 0 0 0 0 (line1#*line2#)
+  end_procedure
+end_object // oStructureErrorInfo
+
+procedure set StructureErrorInfo global integer type# string value#
+  set value of (oStructureErrorInfo(self)) item type# to value#
+end_procedure
+function StructureErrorInfo global integer type# returns string
+  function_return (value(oStructureErrorInfo(self),type#))
+end_function
+procedure DoClearStructureErrorInfo global
+  send delete_data to (oStructureErrorInfo(self))
+end_procedure
+
+//#IFDEF Is$WebApp
+// define Structur$ErrorTrapping for 0
+//#ELSE
+ define Structur$ErrorTrapping for 1
+//#ENDIF
+
+#COMMAND ErrorTrapping.set_attribute@Help
+  #IF !0>0
+    #IFSAME !1 TO OF AT
+    #ELSE
+     set StructureErrorInfo !E to !1
+    #ENDIF
+    ErrorTrapping.set_attribute@Help !2 !3 !4 !5 !6 !7 !8 !9
+  #ENDIF
+#ENDCOMMAND
+#COMMAND ErrorTrapping.set_attribute
+  #IF Structur$ErrorTrapping
+    #PUSH !e
+    #SET E$ 0
+    set StructureErrorInfo 0 to ERRORTRAP_ATTRCHANGE
+    ErrorTrapping.set_attribute@Help !1 !2 !3 !4 !5 !6 !7 !8 !9
+    #POP E$
+  #ENDIF
+  set_attribute !1 !2 !3 !4 !5 !6 !7 !8 !9
+  #IF Structur$ErrorTrapping
+    send DoClearStructureErrorInfo
+  #ENDIF
+#ENDCOMMAND
+
+#COMMAND ErrorTrapping.Create_Field
+  #IF Structur$ErrorTrapping
+    set StructureErrorInfo 0 to ERRORTRAP_FIELDCREATE
+    ErrorTrapping.set_attribute@Help !1 !2 !3 !4 !5 !6 !7 !8 !9
+  #ENDIF
+  Create_Field !1 !2 !3
+  #IF Structur$ErrorTrapping
+    send DoClearStructureErrorInfo
+  #ENDIF
+#ENDCOMMAND
+#COMMAND ErrorTrapping.Delete_Field
+  #IF Structur$ErrorTrapping
+    set StructureErrorInfo 0 to ERRORTRAP_FIELDDELETE
+    ErrorTrapping.set_attribute@Help !1 !2 !3 !4 !5 !6 !7 !8 !9
+  #ENDIF
+  Delete_Field !1 !2
+  #IF Structur$ErrorTrapping
+    send DoClearStructureErrorInfo
+  #ENDIF
+#ENDCOMMAND
+#COMMAND ErrorTrapping.Create_Index
+  #IF Structur$ErrorTrapping
+    set StructureErrorInfo 0 to ERRORTRAP_INDEXCREATE
+    ErrorTrapping.set_attribute@Help !1 !2 !3 !4 !5 !6 !7 !8 !9
+  #ENDIF
+  Create_Index !1 !2 !3
+  #IF Structur$ErrorTrapping
+    send DoClearStructureErrorInfo
+  #ENDIF
+#ENDCOMMAND
+#COMMAND ErrorTrapping.Delete_Index
+  #IF Structur$ErrorTrapping
+    set StructureErrorInfo 0 to ERRORTRAP_INDEXDELETE
+    ErrorTrapping.set_attribute@Help !1 !2 !3 !4 !5 !6 !7 !8 !9
+  #ENDIF
+  Delete_Index !1 !2
+  #IF Structur$ErrorTrapping
+    send DoClearStructureErrorInfo
+  #ENDIF
+#ENDCOMMAND
+
+

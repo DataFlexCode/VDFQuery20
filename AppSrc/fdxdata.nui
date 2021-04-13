@@ -1,0 +1,395 @@
+// Use FDXData.nui  // Class for reading and writing table data to files incl. definition
+//  This file contains data from a #DataFlex# system in a machine readable
+//  format
+//  -- BEGIN HEADER --
+//  FDX DATA 1.0
+//  Date format.......:
+//  Date separator....:
+//  Decimal separator.:
+//  Table definition:
+//  -- END HEADER --
+//  -- BEGIN DATA --
+//    ...Data goes here...
+//  -- END DATA --
+
+#HEADER
+use dfallent.pkg
+Use API_Attr.nui // Functions for querying API attributes (No User Interface)
+Use Files.nui    // Utilities for handling file related stuff (No User Interface)
+Use FDX.utl      // cFDX class
+Use FdxCompa.nui // Class for comparing table definitions
+#ENDHEADER
+Use FdxIndex.utl // Index analysing functions
+
+desktop_section
+  // This object is used when figuring out whether there are any differences
+  // between a table definition in a sequential file and a particular table.
+  object oFDXDataTmpCompareResult is a cDummyCompareResultReciever 
+  end_object
+end_desktop_section
+
+// A FieldMap-object is a simple array holding a number of field numbers
+// (in sequence).
+
+class cFdxRecordBuffer is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer phFDX_Object          0
+    property integer pbBinaryFieldsPresent DFFALSE
+  end_procedure
+
+  // Sets pbBinaryFieldsPresent
+  procedure AnalyseFdx
+    integer lhFdx liFile liMaxField liField liType
+    get phFDX_Object to lhFdx
+    get piMainFile of lhFdx to liFile
+    set pbBinaryFieldsPresent to DFFALSE
+    get FDX_AttrValue_FILE lhFdx DF_FILE_NUMBER_FIELDS liFile to liMaxField
+
+    for liField from 1 to liMaxField
+      get FDX_AttrValue_FIELD lhFdx DF_FIELD_TYPE liFile liField to liType
+      if liType eq DF_BINARY begin
+        set pbBinaryFieldsPresent to DFTRUE
+        procedure_return
+      end
+    loop
+  end_procedure
+
+  // Finds eq in liFile based on current values and lhFieldMap object.
+  function iFindEqIndex integer liFile integer liOrdering integer lhFieldMap returns integer
+    integer liItem liMax liField
+    clear liFile
+    get item_count of lhFieldMap to liMax
+    decrement liMax
+    for liItem from 0 to liMax
+      get value of lhFieldMap item liItem to liField
+      if liField begin
+        set_field_value liFile liField to (value(self,liItem))
+      end
+    loop
+    vfind liFile liOrdering EQ
+    function_return (found)
+  end_function
+
+  function iReadRecordFromSeq integer liChannel returns integer
+    integer liPos lbSeqEof lbSneakMode liField liMaxField
+    integer lhFdx liFile liType liLen
+    string lsRval lsValue
+
+    send delete_data
+    get_channel_position liChannel to liPos
+
+    get phFDX_Object to lhFdx
+    get piMainFile of lhFdx to liFile
+    get FDX_AttrValue_FILE lhFdx DF_FILE_NUMBER_FIELDS liFile to liMaxField
+
+    for liField from 1 to liMaxField
+      get FDX_AttrValue_FIELD lhFdx DF_FIELD_TYPE liFile liField to liType
+      if liType ne DF_OVERLAP begin
+        if (liType=DF_BINARY or liType=DF_TEXT) begin
+          readln liLen
+          read_block lsValue liLen
+          if liType eq DF_TEXT set value item liField to lsValue
+        end
+        else begin
+          readln lsValue
+          set value item liField to lsValue
+        end
+      end
+    loop
+    move (seqeof) to lbSeqEof
+
+    if (pbBinaryFieldsPresent(self)) begin
+      // If binary fields are in the file we leave the channel posistion
+      // ready to reread.
+      move (liPos>0) to lbSneakMode
+      if lbSneakMode decrement liPos
+      set_channel_position liChannel to liPos
+      if lbSneakMode read_block channel liChannel lsValue 1
+      indicate seqeof as lbSeqEof ne 0
+    end
+    function_return (not(lbSeqEof))
+  end_function
+
+  procedure MoveToBuffer integer liChannel integer liFile integer lhFieldMap
+    integer liMaxField liField liMappedField liType liLen liMax liItem
+    integer lhFdx
+    string lsValue
+    if (pbBinaryFieldsPresent(self)) begin // Reread values from SEQ file
+      get phFDX_Object to lhFdx
+      get piMainFile of lhFdx to liFile
+      get FDX_AttrValue_FILE lhFdx DF_FILE_NUMBER_FIELDS liFile to liMaxField
+
+      for liField from 1 to liMaxField
+        get FDX_AttrValue_FIELD lhFdx DF_FIELD_TYPE liFile liField to liType
+        if liType ne DF_OVERLAP begin
+          if (liType=DF_BINARY or liType=DF_TEXT) begin
+            readln liLen
+            read_block channel liChannel lsValue liLen
+          end
+          else readln channel liChannel lsValue
+          get value of lhFieldMap item liField to liMappedField
+          if liMappedField begin
+            set_field_value liFile liMappedField to lsValue
+          end
+        end
+      loop
+    end
+    else begin // Read values from array
+      get item_count of lhFieldMap to liMax
+      decrement liMax
+      for liItem from 0 to liMax
+        get value of lhFieldMap item liItem to liField
+        if liField begin
+          set_field_value liFile liField to (value(self,liItem))
+        end
+      loop
+    end
+  end_procedure
+end_class // cFdxRecordBuffer
+
+class cFDXDataFile is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer piDateFormat     0 // DF_DATE_USA DF_DATE_EUROPEAN DF_DATE_MILITARY
+    property integer piDateSep        0 // DF_DATE_SEPARATOR
+    property integer piDecSep         0 // DF_DECIMAL_SEPARATOR
+    property string  psTitle          "DataFlex"
+    property integer piOverwriteIndex 0
+
+    property integer private.IdenticalDefinitions DFFALSE
+    property integer pbReadInOneTransaction       DFTRUE
+    property integer pbDisableIndicesWhileReading DFFALSE
+    property integer pbNoCheckState               DFFALSE
+
+    object oSeqFileFDX is a cFdxFileDef 
+    end_object
+    object oTableFDX is a cFdxFileDef 
+    end_object
+    object oTableReadFieldMap is a cArray
+      //
+    end_object
+    object oUniqueIndices is a cArray
+      // Note that there should never be more than one (unique) index
+      // intended for overwrite. The reason is that it is not possible
+      // to handle a record from the file conflicting with two different
+      // records on two different unique indices if both are in overwrite
+      // more.
+    end_object
+    object oReadValues is a cFdxRecordBuffer 
+      set phFDX_Object to (oSeqFileFDX(self))
+    end_object
+  end_procedure
+
+  function iSeedBuffer integer liFile returns integer
+    integer liMax liRow lhUniqueIndices liIndex lhReadValues liFound
+    integer lhTableReadFieldMap
+    move (oUniqueIndices(self)) to lhUniqueIndices
+    move (oReadValues(self)) to lhReadValues
+    move (oTableReadFieldMap(self)) to lhTableReadFieldMap
+    get item_count of lhUniqueIndices to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get value of lhUniqueIndices to liIndex
+      get iFindEqIndex of lhReadValues liFile liIndex lhTableReadFieldMap to liFound
+      if liFound function_return 0
+    loop
+    get piOverwriteIndex to liIndex
+    if liIndex get iFindEqIndex of lhReadValues liFile liIndex lhTableReadFieldMap to liFound
+    function_return 1
+  end_function
+
+  procedure DoReset
+    send delete_data to (oTableReadFieldMap(self))
+    send delete_data to (oUniqueIndices(self))
+    send delete_data to (oReadValues(self))
+    send Reset to (oTableFDX(self))
+    send Reset to (oSeqFileFDX(self))
+  end_procedure
+  procedure DoAutoSetupIndexHandling integer liOverwriteIndex
+    integer liIndex lhFDX liFile lhUniqueIndices liItem
+    move (oTableFDX(self)) to lhFDX
+    move (oUniqueIndices(self)) to lhUniqueIndices
+    send delete_data to lhUniqueIndices
+    get piMainFile of lhFDX to liFile
+    set piOverwriteIndex to 0
+    for liIndex from 1 to 15
+      if (FDX_IndexUnique(lhFDX,liFile,liIndex)) begin
+        if (liIndex=liOverwriteIndex) set piOverwriteIndex to liIndex
+        else begin
+          get item_count of lhUniqueIndices to liItem
+          set value of lhUniqueIndices item liItem to liIndex
+        end
+      end
+    loop
+  end_procedure
+  function iRecordExists integer liIndex returns integer
+  end_function
+
+           procedure DoWaitOn string lsValue
+           end_procedure
+           procedure DoWaitUpdate string lsValue
+           end_procedure
+           procedure DoWaitOff
+           end_procedure
+           function iCancel returns integer
+           end_function
+
+           // File must be open before calling this
+           procedure DoReadTableDefinition integer liFile
+             send Reset to (oTableFDX(self))
+             send Read_File_Definition.i to (oTableFDX(self)) liFile
+           end_procedure
+           procedure DoWriteHeader integer liChannel
+             set piDateFormat to (API_AttrValue_GLOBAL(DF_DATE_FORMAT))
+             set piDateSep    to (API_AttrValue_GLOBAL(DF_DATE_SEPARATOR))
+             set piDecSep     to (API_AttrValue_GLOBAL(DF_DECIMAL_SEPARATOR))
+             writeln channel liChannel ("This file contains data from a "+psTitle(self)+" system in a machine readable format.")
+             writeln "-- BEGIN HEADER --"
+             writeln "FDX DATA 1.0"
+             writeln ("Date format.......: "+string(piDateFormat(self)))
+             writeln ("Date separator....: "+string(piDateSep(self)))
+             writeln ("Decimal separator.: "+string(piDecSep(self)))
+             writeln "Table definition: "
+             send Seq_Write to (oTableFDX(self)) liChannel
+             writeln "-- END HEADER --"
+             writeln "-- BEGIN DATA --"
+           end_procedure
+           procedure DoWriteAllData integer liChannel integer liFile integer liOrdering
+             integer liIsSystemFile liFound liReccount liRecords
+             get_attribute DF_FILE_IS_SYSTEM_FILE of liFile to liIsSystemFile
+             if liIsSystemFile send SEQ_WriteRecordBuffer_LD liChannel liFile
+             else begin
+               get_attribute DF_FILE_RECORDS_USED of liFile to liRecords
+               send DoWaitOn "Writing table data"
+               clear liFile
+               move 0 to liReccount
+               repeat
+                 vfind liFile liOrdering GT
+                 move (found) to liFound
+                 if liFound begin
+                   increment liReccount
+                   send DoWaitUpdate (string(liReccount)+"/"+string(liRecords))
+                   send SEQ_WriteRecordBuffer_LD liChannel liFile
+                 end
+               until (not(liFound))
+             end
+           end_procedure
+
+  procedure DoWriteTable integer liChannel integer liFile
+    send DoReadTableDefinition liFile
+    send DoWriteHeader liChannel
+    send DoWriteAllData liChannel liFile 0
+  end_procedure
+
+           // Return value: 0=OK 1=Incompatible format
+           function DoReadHeader integer liChannel returns integer
+             string lsValue
+             if (SEQ_ReadLnUntilValue(liChannel,"-- BEGIN HEADER --")) begin
+               if (SEQ_ReadLnUntilValue(liChannel,"FDX DATA 1.0")) begin
+                 readln channel liChannel lsValue
+                 set piDateFormat to (StringRightBut(lsValue,20))
+                 readln channel liChannel lsValue
+                 set piDateSep    to (StringRightBut(lsValue,20))
+                 readln channel liChannel lsValue
+                 set piDecSep     to (StringRightBut(lsValue,20))
+                 readln channel liChannel lsValue // Skip 'Table definition: '
+                 send Seq_Read to (oSeqFileFDX(self)) liChannel
+                 send AnalyseFdx to (oReadValues(self))
+                 if (SEQ_ReadLnUntilValue(liChannel,"-- END HEADER --")) function_return 0
+               end
+             end
+             function_return 1 // Incompatible format
+           end_function
+
+  function lbIsFdxDataFile string lsFileName returns integer
+    integer liChannel liRval
+    get SEQ_DirectInput lsFileName to liChannel
+    if (liChannel>=0) begin
+      get DoReadHeader liChannel to liRval
+      send SEQ_CloseInput liChannel
+    end
+    else move DFFALSE to liRval
+    function_return (not(liRval))
+  end_function
+
+           // Function returns 1 if there's a difference in field definitions,
+           // otherwise 0
+           function iCompareFDXs returns integer
+             integer lhFDXDataTmpCompareResult liFile1 liFile2 lhFDX1 lhFDX2
+             move (oFDXDataTmpCompareResult(self)) to lhFDXDataTmpCompareResult
+             move (oSeqFileFDX(self)) to lhFDX1
+             move (oTableFDX(self)) to lhFDX2
+             get piMainFile of lhFDX1 to liFile1
+             get piMainFile of lhFDX2 to liFile2
+             get iFdxCompareTables.iiiiii lhFDXDataTmpCompareResult lhFDX1 liFile1 lhFDX2 liFile2 FDXCOMP_MODE_ALL to lhFDXDataTmpCompareResult
+             function_return (piField_Change(lhFDXDataTmpCompareResult))
+           end_function
+           //
+           function iReadAutoSetup returns integer
+             integer liChanged
+             get iCompareFDXs to liChanged
+             set private.IdenticalDefinitions to (not(liChanged))
+           end_function
+
+           procedure DisableIndices integer liFile
+           end_procedure
+           procedure EnableIndices integer liFile
+           end_procedure
+
+           procedure DoReadData integer liChannel integer liFile
+             integer lbDisableIndicesWhileReading
+             integer lbIdenticalDefinitions
+             integer lbReadInOneTransaction
+             integer lhReadValues liFinish liReccount
+             string lsValue
+
+             move (oReadValues(self)) to lhReadValues
+
+             readln channel liChannel lsValue // Skip '-- BEGIN DATA --'
+
+             get pbDisableIndicesWhileReading to lbDisableIndicesWhileReading
+             get private.IdenticalDefinitions to lbIdenticalDefinitions
+             get pbReadInOneTransaction       to lbReadInOneTransaction
+
+             if lbIdenticalDefinitions begin // No field mapping
+               if lbDisableIndicesWhileReading send DisableIndices liFile
+               if lbReadInOneTransaction lock
+
+                 if (pbNoCheckState(self)) begin // Do not check indices
+                   move DFFALSE to liFinish
+                   repeat
+                     clear liFile
+                     send SEQ_ReadRecordBuffer_LD liFile
+                     move (SeqEof) to liFinish
+                     ifnot liFinish begin
+                       saverecord liFile
+                       increment liReccount
+                       send DoWaitUpdate (string(liReccount)+" records read")
+                     end
+                   until liFinish
+                 end
+                 else begin // Check indices
+                   while (iReadRecordFromSeq(lhReadValues))
+                     if (iSeedBuffer(lhReadValues,liFile)) begin
+
+                     end
+                   end
+                 end
+
+               if lbReadInOneTransaction unlock
+               if lbDisableIndicesWhileReading send EnableIndices liFile
+             end
+             else begin
+             end
+           end_procedure
+
+end_class // cFDXDataFile
+
+/// open hkasag
+///
+/// object oTest is a cFDXDataFile
+///   direct_output channel 3 "Unload.txt"
+///   send DoWriteTable 3 hkasag.file_number
+///   close_output channel 3
+/// end_object

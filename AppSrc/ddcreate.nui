@@ -1,0 +1,288 @@
+// Use DDCreate.nui // Create generic DDO structures (using global FDX object)
+
+Use FieldInf     // Global field info objects and abstract field types
+Use Set.utl      // cArray, cSet and cStack classes
+Use FdxGlObj.nui // Global FDX object (ghFDX)
+Use Spec0005.utl // Datadictionary object procedures ("DDUTIL_" prefix)
+Use FdxField.nui // FDX Field things
+
+object DDC_PrivateObject is a cArray
+  property integer pbUseGenericDD        DFTRUE
+  property integer phDefaultDDClass      U_DataDictionary
+  property integer phParent              0
+  property string  priv.psVisitedFiles   ""
+  property integer priv.phChildDDOHandle 0
+  property integer priv.phCutOffDDHandle 0
+  property integer priv.phCutOffDDFile   0
+
+  item_property_list
+    item_property integer piFile.i
+    item_property string  psRootName.i
+  end_item_property_list
+
+  procedure WS_OnCloseWorkSpace
+    set delegation_mode to DELEGATE_TO_PARENT
+    send delete_data
+  end_procedure
+
+            function sFindRootName.is integer liFile string lsRoot returns integer
+              integer liRow liMax
+              move (lowercase(lsRoot)) to lsRoot
+              get row_count to liMax
+              decrement liMax
+              for liRow from 0 to liMax
+                if (psRootName.i(self,liRow)=lsRoot) function_return liRow
+              loop
+              set piFile.i     (liMax+1) to liFile
+              set psRootName.i (liMax+1) to lsRoot
+              function_return -1
+            end_function
+
+            function bOpenAlias.i integer liFile returns integer
+              integer liRval liRow
+              string lsRoot
+              get FDX_AttrValue_FILELIST ghFDX DF_FILE_ROOT_NAME liFile to lsRoot
+              get sFindRootName.is liFile lsRoot to liRow
+              if (liRow<>-1) begin
+                set_attribute DF_FILE_MODE of (piFile.i(self,liRow)) to DF_FILE_IS_MASTER
+                function_return DFTRUE
+              end
+              function_return DFFALSE
+            end_function
+
+            procedure DoOpenFile integer liFile
+              integer lbAlias
+              ifnot (DBMS_IsOpenFile(liFile)) begin
+                if (DBMS_OpenFile(liFile,DF_SHARE,0)) begin
+                  get bOpenAlias.i liFile to lbAlias
+                  if lbAlias set_attribute DF_FILE_MODE of liFile to DF_FILE_IS_ALIAS
+                end
+                else begin
+                  send error 439 "Table could not be opened:" liFile
+                end
+              end
+            end_procedure
+
+            object oStack is a cStack
+            end_object
+
+            procedure push_handle
+              send push.i to (oStack(self)) (priv.phChildDDOHandle(self))
+            end_procedure
+            procedure pop_handle
+              set priv.phChildDDOHandle to (iPop(oStack(self)))
+            end_procedure
+            function bIsVisited integer liFile returns integer
+              integer lbRval
+              string lsValue
+              get priv.psVisitedFiles to lsValue
+              if (IsIntegerPresent(lsValue,liFile)) move DFTRUE to lbRval
+              else begin
+                get AddIntegerToString lsValue liFile to lsValue
+                set priv.psVisitedFiles to lsValue
+                move DFFALSE to lbRval
+              end
+              function_return lbRval
+            end_function
+
+  function iCreateDDO.i integer liFile returns integer
+    integer lhClass lhRval lhSelf lbWasGeneric liMax liRow liSysFile
+    send DoOpenFile liFile
+    if (pbUseGenericDD(self)) get DataDictionary_Class liFile to lhClass
+    else move 0 to lhClass
+    if lhClass move DFTRUE to lbWasGeneric
+    else begin
+      get phDefaultDDClass to lhClass
+      move DFFALSE to lbWasGeneric
+    end
+
+    name lhClass U_DDC_Class
+    move self to lhSelf
+    get phParent to self
+    object oDD is a DDC_Class
+      move self to lhRval
+      if lbWasGeneric begin
+        get System_File_Count to liMax
+        decrement liMax
+        for liRow from 0 to liMax
+          get System_File_Number liRow to liSysFile
+          send DoOpenFile liSysFile
+        loop
+      end
+      else begin
+        set main_file to liFile
+        send DDUTIL_DoQuickSetup self
+      end
+    end_object
+    move lhSelf to self
+    function_return lhRval
+  end_function
+
+  procedure HandleAddField integer liFile integer liField string lsName integer liType integer liLen integer liPrec integer liRelFile integer liRelField integer liIndex integer liOffSet
+    integer lhGrb
+    if liRelFile begin
+      if (FDX_CanOpenFile(ghFDX,liRelFile)) begin
+        get iCreateParentDDOStructure liRelFile to lhGrb
+      end
+    end
+  end_procedure
+
+  function iCreateParentDDOStructure integer liFile returns integer
+    integer lhRval lhChildDD
+    ifnot (bIsVisited(self,liFile)) begin
+
+      if (liFile=priv.phCutOffDDFile(self)) get priv.phCutOffDDHandle to lhRval
+      else get iCreateDDO.i liFile to lhRval
+
+      get priv.phChildDDOHandle to lhChildDD
+      if lhChildDD set DDO_Server of lhChildDD to lhRval
+
+      if (liFile<>priv.phCutOffDDFile(self)) begin
+        send push_handle
+        set priv.phChildDDOHandle to lhRval
+        send FDX_FieldCallBack ghFDX liFile MSG_HandleAddField self // Protected against relating file not present
+        send pop_handle
+      end
+    end
+    function_return lhRval
+  end_function
+
+  function iCreateDDOStructure integer lhParent integer liFile integer lbUseGeneric integer lhDefaultDDClass returns integer
+    integer lhRval
+    set pbUseGenericDD to lbUseGeneric
+    set phDefaultDDClass to lhDefaultDDClass
+    set phParent to lhParent
+    set priv.phChildDDOHandle to 0
+    set priv.psVisitedFiles to ""
+    send delete_data to (oStack(self))
+    set priv.phCutOffDDFile   to 0
+    set priv.phCutOffDDHandle to 0
+    get iCreateParentDDOStructure liFile to lhRval
+    set priv.phCutOffDDFile   to liFile
+    set priv.phCutOffDDHandle to lhRval
+    function_return lhRval
+  end_function
+
+  function iCreateChildDDOStructure integer liFile returns integer
+    integer lhRval
+    send delete_data to (oStack(self))
+    set priv.psVisitedFiles to ""
+    get iCreateParentDDOStructure liFile to lhRval
+    set priv.phCutOffDDFile   to liFile
+    set priv.phCutOffDDHandle to lhRval
+    function_return lhRval
+  end_function
+
+  // We need to put the object ID's of the doomed DD's into an
+  // array instead of destroying them as we go along. The reason
+  // is that the internal arrays of "server"- and "client"- DD's
+  // are updated automatically when a DD present in one of those
+  // arrays is destroyed.
+
+  object oDoomedDDOs is a cArray
+    procedure destroy_all
+      integer liItem liMax
+      get item_count to liMax
+      decrement liMax
+      for liItem from 0 to liMax
+        send destroy to (integer(value(self,liItem)))
+      loop
+      send delete_data
+    end_procedure
+    procedure add_dd integer lhDD
+      integer liItem
+      if lhDD begin
+        get item_count to liItem
+        set value item liItem to lhDD
+      end
+    end_procedure
+  end_object
+
+  procedure DestroyDDOStructure_Help integer lhDD
+    integer liMax liItm lhDDO lhStack
+    move (oStack(self)) to lhStack
+
+    ifnot (bIsOnStack.i(lhStack,lhDD)) begin
+      send push.i to lhStack lhDD
+
+      get data_set_client_count of lhDD to liMax
+      decrement liMax
+      for liItm from 0 to liMax
+        get data_set_client of lhDD item liItm to lhDDO
+        send DestroyDDOStructure_Help lhDDO
+      loop
+
+      get data_set_server_count of lhDD to liMax
+      decrement liMax
+      for liItm from 0 to liMax
+        get data_set_server of lhDD item liItm to lhDDO
+        send DestroyDDOStructure_Help lhDDO
+      loop
+
+      send Drop to lhStack
+      send add_dd to (oDoomedDDOs(self)) lhDD
+    end
+  end_procedure
+
+  procedure DestroyDDOStructure integer lhDD
+    send delete_data to (oStack(self))
+    send DestroyDDOStructure_Help lhDD
+    send delete_data to (oStack(self))
+    send destroy_all to (oDoomedDDOs(self))
+  end_procedure
+end_object // DDC_PrivateObject
+
+//> Create a DDO structure and returns the handle for the "root" DDO.
+function DDC_CreateDDOStructure global integer lhParent integer liFile integer lbUseGeneric integer lhDefaultDDClass returns integer
+  function_return (iCreateDDOStructure(DDC_PrivateObject(self),lhParent,liFile,lbUseGeneric,lhDefaultDDClass))
+end_function
+
+function DDC_CreateChildDDOStructure global integer liFile returns integer
+  function_return (iCreateChildDDOStructure(DDC_PrivateObject(self),liFile))
+end_function
+
+procedure DDC_DestroyDDOStructure global integer lhDD
+  send DestroyDDOStructure to (DDC_PrivateObject(self)) lhDD
+end_procedure
+
+//> Using this procedure will make sure that Master/Alias is always set correctly.
+procedure DDC_OpenFile global integer liFile
+  send DoOpenFile to (DDC_PrivateObject(self)) liFile
+end_procedure
+
+          object oDDC_OpenFileInclParents is a cArray
+            property integer pbRegisterDdoClasses 0
+            procedure HandleField integer liFile integer liField string lsName integer liType integer liLen integer liPrec integer liRelFile integer liRelField integer liIndex integer liOffSet
+              if liRelFile begin
+                if (FDX_CanOpenFile(0,liRelFile)) begin
+                  send OpenFile.i liRelFile
+                end
+              end
+            end_procedure
+            procedure OpenFile.i integer liFile
+              integer lbRegisterDdoClasses lbGarbage
+              get pbRegisterDdoClasses to lbRegisterDdoClasses
+              ifnot (integer(value(self,liFile))) begin
+                send DDC_OpenFile liFile
+                if (DBMS_IsOpenFile(liFile)) begin
+                  if lbRegisterDdoClasses begin
+                    get iDD_Object liFile to lbGarbage // Create if can be done
+                  end
+                  send FDX_FieldCallBack 0 liFile MSG_HandleField self // Protected against relating file not present
+                end
+              end
+            end_procedure
+          end_object
+
+//> Open file and it's parents making sure that Master/Alias is set according to the rules.
+//> If lbRegisterDdoClasses is true DDO objects will be created (but not connected) and registered
+//> with fieldinf.pkg
+procedure DDC_OpenFileInclParents global integer liFile integer lbRegisterDdoClasses
+  integer lhDDC_OpenFileInclParents
+  move oDDC_OpenFileInclParents to lhDDC_OpenFileInclParents
+  send delete_data of lhDDC_OpenFileInclParents
+  set pbRegisterDdoClasses of lhDDC_OpenFileInclParents to lbRegisterDdoClasses
+  send OpenFile.i of lhDDC_OpenFileInclParents liFile lbRegisterDdoClasses
+  send delete_data of lhDDC_OpenFileInclParents
+end_procedure
+

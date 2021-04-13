@@ -1,0 +1,165 @@
+//**********************************************************************
+// Use Fdx4.utl     // FDX aware cFileList_List selector object
+//
+// By Sture Andersen
+//
+// Create: Sun  16-01-2000
+// Update:
+//
+//**********************************************************************
+#HEADER
+Use Fdx2.utl     // FDX aware object for displaying a table definiton
+Use Fdx3.utl     // FDX aware cFileList_List selector class
+#ENDHEADER
+
+
+use aps.pkg
+object oUserModalSelectTables is a aps.ModalPanel
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  set pMinimumSize to 180 0
+  set Locate_Mode to CENTER_ON_SCREEN
+  property integer piNeedsFilling 1
+  property integer piResult 0
+  on_key kCancel send close_panel
+  on_key kSave_Record send close_panel_ok
+  procedure close_panel_ok
+    set piResult to 1
+    send close_panel
+  end_procedure
+  object oCont is a aps.Container3D
+    set p_auto_column to false
+    object oLst is a cFdxFileMultiSelector
+      set size to 180 0
+      set piNo_Alias_State to true          // Exclude alias files
+      //send DriverFilter_Add DBMS_DRIVER_DATAFLEX
+      procedure re_order
+      end_procedure
+      procedure update_select_display // This is called automatically by the class
+        integer selected# total#
+        get File_Select_Count to selected#
+        get Row_Count to total#
+        send select_display selected# total#
+      end_procedure
+    end_object // oLst
+
+    object oSelectTxt is a aps.TextBox snap sl_right
+    end_object
+    set auto_size_state of (oSelectTxt(self)) to true
+    send aps_align_by_moving (oSelectTxt(self)) (oLst(self)) SL_ALIGN_BOTTOM
+    procedure select_display integer selected# integer total#
+      set value of (oSelectTxt(self)) to ("Selected: "+string(selected#))
+    end_procedure
+
+    object oBtn1 is a aps.multi_button
+      on_item t.FDX.Btn.SelectAll     send select_all_not_bad  to (oLst(self))
+    end_object
+    object oBtn2 is a aps.multi_button
+      on_item t.FDX.Btn.SelectNone    send select_none         to (oLst(self))
+    end_object
+    object oBtn3 is a aps.multi_button
+      on_item t.FDX.Btn.SelectInvert  send select_invert       to (oLst(self))
+    end_object
+    object oBtn4 is a aps.multi_button
+      on_item t.FDX.Btn.SelectPhys    send select_master       to (oLst(self))
+    end_object
+    object oBtn5 is a aps.multi_button
+      on_item t.FDX.Btn.SelectParent  send select_parents      to (oLst(self))
+    end_object
+    object oBtn6 is a aps.multi_button
+      on_item t.FDX.Btn.SelectChild   send select_children     to (oLst(self))
+    end_object
+    object oBtn7 is a aps.multi_button
+      on_item "Load selection"        send load_current_selection.browse to (oLst(self))
+    end_object
+    object oBtn8 is a aps.multi_button
+      on_item "Save selection"        send save_current_selection.browse to (oLst(self))
+    end_object
+    object oBtn9 is a aps.multi_button
+      on_item "Re-order"              send re_order            to (oLst(self))
+    end_object
+    object oBtn10 is a aps.multi_button
+      on_item "Display def."          send display_file_things to (oLst(self))
+    end_object
+    send aps_locate_multi_buttons sl_vertical
+  end_object
+  object oBtn1 is a aps.multi_button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.multi_button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oLst(oCont(self))) delta_rw# 0
+    send aps_align_by_moving (oSelectTxt(oCont(self))) (oLst(oCont(self))) SL_ALIGN_BOTTOM
+    send aps_resize (oCont(self)) delta_rw# 0
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+  function iRun.s string title# returns integer
+    integer rval# lst# srv# fdx#
+    set piResult to false
+    set label to title#
+    move (oLst(oCont(self))) to lst#
+    if (piNeedsFilling(lst#)) begin
+      send fill_list_all_files to lst#
+      set piNeedsFilling of lst# to false
+    end
+    set piFDX_Server of lst# to fdx#
+    set object_shadow_state of (oBtn5(oCont(self))) to (not(fdx#))
+    set object_shadow_state of (oBtn6(oCont(self))) to (not(fdx#))
+    send popup
+    function_return (piResult(self))
+  end_function
+  function iCallback_Selected_Files integer get# integer obj# returns integer
+    integer rval#
+    get iCallback_Selected_Files_Server of (oLst(self)) get# obj# to rval#
+    function_return rval#
+  end_function
+end_object // oUserModalSelectTables
+
+procedure UserModalSelectTablesSetup global ;
+          integer oFDX ;
+          integer BES_State# ;
+          integer No_Alias_State# ;
+          integer Driver_Filter_State# ;
+          integer Generic_Display_Name_State#
+  integer obj# fill_list#
+  move 0 to fill_list#
+  move (oLst(oCont(oUserModalSelectTables(self)))) to obj#
+  if oFDX ne (piFDX_Server(obj#)) begin
+    set piFDX_Server of obj# to oFDX
+    move 1 to fill_list#
+  end
+  if BES_State# ne (piBad_Entries_State(obj#)) begin
+    set piBad_Entries_State of obj# to BES_State#
+    move 1 to fill_list#
+  end
+  if No_Alias_State# ne (piNo_Alias_State(obj#)) begin
+    set piNo_Alias_State of obj# to No_Alias_State#
+    move 1 to fill_list#
+  end
+  if Driver_Filter_State# ne (piDriverFilter_State(obj#)) begin
+    set piDriverFilter_State of obj# to Driver_Filter_State#
+    move 1 to fill_list#
+  end
+  if Generic_Display_Name_State# ne (piGeneric_Display_Name_State(obj#)) begin
+    set piGeneric_Display_Name_State of obj# to Generic_Display_Name_State#
+    move 1 to fill_list#
+  end
+  if fill_list# set piNeedsFilling of obj# to true
+end_procedure
+
+function iUserModalSelectTables.s global string title# returns integer
+  function_return (iRun.s(oUserModalSelectTables(self),title#))
+end_function
+function iUserModalSelectTables.sCallBack global integer get# integer obj# returns integer
+  function_return (iCallback_Selected_Files(oUserModalSelectTables(self),get#,obj#))
+end_function
+
+// *** TEST CODE ****************************************************************
+
+// send UserModalSelectTablesSetup 0 BAD_ENTRIES_SHADOW dfFalse dfFalse dfFalse
+// move (iUserModalSelectTables.s("Select tables, please")) to windowindex

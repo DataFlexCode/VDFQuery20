@@ -1,0 +1,264 @@
+// Use AutoDown.pkg
+
+#HEADER
+use dfallent.pkg
+use AutoDown.nui
+use TimedObs.pkg
+Use LogFile.pkg  // Object for specifying log file properties
+Use Dates.nui    // Date routines (No User Interface)
+Use OpenStat.nui // cTablesOpenStatus class (formely cFileAllFiles) (No User Interface)
+Use RGB.nui      // Some basic RGB color functions
+Use MsgBox.utl   // obs procedure
+#ENDHEADER
+
+desktop_section
+object oAutoSystemDowner is a cSystemDowner
+  set piDownPhaseNumber to 1 // Includes a warning
+  procedure OnAppEntryDenied
+    string lsFile
+    get sFileNameAddPath (psDownNowFile(self)) to lsFile
+#IF LNG_DEFAULT=LNG_DANISH
+    send timedobs 1 "Systemet er lukket" ("L†st af fil: "+lsFile)
+#ELSE
+    send timedobs 1 "The system has been shut down" ("Lock file: "+lsFile)
+#ENDIF
+  end_procedure
+  procedure OnBeginWaitForExit
+    integer liSecs
+    get piCheckInterval to liSecs
+    move (liSecs/1000) to liSecs
+#IF LNG_DEFAULT=LNG_DANISH
+    send timedobs liSecs "Systemet er under nedlukning"
+#ELSE
+    send timedobs liSecs "System is being shut down"
+#ENDIF
+  end_procedure
+  procedure CheckKeepSystemDowned
+    integer lbKeepFile lbGrb
+    string lsDownNowFile
+    if (priv.pbImTheOneWhoStartedIt(self)) begin
+      if (DownNowState(self)) begin
+        get psDownNowFile to lsDownNowFile
+        get sFileNameAddPath lsDownNowFile to lsDownNowFile
+#IF LNG_DEFAULT=LNG_DANISH
+        get MB_Verify4 "Skal systemet forblive i nedlukket tilstand n†r dette program afsluttes?" "" "Hvis du svarer JA skal du selv slette nedenst†ende fil, for at †bne op igen" lsDownNowFile 0 to lbKeepFile
+#ELSE
+        get MB_Verify4 "Do you want the system to remain shut down, when this program is terminated?" "" "If you answer YES you must delete the file below to open it up again" lsDownNowFile 0 to lbKeepFile
+#ENDIF
+        ifnot lbKeepFile begin
+          get bFileDelete (psDownNowFile(self)) to lbGrb
+        end
+      end
+    end
+  end_procedure
+  procedure Notify_Exit_Application
+    send CheckKeepSystemDowned
+  end_procedure
+  procedure Broadcast_Notify_Exit_Application
+    send CheckKeepSystemDowned
+  end_procedure
+  function Exit_Application_Check returns integer // CM check
+    send CheckKeepSystemDowned
+    function_return 0 // No changes
+  end_function
+end_object
+
+object oDownSystemMonitorPanel is a aps.ModalPanel
+  set locate_mode to CENTER_ON_SCREEN
+  set Border_Style to BORDER_THICK     // Make panel resizeable
+  on_key KCANCEL send close_panel
+  property number pnShutDownStart 0
+  object oLogFileDisplay is a aps.TextEdit
+    set size to 105 300
+    set read_only_state to TRUE
+    set psTypeFace to "Courier"
+    set pbWrap to False
+    set peAnchors to (anBottom+anRight+anLeft+anTop)
+  end_object
+#IF LNG_DEFAULT=LNG_DANISH
+  object oSwitch is a aps.RadioGroup label "System"
+#ELSE
+  object oSwitch is a aps.RadioGroup label "System state"
+#ENDIF
+    set peAnchors to (anRight+anTop)
+#IF LNG_DEFAULT=LNG_DANISH
+    object oRad1 is a aps.Radio label "I drift"
+#ELSE
+    object oRad1 is a aps.Radio label "Running"
+#ENDIF
+    end_object
+#IF LNG_DEFAULT=LNG_DANISH
+    object oRad2 is a aps.Radio label "Ude af drift"
+#ELSE
+    object oRad2 is a aps.Radio label "Downing"
+#ENDIF
+    end_object
+    procedure notify_select_state integer liTo integer liFrom
+      if (liTo=0) send SystemUp
+      else send SystemDown
+    end_procedure
+  end_object
+  object oInfo is a aps.Group label "" snap SL_DOWN
+    set peAnchors to (anBottom+anRight+anTop)
+    set p_auto_column to 0
+#IF LNG_DEFAULT=LNG_DANISH
+    object oForm1 is a aps.Form label "Nedlukning startede:" abstract AFT_ASCII14
+#ELSE
+    object oForm1 is a aps.Form label "Downing time:" abstract AFT_ASCII14
+#ENDIF
+      set label_justification_mode to JMODE_TOP
+      set form_border to BORDER_NONE
+      set enabled_state to FALSE
+      set form_justification_mode to FORM_DISPLAYCENTER
+    end_object
+    send aps_goto_max_row
+#IF LNG_DEFAULT=LNG_DANISH
+    object oForm2 is a aps.Form label "Eksklusiv tabeladgang:" abstract AFT_ASCII14
+#ELSE
+    object oForm2 is a aps.Form label "Exclusive table access:" abstract AFT_ASCII14
+#ENDIF
+      set label_justification_mode to JMODE_TOP
+      set form_border to BORDER_NONE
+      set enabled_state to FALSE
+    end_object
+  end_object
+  send APS_SIZE_IDENTICAL_MAX (oSwitch(self)) (oInfo(self)) SL_HORIZONTAL
+
+            procedure UpdateDisplay_Watch
+              integer liDiff
+              number lnShutDownStart
+              get pnShutDownStart to lnShutDownStart
+              if (lnShutDownStart=0) set value of oForm1 to ""
+              else begin
+                move (TS_SysTime()-lnShutDownStart) to liDiff
+                set value of oForm1 to (TS_ExtractTime(liDiff))
+              end
+            end_procedure
+
+                      object oTablesOpenStatus is a cTablesOpenStatus
+                        function bCheckExclusivity returns integer
+                          integer liRval
+                          send reset
+                          send RegisterCurrentOpenFiles
+                          send CloseAllFiles
+                          send reset_prepared
+                          send prepare_open_all_registered_tables_exclusive
+                          get iOpen_Prepared_Quiet to liRval
+                          send CloseAllFiles
+                          send RestoreFiles
+                          function_return (liRval=0)
+                        end_function
+                      end_object
+
+            procedure UpdateDisplay_Tables
+              integer lbExclusive liColor
+              number lnShutDownStart
+              string lsValue
+              get pnShutDownStart to lnShutDownStart
+              if (lnShutDownStart=0) begin
+                move clBtnFace to liColor
+                move "" to lsValue
+              end
+              else begin
+                get bCheckExclusivity of oTablesOpenStatus to lbExclusive
+                if lbExclusive begin
+                  move (RGB_Brighten(clGreen,50)) to liColor
+#IF LNG_DEFAULT=LNG_DANISH
+                  move "Opn†et" to lsValue
+#ELSE
+                  move "Obtained" to lsValue
+#ENDIF
+                end
+                else begin
+                  move (RGB_Brighten(clRed,50)) to liColor
+#IF LNG_DEFAULT=LNG_DANISH
+                  move "Ikke opn†et" to lsValue
+#ELSE
+                  move "Failed" to lsValue
+#ENDIF
+                end
+              end
+              set color of oForm2 to liColor
+              set value of oForm2 to lsValue
+            end_procedure
+
+  procedure UpdateDisplay
+    integer lhSystemDowner
+    string lsValue
+    move oAutoSystemDowner to lhSystemDowner
+    get sLogFileTextSinceDowning of lhSystemDowner to lsValue
+    set value of oLogFileDisplay to lsValue
+    send UpdateDisplay_Watch
+    send UpdateDisplay_Tables
+  end_procedure
+
+  object oTimer is a DFTimer
+    set Auto_Start_State to TRUE //<- If this is set to TRUE to timer is activated when
+    set Auto_Stop_State to TRUE  //   the applications start regardless of the oTimedObs "activeness".
+    set Timer_Message to msg_UpdateDisplay
+    set Timer_Object to self
+    set Timeout to 2000 // Every other second
+  end_object
+
+  procedure SystemDown
+    set pnShutDownStart to (TS_SysTime())
+    set DownNowState of oAutoSystemDowner to TRUE
+    send UpdateDisplay
+  end_procedure
+  procedure SystemUp
+    set pnShutDownStart to 0
+    set DownNowState of oAutoSystemDowner to FALSE
+    send UpdateDisplay
+  end_procedure
+
+  send aps_goto_max_row
+  object oLine is a aps.LineControl
+    set peAnchors to (anBottom+anRight+anLeft)
+  end_object
+
+  object oBtn1 is a aps.Multi_Button
+    set peAnchors to (anBottom+anRight)
+    procedure ViewLog
+      integer lhLogFile
+      move (oLogFile(oAutoSystemDowner(self))) to lhLogFile
+      send Popup_LogFileProperties lhLogFile
+    end_procedure
+#IF LNG_DEFAULT=LNG_DANISH
+    on_item "Se log-fil" send ViewLog
+#ELSE
+    on_item "View log file" send ViewLog
+#ENDIF
+  end_object
+
+  object oBtn2 is a aps.Multi_Button
+    set peAnchors to (anBottom+anRight)
+    on_item t.btn.close send close_panel
+  end_object
+  send aps_locate_multi_buttons
+
+  procedure aps_beautify
+    send APS_ALIGN_INSIDE_CONTAINER_BY_SIZING (oLine(self)) SL_ALIGN_RIGHT
+  end_procedure
+  procedure popup
+    string lsFolder
+    send DoSetLogFileName of oAutoSystemDowner
+    get FLIST_CurrentFileListFolder to lsFolder
+#IF LNG_DEFAULT=LNG_DANISH
+    set label to ("Systemsp‘rring"+" ("+lsFolder+")")
+#ELSE
+    set label to ("System downing"+" ("+lsFolder+")")
+#ENDIF
+    send UpdateDisplay
+    forward send popup
+  end_procedure
+end_object
+send aps_SetMinimumDialogSize (oDownSystemMonitorPanel(self)) // Set minimum size
+end_desktop_section
+
+procedure popup_systemdowner global
+  send popup of oDownSystemMonitorPanel
+end_procedure
+
+//Eksklusiv tabel adgang: Opn†et/Ikke opn†et
+//Exclusive table access: Achieved/Not achieved
+

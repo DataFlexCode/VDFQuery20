@@ -1,0 +1,1179 @@
+// Use Output.utl   // Sequential output to whatever
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+Use Aps.pkg
+#IFDEF USE$VPE
+ Use VpeBase6 //JK: Now uses VPE 3.x
+ Object oOutputVPE is a cVPE
+   Set pOpenOptions to (VPE_NO_OPEN_BUTTON + VPE_NO_RULERS + VPE_GRIDBUTTON + VPE_NO_INFOBUTTON)
+ End_Object
+#ELSE
+ Use DFWinRpt
+#ENDIF
+
+
+Use Dates.utl    // Date manipulation for VDF
+Use Files.utl    // Utilities for handling file related stuff
+Use MsgBox.utl   // obs procedure
+Use Seq_Chnl     // Defines global sequential device management operations (DAC)
+Use Language.pkg // Default language setup
+Use API_Attr.nui // Functions for querying API attributes (No User Interface)
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+
+// ===========================================================================
+//          LANGUAGE DEPENDANT TEXT CONSTANTS
+// ===========================================================================
+
+#IF LNG_DEFAULT=lng_dutch
+ define t.output.GoPg_Label     for "Ga naar pagina"
+ define t.output.Find           for "Zoeken"
+ define t.output.Search_string  for "Zoektekst"
+ define t.output.Case_sensitive for "Identieke Hoofd/kleine letters"
+ define t.output.Searching      for "Bezig met zoeken naar tekst..."
+ define t.output.PressAnyKey    for "Druk op een toets om te onderbreken"
+ define t.output.CancelSearch   for "Zoeken annuleren?"
+ define t.output.TextNotFound   for "' niet gevonden!"
+ define t.output.NotToScreen    for "Niet het scherm!"
+ define t.output.Main1          for " &Einde"
+ define t.output.Main1_1        for "&Einde\aEsc"
+ define t.output.Main2          for " &Navigeren"
+ define t.output.Main2_1        for "V&orige pagina \aPgUp"
+ define t.output.Main2_2        for "&Volgende pagina \aPgDn"
+ define t.output.Main2_3        for "16 regels Om&hoog\a-"
+ define t.output.Main2_4        for "16 regels Om&laag\a+"
+ define t.output.Main2_5        for "Eerste pagina \aCtrl+PgUp"
+ define t.output.Main2_6        for "Laatste pagina \aCtrl+PgDn"
+ define t.output.Main2_7        for "&Ga naar pagina\aAlt-G"
+ define t.output.Main2_8        for "Regel begin\aHome"
+ define t.output.Main2_9        for "Links"
+ define t.output.Main2_10       for "Rechts"
+ define t.output.Main2_11       for "Regel einde\aEnd"
+ define t.output.Main3          for " &Zoeken"
+ define t.output.Main3_1        for "&Zoeken\aF2"
+ define t.output.Main3_2        for "Zoek &volgende\aSF2"
+ define t.output.Main4          for " Af&drukken"
+ define t.output.Main4_1        for "Af&drukken rapport"
+#ENDIF
+#IF LNG_DEFAULT=lng_spanish  // 03/10/2002 to 31/01/2005 for 2.3 Pepe Guimar∆es Moose Software  pg@moose-software.com
+ define t.output.GoPg_Label     for "Ir a p†gina"
+ define t.output.Find           for "Buscar"
+ define t.output.Search_string  for "Buscar cadena"
+ define t.output.Case_sensitive for "Sensible May£scula-Min£scula"
+ define t.output.Searching      for "Buscando cadena..."
+ define t.output.PressAnyKey    for "Pulse tecla para interrumpir"
+ define t.output.CancelSearch   for "®Cancelar B£squeda?"
+ define t.output.TextNotFound   for "' no encontrado!"
+ define t.output.NotToScreen    for "No mostrar en Pantalla"
+ define t.output.Main1          for " &Salir"
+ define t.output.Main1_1        for "&Salir\aEsc"
+ define t.output.Main2          for " &Navegar"
+ define t.output.Main2_1        for "&P†gina Ant. \aPgUp"
+ define t.output.Main2_2        for "P†gina S&ig. \aPgDn"
+ define t.output.Main2_3        for "S&ubir 16 l°neas\a-"
+ define t.output.Main2_4        for "&Bajar 16 l°neas\a+"
+ define t.output.Main2_5        for "P†gina Inicial \aCtrl+PgUp"
+ define t.output.Main2_6        for "P†gina Final \aCtrl+PgDn"
+ define t.output.Main2_7        for "&Ir a p†gina\aAlt-I"
+ define t.output.Main2_8        for "Inicio de L°nea\aHome"
+ define t.output.Main2_9        for "Izquierda"
+ define t.output.Main2_10       for "Derecha"
+ define t.output.Main2_11       for "Fin de L°nea\aEnd"
+ define t.output.Main3          for " Bus&car"
+ define t.output.Main3_1        for "Busc&ar"
+ define t.output.Main3_2        for "Buscar Si&guiente\aSF2"
+ define t.output.Main4          for " &Imprimir"
+ define t.output.Main4_1        for "&Imprimir Informe"
+#ENDIF
+#IF LNG_DEFAULT=lng_english
+ define t.output.GoPg_Label     for "Go to page"
+ define t.output.Find           for "Find"
+ define t.output.Search_string  for "Search string"
+ define t.output.Case_sensitive for "Case sensitive"
+ define t.output.Searching      for "Searching for string..."
+ define t.output.PressAnyKey    for "Press any key to interrupt"
+ define t.output.CancelSearch   for "Cancel search?"
+ define t.output.TextNotFound   for "' not found!"
+ define t.output.NotToScreen    for "Not screen!"
+ define t.output.Main1          for " &Exit"
+ define t.output.Main1_1        for "&Exit\aEsc"
+ define t.output.Main2          for " &Navigate"
+ define t.output.Main2_1        for "&Prev. page \aPgUp"
+ define t.output.Main2_2        for "&Next page \aPgDn"
+ define t.output.Main2_3        for "16 lines &Up\a-"
+ define t.output.Main2_4        for "16 lines &Down\a+"
+ define t.output.Main2_5        for "First page \aCtrl+PgUp"
+ define t.output.Main2_6        for "Last page \aCtrl+PgDn"
+ define t.output.Main2_7        for "&Go to page\aAlt-G"
+ define t.output.Main2_8        for "Line start\aHome"
+ define t.output.Main2_9        for "Left"
+ define t.output.Main2_10       for "Right"
+ define t.output.Main2_11       for "Linie end\aEnd"
+ define t.output.Main3          for " &Search"
+ define t.output.Main3_1        for "&Search\aF2"
+ define t.output.Main3_2        for "&Find next\aSF2"
+ define t.output.Main4          for " &Print"
+ define t.output.Main4_1        for "&Print report"
+#ENDIF
+#IF LNG_DEFAULT=lng_danish
+ define t.output.GoPg_Label     for "GÜ til side"
+ define t.output.Find           for "Sõg"
+ define t.output.Search_string  for "Sõgestreng"
+ define t.output.Case_sensitive for "Case sensitive"
+ define t.output.Searching      for "Sõger efter tekst..."
+ define t.output.PressAnyKey    for "Tryk pÜ en tast for at afbryde"
+ define t.output.CancelSearch   for "Afbryd sõgningen?"
+ define t.output.TextNotFound   for "' ikke fundet!"
+ define t.output.NotToScreen    for "Ikke skërm!"
+ define t.output.Main1          for " &Afslut"
+ define t.output.Main1_1        for "&Afslut\aEsc"
+ define t.output.Main2          for " &NavigÇr"
+ define t.output.Main2_1        for "&Forr. side \aPgUp"
+ define t.output.Main2_2        for "&Nëste side \aPgDn"
+ define t.output.Main2_3        for "16 linier &Op\a-"
+ define t.output.Main2_4        for "16 linier &Ned\a+"
+ define t.output.Main2_5        for "Fõrste side \aCtrl+PgUp"
+ define t.output.Main2_6        for "Sidste side \aCtrl+PgDn"
+ define t.output.Main2_7        for "&GÜ til side\aAlt-G"
+ define t.output.Main2_8        for "Linie start\aHome"
+ define t.output.Main2_9        for "Venstre"
+ define t.output.Main2_10       for "Hõjre"
+ define t.output.Main2_11       for "Linie slut\aEnd"
+ define t.output.Main3          for " &Sõg"
+ define t.output.Main3_1        for "&Sõg\aF2"
+ define t.output.Main3_2        for "&Find nëste\aSF2"
+ define t.output.Main4          for " &Udskriv"
+ define t.output.Main4_1        for "&Udskriv rapport"
+#ENDIF
+#IF LNG_DEFAULT=lng_swedish
+ define t.output.GoPg_Label     for "GÜ till sida"
+ define t.output.Find           for "Sîk"
+ define t.output.Search_string  for "Sîk strÑng"
+ define t.output.Case_sensitive for "Case sensitive"
+ define t.output.Searching      for "Sîker efter text..."
+ define t.output.PressAnyKey    for "Tryck pÜ en tangent fîr att avbryta sîkningen"
+ define t.output.CancelSearch   for "Avbryt sîkningen?"
+ define t.output.TextNotFound   for "' ej funnet!"
+ define t.output.NotToScreen    for "Ej skÑrm!"
+ define t.output.Main1          for " &Exit"
+ define t.output.Main1_1        for "&Avslut\aEsc"
+ define t.output.Main2          for " &NavigÇr"
+ define t.output.Main2_1        for "&Forr. sida \aPgUp"
+ define t.output.Main2_2        for "&Nëste sida \aPgDn"
+ define t.output.Main2_3        for "16 linjer &Op\a-"
+ define t.output.Main2_4        for "16 linjer &Ned\a+"
+ define t.output.Main2_5        for "Fîrste sida \aCtrl+PgUp"
+ define t.output.Main2_6        for "Sidste sida \aCtrl+PgDn"
+ define t.output.Main2_7        for "&GÜ till sida\aAlt-G"
+ define t.output.Main2_8        for "Linje start\aHome"
+ define t.output.Main2_9        for "Venstre"
+ define t.output.Main2_10       for "Hîjre"
+ define t.output.Main2_11       for "Linje slut\aEnd"
+ define t.output.Main3          for " &Sîk"
+ define t.output.Main3_1        for "&Sîk\aF2"
+ define t.output.Main3_2        for "&Finn nÑste\aSF2"
+ define t.output.Main4          for " &Print"
+ define t.output.Main4_1        for "&Print rapport"
+#ENDIF
+#IF LNG_DEFAULT=lng_norwegian
+ define t.output.GoPg_Label     for "GÜ til side"
+ define t.output.Find           for "Sõk"
+ define t.output.Search_string  for "Sõkestreng"
+ define t.output.Case_sensitive for "Case sensitive"
+ define t.output.Searching      for "Sõker etter tekst..."
+ define t.output.PressAnyKey    for "Trykk pÜ en tast for Ü avbryte sõkningen"
+ define t.output.CancelSearch   for "Avbryt sõkningen?"
+ define t.output.TextNotFound   for " ikke funnet!"
+ define t.output.NotToScreen    for "Ikke skjerm!"
+ define t.output.Main1          for " &Avslutt"
+ define t.output.Main1_1        for "&Avslutt\aEsc"
+ define t.output.Main2          for " &NavigÇr"
+ define t.output.Main2_1        for "&Forr. side \aPgUp"
+ define t.output.Main2_2        for "&Neste side \aPgDn"
+ define t.output.Main2_3        for "16 linjer &Opp\a-"
+ define t.output.Main2_4        for "16 linjer &Ned\a+"
+ define t.output.Main2_5        for "Fõrste side \aCtrl+PgUp"
+ define t.output.Main2_6        for "siste side \aCtrl+PgDn"
+ define t.output.Main2_7        for "&GÜ til side\aAlt-G"
+ define t.output.Main2_8        for "linje start\aHome"
+ define t.output.Main2_9        for "Venstre"
+ define t.output.Main2_10       for "Hõyre"
+ define t.output.Main2_11       for "linje slutt\aEnd"
+ define t.output.Main3          for " &Sõk"
+ define t.output.Main3_1        for "&Sõk\aF2"
+ define t.output.Main3_2        for "&Finn neste\aSF2"
+ define t.output.Main4          for " &Utskriv"
+ define t.output.Main4_1        for "&Utskriv rapport"
+#ENDIF
+#IF LNG_DEFAULT=lng_german
+ define t.output.GoPg_Label     for "Gehe zu Seite"
+ define t.output.Find           for "Suchen"
+ define t.output.Search_string  for "Suchbegriff"
+ define t.output.Case_sensitive for "Gro·/Kleinschreibung"
+ define t.output.Searching      for "Suche lÑuft..."
+ define t.output.PressAnyKey    for "Zum Unterbrechen eine Taste drÅcken"
+ define t.output.CancelSearch   for "Suche abbrechen?"
+ define t.output.TextNotFound   for "' nicht gefunden!"
+ define t.output.NotToScreen    for "Nicht auf Bildschirm!"
+ define t.output.Main1          for " &Abbrechen"
+ define t.output.Main1_1        for "&Beenden\aEsc"
+ define t.output.Main2          for " &Navigation"
+ define t.output.Main2_1        for "&Vorh. Seite \aPgUp"
+ define t.output.Main2_2        for "&NÑchste Seite \aPgDn"
+ define t.output.Main2_3        for "16 Zeilen &ZurÅck\a-"
+ define t.output.Main2_4        for "16 lines &Vor\a+"
+ define t.output.Main2_5        for "Erste Seite \aCtrl+PgUp"
+ define t.output.Main2_6        for "Letzte Seite \aCtrl+PgDn"
+ define t.output.Main2_7        for "&Gehe zu Seite\aAlt-G"
+ define t.output.Main2_8        for "Zeilenbeginn\aHome"
+ define t.output.Main2_9        for "Links"
+ define t.output.Main2_10       for "Rechts"
+ define t.output.Main2_11       for "Zeilenende\aEnd"
+ define t.output.Main3          for " &Suchen"
+ define t.output.Main3_1        for "&Suchen\aF2"
+ define t.output.Main3_2        for "&NÑchsten Suchen\aSF2"
+ define t.output.Main4          for " &Drucken"
+ define t.output.Main4_1        for "&Drucken Bericht"
+#ENDIF
+#IF LNG_DEFAULT=lng_portuguese // by Claudio Rossoni (SP-Brasil)
+ define t.output.GoPg_Label     for "Ir para a p†gina"                    //"Go to page"
+ define t.output.Find           for "Procurar"                            //"Find"
+ define t.output.Search_string  for "Procurar string"                     //"Search string"
+ define t.output.Case_sensitive for "Sensibilidade a Maiuscula-Minuscula" //"Case sensitive"
+ define t.output.Searching      for "Procurando por..."                    //"Searching for string..."
+ define t.output.PressAnyKey    for "Pressione qq. tecla para interromper" //"Press any key to interrupt"
+ define t.output.CancelSearch   for "Cancelar a procura?"           //"Cancel search?"
+ define t.output.TextNotFound   for "' n∆o encontrado!"             //"' not found!"
+ define t.output.NotToScreen    for "N∆o mostrar em v°deo"          //"Not screen!"
+ define t.output.Main1          for " &Sair"                        //" &Exit"
+ define t.output.Main1_1        for "&Sair\aEsc"                    //"&Exit\aEsc"
+ define t.output.Main2          for " &Navegar"                     //" &Navigate"
+ define t.output.Main2_1        for "&P†gina Ant. \aPgUp"                  //"&Prev. page"
+ define t.output.Main2_2        for "P&r¢xima P†gina \aPgDn"                  //"&Next page"
+ define t.output.Main2_3        for "S&ubir 16 linhas\a-"            //"16 lines &Up\a-"
+ define t.output.Main2_4        for "&Descer 16 linhas\a+"           //"16 lines &Down\a+"
+ define t.output.Main2_5        for "P†gina Inicial \aCtrl+PgUp"
+ define t.output.Main2_6        for "P†gina Final \aCtrl+PgDn"
+ define t.output.Main2_7        for "&Ir para a p†gina\aAlt-I"      //"&Go to page\aAlt-G"
+ define t.output.Main2_8        for "In°cio de &Linha\aHome"         //"Line start\aHome"
+ define t.output.Main2_9        for "Esquerda"                      //"Left"
+ define t.output.Main2_10       for "Direita"                       //"Right"
+ define t.output.Main2_11       for "Fim da Linha\aEnd"             //"Linie end\aEnd"
+ define t.output.Main3          for " &Procurar"                    //" &Search"
+ define t.output.Main3_1        for "&Procurar\aF2"                 //"&Search\aF2"
+ define t.output.Main3_2        for "Procurar Se&guinte\aSF2"      //"&Find next\aSF2"
+ define t.output.Main4          for " &Imprimir"                    //"&Print"
+ define t.output.Main4_1        for "&Imprimir o Relat¢rio"         //"&Print report"
+#ENDIF
+#IF LNG_DEFAULT=lng_french // French by Arnaud Mallick (Fr) (Arnaud.mallick@wanadoo.fr)
+ define t.output.GoPg_Label     For "Aller Ö la page"
+ define t.output.Find           For "Trouve"
+ define t.output.Search_string  For "Rechercher"
+ define t.output.Case_sensitive For "Repecter Maj/Min"
+ define t.output.Searching      For "Recherche..."
+ define t.output.PressAnyKey    For "Appuyer sur une touche pour arràter"
+ define t.output.CancelSearch   For "Annuler la recherche?"
+ define t.output.TextNotFound   For "' pas trouvÇ!"
+ define t.output.NotToScreen    For "Pas affichÇ!"
+ define t.output.Main1          For " Quitt&er"
+ define t.output.Main1_1        For "Quitt&er\aEsc"
+ define t.output.Main2          For " &Naviguer"
+ define t.output.Main2_1        For "Page &PrÇc. \aPgUp"
+ define t.output.Main2_2        For "Page Suiva&nte \aPgDn"
+ define t.output.Main2_3        For "Ha&usser de 16 lignes\a-"      //Bof
+ define t.output.Main2_4        For "&Descendre de 16 lignes\a+"
+ define t.output.Main2_5        For "Premiäre page \aCtrl+PgUp"
+ define t.output.Main2_6        For "Derniäre page \aCtrl+PgDn"
+ define t.output.Main2_7        For "Aller(&G) Ö la page\aAlt-G"    //pas trouvÇ mieux avec un G
+ define t.output.Main2_8        For "Ligne de dÇbut\aHome"
+ define t.output.Main2_9        For "Gauche"
+ define t.output.Main2_10       For "Droite"
+ define t.output.Main2_11       For "Fin de ligne\aEnd"
+ define t.output.Main3          For " Recherche&s"
+ define t.output.Main3_1        For "Recherche&s\aF2"
+ define t.output.Main3_2        For "Suivant\aSF2"
+ define t.output.Main4          For " Im&prime"
+ define t.output.Main4_1        For "Im&prime rapport"
+#ENDIF
+#IF LNG_DEFAULT=lng_italian // 05/03/04 Paolo Zanni (Italia)
+ define t.output.GoPg_Label     for "Vai alla pagina"
+ define t.output.Find           for "Trova"
+ define t.output.Search_string  for "Cerca stringa"
+ define t.output.Case_sensitive for "Distinzione maiuscole/minuscole"
+ define t.output.Searching      for "Ricerca per stringa..."
+ define t.output.PressAnyKey    for "Premere un tasto per interrompere"
+ define t.output.CancelSearch   for "Cancella ricerca?"
+ define t.output.TextNotFound   for "' non trovato!"
+ define t.output.NotToScreen    for "Not screen!"
+ define t.output.Main1          for " Uscita"
+ define t.output.Main1_1        for "Uscita\aEsc"
+ define t.output.Main2          for " Navigare"
+ define t.output.Main2_1        for "Pagina precedente \aPgUp"
+ define t.output.Main2_2        for "Pagina successiva \aPgDn"
+ define t.output.Main2_3        for "16 linee su\a-"
+ define t.output.Main2_4        for "16 linee giu'\a+"
+ define t.output.Main2_5        for "Pagina iniziale \aCtrl+PgUp"
+ define t.output.Main2_6        for "Pagina finale \aCtrl+PgDn"
+ define t.output.Main2_7        for "Vai alla pagina\aAlt-G"
+ define t.output.Main2_8        for "Line start\aHome"
+ define t.output.Main2_9        for "Sinistra"
+ define t.output.Main2_10       for "Destra"
+ define t.output.Main2_11       for "Linie end\aEnd"
+ define t.output.Main3          for " Ricerca"
+ define t.output.Main3_1        for " Ricerca\aF2"
+ define t.output.Main3_2        for " Cerca successivo\aSF2"
+ define t.output.Main4          for " Stampa"
+ define t.output.Main4_1        for " Stampa report"
+#ENDIF
+
+// ===========================================================================
+//          CONSTANTS DECLARATIONS
+// ===========================================================================
+
+define DEST_NONE    for 0
+define DEST_PRINTER for 1
+define DEST_SCREEN  for 2
+define DEST_FILE    for 3
+define DEST_HTML    for 4
+define DEST_EDITOR  for 5
+define DEST_EMAIL   for 6
+
+define FILEEXISTS_CANCEL    for 0
+define FILEEXISTS_APPEND    for 1
+define FILEEXISTS_OVERWRITE for 2
+define FILEEXISTS_PROMPT    for 3 // Ask the operator
+
+// ===========================================================================
+//          BASIC OUTPUT CLASS
+// ===========================================================================
+
+indicator output$move_up?
+string    output$code
+string    output$symbollist 255
+integer   output$idx
+integer   seq.object#
+
+#COMMAND OUTPUT.DEFINE_CODE
+  string gl_code!1
+  #REPLACE code_symbol!1 !2
+  #REPLACE codebuild!Zt !2
+  define idx!1
+  [ output$move_up?] if output$idx eq idx!1 move gl_code!1 to output$code
+  [~output$move_up?] if output$idx eq idx!1 move output$code to gl_code!1
+#ENDCOMMAND
+
+goto output$skip_definition
+output$code_move:
+  Enumeration_List
+    output.define_code _nop             "<nop>"
+    output.define_code _initialize      "<INI>"
+    output.define_code _reset           "<RST>"
+    output.define_code _bold_on         "<BLD>"
+    output.define_code _bold_off        "<bld>"
+    output.define_code _italics_on      "<ITL>"
+    output.define_code _italics_off     "<itl>"
+    output.define_code _underline_on    "<UND>"
+    output.define_code _underline_off   "<und>"
+    output.define_code _user_on         "<USR>"
+    output.define_code _user_off        "<usr>"
+    output.define_code _cpi10           "<C10>"
+    output.define_code _cpi12           "<C12>"
+    output.define_code _cpi17           "<C17>"
+    output.define_code _lpi03           "<L03>"
+    output.define_code _lpi06           "<L06>"
+    output.define_code _lpi08           "<L08>"
+    output.define_code _lpi12           "<L12>"
+    output.define_code _lpi72           "<L72>"
+    output.define_code _macro_def_pre   "<MDF>"
+    output.define_code _macro_def_post  "<mdf>"
+    output.define_code _macro_call_pre  "<MCL>"
+    output.define_code _macro_call_post "<mcl>"
+    output.define_code _macro_kill_pre  "<MKL>"
+    output.define_code _macro_kill_post "<mkl>"
+    output.define_code _paper_tray_1    "<PT1>"
+    output.define_code _paper_tray_2    "<PT2>"
+    output.define_code _paper_tray_3    "<PT3>"
+    output.define_code _paper_tray_4    "<PT4>"
+    output.define_code _pos_push        "<PSH>"
+    output.define_code _pos_pop         "<POP>"
+    #REPLACE output$max_code (!Zt -1)
+  End_Enumeration_List
+return
+output$skip_definition:
+
+#COMMAND BUILD_CODE_SYMBOLS
+ #IFDEF codebuild!e
+  move (OUTPUT$SYMBOLLIST+codebuild!e) to OUTPUT$SYMBOLLIST
+  #SET E$ !E
+  BUILD_CODE_SYMBOLS
+ #ENDIF
+#ENDCOMMAND
+
+#PUSH !e
+#SET E$ 0
+move "" to OUTPUT$SYMBOLLIST
+BUILD_CODE_SYMBOLS
+#POP E$
+
+procedure output.get_code integer code#
+  indicate output$move_up? true
+  move code# to output$idx
+  gosub output$code_move
+end_procedure
+procedure output.set_code integer code#
+  indicate output$move_up? false
+  move code# to output$idx
+  gosub output$code_move
+end_procedure
+procedure output.zero_codes
+  integer code#
+  move "" to output$code
+  for code# from 0 to output$max_code
+    send output.set_code code#
+  loop
+end_procedure
+send output.zero_codes
+function output.replace_codes global string str# returns string
+  integer code#
+  string symb#
+  if "<" in str# begin
+    for code# from 0 to output$max_code
+      send output.get_code code#
+      move (replaces(mid(output$symbollist,5,code#*5+1),str#,output$code)) to str#
+    loop
+  end
+  function_return str#
+end_function
+function output.remove_codes global string str# returns string
+  integer code#
+  string symb#
+  if "<" in str# begin
+    for code# from 0 to output$max_code
+      move (replaces(mid(output$symbollist,5,code#*5+1),str#,"")) to str#
+    loop
+  end
+  function_return str#
+end_function
+
+class cBasicSequentialOutputEMailRecipients is a cArray
+  item_property_list
+    item_property string psName.i
+    item_property string psAddress.i
+  end_item_property_list cBasicSequentialOutputEMailRecipients
+  procedure add_recipient string lsName string lsAddress
+    integer liRow
+    get row_count to liRow
+    set psName.i    liRow to lsName
+    set psAddress.i liRow to lsAddress
+  end_procedure
+end_class // cBasicSequentialOutputEMailRecipients
+
+class cBasicSequentialOutput is a cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+    set delegation_mode to delegate_to_parent
+    move self to seq.object#
+    property string  pTitle             "Un-titled"
+    property date    pInitDate          0
+    property string  pInitTime          ""
+    property integer pDestination       DEST_SCREEN
+
+    property integer pOutputChannel     -1
+
+    #IFDEF _UNIX_
+     property string  pPrinterPort      "dbms.res"
+    #ELSE
+     property string  pPrinterPort      "LPT1:"
+    #ENDIF
+    property string  pOutFileName       "dataflex.txt"
+    property string  pScreenTmpFile     "" // Used when printing to screen AND *email*
+    property integer pFileExistsAction  FILEEXISTS_OVERWRITE // If set to FILEEXISTS_CANCEL the report will refuse to print to an existing file!
+    property integer pOmitFormFeed      0
+
+    property integer pLineCount         0
+    property integer pPageCount         0
+    property integer pPageLength        50 // 0 means continous
+    property integer pBytesWritten      0
+
+    property integer phMsg_Object       0
+
+    property integer pHeader_image      0
+    property integer pHeader_height     0 // number of lines in header.
+    property integer pHeader_msg        0
+
+    property integer pSubHeader_image   0
+    property integer pSubHeader_height  0 // number of lines in subheader.
+    property integer pSubHeader_msg     0
+
+    property integer pFooter_image      0
+    property integer pFooter_height     0 // number of lines in footer.
+    property integer pFooter_msg        0
+    property integer pFooterFill_image  0
+
+    property integer pOnceOnly_image    0
+    property integer pOnceOnly_height   0
+    property integer pOnceOnly_msg      0
+
+    property integer pInUseState        false
+    property integer pWidth             77
+    property integer pbOemToAnsi        0
+
+    object oPageOffSets is an array
+    end_object
+    object oChannelAdmin is a cChannelAdmin
+    end_object
+    #IFDEF USE$VPE
+     property integer pOriginalVPE_Object 0
+    #ENDIF
+    object oEmailRecipients is a cBasicSequentialOutputEMailRecipients
+    end_object
+    // ". /dfds01/appl/scripts/sendfile #F# #A#"
+    property string psSendMailProgramPath ""
+  end_procedure
+
+  procedure add_recipient string lsName string lsAddress
+    send add_recipient to (oEmailRecipients(self)) lsName lsAddress
+  end_procedure
+
+  procedure reset_recipients
+    send delete_data to (oEmailRecipients(self))
+  end_procedure
+
+  function iUseSequentialChannel returns integer
+    integer destination#
+    get pDestination to destination#
+    function_return (destination#=DEST_FILE or destination#=DEST_HTML or destination#=DEST_EDITOR)
+  end_function // iUseSequentialChannel
+
+  function iPageBreakNeeded integer lines# returns integer
+    integer pageend#
+    get pPageLength to pageend#
+    if pageend# eq 0 function_return 0
+    function_return (lines#>(pageend#-pLineCount(self)-pFooter_height(self)))
+  end_function
+
+  function iAvailablePageLength returns integer
+    integer pageend# headerlines# subheaderlines# footerlines#
+    get pPageLength to pageend#
+    get pHeader_height to headerlines#
+    get pSubHeader_height to subheaderlines#
+    get pFooter_height to footerlines#
+    function_return (pageend#-headerlines#-subheaderlines#-footerlines#)
+  end_function
+
+  function Remaining_Lines returns integer
+    integer pageend# linecount# footerlines#
+    get pPageLength to pageend#
+    get pLineCount to linecount#
+    get pFooter_height to footerlines#
+    function_return (pageend#-linecount#-footerlines#)
+  end_function
+
+  function iResource_Reserve returns integer
+    integer ch1# ch2# rval# UseSequentialChannel#
+    get iUseSequentialChannel to UseSequentialChannel# // Do we need a channel?
+    if UseSequentialChannel# get Seq_New_Channel to ch1#
+    else move 0 to ch1#
+    get Seq_New_Channel to ch2#
+    move (ch1#>=0 and ch2#>=0) to rval#
+    if rval# begin
+      if UseSequentialChannel# set pOutputChannel to ch1#
+      set pChannel of (oChannelAdmin(self)) to ch2#
+    end
+    else begin
+      if UseSequentialChannel# if ch1# ge 0 send Seq_Release_Channel ch1#
+      if ch2# ge 0 send Seq_Release_Channel ch2#
+    end
+    #IFDEF USE$VPE
+     set pOriginalVPE_Object to oVPE#
+     move (oOutputVPE(self)) to oVPE#
+    #ENDIF
+    function_return rval#
+  end_function
+
+  procedure Resource_Release
+    if (iUseSequentialChannel(self)) ;
+        send Seq_Release_Channel (pOutputChannel(self))
+    send Seq_Release_Channel (pChannel(oChannelAdmin(self)))
+    #IFDEF USE$VPE
+     get pOriginalVPE_Object to oVPE#
+    #ENDIF
+  end_procedure
+
+  procedure Page_Eject_No_Footer.i integer ff#
+    integer obj# ch# Destination#
+    integer pos# UseSequentialChannel#
+    if (pLineCount(self)) begin
+      get iUseSequentialChannel to UseSequentialChannel#
+      if UseSequentialChannel# begin
+        get pOutputChannel to ch#
+        get_channel_position ch# to pos#
+        set pBytesWritten to pos#
+      end
+      get pDestination to Destination#
+      if Destination# eq DEST_SCREEN begin //screen
+         #IFDEF USE$VPE
+          if ff# send vpe_PageBreak to oVPE#
+         #ELSE
+//        winprint, newpage
+         #ENDIF
+      end
+      else begin
+        if UseSequentialChannel# begin
+          if ff# begin
+            if Destination# eq DEST_HTML write channel ch# (replace("#",'<BR><BR><A NAME="EndOfSection#"></A>',string(pPageCount(self))))
+            else write channel ch# (character(12))
+          end
+        end
+      end
+      set pPageCount to (pPageCount(self)+1)
+      set pLineCount to 0
+      move 0 to linecount
+    end
+  end_procedure
+
+  procedure page_eject.i integer ff#
+    integer line# linecount# pageend# footerlines# footer_img# footerfill_img#
+    get pLineCount to linecount#
+    if linecount# begin // only if something has been written
+      get pFooter_image to footer_img#
+      if footer_img# begin // If 'footer' has been set
+        get pPageLength to pageend#
+        get pFooter_height to footerlines#
+        get pFooterFill_image to footerfill_img#
+        for line# from linecount# to (pageend#-1-footerlines#)
+          if footerfill_img# send output_image_aux footerfill_img#
+          else send writeln_no_headers ""
+        loop
+        send message.i (pFooter_msg(self))
+        send output_image_aux footer_img#
+      end
+      send page_eject_no_footer.i ff#
+    end
+  end_procedure
+
+  procedure new_page
+    send page_eject.i 1
+  end_procedure
+
+  procedure cmdline_start
+  end_procedure
+  procedure cmdline_stop
+  end_procedure
+
+  function iPreconditions_Direct_Output returns integer
+    integer rval#
+    get iResource_Reserve to rval#
+    function_return rval#
+  end_function
+
+  function iDirect_Output returns integer
+    integer rval# dest# exists_action#
+    string tmp_fn# fn#
+    move 1 to rval#
+    if (iPreconditions_Direct_Output(self)) begin
+      get pDestination to dest#
+      set pInitDate to (dSysDate())
+      set pInitTime to (sSysTime())
+      if dest# eq DEST_PRINTER begin // Printer
+         set pOmitFormFeed to true
+         #IFDEF USE$VPE
+          set pTitle of oVPE# to (pTitle(self))
+          send OpenDoc to oVPE#
+          send obs "Hello (test)"
+         #ELSE
+         #ENDIF
+      end
+      if dest# eq DEST_SCREEN begin // Screen
+         set pOmitFormFeed to true
+         #IFDEF USE$VPE
+          set pTitle of oVPE# to (pTitle(self))
+          send OpenDoc to oVPE#
+         #ELSE // WinPrint
+         #ENDIF
+      end
+      if dest# eq DEST_FILE begin // File
+        get pOutFileName to fn#
+        move 2 to exists_action# // 0=cancel 1=append, 2=overwrite
+        if (SEQ_FileExists(fn#)) begin
+          get pFileExistsAction to exists_action#
+          // if exists_action# eq FILEEXISTS_PROMPT move (SEQ_FileExistsAction(fn#,1)) to exists_action#
+        end
+        if exists_action# begin
+          if exists_action# eq 1 append_output channel (pOutputChannel(self)) ("cr: 13 eol: 10 "+fn#) //append
+          if exists_action# eq 2 direct_output channel (pOutputChannel(self)) ("cr: 13 eol: 10 "+fn#) //overwrite
+        end
+        else move 0 to rval#
+      end
+      if dest# eq DEST_EMAIL begin // EMAIL
+
+//        get SEQ_UniqueFileName "mail" to fn#
+        get SEQ_UniqueFileNamePathAndExt "" "mail" "txt" to fn#
+        if fn# ne "" begin
+          set pScreenTmpFile to fn#
+          if (API_OtherAttr_Value(OA_OS_SHORT_NAME)="WIN32CM") begin
+            direct_output channel (pOutputChannel(self)) fn#
+          end
+          else begin
+            direct_output channel (pOutputChannel(self)) ("pc-text: "+fn#)
+          end
+        end
+        else begin
+          send obs "Outfile failure (source: output.utl)" "(E-mail)"
+          move 0 to rval#
+        end
+      end
+      if dest# eq DEST_HTML begin // HTML
+      end
+      set pPageCount    to 0
+      set pBytesWritten to 0
+      set pLineCount    to 0
+    end
+    else move 0 to rval#
+    if rval# begin
+      set pInUseState to true
+      send Report_Wait_On
+      send Initialize_Output
+    end
+    else begin
+      set pInUseState to false
+      send Resource_Release
+    end
+    function_return rval#
+  end_function
+  function iDirect_Output_Title string title# returns integer
+    integer rval#
+    set pTitle to title#
+    get iDirect_Output to rval#
+    if rval# begin
+      set pHeader_image to 0
+      set pHeader_height to 0
+      set pHeader_msg to 0
+      set pSubHeader_image to 0
+      set pSubHeader_height to 0
+      set pSubHeader_msg to 0
+      set pFooter_image to 0
+      set pFooter_height to 0
+      set pFooter_msg to 0
+      set pFooterFill_image to 0
+      set pOnceOnly_image to 0
+      set pOnceOnly_height to 0
+      set pOnceOnly_msg to 0
+    end
+    function_return rval#
+  end_function
+  procedure Initialize_Output
+  end_procedure
+
+            procedure DoSendEmails string lsFile
+              integer lhEmailRecipients liMax liRow
+              string lsName lsAddress lsSendMailProgramPath
+
+              get psSendMailProgramPath to lsSendMailProgramPath
+              if (lsSendMailProgramPath<>"") begin
+
+                move (oEmailRecipients(self)) to lhEmailRecipients
+                get row_count of lhEmailRecipients to liMax
+                decrement liMax
+                for liRow from 0 to liMax
+                  get psSendMailProgramPath to lsSendMailProgramPath
+                  move (replace("#A#",lsSendMailProgramPath,psAddress.i(lhEmailRecipients,liRow))) to lsSendMailProgramPath
+                  move (replace("#F#",lsSendMailProgramPath,lsFile)) to lsSendMailProgramPath
+                  //send obs lsSendMailProgramPath
+                  runprogram wait lsSendMailProgramPath
+                loop
+              end
+              else send obs "E-mail program path not specified."
+            end_procedure
+
+  procedure Close_Output
+    integer ch# dest# pos#
+    string lsFileName
+    if (pInUseState(self)) begin
+      if (pLineCount(self)) send page_eject.i (not(pOmitFormFeed(self)))
+
+      if (iUseSequentialChannel(self)) begin
+        send write_no_headers "<RST>"
+        get pOutputChannel to ch#
+        get_channel_position ch# to pos#
+        set pBytesWritten to pos#
+        despool
+        close_output channel ch#
+      end
+
+      get pDestination to dest#
+      if dest# eq DEST_PRINTER begin
+        send cmdline_stop
+         #IFDEF USE$VPE
+          send PrintDoc to oVPE#
+         #ELSE
+//        WinPrint, print doc
+         #ENDIF
+      end
+      if dest# eq DEST_EMAIL begin
+        //send obs "Haps, min fine ven"
+        send report_wait_update "Sending e-mails..."
+        get pScreenTmpFile to lsFileName
+        get SEQ_ConvertToAbsoluteFileName lsFileName to lsFileName
+        send DoSendEmails lsFileName
+        erasefile lsFileName
+      end
+      send report_wait_off
+      if dest# eq DEST_SCREEN begin
+         #IFDEF USE$VPE
+          send PreviewDoc to oVPE#
+         #ELSE
+//        WinPrint, print doc
+         #ENDIF
+      end
+      else send report_done
+      set pInUseState to false
+      send Resource_Release
+    end
+
+  end_procedure
+
+  procedure message.i integer msg#
+    integer lhObj
+    if msg# begin
+      get phMsg_Object to lhObj
+      if lhObj send msg# to lhObj
+      else send msg#
+    end
+  end_procedure
+
+  function replace_header_codes string str# returns string
+    integer pagecount#
+    date date#
+    string page#
+    get pInitDate to date#
+    move (pPageCount(self)+1) to pagecount#
+    move (replaces("<date---->",str#,string(date#))) to str#
+    move (replaces("<time-->",str#,pInitTime(self))) to str# //time
+    if "<pg>" in str# begin // page number
+      move pagecount# to page#
+      if pagecount# le 999 insert " " in page# at 1
+      pad page# to page# 4
+      move (replaces("<pg>",str#,page#)) to str# //time
+    end
+    if "<p>" in str# begin // page number
+      move pagecount# to page#
+      if pagecount# le 99 insert " " in page# at 1
+      if pagecount# le  9 insert " " in page# at 1
+      move (replaces("<p>",str#,page#)) to str#
+    end
+    function_return str#
+  end_function
+
+  function replace_codes string str# returns string
+    // If e-mail remove codes, else insert code values
+    if (pDestination(self)=DEST_EMAIL) function_return (output.replace_codes(str#))
+    function_return (output.remove_codes(str#))
+  end_function
+
+  procedure output_image_help integer img# integer header_codes#
+    integer seqeof# obj# ch#
+    string str#
+    move (seqeof) to seqeof#
+    move (oChannelAdmin(self)) to obj#
+    get pChannel of obj# to ch#
+    send direct_xput to obj# 1 ("image: "+string(img#))
+    repeat
+      readln channel ch# str#
+      [~seqeof] begin
+        if header_codes# send writeln_no_headers (replace_header_codes(self,str#))
+        else send writeln str#
+      end
+    [~seqeof] loop
+    send close_xput to obj#
+    indicate seqeof as seqeof#
+  end_procedure
+
+  procedure output_image_aux integer img#
+    send output_image_help img# 1
+  end_procedure
+
+  procedure output_image integer img# integer check_space_tmp#
+    integer check_space#
+    if num_arguments gt 1 move check_space_tmp# to check_space#
+    else move 0 to check_space#
+    if (iPageBreakNeeded(self,check_space#)) send page_eject.i 0
+    send output_image_help img# 0
+  end_procedure
+
+  procedure output_image_wrap integer img# // Won't work! (BLANKFORM img#)
+    send output_image_help img# 0
+    !A [] $20A img#
+    indicate copy_122 as [ |122]
+    send output_image img#
+    !A [not copy_122] $1C4 img#
+    !A [not copy_122] $20A img#
+    indicate copy_122 as [ |122]
+    [not copy_122] repeat
+      send output_image img#
+      !A [] $20A img#
+      indicate copy_122 as [ |122]
+    [not copy_122] loop
+  end_procedure
+
+  procedure write.i string str# integer do_headers#
+    integer header_img# subheader_img# onceonly_img# pagecount# pageend#
+    string page_init#
+    if do_headers# begin
+      get pHeader_image    to header_img#
+      get pSubHeader_image to subheader_img#
+      get pOnceOnly_image  to onceonly_img#
+      get pPageCount       to pagecount#
+      get pPageLength      to pageend#
+
+      if (iPageBreakNeeded(self,1)) send page_eject.i 0
+
+      // if we are at the top of a new page print header and subheader:
+      if (pLineCount(self)) eq 0 begin
+
+        send message.i (pHeader_msg(self))
+        if header_img# send output_image_aux header_img#
+
+        send message.i (pSubHeader_msg(self))
+        if subheader_img# send output_image_aux subheader_img#
+      end
+      if onceonly_img# begin
+        send message.i (pOnceOnly_msg(self))
+        set pOnceOnly_image to 0
+        send output_image onceonly_img#
+      end
+    end
+    move (replace_codes(self,str#)) to str#
+    if (iUseSequentialChannel(self)) write channel (pOutputChannel(self)) str#
+    else begin
+       #IFDEF USE$VPE
+        send Write to oVPE# str#
+       #ENDIF
+    end
+  end_procedure
+
+  procedure write_no_headers string str#
+    send write.i str# 0
+  end_procedure
+
+  procedure write string str#
+    send write.i str# 1
+  end_procedure
+
+  procedure writeln string str#
+    send write.i str# 1
+    if (iUseSequentialChannel(self)) writeln channel (pOutputChannel(self)) (if(pDestination(self)=DEST_HTML,"<BR>",""))
+    else begin
+       #IFDEF USE$VPE
+        send WriteLn to oVPE# " "
+       #ELSE
+       #ENDIF
+    end
+    set pLineCount to (pLineCount(self)+1)
+  end_procedure
+
+  procedure writeln_no_headers string str#
+    send write.i str# 0
+    writeln channel (pOutputChannel(self))
+    set pLineCount to (pLineCount(self)+1)
+  end_procedure
+
+  procedure make_horizontal_line
+    integer destination#
+    get pDestination to Destination#
+
+     #IFDEF USE$VPE
+      if (destination#=DEST_PRINTER or destination#=DEST_SCREEN) send WriteLine to oVPE#
+//    send writeln to oVPE# " "
+     #ELSE
+//    if (destination#=DEST_PRINTER or destination#=DEST_SCREEN)  winprint, draw line
+     #ENDIF
+    else begin
+      if destination# eq DEST_HTML send writeln "<HR>" // Horizontal ruler
+      else send writeln (repeat(" ",pWidth(self)))
+    end
+  end_procedure
+
+  procedure call_viewer
+    integer self#
+    move self to self#
+    send output.CallViewer (pScreenTmpFile(self)) self#
+  end_procedure
+
+  procedure Report_Wait_On
+  end_procedure
+  procedure Report_Wait_Off
+  end_procedure
+  procedure Report_Wait_Update string str#
+  end_procedure
+  procedure Report_Wait_Update2 string str#
+  end_procedure
+  function iReport_Cancel returns integer
+  end_function
+  procedure Report_Done
+    send obs "Done"
+  end_procedure
+end_class // cBasicSequentialOutput
+
+object oBasicSequentialOutput is a cBasicSequentialOutput
+end_object
+
+#COMMAND SEQ.DIRECT_OUTPUT
+#ENDCOMMAND
+
+// seq.output <image> [lines]
+#COMMAND SEQ.OUTPUT R
+  send output_image to seq.object# !1.N !2
+#ENDCOMMAND
+
+#COMMAND SEQ.OUTPUT_WRAP R .
+  send output_image_wrap to seq.object# !1.N
+#ENDCOMMAND
+
+#COMMAND SEQ.CLOSE_OUTPUT .
+  send close_output to seq.object#
+#ENDCOMMAND
+
+#COMMAND SEQ.WRITE
+ #IF !0=0
+  SEQ.WRITE ""
+ #ELSE
+  SEQ.WRITE$HELP !1 !2 !3 !4 !5 !6 !7 !8 !9
+ #ENDIF
+#ENDCOMMAND
+
+#COMMAND SEQ.WRITELN
+ #IF !0=0
+  SEQ.WRITELN ""
+ #ELSE
+  SEQ.WRITE$HELP !1 !2 !3 !4 !5 !6 !7 !8 !9
+  send writeln to seq.object# ""
+ #ENDIF
+#ENDCOMMAND
+
+#COMMAND SEQ.WRITE$HELP
+ #IF !0>0
+  send write to seq.object# !1
+  SEQ.WRITE$HELP !2 !3 !4 !5 !6 !7 !8 !9
+ #ENDIF
+#ENDCOMMAND
+
+
+// ===========================================================================
+//  ********************* CHARACTER MODE PREVIEW OBJECT *********************
+// ===========================================================================
+
+Use aps.pkg     // Auto Position and Sizing classes for Visual DataFlex 4.0
+use file_dlg // OpenDialog class
+register_abstract_field_type aft_AppLinkPath50 50 ascii_window
+
+object WordPadLinkSetup is a aps.ModalPanel label "WordPad kommunikation"
+  object FlDlg is a OpenDialog
+    set NoChangeDir_State to true
+  end_object
+  object cont is a aps.container3D
+    object frm1 is a aps.Form label "WordPadPath:" abstract aft_AppLinkPath50
+      set p_extra_internal_width to -100
+      set form_button item 0 to 1
+      set form_button_value item 0 to "..."
+      procedure form_button_notification integer itm#
+        integer obj#
+        move (FlDlg(self)) to obj#
+        set Dialog_Caption of obj# to "Locate WORDPAD.EXE"
+        Set Filter_String  of obj# to ;
+         "Standard (WORDPAD.EXE)|WORDPAD.EXE|EXE files|*.exe|All files|*.*"
+        if (Show_Dialog(obj#)) set value item 0 to (File_Name(obj#))
+      end_procedure
+    end_object
+  end_object
+  procedure activate
+    ifnot (active_state(self)) send retrieve_values
+    forward send activate
+  end_procedure
+  procedure retrieve_values
+    string str#
+    get_profile_string "APPLICATION_LINKS" "WordPadPath"  to str#
+    set value of (frm1(cont(self))) item 0 to str#
+  end_procedure
+  procedure store_values
+    set_profile_string "APPLICATION_LINKS" "WordPadPath"  to (value(frm1(cont(self)),0))
+    send close_panel
+  end_procedure
+  object btn1 is a aps.multi_button
+    on_item "OK" send store_values
+  end_object
+  object btn2 is a aps.multi_button
+    on_item "Cancel" send close_panel
+  end_object
+  send aps_locate_multi_buttons
+end_object
+procedure activate_wordpad_setup
+  send popup to (WordPadLinkSetup(self))
+end_procedure
+
+procedure output.CallViewer global string fn# integer obj#
+   string str#
+   get_profile_string "APPLICATION_LINKS" "WordPadPath" to str#
+   move (str#*fn#) to str#
+   runprogram wait str#
+end_procedure
+
+procedure output.display_file global string fn#
+  integer ch# fin# liPos
+  integer liSearchPrnLine // Find this line (in .PRN file)
+  integer liFileLine      // Line number currently being loaded
+  integer liResultLine    // desired item found in this line in the file
+  string  lsTmpPrnLine    //
+  string str# dir#
+  get Seq_New_Channel to ch#
+  direct_input channel ch# fn#
+  if [seqeof] send obs ("File not found ("+fn#+")")
+  else begin
+    get SEQ_ExtractPathFromFileName fn# to dir#
+    if (dir#="") move (SEQ_FindFileAlongDFPath(fn#)) to dir#
+    if (dir#=".") get_current_directory to dir#
+    set pDestination of seq.object# to DEST_SCREEN
+    if (iDirect_Output_Title(seq.object#,fn#+" "+"("+dir#+")")) begin
+      move 0 to fin#
+      move 0 to liFileLine
+      move 0 to liResultLine
+      repeat
+        readln channel ch# str#
+        move (seqeof) to fin#
+        ifnot fin# begin
+
+          increment liFileLine
+
+          // *** PRN file search ***
+          if liSearchPrnLine begin // If we're searching for a PRN line
+            ifnot liResultLine begin // If we didn't find it yet
+              if ("0123456789" contains left(str#,1)) begin
+                move (pos(">",str#)) to liPos
+                if (liPos>0 and liPos<8) begin
+                  move (left(str#,liPos-1)) to lsTmpPrnLine
+                  if (StringIsInteger(lsTmpPrnLine) and integer(lsTmpPrnLine)>=liSearchPrnLine) begin
+                    move liFileLine to liResultLine
+                    move 0 to liSearchPrnLine
+                  end
+                end
+              end
+            end
+          end
+
+          seq.writeln str#
+        end
+      until fin#
+      seq.close_output
+    end
+  end
+  send Seq_Release_Channel ch#
+end_procedure
+
+procedure output.run_dfindex_all global
+  #IFDEF MSG_run_dfindex_all
+   send run_dfindex_all
+  #ENDIF
+  send output.display_file "dfsort.log"
+end_procedure

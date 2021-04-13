@@ -1,0 +1,288 @@
+// TESTDATE.SRC
+//
+// This program source may be used for testing the functions of utility
+// pack DATES.UTL.
+//
+// Sture Andersen
+Use VdfBase.pkg
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  #WARNING -1 // Suspend warnings
+#ENDIF
+
+Use aps.pkg        // Auto Position and Sizing classes for Visual DataFlex
+Use Dates.utl  // Date functions
+
+on_key key_ctrl+key_d send request_popup to (popup_calendar(self))
+
+register_object TestDate_Client
+register_object Cont3d
+register_object Grp1
+register_object Frm
+
+object TestWeekToDate is an aps.ModalPanel label "Test function WeekToDate"
+  Set Locate_Mode to CENTER_ON_SCREEN
+  On_Key kCancel Send close_panel
+  
+  object cont is a aps.container3d
+    set p_auto_column to false
+    object frm1 is an aps.spinform label "Year:" abstract aft_numeric4.0
+      procedure onchange
+        send calculate_date
+      end_procedure
+    end_object
+    object frm2 is an aps.spinform label "Week:" abstract aft_numeric2.0
+      procedure onchange
+        send calculate_date
+      end_procedure
+    end_object
+    object frm3 is an aps.form label "Result:" abstract aft_date
+      Set object_shadow_state to True
+    end_object
+    procedure calculate_date
+      integer year# week#
+      date result#
+      get value of (frm1(self)) item 0 to year#
+      get value of (frm2(self)) item 0 to week#
+      move (WeekToDate(year#,week#)) to result#
+      set value of (frm3(self)) item 0 to result#
+      send NotifyPopupCalendarChange to (frm(grp1(cont3d(testdate_client(self))))) result#
+    end_procedure
+  end_object
+  object btn1 is a aps.multi_button
+    on_item "Close" send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure popup_modal
+    integer date#
+    get value of (frm(grp1(cont3d(testdate_client(self))))) item 0 to date#
+    set value of (frm1(cont(self))) item 0 to (vdfq_DateSegment(date#,DS_YEAR))
+    set value of (frm2(cont(self))) item 0 to (DateWeekNumber(date#))
+    send calculate_date to (cont(self))
+    forward send popup_modal
+  end_procedure
+end_object
+
+object TestDate_Client is an aps.ModalPanel label "Test date routines"
+  On_Key kCancel Send Close_Panel
+  On_Key kUser Send TestPopupCalendarFunction
+
+  Procedure ToggleSunAsFirstDayOfWeek
+    Move (not(gbSundayIsFirstDayOfWeek)) to gbSundayIsFirstDayOfWeek
+    Send Info_Box ("gbSundayIsFirstDayOfWeek now set to "+If(gbSundayIsFirstDayOfWeek,"True","False"))
+  End_Procedure
+  On_Key kSave_Record Send ToggleSunAsFirstDayOfWeek
+  
+  Procedure display_result Date date#
+    broadcast recursive send display_result date#
+  end_procedure
+  object cont3d is a aps.Container3d
+    set p_Auto_Column to false
+    object grp1 is a aps.Group label "Input"
+      set p_Auto_Column to false
+      object frm is a aps.form label "Date:" abstract aft_date
+        on_key kEnter send calc_date
+        set form_button item 0 to 1 // Manually create a prompt button
+        set form_button_value item 0 to "..."
+        set p_extra_internal_width to 10
+        Set p_extra_external_width to 0
+        On_Key Key_Ctrl+Key_Up_Arrow Send DateUp
+        On_Key Key_Ctrl+Key_Down_Arrow Send DateDown
+        Procedure DateUp
+            Date dValue
+            Get Value to dValue
+            If (Integer(dValue)>0) Begin
+                Increment dValue
+                Set Value to dValue
+                Send calc_date
+            End
+        End_Procedure
+        Procedure DateDown
+            Date dValue
+            Get Value to dValue
+            If (Integer(dValue)>0) Begin
+                Decrement dValue
+                Set Value to dValue
+                Send calc_date
+            End
+        End_Procedure
+        Procedure Prompt
+          send activate
+          //send request_popup to (popup_calendar(self))
+          send popup_calendar_no_export
+        End_Procedure
+        procedure form_button_notification integer itm#
+            Send Prompt
+        end_procedure
+        procedure calc_date
+          // Mystery: Out-comment the following one line and it stops working!!
+          set value item 0 to (string(date(value(self,0))))
+          send display_result (date(value(self,0)))
+        end_procedure
+        procedure NotifyPopupCalendarChange date date#
+          set delegation_mode to delegate_to_parent // Undo broadcast side-effect
+          set value item 0 to (string(date#))
+          Send calc_date
+        End_Procedure
+      end_object
+    end_object
+    object grp2 is a aps.RadioGroup Label "Date format" snap sl_right
+      object rad1 is a aps.Radio label "US"
+      end_object
+      object rad2 is a aps.Radio label "European" snap sl_right
+      end_object
+      object rad3 is a aps.Radio label "Military" snap sl_right
+      end_object
+      procedure change_date_format
+        integer itm#
+        date date#
+        get value of (frm(grp1(self))) item 0 to date#
+        get current_radio to itm#
+        if itm# eq 0 set_attribute df_date_format to DF_DATE_USA
+        if itm# eq 1 set_attribute df_date_format to DF_DATE_EUROPEAN
+        if itm# eq 2 set_attribute df_date_format to DF_DATE_MILITARY
+        set value of (frm(grp1(self))) item 0 to date#
+      end_procedure
+      procedure notify_select_state integer to# integer from#
+        send change_date_format
+        send calc_date to (frm(grp1(self)))
+      end_procedure
+      procedure initialize
+        integer date_format#
+        get_attribute df_date_format to date_format#
+        if date_format# eq DF_DATE_USA      set current_radio to 0
+        if date_format# eq DF_DATE_EUROPEAN set current_radio to 1
+        if date_format# eq DF_DATE_MILITARY set current_radio to 2
+      end_procedure
+      send initialize
+    end_object
+    object grp3 is a aps.Group label "UseEpoch" snap sl_right
+      set p_Auto_Column to false
+      object cb is a aps.CheckBox label "Date4_state"
+        procedure change_date4_state
+          integer st#
+          get select_state item 0 to st#
+          set_date_attribute date4_state to st#
+        end_procedure
+        procedure onchange
+          send change_date4_state
+          send calc_date to (frm(grp1(self)))
+        end_procedure
+        procedure initialize
+          integer st#
+          get_date_attribute date4_state to st#
+          set select_state item 0 to st#
+        end_procedure
+        send initialize
+      end_object
+    end_object
+    object grp4 is a aps.Group label "Epoch" snap sl_right
+      set p_Auto_Column to false
+      object frm1 is an aps.SpinForm label "Value:" abstract aft_numeric2.0
+        set shadow_state item 0 to true
+        procedure initialize
+          integer value#
+          get_date_attribute epoch_value to value#
+          set value item 0 to value#
+        end_procedure
+        send initialize
+      end_object
+    end_object
+    object grp5 is a aps.Group label "Result" snap sl_down relative_to (grp1(self))
+      send tab_column_define 2 200 55 jmode_right // Define a second tabulator
+      object frm1 is a aps.form label "Week number:" abstract aft_numeric2.0
+        procedure display_result integer date#
+          set value item 0 to (DateWeekNumber(date#))
+        end_procedure
+      end_object
+      object frm2 is a aps.form label "Julian value:" abstract aft_numeric8.0 snap 2
+        procedure display_result integer date#
+          set value item 0 to (integer(date#))
+        end_procedure
+      end_object
+      object frm3 is a aps.form label "Day:" abstract aft_numeric2.0
+        procedure display_result integer date#
+          set value item 0 to (vdfq_DateSegment(date#,DS_DAY))
+        end_procedure
+      end_object
+      object frm4 is a aps.form label "Weekday:" abstract aft_numeric2.0 snap 2
+        procedure display_result integer date#
+          set value item 0 to (DateDayNumber(date#))
+        end_procedure
+      end_object
+      object frm5 is a aps.form abstract aft_ascii20 snap sl_right
+        procedure display_result integer date#
+          set value item 0 to (vdfq_DateDayName(date#))
+        end_procedure
+      end_object
+      object frm6 is a aps.form label "Year:" abstract aft_numeric4.0
+        procedure display_result integer date#
+          set value item 0 to (vdfq_DateSegment(date#,DS_YEAR))
+        end_procedure
+      end_object
+      object frm7 is a aps.form label "Month:" abstract aft_numeric2.0 snap 2
+        procedure display_result integer date#
+          set value item 0 to (vdfq_DateSegment(date#,DS_MONTH))
+        end_procedure
+      end_object
+      object frm8 is a aps.form abstract aft_ascii20 snap sl_right
+        procedure display_result integer date#
+          set value item 0 to (vdfq_DateMonthName(date#))
+        end_procedure
+      end_object
+      send make_row_space 4
+      send tab_column_define 1 105 75 jmode_left // Re-define a tabulator one
+      send tab_column_define 2 235 75 jmode_left // Re-define a tabulator two
+      object frm9 is a aps.form label "First date in month:" abstract aft_date
+        procedure display_result integer date#
+          set value item 0 to (FirstDayInMonth(date#))
+        end_procedure
+      end_object
+      object frm10 is a aps.form label "Last date in month:" abstract aft_date snap 2
+        procedure display_result integer date#
+          set value item 0 to (LastDayInMonth(date#))
+        end_procedure
+      end_object
+      object frm11 is a aps.form label "Three weeks before:" abstract aft_date
+        procedure display_result integer date#
+          set value item 0 to (DateIncr(date#,DS_WEEK,-3))
+        end_procedure
+      end_object
+      object frm12 is a aps.form label "Three weeks after:" abstract aft_date snap 2
+        procedure display_result integer date#
+          set value item 0 to (DateIncr(date#,DS_WEEK,3))
+        end_procedure
+      end_object
+      object frm13 is a aps.form label "Four months before:" abstract aft_date
+        procedure display_result integer date#
+          set value item 0 to (DateIncr(date#,DS_MONTH,-4))
+        end_procedure
+      end_object
+      object frm14 is a aps.form label "Two months after:" abstract aft_date snap 2
+        procedure display_result integer date#
+          set value item 0 to (DateIncr(date#,DS_MONTH,2))
+        end_procedure
+      end_object
+      broadcast recursive set shadow_state item 0 to true
+    end_object
+    send aps_align_by_sizing (grp5(self)) (grp4(self)) sl_align_right
+  end_object // Cont3D
+
+  object btn1 is a aps.multi_button
+    on_item "WeekToDate" send PopUp_Modal to (TestWeekToDate(self))
+  end_object
+  object btn2 is a aps.multi_button
+    on_item "Close" send close_panel
+  end_object
+  Send aps_locate_multi_buttons
+  
+  Procedure TestPopupCalendarFunction 
+    Date dHereWeAre
+    Get Value of (frm(grp1(cont3d(Self)))) to dHereWeAre
+    Get PopupCalendarFunction dHereWeAre to dHereWeAre
+    Send Info_Box (String(dHereWeAre)) "Selected date"
+  End_Procedure
+  
+end_object
+
+start_ui (TestDate_Client(self))

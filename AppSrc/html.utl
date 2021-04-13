@@ -1,0 +1,257 @@
+//**********************************************************************
+// Use HTML.utl     // HTML functions
+//
+//
+// Create: Fri  04-09-1998
+// Update: Wed  16-09-1998 - Un-commented setting of pHtmlConversionTable
+//
+//
+//**********************************************************************
+
+Use Strings.nui  // String manipulation for VDF
+Use Files.nui    // Utilities for handling file related stuff
+Use URL.nui      // URL manipulation
+
+integer oGlobalHtmlAttributes#
+object oGlobalHtmlAttributes is an array
+  property integer pHtmlConversionTable 0
+  property integer pHtmlTrimCrState     1           // Exclamation mark
+  property string  pHtmlDocType         ('<'+character(33)+'DOCTYPE HTML "-/'+'/IETF/'+'/DTD HTML/'+'/EN">')
+  property string  pHtmlMT_Generator    "Visual DataFlex"
+  property string  pHtmlMT_Formatter    "Visual DataFlex"
+  move self to oGlobalHtmlAttributes#
+end_object
+
+class cAnsiToHtml_ConversionTable is an array
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property string pCharacterSetName "Un-named"
+    property string pCharacterSetID   ""
+  end_procedure
+  function Is_cAnsiToHtml_ConversionTable returns integer
+    function_return 1
+  end_function
+  procedure set CharacterConversion integer char# string html#
+    // By setting the item value to character(char#) we avoid having
+    // to call that function during the character translation:
+    set value item (item_count(self)) to (character(char#))
+    set value item (item_count(self)) to html#
+  end_procedure
+  function ConvertAnsiToHtml string str# returns string
+    integer max# itm#
+    string html# char#
+    get item_count to max#
+    move 0 to itm#
+    while itm# lt max#
+      get value item itm# to char#
+      increment itm#
+      get value item itm# to html#
+      increment itm#
+      move (replaces(char#,str#,html#)) to str#
+    end
+    function_return str#
+  end_function
+end_class
+
+function html_TextToHTML global string lsValue returns string
+  get Text_Trim lsValue to lsValue
+  move (replaces(character(10),lsValue,"<br>")) to lsValue
+  get RemoveDblBlanks lsValue to lsValue
+  get url_InsertLinks lsValue to lsValue
+  function_return lsValue
+end_function
+
+function html_TextToHTML_LeaveSpaces global string lsValue returns string
+  get Text_Trim lsValue to lsValue
+  move (replaces(character(10),lsValue,"<br>")) to lsValue
+  get url_InsertLinks lsValue to lsValue
+  function_return lsValue
+end_function
+
+desktop_section
+object oAnsiToHtml_Latin_1 is a cAnsiToHtml_ConversionTable
+  set pCharacterSetName to "Latin 1"
+  set pCharacterSetID   to "iso-8859-1"
+  set CharacterConversion 160 to "&nbsp;"    //
+  set CharacterConversion 161 to "&iexcl;"   // ≠
+  set CharacterConversion 162 to "&cent;"    // õ
+  set CharacterConversion 163 to "&pound;"   // ú
+  set CharacterConversion 164 to "&curren;"  // general currency
+  set CharacterConversion 165 to "&yen;"     // ù
+  set CharacterConversion 166 to "&brvbar;"  // |
+  set CharacterConversion 167 to "&sect;"    // ı
+  set CharacterConversion 168 to "&uml;"     // ˘
+  set CharacterConversion 169 to "&copy;"    // (c)
+  set CharacterConversion 170 to "&ordf;"    //
+  set CharacterConversion 171 to "&laquo;"   //
+  set CharacterConversion 172 to "&not;"     // ™
+  set CharacterConversion 173 to "&shy;"     //
+  set CharacterConversion 174 to "&reg;"     // (r) ©
+  set CharacterConversion 175 to "&macr;"    //
+  set CharacterConversion 176 to "&deg;"     // ¯
+  set CharacterConversion 177 to "&plusmn;"  // Ò
+  set CharacterConversion 178 to "&sup2;"    // exp(2)
+  set CharacterConversion 179 to "&sup3;"    // exp(3)
+  set CharacterConversion 180 to "&acute;"   //
+  set CharacterConversion 181 to "&micro;"   //
+  set CharacterConversion 182 to "&para;"    //
+  set CharacterConversion 183 to "&middot;"  //
+  set CharacterConversion 184 to "&cedil;"   //
+  set CharacterConversion 185 to "&sup1;"    //
+  set CharacterConversion 186 to "&ordm;"    //
+  set CharacterConversion 187 to "&raquo;"   //
+  set CharacterConversion 188 to "&frac14;"  // 1/4
+  set CharacterConversion 189 to "&frac12;"  // 1/2
+  set CharacterConversion 190 to "&frac34;"  // 3/4
+  set CharacterConversion 191 to "&iquest;"  // ®
+  set CharacterConversion 192 to "&Agrave;"  // ∑
+  set CharacterConversion 193 to "&Aacute;"  // µ
+  set CharacterConversion 194 to "&Acirc;"   // ∂
+  set CharacterConversion 195 to "&Atilde;"  // «
+  set CharacterConversion 196 to "&Auml;"    // é
+  set CharacterConversion 197 to "&Aring;"   // è
+  set CharacterConversion 198 to "&Aelig;"   // í
+  set CharacterConversion 199 to "&Ccedil;"  // Ä
+  set CharacterConversion 200 to "&Egrave;"  // ‘
+  set CharacterConversion 201 to "&Eacute;"  // ê
+  set CharacterConversion 202 to "&Ecirc;"   // “
+  set CharacterConversion 203 to "&Euml;"    // ”
+  set CharacterConversion 204 to "&Igrave;"  // ﬁ
+  set CharacterConversion 205 to "&Iacute;"  // ÷
+  set CharacterConversion 206 to "&Icirc;"   // ◊
+  set CharacterConversion 207 to "&Iuml;"    // ÿ
+  set CharacterConversion 208 to "&ETH;"     // —
+  set CharacterConversion 209 to "&Ntilde;"  // •
+  set CharacterConversion 210 to "&Ograve;"  // „
+  set CharacterConversion 211 to "&Oacute;"  // ‡
+  set CharacterConversion 212 to "&Ocirc;"   // ‚
+  set CharacterConversion 213 to "&Otilde;"  // Â
+  set CharacterConversion 214 to "&Ouml;"    // ô
+  set CharacterConversion 216 to "&Oslash;"  // ù
+  set CharacterConversion 217 to "&Ugrave;"  // Î
+  set CharacterConversion 218 to "&Uacute;"  // È
+  set CharacterConversion 219 to "&Ucirc;"   // Í
+  set CharacterConversion 220 to "&Uuml;"    // ö
+  set CharacterConversion 221 to "&Yacute;"  // Ì
+  set CharacterConversion 222 to "&THORN;"   // Ë
+  set CharacterConversion 223 to "&szlig;"   // ·
+  set CharacterConversion 224 to "&agrave;"  // Ö
+  set CharacterConversion 225 to "&aacute;"  // †
+  set CharacterConversion 226 to "&acirc;"   // É
+  set CharacterConversion 227 to "&atilde;"  // ∆
+  set CharacterConversion 228 to "&auml;"    // Ñ
+  set CharacterConversion 229 to "&aring;"   // Ü
+  set CharacterConversion 230 to "&aelig;"   // ë
+  set CharacterConversion 231 to "&ccedil;"  // á
+  set CharacterConversion 232 to "&egrave;"  // ä
+  set CharacterConversion 233 to "&eacute;"  // Ç
+  set CharacterConversion 234 to "&ecirc;"   // à
+  set CharacterConversion 235 to "&euml;"    // â
+  set CharacterConversion 236 to "&igrave;"  // ç
+  set CharacterConversion 237 to "&iacute;"  // °
+  set CharacterConversion 238 to "&icirc;"   // å
+  set CharacterConversion 239 to "&iuml;"    // ã
+  set CharacterConversion 240 to "&eth;"     // –
+  set CharacterConversion 241 to "&ntilde;"  // §
+  set CharacterConversion 242 to "&ograve;"  // ï
+  set CharacterConversion 243 to "&oacute;"  // ¢
+  set CharacterConversion 244 to "&ocirc;"   // ì
+  set CharacterConversion 245 to "&otilde;"  // ‰
+  set CharacterConversion 246 to "&ouml;"    // î
+  set CharacterConversion 248 to "&oslash;"  // õ
+  set CharacterConversion 249 to "&ugrave;"  // ó
+  set CharacterConversion 250 to "&uacute;"  // £
+  set CharacterConversion 251 to "&ucirc;"   // ñ
+  set CharacterConversion 252 to "&uuml;"    // Å
+  set CharacterConversion 253 to "&yacute;"  // Ï
+  set CharacterConversion 254 to "&thorn;"   // Á
+  set CharacterConversion 255 to "&yuml;"    // ò
+end_object // oAnsiToHtml_Latin_1
+end_desktop_section
+
+// Uncomment the following line in order to have the function convert ANSI
+// characters to native html characters.
+//set pHtmlConversionTable of oGlobalHtmlAttributes# to (oAnsiToHtml_Latin_1(self))
+
+// Make the html_AnsiToHtml function cut away superfluous trailing cr/lf
+// characters when printing text.
+set pHtmlTrimCrState of oGlobalHtmlAttributes# to true
+
+// If function ConvertChar is not already defined we define it here:
+#IFDEF get_ConvertChar
+#ELSE
+ Function ConvertChar Global integer bToAnsi String sString Returns String
+   Pointer psString
+   integer iVoid bIsCString
+   Move (ascii(Right(sString,1))=0) to bIsCString
+   If Not bISCString Append sString (character(0))
+   GetAddress Of sString To psString
+   if bToAnsi Move (OEMToANSI(psString,psString)) To iVoid
+   else       Move (ANSItoOEM(psString,psString)) To iVoid
+   Function_Return (if(bIsCString, sString, cstring(sString)))
+ End_Function
+#ENDIF
+
+// This function assumes that string parameter contains ANSI characters
+function html_AnsiToHtml global string str# returns string
+  move (replaces("&",str#,"&amp;"))          to str#
+  move (replaces('"',str#,"&quot;"))         to str#
+  move (replaces("<",str#,"&lt;"))           to str#
+  move (replaces(">",str#,"&gt;"))           to str#
+  if (pHtmlTrimCrState(oGlobalHtmlAttributes#)) ;
+          move (Text_RemoveTrailingCr(str#)) to str#
+  move (replaces(character(10),str#,"<br>")) to str#
+  move (replaces(character(13),str#,""))     to str#
+  move (RemoveDblBlanks(str#))               to str#
+  if (pHtmlConversionTable(oGlobalHtmlAttributes#)) ;
+    get ConvertAnsiToHtml of (pHtmlConversionTable(oGlobalHtmlAttributes#)) str# to str#
+  function_return str#
+end_function
+
+// This function is identical to html_AnsiToHtml except that it
+// assumes the parameter to be OEM characters.
+function html_DfToHtml global string str# returns string
+  function_return (html_AnsiToHtml(ConvertChar(1,str#)))
+end_function
+
+// This is identical to the html_DfToHtml function except that it will
+// never return the empty string. Where html_DfToHtml would return the
+// empty string this function will return a 'non breaking space'. You
+// may want to use this function when writing table data since it will
+// ensure that the cells are appearing even if their content is empty.
+function html_DfToHtmlTable global string str# returns string
+  string rval#
+  move (html_AnsiToHtml(ConvertChar(1,str#))) to rval#
+  if rval# eq "" move "&nbsp;" to rval#
+  function_return rval#
+end_function
+
+External_Function HtmlShellExecute "ShellExecuteA" SHELL32.DLL ;
+  handle hwnd# String lpszOp# String lpszFile# String lpszParams# ;
+  String lpszDir# integer FsShowCmd# returns integer
+
+// This may be used to start any kind of document. Not just html docs.
+procedure html_StartDoc global string doc#
+  integer grb#
+  handle scrhDC#
+  string dir#
+  move (GetDesktopWindow()) to scrhDC# // Defined in WinUser.pkg
+  // We assume that the document is in a directory along DFPATH or that
+  // the directory path is part of the doc name:
+  get SEQ_ExtractPathFromFileName doc# to dir# // Is a path specified?
+  if dir# eq "" get SEQ_FindFileAlongDFPath doc# to dir#
+  else move "" to dir#
+  //                               Parameters   Directory
+  move (HtmlShellExecute(scrhDC#,"Open",doc#,"",dir#,1)) to grb#
+end_procedure
+
+procedure html_WriteHeader global integer channel# string title#
+  writeln channel channel# (pHtmlDocType(oGlobalHtmlAttributes#))
+  writeln '<html>'
+  writeln '<head>'
+  writeln (' <title>'+html_DfToHtmlTable(title#)+'</title>')
+  //writeln ' <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">'
+  writeln (' <meta name="GENERATOR" content="'+pHtmlMT_Generator(oGlobalHtmlAttributes#)+'">')
+  writeln '</head>'
+end_procedure
+

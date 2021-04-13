@@ -1,0 +1,470 @@
+// This FvDynamo.pkg package MUST be used at Main-ClientArea level!!!
+// Use FvDynamo.pkg // Part that generates the view based on vw-definition
+
+Use Dynamo.utl   // Dynamic creation of objects for VDF
+Use FvVwDefn.pkg // FastView, View definition cls (cFastView_ViewDefinition)
+Use FvLayout.pkg //
+
+// First we define a special dbView and dbEdit classes for the Dynamo to use
+class cFastView_dbView is a aps.dbView
+  procedure Load_Environment
+  end_procedure
+  procedure ReloadDefinition
+    integer lhDefinitionObject lhSelf
+    move self to lhSelf
+    get phDefinitionObject to lhDefinitionObject
+    send DoReload to lhDefinitionObject lhSelf
+  end_procedure
+  procedure SaveDefinition
+    integer lhDefinitionObject
+    get phDefinitionObject to lhDefinitionObject
+    send DoSaveDefinition to lhDefinitionObject
+  end_procedure
+  procedure SaveDefinitionAs
+    integer lhDefinitionObject
+    get phDefinitionObject to lhDefinitionObject
+    send DoSaveDefinitionAs to lhDefinitionObject
+  end_procedure
+  procedure EditProperties
+    integer lhDefinitionObject lhSelf
+    move self to lhSelf
+    get phDefinitionObject to lhDefinitionObject
+    send Activate_FastViewPropertyEdit lhDefinitionObject lhSelf
+  end_procedure
+  procedure Request_CloneView
+    integer lhDefinitionObject liLocation lhVw
+    get location to liLocation
+    get phDefinitionObject to lhDefinitionObject
+    get iCreateView of lhDefinitionObject to lhVw
+    set location of lhVw to (hi(liLocation)+13) (low(liLocation)+13)
+    send popup to lhVw
+  end_procedure
+  procedure construct_object
+    forward send construct_object
+    property integer phDefinitionObject 0
+    on_key key_ctrl+key_f send Request_Popup_DefaultPromptList
+    on_key key_ctrl+key_d send Request_Popup_Calendar
+    on_key key_ctrl+key_p send Request_CreateNewQuery
+    on_key key_ctrl+key_n send Request_CloneView
+    on_key key_alt+key_f2 send Request_Save_No_Clear
+    property integer phChildDD 0
+    set p_auto_column to 1
+    object oPopupMenu is a FloatingPopupMenu
+      send Add_Item MSG_ReloadDefinition "Re-load definition"
+      send Add_Item MSG_Request_CloneView "Clone view"
+      send Add_Item MSG_None ""
+      send Add_Item MSG_SaveDefinition "Save definition"
+      send Add_Item MSG_SaveDefinitionAs "Save definition as"
+      send Add_Item MSG_None ""
+      send Add_Item MSG_EditProperties "Properties"
+    end_object
+    property integer pbAlreadyRegistered DFFALSE
+    send tab_column_define 1  60 55 JMODE_LEFT
+    send tab_column_define 2 120 55 JMODE_RIGHT
+    send tab_column_define 3 180 55 JMODE_RIGHT
+    send tab_column_define 4 240 55 JMODE_RIGHT
+    send tab_column_define 5 300 55 JMODE_RIGHT
+    send tab_column_define 6 360 55 JMODE_RIGHT
+    send tab_column_define 7 420 55 JMODE_RIGHT
+    send tab_column_define 8 480 55 JMODE_RIGHT
+  end_procedure
+  procedure DoRegisterWithFvLayoutObjectReset
+    set pbAlreadyRegistered to DFFALSE
+  end_procedure
+  procedure DoRegisterWithFvLayoutObject
+    integer lhView
+    set delegation_mode to DELEGATE_TO_PARENT
+    ifnot (pbAlreadyRegistered(self)) begin
+      move self to lhView
+      send FastView_RegisterWithLayout lhView
+      set pbAlreadyRegistered to DFTRUE
+    end
+  end_procedure
+  procedure DoPopupMenu
+if (FV_AdminMode()) begin
+    send popup to (oPopupMenu(self))
+end
+  end_procedure
+  procedure Mouse_Up2 // Right click
+    send DoPopupMenu
+  end_procedure
+  procedure Close_Query_View
+    set delegation_mode to DELEGATE_TO_PARENT
+    send close_panel
+  end_procedure
+  procedure close_panel
+    forward send close_panel
+    send request_destroy_object // Not sent if Escape is used
+  end_procedure
+end_class // cFastView_dbView
+
+class cFastView_dbEdit is a aps.dbEdit
+  procedure construct_object
+    forward send construct_object
+  end_procedure
+  procedure end_construct_object
+    integer liFile liField
+    forward send end_construct_object
+    get Data_File  item 0 to liFile
+    get Data_Field item 0 to liField
+    Set File_Name to  ("DBMS:FS" - string(liFile) - "," - string(liField) )
+  end_procedure
+  function TooltipHint returns string
+      function_return "tool tip string" // or property, or expression etc.
+  end_function
+end_class
+
+class cFastView_dbGroup is a aps.dbGroup
+  procedure construct_object
+    forward send construct_object
+    property integer phParentGrid
+    send tab_column_define 1  60 55 JMODE_LEFT
+    send tab_column_define 2 120 55 JMODE_RIGHT
+    send tab_column_define 3 180 55 JMODE_RIGHT
+    send tab_column_define 4 240 55 JMODE_RIGHT
+    send tab_column_define 5 300 55 JMODE_RIGHT
+    send tab_column_define 6 360 55 JMODE_RIGHT
+    send tab_column_define 7 420 55 JMODE_RIGHT
+    send tab_column_define 8 480 55 JMODE_RIGHT
+    on_key key_alt+key_f2 send Request_Save_No_Clear
+  end_procedure
+  procedure Mouse_Up2 // Right click
+    send DoPopupMenu
+  end_procedure
+  procedure request_save
+    send request_save to (phParentGrid(self))
+  end_procedure
+  procedure request_clear
+//    if (should_save(self)) send request_clear to (phParentGrid(self))
+//    else send request_clear_all
+    send request_clear to (phParentGrid(self))
+  end_procedure
+  procedure request_delete
+    send request_delete to (phParentGrid(self))
+  end_procedure
+end_class
+
+object oDeltaColumnWidths is a cArray
+end_object
+
+register_object ToolTipTimer
+
+class cFastView_dbGrid is a aps.dbGrid
+  procedure construct_object
+    forward send construct_object
+    set highlight_row_state to DFTRUE
+    //set highlight_row_color to (rgb(0,255,255))
+    //set current_item_color to (rgb(0,255,255))
+
+//  set CurrentCellColor     to clHighlight
+//  set CurrentCellTextColor to clHighlightText
+    set CurrentRowColor      to clHighlight
+    set CurrentRowTextColor  to clHighlightText
+
+    on_key key_alt+key_f2 send Request_Save_No_Clear
+  end_procedure
+  procedure ActivateFirstFocusableItem
+    integer liBase liColumns liMaxItem liItem
+    get base_item to liBase
+    get Grid_Columns self to liColumns
+    move (liBase+liColumns-1) to liMaxItem
+    move liBase to liItem
+    while (liItem<=liMaxItem)
+      ifnot (shadow_state(self,liItem)) begin
+        send activate
+        set current_item to liItem
+        procedure_return
+      end
+      increment liItem
+    end
+  end_procedure
+  procedure request_delete
+    integer liRecnum
+    get current_record of (server(self)) to liRecnum
+    forward send request_delete
+    if (liRecnum<>current_record(server(self))) send ActivateFirstFocusableItem
+  end_procedure
+  procedure request_save
+    forward send request_save
+    ifnot (should_save(self)) send ActivateFirstFocusableItem
+  end_procedure
+  function aps_ColumnCorrection integer liColumn returns integer
+    integer liDeltaLen
+    get value of (oDeltaColumnWidths(self)) liColumn to liDeltaLen
+    function_return liDeltaLen
+  end_function
+//function TooltipHint returns string
+//    function_return "tool tip string" // or property, or expression etc.
+//end_function
+//Procedure OnMouseDown Integer eButton Integer x Integer y Integer fKeys
+//  send CheckRemoveToolTip of ToolTipTimer
+//end_procedure
+end_class
+class cFastView_dbForm is a aps.dbForm
+//function TooltipHint returns string
+//    function_return "tool tip string" // or property, or expression etc.
+//end_function
+//Procedure OnMouseDown Integer eButton Integer x Integer y Integer fKeys
+//  send CheckRemoveToolTip of ToolTipTimer
+//end_procedure
+end_class
+class cFastView_dbCheckBox  is a aps.dbCheckBox
+//function TooltipHint returns string
+//    function_return "tool tip string" // or property, or expression etc.
+//end_function
+//Procedure OnMouseDown Integer eButton Integer x Integer y Integer fKeys
+//  send CheckRemoveToolTip of ToolTipTimer
+//end_procedure
+end_class
+class cFastView_dbComboForm is a aps.dbComboForm
+  procedure construct_object
+    forward send construct_object
+    set entry_state item 0 to false
+  end_procedure
+//function TooltipHint returns string
+//    function_return "tool tip string" // or property, or expression etc.
+//end_function
+//Procedure OnMouseDown Integer eButton Integer x Integer y Integer fKeys
+//  send CheckRemoveToolTip of ToolTipTimer
+//end_procedure
+end_class
+
+integer ghWhyThis?
+
+object oFastViewCreator is a aps_ObjectDynamo
+  set value item class.dbView      to U_cFastView_dbView  // Use special class
+  set value item class.dbEdit      to U_cFastView_dbEdit  // Use special class
+  set value item class.dbGroup     to U_cFastView_dbGroup // Use special class
+  set value item class.dbGrid      to U_cFastView_dbGrid  // Use special class
+  set value item class.dbForm      to U_cFastView_dbForm  // Use special class
+  set value item class.dbCheckBox  to U_cFastView_dbCheckBox
+  set value item class.dbComboForm to U_cFastView_dbComboForm
+  procedure DoDDFieldSetup integer lhFormList integer lhServer
+    integer liRow liMax liFile liField lhGrid lbNoEnter lbCaps lbPrompt lhPrompt
+    get row_count of lhFormList to liMax
+    decrement liMax
+    for liRow from 0 to liMax // Set DataDictionary values
+      get piFile.i         of lhFormList liRow to liFile
+      get piField.i        of lhFormList liRow to liField
+      get pbForceNoenter.i of lhFormList liRow to lbNoEnter
+      get pbCapslock.i     of lhFormList liRow to lbCaps
+      get pbDefaultSL.i    of lhFormList liRow to lbPrompt
+
+      if lbPrompt begin
+        get File_Field_Property of lhServer liFile liField GET_Field_Prompt_Object to lhPrompt
+        ifnot lhPrompt set File_Field_Property of lhServer liFile liField SET_Field_Prompt_Object to (DefaultPromptList(self))
+      end
+      if lbNoEnter begin
+        set File_Field_Property of lhServer liFile liField SET_Field_Options to DD_NOENTER
+      end
+      if lbCaps begin
+        set File_Field_Property of lhServer liFile liField SET_Field_Options to DD_CAPSLOCK
+      end
+    loop
+  end_function
+
+  procedure CreateForms integer lhContainer integer lhFormList integer lhServer
+    integer liRow liMax liFile liField lhClass lhForm liSnap liSnapRow
+    string  lsLabel
+    send DoDDFieldSetup lhFormList lhServer
+
+    get row_count of lhFormList to liMax
+    decrement liMax
+
+    for liRow from 0 to liMax
+      get piClass.i of lhFormList liRow to lhClass
+
+      get piSnap.i of lhFormList liRow to liSnap
+      if (liSnap>=0 or liRow>0) begin // No relative snaps on row 0!
+        if (liSnap<>0) begin
+          send add_top_message set_p_snap_location liSnap
+          get piLastObjectRow.i of lhFormList liRow to liSnapRow
+          if (liSnap=SL_DOWN) begin
+            send add_top_message set_label_justification_mode JMODE_RIGHT
+            send add_top_message set_label_offset 0 0
+          end
+          // We do nothing with it
+  //        get piSnap.i of lhFormList liRow to liSnap
+
+        end
+        else begin
+          if (liRow>0 and piClass.i(lhFormList,liRow-1)=class.dbEdit) begin
+            send aps_goto_max_row to lhContainer
+          end
+        end
+      end
+      // Label handling
+      if (pbNoLabel.i(lhFormList,liRow)) begin
+        send add_top_message set_label ""
+        send add_top_message set_p_auto_label_state DFFALSE
+      end
+      else begin
+        get psLabel.i of lhFormList liRow to lsLabel
+        if (lsLabel<>"") begin
+          send add_top_message set_label lsLabel
+          send add_top_message set_p_auto_label_state DFFALSE
+        end
+      end
+
+      // Size handling
+      if (piSizeX.i(lhFormList,liRow)) begin
+        if (piSizeY.i(lhFormList,liRow)) begin
+          send add_top_message set_p_auto_size_control_state DFFALSE
+          send add_top_message set_size (piSizeX.i(lhFormList,liRow)) (piSizeY.i(lhFormList,liRow))
+        end
+        else send add_top_message set_size (piSizeX.i(lhFormList,liRow)) 0
+      end
+      else if (piSizeY.i(lhFormList,liRow)) send add_top_message set_size 0 (piSizeY.i(lhFormList,liRow))
+      if (piExtraIntWidth.i(lhFormList,liRow)) send add_top_message set_p_extra_internal_width (piExtraIntWidth.i(lhFormList,liRow))
+      if (piExtraExtWidth.i(lhFormList,liRow)) send add_top_message set_p_extra_external_width (piExtraExtWidth.i(lhFormList,liRow))
+
+      if (pbForceNoenter.i(lhFormList,liRow) and lhClass=class.dbEdit) send add_top_message set_enabled_state DFFALSE
+
+      send push_data_field (piFile.i(lhFormList,liRow)) (piField.i(lhFormList,liRow))
+      if (lhClass=class.dbComboForm) begin
+        send add_top_message set_p_abstract (0-((piFile.i(lhFormList,liRow)*4096)+piField.i(lhFormList,liRow)))
+      end
+      get icreate_dynamo_object lhClass to lhForm
+      set phObjectID.i of lhFormList liRow to lhForm
+    loop
+  end_procedure
+
+  function CreateGrid integer lhFormList integer lhServer returns integer
+    integer liRow liMax liFile liField lhGrid lbNoLabel liOrdering liDeltaLen
+    string lsLabel
+    get row_count of lhFormList to liMax
+    if (liMax>20) begin
+      send obs ("You have specified "+string(liMax)+" fields in a Grid object.") "FastView is only capable of handling 20. The remainder will be ignored."
+      move 20 to liMax
+    end
+    send DoDDFieldSetup lhFormList lhServer
+    decrement liMax
+    for liRow from 0 to liMax // Add the data fields
+      get piFile.i          of lhFormList liRow to liFile
+      get piField.i         of lhFormList liRow to liField
+      get pbNoLabel.i       of lhFormList liRow to lbNoLabel
+      get psLabel.i         of lhFormList liRow to lsLabel
+      get piExtraIntWidth.i of lhFormList liRow to liDeltaLen
+      set value of (oDeltaColumnWidths(self)) liRow to liDeltaLen
+      if lbNoLabel send add_bottom_message SET_Header_Label liRow ""
+      else if (lsLabel<>"") send add_bottom_message SET_Header_Label liRow lsLabel
+      send push_data_field liFile liField
+    loop
+    send add_top_message set_server lhServer
+    get FDX_IndexFindPrimary ghFDX (main_file(lhServer)) to liOrdering
+    send add_top_message set_ordering liOrdering
+    get icreate_dynamo_object class.dbGrid to lhGrid
+    function_return lhGrid
+  end_function
+
+  function CreateGridSidecarFields integer lhFormList integer lhParentGrid integer lhServer returns integer
+    integer lhGroup
+    if (row_count(lhFormList)) begin
+      get icreate_dynamo_object class.dbGroup to lhGroup
+        set label of lhGroup to "Current row data"
+        set server of lhGroup to lhServer
+        set phParentGrid of lhGroup to lhParentGrid
+        send CreateForms lhGroup lhFormList lhServer
+      send pop_object // dbGroup
+    end
+    else move 0 to lhGroup
+    function_return lhGroup
+  end_function
+
+  function iCreateFastView integer lhDef returns integer
+    integer lhVw liMainFile liChildFile lhMainDD lhChildDD lhGrid liViewType
+    integer lbUseGeneric lhGroup liTmp
+    integer lbVerticalAbsorberFound lbHorizontalAbsorberFound
+
+    move DFFALSE to lbVerticalAbsorberFound
+    move DFFALSE to lbHorizontalAbsorberFound
+
+    move 0 to lhGrid
+    move 0 to lhGroup
+
+    send add_top_message set_label (psViewTitle(lhDef))
+    get icreate_dynamo_object class.dbView to lhVw
+      // Indentation indicates that the object was pushed on the
+      // container stack
+
+      set phDefinitionObject of lhVw to lhDef
+
+      get piViewType of lhDef to liViewType
+
+      // Create DDO objects:
+      get piMainFile of lhDef to liMainFile
+      get pbUseGenericDD of lhDef to lbUseGeneric
+      ifnot (FastView_GenericDDsApplicable()) move DFFALSE to lbUseGeneric
+      get DDC_CreateDDOStructure lhVw liMainFile lbUseGeneric U_DataDictionary to lhMainDD
+
+      if (not(integer(FVSetupValue(FVSETUP_USER_CHG_DATA)))) set read_only_state of lhMainDD to DFTRUE
+
+      if (liViewType=VT_HEADER_DETAIL) begin
+        get piChildFile of lhDef to liChildFile
+        get DDC_CreateChildDDOStructure liChildFile to lhChildDD
+        if (not(integer(FVSetupValue(FVSETUP_USER_CHG_DATA)))) set read_only_state of lhChildDD to DFTRUE
+        set constrain_file of lhChildDD to liMainFile
+        set phChildDD of lhVw to lhChildDD
+      end
+      set server of lhVw to lhMainDD
+      set main_dd of lhVw to lhMainDD
+
+      if (liViewType=VT_GRID) begin
+        set p_auto_column of lhVw to DFFALSE
+        get CreateGrid (oMainFileFields(lhDef)) lhMainDD to lhGrid
+        send aps_goto_max_row to lhVw
+        get CreateGridSidecarFields (oGridSideCarFields(lhDef)) lhGrid lhMainDD to lhGroup
+        move DFTRUE to lbVerticalAbsorberFound
+        move DFTRUE to lbHorizontalAbsorberFound
+        set peAnchors of lhGrid to anAll
+        set peResizeColumn of lhGrid to rcAll
+        if lhGroup set peAnchors of lhGroup to anBottomLeftRight
+        get iDoAnchors of (oGridSideCarFields(lhDef)) DFFALSE to liTmp
+      end
+      else begin
+        // Create Form things:
+        send CreateForms lhVw (oMainFileFields(lhDef)) lhMainDD
+
+        // Create grid:
+        if (liViewType=VT_HEADER_DETAIL) begin
+          set p_auto_column of lhVw to DFFALSE
+          send aps_goto_max_row to lhVw
+          get CreateGrid (oChildFileFields(lhDef)) lhChildDD to lhGrid
+          set child_table_state of lhGrid to TRUE     // Saves when exit object
+          send aps_goto_max_row to lhVw
+          get CreateGridSidecarFields (oGridSideCarFields(lhDef)) lhGrid lhChildDD to lhGroup
+          move DFTRUE to lbVerticalAbsorberFound
+          move DFTRUE to lbHorizontalAbsorberFound
+          set peAnchors of lhGrid to anAll
+          set peResizeColumn of lhGrid to rcAll
+          if lhGroup set peAnchors of lhGroup to anBottomLeftRight
+          get iDoAnchors of (oMainFileFields(lhDef)) DFFALSE to liTmp
+          get iDoAnchors of (oGridSideCarFields(lhDef)) DFFALSE to liTmp
+        end
+        else begin // Simple dimple
+          get iDoAnchors of (oMainFileFields(lhDef)) DFTRUE to liTmp
+          move (hi(liTmp)) to lbVerticalAbsorberFound
+          move (low(liTmp)) to lbHorizontalAbsorberFound
+        end
+      end
+    send pop_object // dbView
+    if (lbVerticalAbsorberFound or lbHorizontalAbsorberFound) begin
+      set Border_Style of lhVw to BORDER_THICK   // Make panel resizeable
+      set piMinSize of lhVw to (hi(size(lhVw))) (low(size(lhVw)))
+      ifnot lbVerticalAbsorberFound ;
+              set piMaxSize of lhVw to (hi(size(lhVw))) 65535
+      else begin
+        ifnot lbHorizontalAbsorberFound ;
+              set piMaxSize of lhVw to 65535 (low(size(lhVw)))
+        else set Window_Style of lhVw to WS_MAXIMIZEBOX 1
+      end
+    end
+    function_return lhVw
+  end_function
+  move self to ghWhyThis?
+end_object
+
+function iFastViewCreatePanel global integer lhDef returns integer
+  function_return (iCreateFastView(ghWhyThis?,lhDef))
+end_function
+

@@ -1,0 +1,1017 @@
+// Use Css.nui // CSS things
+// Source: www.w3schools.com/css/css_reference.asp
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+
+enumeration_list // Here's a list of groups of CSS properies.
+  define CSSPG_BACKGR // CSS Background properties define the background effects of an element.
+  define CSSPG_BORDER // CSS Border properties define the borders around an element.
+  define CSSPG_CLASSI // The Classification properties allow you to control how to display an element, set where an image will appear in another element, position an element relative to its normal position, position an element using an absolute value, and how to control the visibility of an element.
+  define CSSPG_DIMENS // The Dimension properties allow you to control the height and width of an element. It also allows you to increase the space between two lines.
+  define CSSPG_FONT   // CSS Font properties define the font in text.
+  define CSSPG_LIST   // The List properties allow you to change between different list-item markers, set an image as a list-item marker, and set where to place a list-item marker.
+  define CSSPG_MARGIN // CSS Margin properties define the space around elements.
+  define CSSPG_PAD    // CSS Padding properties define the space between the element border and the element content.
+  define CSSPG_POS    // CSS Positioning properties define the position of an element.
+  define CSSPG_TEXT   // CSS Text properties define the appearance of text.
+//define CSSPG_OUTLINES
+//define CSSPG_TABLE
+end_enumeration_list
+
+desktop_section
+object oCssPropertyGroups is a cArray // This object gives names to the groups above
+  set value item CSSPG_BACKGR to "Background"
+  set value item CSSPG_BORDER to "Border"
+  set value item CSSPG_CLASSI to "Classification"
+  set value item CSSPG_DIMENS to "Dimension"
+  set value item CSSPG_FONT   to "Font"
+  set value item CSSPG_LIST   to "List and Marker"
+  set value item CSSPG_MARGIN to "Margin"
+  set value item CSSPG_PAD    to "Padding"
+  set value item CSSPG_POS    to "Positioning"
+  set value item CSSPG_TEXT   to "Text"
+
+//  set value item CSSPG_OUTLINES  to "Outlines"
+//  set value item CSSPG_TABLE     to "Table"
+end_object // oCssPropertyGroups
+
+enumeration_list // Parameter value types
+  define CSSPT_CONST //
+  define CSSPT_PERCENT
+  define CSSPT_PERCENT_2
+  define CSSPT_PERCENT_4
+  define CSSPT_PIXEL
+  define CSSPT_PIXEL_2
+  define CSSPT_PIXEL_4
+  define CSSPT_EM
+  define CSSPT_EM_2
+  define CSSPT_COLOR
+  define CSSPT_URL
+  define CSSPT_NUMBER
+end_enumeration_list
+
+object oCssPropertyTypes is a cArray // Name and format of parameter value types
+  item_property_list
+    item_property string psName.i
+    item_property string psFormat.i
+  end_item_property_list
+  procedure add_type integer liType string lsName
+    set psName.i liType to lsName
+  end_procedure
+  send add_type CSSPT_PERCENT      "Percent"          "#%"
+  send add_type CSSPT_PERCENT_2    "X,Y percent"      "#% #%"
+  send add_type CSSPT_PERCENT_4    "Percent (4 args)" "#% #% #% #%"
+  send add_type CSSPT_PIXEL        "Pixel"            "#px"
+  send add_type CSSPT_PIXEL_2      "X,Y pixel"        "#px #px"
+  send add_type CSSPT_PIXEL_4      "Pixel (4 args)"   "#px #px# px #px"
+  send add_type CSSPT_EM           "em"               "#em"
+  send add_type CSSPT_EM_2         "X,Y em"           "#em #em"
+  send add_type CSSPT_COLOR        "Color"            ""
+  send add_type CSSPT_URL          "url"              ""
+  send add_type CSSPT_NUMBER       "Integer"          ""
+end_object // oCssPropertyTypes
+
+enumeration_list // Enumeration of CSS properties
+  define CSSPS_BACKGROUND_ATTACHMENT
+  define CSSPS_BACKGROUND_COLOR
+  define CSSPS_BACKGROUND_IMAGE
+  define CSSPS_BACKGROUND_POSITION
+  define CSSPS_BACKGROUND_REPEAT
+  define CSSPS_BORDER_COLOR
+  define CSSPS_BORDER_WIDTH
+  define CSSPS_BORDER_STYLE
+  define CSSPS_CLASSI_CLEAR
+  define CSSPS_CLASSI_CURSOR
+  define CSSPS_CLASSI_DISPLAY
+  define CSSPS_CLASSI_FLOAT
+  define CSSPS_CLASSI_POSITION
+  define CSSPS_CLASSI_VISIBILITY
+  define CSSPS_DIMEN_HEIGHT
+  define CSSPS_DIMEN_MIN_HEIGHT
+  define CSSPS_DIMEN_LINE_HEIGHT
+  define CSSPS_DIMEN_WIDTH
+  define CSSPS_DIMEN_MIN_WIDTH
+  define CSSPS_FONT_FAMILY
+  define CSSPS_FONT_SIZE
+  define CSSPS_FONT_SIZE_ADJUST
+  define CSSPS_FONT_STRETCH
+  define CSSPS_FONT_STYLE
+  define CSSPS_FONT_VARIANT
+  define CSSPS_FONT_WEIGHT
+  define CSSPS_LIST_IMAGE
+  define CSSPS_LIST_POSITION
+  define CSSPS_LIST_TYPE
+  define CSSPS_MARGIN_BOTTOM
+  define CSSPS_MARGIN_LEFT
+  define CSSPS_MARGIN_RIGHT
+  define CSSPS_MARGIN_TOP
+  define CSSPS_MARGIN
+  define CSSPS_PADDING_BOTTOM
+  define CSSPS_PADDING_LEFT
+  define CSSPS_PADDING_RIGHT
+  define CSSPS_PADDING_TOP
+  define CSSPS_PADDING
+  define CSSPS_POS_BOTTOM
+  define CSSPS_POS_LEFT
+  define CSSPS_POS_RIGHT
+  define CSSPS_POS_TOP
+//  define CSSPS_POS_CLIP
+  define CSSPS_POS_OVERFLOW
+  define CSSPS_POS_OVERFLOW_X
+  define CSSPS_POS_OVERFLOW_Y
+  define CSSPS_POS_VERTICAL_ALIGN
+  define CSSPS_POS_Z_INDEX
+  define CSSPS_TEXT_COLOR
+  define CSSPS_TEXT_LETTER_SPACING
+  define CSSPS_TEXT_ALIGN
+  define CSSPS_TEXT_DECORATION
+  define CSSPS_TEXT_INDENT
+  define CSSPS_TEXT_TRANSFORM
+  define CSSPS_TEXT_WHITE_SPACE
+  define CSSPS_TEXT_WORD_SPACING
+end_enumeration_list
+
+// // This is not used. It was meant to be able to control different browsers.
+// enumeration_list // CSS Subsets
+//   define CSS_SUBSET_CSS1
+//   define CSS_SUBSET_CSS2
+//   define CSS_SUBSET_IE4
+//   define CSS_SUBSET_IE5
+//   define CSS_SUBSET_IE6
+//   define CSS_SUBSET_NN4
+//   define CSS_SUBSET_NN5
+//   define CSS_SUBSET_MZ17
+// end_enumeration_list
+
+object oCssProperties is a cArray // This object contains all the (META) information we need about CSS properties
+  item_property_list
+    item_property integer piGroup.i
+    item_property string  psProperty.i
+    item_property string  psDescription.i
+    item_property integer phValueSet.i
+    item_property string  psDefault.i
+  end_item_property_list
+  procedure add_property integer liProperty string lsProperty integer liGroup string lsDescription
+    set piGroup.i       liProperty to liGroup
+    set psProperty.i    liProperty to lsProperty
+    set psDescription.i liProperty to lsDescription
+  end_procedure
+            function hValueSet.i integer liRow returns integer
+              integer hValueSet
+              get phValueSet.i liRow to hValueSet
+              ifnot hValueSet begin
+                object oValueSet is a cArray
+                  move self to hValueSet
+                end_object
+                set phValueSet.i liRow to hValueSet
+              end
+              function_return hValueSet
+            end_function
+  procedure default_value string lsValue
+    integer liRow
+    get row_count to liRow
+    decrement liRow
+    set psDefault.i liRow to lsValue
+  end_procedure
+  procedure add_value string lsValue
+    integer liRow lhValueSet liItem
+    get row_count to liRow
+    decrement liRow
+    get hValueSet.i liRow to lhValueSet
+    get item_count of lhValueSet to liItem
+    set value of lhValueSet liItem to lsValue
+  end_procedure
+  procedure add_value_type integer liType
+    send add_value (" "+string(liType))
+  end_procedure
+
+  // ********** Background properties **************************************************************
+  send add_property CSSPS_BACKGROUND_ATTACHMENT "background-attachment" CSSPG_BACKGR "Sets whether a background image is fixed or scrolls with the rest of the page"
+       send add_value "scroll"
+       send add_value "fixed"
+       send default_value "scroll"
+  send add_property CSSPS_BACKGROUND_COLOR      "background-color"      CSSPG_BACKGR "Sets the background color of an element"
+       send add_value "transparent"
+       send add_value_type CSSPT_COLOR
+  send add_property CSSPS_BACKGROUND_IMAGE      "background-image"      CSSPG_BACKGR "Sets an image as the background"
+       send add_value_type CSSPT_URL
+  send add_property CSSPS_BACKGROUND_POSITION   "background-position"   CSSPG_BACKGR "Sets the starting position of a background image"
+       send add_value "top left"
+       send add_value "top center"
+       send add_value "top right"
+       send add_value "center left"
+       send add_value "center center"
+       send add_value "center right"
+       send add_value "bottom left"
+       send add_value "bottom center"
+       send add_value "bottom right"
+       send add_value_type CSSPT_PERCENT_2
+       send add_value_type CSSPT_PIXEL_2
+       send add_value_type CSSPT_EM_2
+  send add_property CSSPS_BACKGROUND_REPEAT     "background-repeat"     CSSPG_BACKGR "Sets if/how a background image will be repeated"
+       send add_value "repeat"
+       send add_value "repeat-x"
+       send add_value "repeat-y"
+       send add_value "no-repeat"
+       send default_value "no-repeat"
+
+  // ********** Border properties ******************************************************************
+  send add_property CSSPS_BORDER_COLOR         "border-color"           CSSPG_BORDER     "Sets the color of the four borders, can have from one to four colors"
+       send add_value_type CSSPT_COLOR
+  send add_property CSSPS_BORDER_WIDTH         "border-width"           CSSPG_BORDER     "A shorthand property for setting the width of the four borders in one declaration, can have from one to four values"
+       send add_value "thin"
+       send add_value "medium"
+       send add_value "thick"
+       send add_value_type CSSPT_PIXEL
+       send default_value "medium"
+  send add_property CSSPS_BORDER_STYLE         "border-style"           CSSPG_BORDER     "Sets the style of the four borders, can have from one to four styles"
+       send add_value "none"
+       send add_value "hidden"
+       send add_value "dotted"
+       send add_value "dashed"
+       send add_value "solid"
+       send add_value "double"
+       send add_value "groove"
+       send add_value "ridge"
+       send add_value "inset"
+       send add_value "outset"
+
+  // ********** Classification *********************************************************************
+  send add_property CSSPS_CLASSI_CLEAR         "clear"                  CSSPG_CLASSI "Sets the sides of an element where other floating elements are not allowed"
+       send add_value "left"
+       send add_value "right"
+       send add_value "both"
+       send add_value "none"
+  send add_property CSSPS_CLASSI_CURSOR        "cursor"                 CSSPG_CLASSI "Specifies the type of cursor to be displayed"
+       send add_value "auto"
+       send add_value "crosshair"
+       send add_value "default"
+       send add_value "pointer"
+       send add_value "move"
+       send add_value "e-resize"
+       send add_value "ne-resize"
+       send add_value "nw-resize"
+       send add_value "n-resize"
+       send add_value "se-resize"
+       send add_value "sw-resize"
+       send add_value "s-resize"
+       send add_value "w-resize"
+       send add_value "text"
+       send add_value "wait"
+       send add_value "help"
+  send add_property CSSPS_CLASSI_DISPLAY       "display"                CSSPG_CLASSI "Sets how/if an element is displayed"
+       send add_value "none"
+       send add_value "inline"
+       send add_value "block"
+       send add_value "list-item"
+       send add_value "run-in"
+       send add_value "compact"
+       send add_value "marker"
+       send add_value "table"
+       send add_value "inline-table"
+       send add_value "table-row-group"
+       send add_value "table-header-group"
+       send add_value "table-footer-group"
+       send add_value "table-row"
+       send add_value "table-column-group"
+       send add_value "table-column"
+       send add_value "table-cell"
+       send add_value "table-caption"
+  send add_property CSSPS_CLASSI_FLOAT         "float"                  CSSPG_CLASSI "Sets where an image or a text will appear in another element"
+       send add_value "left"
+       send add_value "right"
+       send add_value "none"
+  send add_property CSSPS_CLASSI_POSITION      "position"               CSSPG_CLASSI "Places an element in a static, relative, absolute or fixed position"
+       send add_value "static"
+       send add_value "relative"
+       send add_value "absolute"
+       send add_value "fixed"
+  send add_property CSSPS_CLASSI_VISIBILITY    "visibility"             CSSPG_CLASSI "Sets if an element should be visible or invisible"
+       send add_value "visible"
+       send add_value "hidden"
+       send add_value "collapse"
+
+  // ********** Dimension **************************************************************************
+  send add_property CSSPS_DIMEN_HEIGHT         "height"                 CSSPG_DIMENS     "Sets the height of an element"
+       send add_value "auto"
+       send default_value "auto"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_DIMEN_MIN_HEIGHT     "min-height"             CSSPG_DIMENS     "Sets the minimum height of an element"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_DIMEN_LINE_HEIGHT    "line-height"            CSSPG_DIMENS     "Sets the distance between lines"
+       send add_value "normal"
+       send default_value "normal"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_DIMEN_WIDTH          "width"                  CSSPG_DIMENS     "Sets the width of an element"
+       send add_value "auto"
+       send default_value "auto"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_DIMEN_MIN_WIDTH      "min-width"              CSSPG_DIMENS     "Sets the minimum width of an element"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+
+  // ********** Font *******************************************************************************
+  send add_property CSSPS_FONT_FAMILY          "font-family"            CSSPG_FONT          "A prioritized list of font family names and/or generic family names for an element"
+       send add_value "verdana"
+       send add_value "courier"
+  send add_property CSSPS_FONT_SIZE            "font-size"              CSSPG_FONT          "Sets the size of a font"
+       send add_value "xx-small"
+       send add_value "x-small"
+       send add_value "small"
+       send add_value "medium"
+       send add_value "large"
+       send add_value "x-large"
+       send add_value "xx-large"
+       send add_value "smaller"
+       send add_value "larger"
+       send add_value_type CSSPT_PERCENT
+  send add_property CSSPS_FONT_SIZE_ADJUST     "font-size-adjust"       CSSPG_FONT          "Specifies an aspect value for an element that will preserve the x-height of the first-choice font"
+       send add_value "none"
+       send add_value_type CSSPT_NUMBER
+  send add_property CSSPS_FONT_STRETCH         "font-stretch"           CSSPG_FONT          "Condenses or expands the current font-family"
+       send add_value "normal"
+       send add_value "wider"
+       send add_value "narrower"
+       send add_value "ultra-condensed"
+       send add_value "extra-condensed"
+       send add_value "condensed"
+       send add_value "semi-condensed"
+       send add_value "semi-expanded"
+       send add_value "expanded"
+       send add_value "extra-expanded"
+       send add_value "ultra-expanded"
+  send add_property CSSPS_FONT_STYLE           "font-style"             CSSPG_FONT          "Sets the style of the font"
+       send add_value "normal"
+       send add_value "italic"
+       send add_value "oblique"
+  send add_property CSSPS_FONT_VARIANT         "font-variant"           CSSPG_FONT          "Displays text in a small-caps font or a normal font"
+       send add_value "normal"
+       send add_value "small-caps"
+  send add_property CSSPS_FONT_WEIGHT          "font-weight"            CSSPG_FONT          "Sets the weight of a font"
+       send add_value "normal"
+       send add_value "bold"
+       send add_value "bolder"
+       send add_value "lighter"
+       send add_value "100"
+       send add_value "200"
+       send add_value "300"
+       send add_value "400"
+       send add_value "500"
+       send add_value "600"
+       send add_value "700"
+       send add_value "800"
+       send add_value "900"
+
+  // ********** List and Marker ********************************************************************
+  send add_property CSSPS_LIST_IMAGE           "list-style-image"       CSSPG_LIST          "Sets an image as the list-item marker"
+       send add_value "none"
+       send default_value "none"
+       send add_value_type CSSPT_URL
+  send add_property CSSPS_LIST_POSITION        "list-style-position"    CSSPG_LIST          "Sets where the list-item marker is placed in the list"
+       send add_value "inside"
+       send add_value "outside"
+  send add_property CSSPS_LIST_TYPE            "list-style-type"        CSSPG_LIST          "Sets the type of the list-item marker"
+       send add_value "none"
+       send add_value "disc"
+       send add_value "circle"
+       send add_value "square"
+       send add_value "decimal"
+       send add_value "decimal-leading-zero"
+       send add_value "lower-roman"
+       send add_value "upper-roman"
+       send add_value "lower-alpha"
+       send add_value "upper-alpha"
+       send add_value "lower-greek"
+       send add_value "lower-latin"
+       send add_value "upper-latin"
+       send add_value "hebrew"
+       send add_value "armenian"
+       send add_value "georgian"
+       send add_value "cjk-ideographic"
+       send add_value "hiragana"
+       send add_value "katakana"
+       send add_value "hiragana-iroha"
+       send add_value "katakana-iroha"
+
+  // ********** Margin *****************************************************************************
+  send add_property CSSPS_MARGIN_BOTTOM        "margin-bottom"          CSSPG_MARGIN        "Sets the bottom margin of an element"
+       send add_value "auto"
+       send default_value "auto"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_MARGIN_LEFT          "margin-left"            CSSPG_MARGIN        "Sets the left margin of an element"
+       send add_value "auto"
+       send default_value "auto"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_MARGIN_RIGHT         "margin-right"           CSSPG_MARGIN        "Sets the right margin of an element"
+       send add_value "auto"
+       send default_value "auto"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_MARGIN_TOP           "margin-top"             CSSPG_MARGIN        "Sets the top margin of an element"
+       send add_value "auto"
+       send default_value "auto"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_MARGIN               "margin"                 CSSPG_MARGIN       "Sets the margin of an element in 1 to 4 numbers"
+       send add_value_type CSSPT_PERCENT_4
+       send add_value_type CSSPT_PIXEL_4
+
+  // ********** PADDING ****************************************************************************
+  send add_property CSSPS_PADDING_BOTTOM       "padding-bottom"         CSSPG_PAD       "Sets the bottom padding of an element"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_PADDING_LEFT         "padding-left"           CSSPG_PAD       "Sets the left padding of an element"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_PADDING_RIGHT        "padding-right"          CSSPG_PAD       "Sets the right padding of an element"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_PADDING_TOP          "padding-top"            CSSPG_PAD       "Sets the top padding of an element"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_PADDING              "padding"                CSSPG_PAD      "Sets the padding of an element in 1 to 4 numbers"
+       send add_value_type CSSPT_PERCENT_4
+       send add_value_type CSSPT_PIXEL_4
+
+  // ********** POSITIONING ************************************************************************
+  send add_property CSSPS_POS_BOTTOM           "bottom"                 CSSPG_POS   "Sets how far the bottom edge of an element is above/below the bottom edge of the parent element"
+       send add_value "auto"
+       send default_value "auto"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_POS_LEFT             "left"                   CSSPG_POS   "Sets how far the left edge of an element is to the right/left of the left edge of the parent element"
+       send add_value "auto"
+       send default_value "auto"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_POS_RIGHT            "right"                  CSSPG_POS   "Sets how far the right edge of an element is to the left/right of the right edge of the parent element"
+       send add_value "auto"
+       send default_value "auto"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_POS_TOP              "top"                    CSSPG_POS   "Sets how far the top edge of an element is above/below the top edge of the parent element"
+       send add_value "auto"
+       send default_value "auto"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_POS_OVERFLOW         "overflow"               CSSPG_POS   "Sets what happens if the content of an element overflow its area"
+       send add_value "visible"
+       send add_value "hidden"
+       send add_value "scroll"
+       send add_value "auto"
+  send add_property CSSPS_POS_OVERFLOW_X       "overflow-x"             CSSPG_POS   "Sets what happens if the content of an element overflow its area in the x dimension"
+       send add_value "visible"
+       send add_value "hidden"
+       send add_value "scroll"
+       send add_value "auto"
+  send add_property CSSPS_POS_OVERFLOW_Y       "overflow-y"             CSSPG_POS   "Sets what happens if the content of an element overflow its area in the y dimension"
+       send add_value "visible"
+       send add_value "hidden"
+       send add_value "scroll"
+       send add_value "auto"
+  send add_property CSSPS_POS_VERTICAL_ALIGN   "vertical-align"         CSSPG_POS   "Sets the vertical alignment of an element"
+       send add_value "baseline"
+       send add_value "sub"
+       send add_value "super"
+       send add_value "top"
+       send add_value "text-top"
+       send add_value "middle"
+       send add_value "bottom"
+       send add_value "text-bottom"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_POS_Z_INDEX           "z-index"               CSSPG_POS   "Sets the stack order of an element"
+       send add_value "auto"
+       send add_value_type CSSPT_NUMBER
+
+  // ********** TEXT *******************************************************************************
+  send add_property CSSPS_TEXT_COLOR            "color"                 CSSPG_TEXT "Sets the color of a text"
+       send add_value_type CSSPT_COLOR
+  send add_property CSSPS_TEXT_LETTER_SPACING   "letter-spacing"        CSSPG_TEXT "Increase or decrease the space between characters"
+       send add_value "normal"
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_TEXT_ALIGN            "text-align"            CSSPG_TEXT "Aligns the text in an element"
+       send add_value "left"
+       send add_value "right"
+       send add_value "center"
+       send add_value "justify"
+  send add_property CSSPS_TEXT_DECORATION       "text-decoration"       CSSPG_TEXT "Adds decoration to text"
+       send add_value "none"
+       send add_value "underline"
+       send add_value "overline"
+       send add_value "line-through"
+       send add_value "blink"
+  send add_property CSSPS_TEXT_INDENT           "text-indent"           CSSPG_TEXT "Indents the first line of text in an element"
+       send add_value_type CSSPT_PERCENT
+       send add_value_type CSSPT_PIXEL
+  send add_property CSSPS_TEXT_TRANSFORM        "text-transform"        CSSPG_TEXT "Controls the letters in an element"
+       send add_value "none"
+       send add_value "capitalize"
+       send add_value "uppercase"
+       send add_value "lowercase"
+  send add_property CSSPS_TEXT_WHITE_SPACE      "white-space"           CSSPG_TEXT "Sets how white space inside an element is handled"
+       send add_value "normal"
+       send add_value "pre"
+       send add_value "nowrap"
+  send add_property CSSPS_TEXT_WORD_SPACING     "word-spacing"          CSSPG_TEXT "Increase or decrease the space between words"
+       send add_value "normal"
+       send add_value_type CSSPT_PIXEL
+
+           // -- Private methods -------
+           function iFindProperty.s string lsProperty returns integer
+             integer liRow liMax
+             move (trim(lowercase(lsProperty))) to lsProperty
+             get row_count to liMax
+             decrement liMax
+             for liRow from 0 to liMax
+               if (lsProperty=psProperty.i(self,liRow)) function_return liRow
+             loop
+             function_return -1
+           end_function
+
+           function NumberOfNumbers string lsValue returns integer
+             integer liRval liPos liLen lbInNum
+             move 0 to lbInNum
+             move 0 to liRval
+             move (length(lsValue)) to liLen
+             for liPos from 1 to liLen
+               if (mid(lsValue,1,liPos)) in "0123456789." begin
+                 ifnot lbInNum begin
+                   increment liRval
+                   move 1 to lbInNum
+                 end
+               end
+               else if lbInNum move 0 to lbInNum
+             loop
+             function_return liRval
+           end_function
+
+           function bExistsValueTypeOnProperty integer liProperty integer liValueType returns integer
+             integer lhValueSet liMax liRow
+             string lsValue
+             get phValueSet.i liProperty to lhValueSet
+             get item_count of lhValueSet to liMax
+             decrement liMax
+             for liRow from 0 to liMax
+               get value of lhValueSet liRow to lsValue
+               if (left(lsValue,1)=" ") begin
+                 if (integer(lsValue)=liValueType) function_return TRUE
+               end
+             loop
+             function_return FALSE
+           end_function
+           function bExistsValueOnProperty integer liProperty string lsValue returns integer
+             integer lhValueSet liMax liRow
+             string lsTmp
+             move (lowercase(lsValue)) to lsValue
+
+             get phValueSet.i liProperty to lhValueSet
+             get item_count of lhValueSet to liMax
+             decrement liMax
+             for liRow from 0 to liMax
+               get value of lhValueSet liRow to lsTmp
+               if (left(lsTmp,1)<>" ") begin
+                 if (lsTmp=lsValue) function_return TRUE
+               end
+             loop
+             function_return FALSE
+           end_function
+
+           function PropertyValueType_Help integer liProperty string lsValue returns integer
+             integer lhValueSet liMax liRow liCount
+             if (lsValue="") function_return -1
+             get phValueSet.i liProperty to lhValueSet
+             get item_count of lhValueSet to liMax
+             decrement liMax
+             for liRow from 0 to liMax
+               if (value(lhValueSet,liRow)=lowercase(lsValue)) function_return CSSPT_CONST
+             loop
+             if (liProperty=CSSPS_BACKGROUND_COLOR) function_return CSSPT_COLOR
+             if (liProperty=CSSPS_BORDER_COLOR)     function_return CSSPT_COLOR
+             if (liProperty=CSSPS_TEXT_COLOR)       function_return CSSPT_COLOR
+             if (liProperty=CSSPS_BACKGROUND_IMAGE) function_return CSSPT_URL
+             if (liProperty=CSSPS_LIST_IMAGE)       function_return CSSPT_URL
+             if (StringIsInteger(lsValue))          function_return CSSPT_NUMBER
+             move (lowercase(lsValue)) to lsValue
+
+             get NumberOfNumbers lsValue to liCount
+
+             if (lsValue contains "px") begin
+               if (liCount=1) function_return CSSPT_PIXEL
+               if (liCount=2) function_return CSSPT_PIXEL_2
+               if (liCount=4) function_return CSSPT_PIXEL_4
+             end
+             if (lsValue contains "em") begin
+               if (liCount=1) function_return CSSPT_EM
+               if (liCount=2) function_return CSSPT_EM_2
+             end
+             if (lsValue contains "%") begin
+               if (liCount=1) function_return CSSPT_PERCENT
+               if (liCount=2) function_return CSSPT_PERCENT_2
+               if (liCount=4) function_return CSSPT_PERCENT_4
+             end
+             function_return -1 // Unknown
+           end_function
+
+  // -- methods -------
+  function PropertyValueType integer liProperty string lsValue returns integer
+    integer liRval lbOk
+    get PropertyValueType_Help liProperty lsValue to liRval // Value type
+    if (liRval<>-1) begin
+      if (liRval=CSSPT_CONST) get bExistsValueOnProperty liProperty lsValue to lbOk
+      else begin
+        get bExistsValueTypeOnProperty liProperty liRval to lbOk
+      end
+      if lbOk function_return liRval
+    end
+    function_return -1
+  end_function
+end_object // oCssProperties
+end_desktop_section
+
+// Takes a property and a value and returns an identification of the parameter type.
+function CSS_PropertyValueType global integer liProperty string lsValue returns integer
+  integer liRval
+  get PropertyValueType of oCssProperties liProperty lsValue to liRval
+  function_return liRval
+end_function
+
+function CSS_PropertyValueTypeName global integer liValueType returns string
+  function_return (psName.i(oCssPropertyTypes,liValueType))
+end_function
+
+function CSS_FormatPropertyValue global integer liProperty string lsValue returns string
+  integer liValueType
+  string lsUnit
+  get CSS_PropertyValueType liProperty lsValue to liValueType
+  if (liValueType<>-1) begin
+    if (liValueType=CSSPT_CONST) function_return (lowercase(lsValue))
+
+    if (liValueType=CSSPT_PERCENT or liValueType=CSSPT_PERCENT_2 or liValueType=CSSPT_PERCENT_4) move "%" to lsUnit
+    if (liValueType=CSSPT_PIXEL or liValueType=CSSPT_PIXEL_2 or liValueType=CSSPT_PIXEL_4) move "px" to lsUnit
+    if (liValueType=CSSPT_EM or liValueType=CSSPT_EM_2) move "em" to lsUnit
+
+    if (liValueType=CSSPT_PERCENT or liValueType=CSSPT_PIXEL or liValueType=CSSPT_EM) begin
+      function_return (ExtractItemNeg(lsValue,".0123456789",1)+lsUnit)
+    end
+    if (liValueType=CSSPT_PERCENT_2 or liValueType=CSSPT_PIXEL_2 or liValueType=CSSPT_EM_2) begin
+      function_return (ExtractItemNeg(lsValue,".0123456789",1)+lsUnit+" "+ExtractItemNeg(lsValue,".0123456789",2)+lsUnit)
+    end
+    if (liValueType=CSSPT_PERCENT_4 or liValueType=CSSPT_PIXEL_4) begin
+      function_return (ExtractItemNeg(lsValue,".0123456789",1)+lsUnit+" "+ExtractItemNeg(lsValue,".0123456789",2)+lsUnit+" "+ExtractItemNeg(lsValue,".0123456789",3)+lsUnit+" "+ExtractItemNeg(lsValue,".0123456789",4)+lsUnit)
+    end
+    if (liValueType=CSSPT_COLOR) function_return (lowercase(lsValue))
+    if (liValueType=CSSPT_URL)   function_return lsValue
+    if (liValueType=CSSPT_NUMBER) function_return (number(lsValue))
+  end
+  function_return ""
+end_function
+
+function CSS_PropertyId global string lsProperty returns integer
+  integer liRval
+  get iFindProperty.s of oCssProperties lsProperty to liRval
+  function_return liRval
+end_function
+
+// The following global procedures and functions are most useful when generating a UI for
+// setting stylesheet property values.
+function CSS_PropertyName global integer liProperty returns string
+  string lsName
+  get psProperty.i of oCssProperties liProperty to lsName
+  function_return lsName
+end_function
+
+function CSS_PropertyDefaultValue global integer liProperty returns string
+  string lsValue
+  get psDefault.i of oCssProperties liProperty to lsValue
+  function_return lsValue
+end_function
+
+//> Used by comboform selection
+procedure CSS_CallBack_Groups global integer lhMsg integer lhObj
+  integer liMax liItem lhArr
+  move oCssPropertyGroups to lhArr
+  get item_count of lhArr to liMax
+  decrement liMax
+  for liItem from 0 to liMax
+    send lhMsg of lhObj liItem (value(lhArr,liItem))
+  loop
+end_procedure
+
+procedure CSS_CallBack_Properties global integer liPropertyGroup integer lhMsg integer lhObj
+  integer liMax liRow lhArr
+  string lsName
+  move oCssProperties to lhArr
+  get row_count of lhArr to liMax
+  decrement liMax
+  for liRow from 0 to liMax
+    if (liPropertyGroup=piGroup.i(lhArr,liRow)) begin
+      // procedure XXX integer liType string lsName string lsDescription string lsDefault integer liClass
+      get psProperty.i of lhArr liRow to lsName
+      send lhMsg of lhObj liRow lsName (psDescription.i(lhArr,liRow)) (psDefault.i(lhArr,liRow)) liPropertyGroup
+    end
+  loop
+end_procedure
+
+procedure CSS_CallBack_PropertyValues global integer liProperty integer lhMsg integer lhObj
+  integer liMax liItem lhArr liValue
+  string lsValue
+  move oCssProperties to lhArr
+  get phValueSet.i of lhArr liProperty to lhArr
+  if lhArr begin
+    get item_count of lhArr to liMax
+    decrement liMax
+    for liItem from 0 to liMax
+      get value of lhArr item liItem to lsValue
+      // procedure xxx integer liProperty string lsValue
+      if (left(lsValue,1)<>" ") send lhMsg of lhObj liProperty lsValue
+    loop
+  end
+end_procedure
+
+procedure CSS_CallBack_PropertyValueTypes global integer liProperty integer lhMsg integer lhObj
+  integer liMax liItem lhArr liType lhArr2
+  string lsValue
+  move oCssProperties to lhArr
+  move oCssPropertyTypes to lhArr2
+  get phValueSet.i of lhArr liProperty to lhArr
+  if lhArr begin
+    get item_count of lhArr to liMax
+    decrement liMax
+    for liItem from 0 to liMax
+      get value of lhArr item liItem to lsValue
+      if (left(lsValue,1)=" ") begin
+        move lsValue to liType
+        // procedure xxx integer liProperty string lsTypeName integer liType
+        send lhMsg of lhObj liProperty (psName.i(lhArr2,liType)) liType
+      end
+    loop
+  end
+end_procedure
+
+// An object of this class is capable of translating a set of CSS property values into
+// a in-line style sheet.
+class cCssPropertyValues is a cArray
+  item_property_list
+    item_property integer piProperty.i
+    item_property string  psValue.i
+  end_item_property_list cCssPropertyValues
+           function iFindRow.i integer liProperty returns integer
+             integer liMax liRow
+             get row_count to liMax
+             decrement liMax
+             for liRow from 0 to liMax
+               if (liProperty=piProperty.i(self,liRow)) function_return liRow
+             loop
+             function_return -1
+           end_function
+
+  function property_value integer liProperty returns string
+    integer liRow
+    get iFindRow.i liProperty to liRow
+    if (liRow<>-1) function_return (psValue.i(self,liRow))
+    function_return ""
+  end_function
+
+  procedure set property_value integer liProperty string lsValue
+    integer liRow
+    get iFindRow.i liProperty to liRow
+    if (liRow=-1) get row_count to liRow
+    set piProperty.i liRow to liProperty
+    set psValue.i    liRow to lsValue
+  end_procedure
+
+  procedure clear_property integer liProperty
+    integer liRow
+    get iFindRow.i liProperty to liRow
+    if (liRow<>-1) send delete_row liRow
+  end_procedure
+
+  function bInlineStyleDecode string lsStyle returns integer
+    integer liMax liItem liPos liProperty lbRval lbOk
+    string lsPropertyAndValue lsProperty lsValue
+    send clear_all_properties
+    move 1 to lbOk
+    get HowManyWords lsStyle ";" to liMax
+    for liItem from 1 to liMax
+      get ExtractWord lsStyle ";" liItem to lsPropertyAndValue
+      move (pos(":",lsPropertyAndValue)) to liPos
+      move (left(lsPropertyAndValue,liPos-1)) to lsProperty
+      move (trim(replace(lsProperty+":",lsPropertyAndValue,""))) to lsValue
+      get CSS_PropertyId lsProperty to liProperty
+      if (liProperty<>-1) set property_value liProperty to lsValue
+      else begin
+        error 647  ("Unknown style property: "+lsProperty)
+        move 0 to lbOk
+      end
+    loop
+    function_return lbOk
+  end_function
+
+  function sInlineStyle returns string
+    integer liMax liRow liProperty
+    string lsValue lsRval
+    move "" to lsValue
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get piProperty.i liRow to liProperty
+      get psValue.i    liRow to lsValue
+      if (liRow<>0) move (lsRval+" ") to lsRval
+      move (lsRval+CSS_PropertyName(liProperty)+": "+lsValue+";") to lsRval
+    loop
+    function_return lsRval
+  end_function
+  procedure clear_all_properties
+    send delete_data
+  end_procedure
+  //> This procedure copies the content of another cCssPropertyValues object
+  procedure CopyFrom integer lhCssPropertyValues
+    integer liItm liMax
+    get item_count of lhCssPropertyValues to liMax
+    decrement liMax
+    for liItm from 0 to liMax
+      set value item liItm to (value(lhCssPropertyValues,liItm))
+    loop
+  end_procedure
+  //> This procedure adds the content of another cCssPropertyValues object
+  procedure AddFrom integer lhCssPropertyValues
+    integer liRow liMax liProperty
+    string lsValue
+    get row_count of lhCssPropertyValues to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get piProperty.i of lhCssPropertyValues liRow to liProperty
+      get psValue.i    of lhCssPropertyValues liRow to lsValue
+      set property_value liProperty to lsValue
+    loop
+  end_procedure
+end_class // cCssPropertyValues
+
+// ============================================================================
+//  This section defines a few global methods for constructing an in-line CSS
+
+desktop_section
+  object oCssPropertyValues is a cCssPropertyValues
+  end_object
+end_desktop_section
+
+procedure CSS_Reset_Properties global string lsStyle
+  integer lbGrb
+  send clear_all_properties of oCssPropertyValues
+  get bInlineStyleDecode of oCssPropertyValues lsStyle to lbGrb
+end_procedure
+
+procedure set CSS_Property_Value global integer liProperty string lsValue
+  set property_value of oCssPropertyValues liProperty to lsValue
+end_procedure
+
+function CSS_Property_Value global integer liProperty returns string
+  string lsValue
+  get property_value of oCssPropertyValues liProperty to lsValue
+  function_return lsValue
+end_function
+
+function CSS_InLineStyle global returns string // Get it only once!
+  string lsValue
+  get sInlineStyle of oCssPropertyValues to lsValue
+  send CSS_Reset_Properties "" // 'cause the next time, it isn't there.
+  function_return lsValue
+end_function
+
+// ============================================================================
+desktop_section
+  object oCssInlineStylesHelp is a cCssPropertyValues
+  end_object
+end_desktop_section
+
+class cCssInlineStyles is a cArray
+  procedure construct_object
+    forward send construct_object
+    property integer phInheritObject 0 // 0=no inheritance
+  end_procedure
+
+  procedure end_construct_object
+    forward send end_construct_object
+    if (phInheritObject(self)) send DoReset // This will set pbDirty state on all
+  end_procedure
+
+  item_property_list
+    item_property string  psValue.i
+    item_property integer pbDirty.i
+    item_property integer phCssPropertyValues.i
+  end_item_property_list cCssInlineStyles
+
+           function hCssPropertyValuesObject integer liIndex returns integer
+             integer lhObj
+             get phCssPropertyValues.i liIndex to lhObj
+             ifnot lhObj begin
+               object oCssPropertyValues is a cCssPropertyValues
+                 move self to lhObj
+                 set phCssPropertyValues.i liIndex to lhObj
+               end_object
+             end
+             function_return lhObj
+           end_function
+
+  function property_value integer liIndex integer liProperty returns string
+    integer lhObj
+    string lsValue
+    get hCssPropertyValuesObject liIndex to lhObj
+    get property_value of lhObj liProperty to lsValue
+    function_return lsValue
+  end_function
+
+  procedure set property_value integer liIndex integer liProperty string lsValue
+    integer lhObj
+    get hCssPropertyValuesObject liIndex to lhObj
+    set property_value of lhObj liProperty to lsValue
+    set pbDirty.i liIndex to TRUE
+  end_procedure
+
+  procedure clear_property integer liIndex integer liProperty
+    integer lhObj
+    get hCssPropertyValuesObject liIndex to lhObj
+    send clear_property of lhObj liProperty
+    set pbDirty.i liIndex to TRUE
+  end_procedure
+
+  procedure clear_all_properties integer liIndex
+    integer lhObj
+    get hCssPropertyValuesObject liIndex to lhObj
+    send clear_all_properties of lhObj
+    set pbDirty.i liIndex to TRUE
+  end_procedure
+
+           procedure BuildHelpObject integer liIndex
+             integer lhInherit lhCssPropertyValues
+             get phInheritObject to lhInherit
+             get hCssPropertyValuesObject liIndex to lhCssPropertyValues
+             if lhInherit begin
+               send BuildHelpObject of lhInherit liIndex
+               send AddFrom of oCssInlineStylesHelp lhCssPropertyValues
+             end
+             else begin
+               // We have found the ultimate ancestor
+               send CopyFrom of oCssInlineStylesHelp lhCssPropertyValues
+             end
+           end_procedure
+
+  function sInlineStyle integer liIndex returns string
+    integer lbDirty lhInherit lhObj
+    string lsInLineCSS
+    get pbDirty.i liIndex to lbDirty
+    if lbDirty begin
+
+      get phInheritObject to lhInherit
+      if lhInherit begin
+        // We have to get to the inheritance bottom of this:
+        send clear_all_properties of oCssInlineStylesHelp // Clear tmp object
+        send BuildHelpObject liIndex // Make all ancestors contribute
+        get sInlineStyle of oCssInlineStylesHelp to lsInLineCSS // Get in-line from tmp object
+      end
+      else begin
+        // No inheritance, which means we keep it simple
+        get hCssPropertyValuesObject liIndex to lhObj
+        get sInlineStyle of lhObj to lsInLineCSS
+      end
+      set psValue.i liIndex to lsInLineCSS
+      set pbDirty.i liIndex to FALSE
+    end
+    else get psValue.i liIndex to lsInLineCSS
+    function_return lsInLineCSS
+  end_function
+
+  procedure DoReset
+    integer liRow liMax lhObj lhInherit
+
+    get phInheritObject to lhInherit
+    if lhInherit begin
+      get row_count of lhInherit to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        set psValue.i liRow to ""
+        set pbDirty.i liRow to TRUE
+        get phCssPropertyValues.i liRow to lhObj
+        if lhObj send clear_all_properties of lhObj
+      loop
+    end
+    else begin
+      get row_count to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        get phCssPropertyValues.i liRow to lhObj
+        if lhObj send destroy of lhObj
+      loop
+      send delete_data
+    end
+  end_procedure
+end_class // cCssInlineStyles
+

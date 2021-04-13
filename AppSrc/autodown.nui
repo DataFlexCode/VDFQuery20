@@ -1,0 +1,315 @@
+// Remote Application Termination
+// ------------------------------
+// This package lets you take down a running application by using a timer
+// object to detect for the presence of a specific file name.
+//
+// Update: 19/06/2003 Included ObjGroup.utl to get rid of errors
+//                    when autodowning. Due to DD's firering
+//                    new_current_record when destroyed
+//
+
+// This package may be developed in these areas
+//
+//   * Create a user interface for creating the stop file.
+//
+//   * Have the program creating the stop file check when
+//     exclusive access can be obtained.
+//
+//   * Have programs that exits write in the log file.
+//
+//   * Warn the users that their program will be closed in x minutes
+
+// Usage (in ClientArea):
+//
+//   Use AutoDown.nui
+//   object oSystemDowner is a cSystemDowner
+//     send ApplicationAutoExit
+//   end_object
+//
+// and this at client_area level:
+//
+//  move self to glMainClientId#
+//
+//  send CreateAutoDownObject to (oSystemDowner(self)) glMainClientId#
+//
+Use Base.nui      // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Files.nui     // Utilities for handling file related stuff (No User Interface)
+Use DFTimer.pkg   // DAW DFTimer class
+Use LogFile.nui   // Class for handling a log file (No User Interface)
+Use WinUser.nui   // User_Windows_User_Name function
+Use ObjGroup.utl  // Defining groups of objects
+Use FList.nui     // A lot of FLIST- procedures and functions
+Use Language.pkg  // Default language setup
+
+
+#IF LNG_DEFAULT=LNG_DUTCH
+  define t.autodown.purpose      for "Dit bestand logt het automatisch sluiten van een VDF toepassing"
+  define t.autodown.thrownoff    for "is eruit gegooid"
+  define t.autodown.accessdenied for "toegang geweigerd"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ITALIAN
+  define t.autodown.purpose      for "This file logs the automatic closing of a VDF application"
+  define t.autodown.thrownoff    for "has been thrown off"
+  define t.autodown.accessdenied for "denied access"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SPANISH
+  define t.autodown.purpose      for "Este archivo anota el cierre autom tico de una aplicaci¢n VDF"
+  define t.autodown.thrownoff    for "Ha sido tirado fuera"
+  define t.autodown.accessdenied for "Acceso denegado"
+
+#ENDIF
+#IF LNG_DEFAULT=LNG_ENGLISH
+  define t.autodown.purpose      for "This file logs the automatic closing of a VDF application"
+  define t.autodown.thrownoff    for "has been thrown off"
+  define t.autodown.accessdenied for "denied access"
+#ENDIF
+#IF LNG_DEFAULT=LNG_DANISH
+  define t.autodown.purpose      for "I denne fil logges den automatiske nedlukning af et VDF system"
+  define t.autodown.thrownoff    for "er blevet lukket ude"
+  define t.autodown.accessdenied for "n‘gtet adgang"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SWEDISH
+  define t.autodown.purpose      for "This file logs the automatic closing of a VDF application"
+  define t.autodown.thrownoff    for "has been thrown off"
+  define t.autodown.accessdenied for "denied access"
+#ENDIF
+#IF LNG_DEFAULT=LNG_NORWEGIAN
+  define t.autodown.purpose      for "This file logs the automatic closing of a VDF application"
+  define t.autodown.thrownoff    for "has been thrown off"
+  define t.autodown.accessdenied for "denied access"
+#ENDIF
+#IF LNG_DEFAULT=LNG_GERMAN
+  define t.autodown.purpose      for "This file logs the automatic closing of a VDF application"
+  define t.autodown.thrownoff    for "has been thrown off"
+  define t.autodown.accessdenied for "denied access"
+#ENDIF
+#IF LNG_DEFAULT=LNG_PORTUGUESE
+  define t.autodown.purpose      for "This file logs the automatic closing of a VDF application"
+  define t.autodown.thrownoff    for "has been thrown off"
+  define t.autodown.accessdenied for "denied access"
+#ENDIF
+#IF LNG_DEFAULT=LNG_FRENCH
+  define t.autodown.purpose      for "This file logs the automatic closing of a VDF application"
+  define t.autodown.thrownoff    for "has been thrown off"
+  define t.autodown.accessdenied for "denied access"
+#ENDIF
+
+class cSystemDowner is a cArray
+  procedure construct_object
+    forward send construct_object
+    property string  psDownDisableFile "DownOff.txt"
+    property string  psDownNowFile     "DownNow.txt"
+    property string  psDownLogFile     "DownLog.txt"
+    property integer piCheckInterval   180000 // 3 minutes (1000 = 1 sec)
+    object oLogFile is a cLogFile
+      set piCloseOnWrite to DFTRUE
+      set psPurpose to t.autodown.purpose // "This file logs the automatic closing of a VDF application"
+    end_object
+    property integer piDownPhaseNumber            0
+    property integer priv.pbImTheOneWhoStartedIt  FALSE
+    property integer priv.pbAccessDeniedState     FALSE
+    property number  priv.pnLogFileOffset         0
+  end_procedure
+
+           function sFileNameAddPath string lsFile returns string
+             string lsFolder
+             get FLIST_CurrentFileListFolder to lsFolder
+             get SEQ_RemovePathFromFileName lsFile to lsFile
+             function_return (Files_AppendPath(lsFolder,lsFile))
+           end_function
+
+           function bFileExists string lsFile returns integer
+             get sFileNameAddPath lsFile to lsFile
+             function_return (SEQ_FileExists(lsFile)<>SEQIT_NONE)
+           end_function
+           function bFileDelete string lsFile returns integer
+             get sFileNameAddPath lsFile to lsFile
+             function_return (SEQ_EraseFile(lsFile))
+           end_function
+           function bFileCreate string lsFile returns integer
+             integer liChannel
+             get SEQ_DirectOutput (sFileNameAddPath(self,lsFile)) to liChannel
+             if (liChannel>=0) begin
+               write (character(26))
+               send SEQ_CloseOutput liChannel
+             end
+             function_return (bFileExists(self,lsFile))
+           end_function
+
+           procedure DoSetLogFileName
+             string lsFile
+             get psDownLogFile to lsFile
+             get sFileNameAddPath lsFile to lsFile
+             set psFileName of oLogFile to lsFile
+           end_procedure
+
+//procedure set DownerDisableState integer lbState
+//  integer lbGrb
+//  if lbState get bFileCreate (psDownDisableFile(self)) to lbGrb
+//  else       get bFileDelete (psDownDisableFile(self)) to lbGrb
+//end_procedure
+
+  function DownNowState returns integer
+    integer lbState lbDownerDisabled
+    get bFileExists (psDownDisableFile(self)) to lbDownerDisabled
+    if lbDownerDisabled move FALSE to lbState
+    else get bFileExists (psDownNowFile(self)) to lbState
+    function_return lbState
+  end_function
+
+  procedure set DownNowState integer lbState
+    integer lbGrb lbAlreadyDownNow
+    number lnSize
+    string lsFile
+    lock
+      get bFileExists (psDownNowFile(self)) to lbAlreadyDownNow
+
+      if lbState begin
+        ifnot lbAlreadyDownNow begin
+          get bFileCreate (psDownNowFile(self)) to lbGrb
+          if lbGrb begin
+            set priv.pbImTheOneWhoStartedIt to TRUE
+
+            move (sFileNameAddPath(self,psDownLogFile(self))) to lsFile
+            set psFileName of oLogFile to lsFile
+
+            get SEQ_FileSize lsFile to lnSize
+            set priv.pnLogFileOffset to lnSize
+#IF LNG_DEFAULT=LNG_DANISH
+            send DoWriteTimeEntry to oLogFile ("Nedlukning p†begyndt af "+User_Windows_User_Name()) // Nedlukning initieret af
+#ELSE
+            send DoWriteTimeEntry to oLogFile ("System down state initated by "+User_Windows_User_Name()) // Nedlukning initieret af
+#ENDIF
+          end
+        end
+      end
+      else begin
+        if (priv.pbImTheOneWhoStartedIt(self)) begin
+          get bFileDelete (psDownNowFile(self)) to lbGrb
+          if lbGrb begin
+            set priv.pbImTheOneWhoStartedIt to FALSE
+            set priv.pnLogFileOffset to 0
+#IF LNG_DEFAULT=LNG_DANISH
+            send DoWriteTimeEntry to oLogFile ("Nedlukning aflyst af "+User_Windows_User_Name()) // Nedlukning aflyst af
+#ELSE
+            send DoWriteTimeEntry to oLogFile ("System down state cancelled by "+User_Windows_User_Name()) // Nedlukning aflyst af
+#ENDIF
+          end
+        end
+      end
+    unlock
+  end_procedure
+
+  function sLogFileTextSinceDowning returns string
+    integer liChannel lbSeqEof lbDownState
+    number lnSize
+    string lsFile lsRval lsLine
+
+    get DownNowState to lbDownState
+
+    if lbDownState begin
+      if (priv.pbImTheOneWhoStartedIt(self)) begin
+        get psFileName of oLogFile to lsFile
+        get priv.pnLogFileOffset to lnSize
+        get SEQ_DirectInput lsFile to liChannel
+        if (liChannel>=0) begin
+          set_channel_position liChannel to lnSize
+          move "" to lsRval
+          repeat
+            readln channel liChannel lsLine
+            move (seqeof) to lbSeqEof
+            ifnot lbSeqEof begin
+              move (lsRval+lsLine+character(10)) to lsRval
+            end
+          until lbSeqEof
+          send SEQ_CloseInput liChannel
+          if (pbANSI_State(oLogFile)) get ToOEM lsRval to lsRval
+        end
+#IF LNG_DEFAULT=LNG_DANISH
+        else move "L‘sefejl i logfil" to lsRval // Fejl ved l‘sning af log file
+#ELSE
+        else move "Log file read failure" to lsRval // Fejl ved l‘sning af log file
+#ENDIF
+      end
+#IF LNG_DEFAULT=LNG_DANISH
+      else move "Ingen adgang til logfil" to lsRval // Ingen adgang til log fil
+#ELSE
+      else move "No access to log file" to lsRval // Ingen adgang til log fil
+#ENDIF
+    end
+#IF LNG_DEFAULT=LNG_DANISH
+    else move "Systemet er i drift" to lsRval // Systemet †bent
+#ELSE
+    else move "Access allowed" to lsRval // Systemet †bent
+#ENDIF
+    function_return lsRval
+  end_function
+
+            procedure OnBeginWaitForExit
+            end_procedure
+            procedure OnAppEntryDenied
+            end_procedure
+
+  procedure ApplicationAutoExit
+    integer lbBool lhLogFile
+    string lsFile
+    ifnot (priv.pbImTheOneWhoStartedIt(self)) begin
+      get bFileExists (psDownDisableFile(self)) to lbBool
+      ifnot lbBool begin // Is the downer system enabled?
+        get bFileExists (psDownNowFile(self)) to lbBool
+        if lbBool begin // Is the system marked for downing?
+          if (piDownPhaseNumber(self)=0) begin
+            get psDownLogFile to lsFile
+            if (lsFile<>"") begin
+              move (oLogFile(self)) to lhLogFile
+              get sFileNameAddPath lsFile to lsFile
+              set psFileName of lhLogFile to lsFile
+              send AppendOutput to lhLogFile
+              if (priv.pbAccessDeniedState(self)) send DoWriteTimeEntry to lhLogFile (User_Windows_User_Name()*t.autodown.accessdenied)
+              else send DoWriteTimeEntry to lhLogFile (User_Windows_User_Name()*t.autodown.thrownoff)
+              send CloseOutput to lhLogFile
+            end
+            move 0 to NotExitingApplication // From objgroup.utl
+            if (priv.pbAccessDeniedState(self)) send OnAppEntryDenied
+            system
+          end
+          else begin
+            set piDownPhaseNumber to (piDownPhaseNumber(self)-1)
+            send OnBeginWaitForExit
+          end
+        end
+      end
+    end
+  end_procedure
+                      // This procedure should execute on application startup.
+                      procedure CheckApplicationEntry
+                        integer liDownPhaseNumber
+                        get piDownPhaseNumber to liDownPhaseNumber // Save original value
+                        set piDownPhaseNumber to 0 // Exit immediately if down-file is found
+                        set priv.pbAccessDeniedState to TRUE // Makes it write "denied access" instead of "has been thrown off"
+                        send ApplicationAutoExit
+                        set priv.pbAccessDeniedState to FALSE
+                        set piDownPhaseNumber to liDownPhaseNumber // Restore
+                      end_procedure
+
+  procedure end_construct_object
+    forward send end_construct_object
+    send CheckApplicationEntry
+  end_procedure
+
+  procedure CreateAutoDownObject integer lhClientArea
+    integer lhSelf liTimeout
+    move self to lhSelf
+    get piCheckInterval to liTimeout
+    move lhClientArea to self
+    object oDownTimer is a DFTimer
+      set Auto_Start_State to DFFALSE
+      set Auto_Stop_State to DFFALSE
+      set Timer_Message to msg_ApplicationAutoExit
+      set Timer_Object to lhSelf
+      set Timeout to liTimeout
+      set Timer_Active_State to TRUE
+    end_object
+    move lhSelf to self
+  end_procedure
+end_class // cSystemDowner

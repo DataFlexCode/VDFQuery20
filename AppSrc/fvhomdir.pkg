@@ -1,0 +1,604 @@
+// Use FvHomDir.pkg // Dialogs for saving and opening FastViews
+
+Use Files.utl    // Utilities for handling file related stuff
+Use ItemProp.nui // ITEM_PROPERTY command for use within arrays
+Use WildCard.nui // vdfq_WildCardMatch function
+Use WinUser.nui  // User_Windows_User_Name function
+
+desktop_section
+  object oFastViewsOnDisk is a cArray
+    property string  psCurrentDirectory ""
+    property string  psCurrentMask      ""
+    property integer piCurrentSortOrder 0
+    item_property_list
+      item_property string  psFileName.i
+      item_property integer piMainFile.i
+      item_property integer piChildFile.i
+      item_property integer piViewType.i
+      item_property string  psViewTitle.i
+      item_property string  psMainFileName.i
+      item_property number  pnDateTime.i
+      item_property integer piSize.i
+    end_item_property_list
+    procedure AddFile string lsFile string lsDir integer liSize number lnDateTime
+      integer liFile liChannel liRow
+      string lsViewTitle lsChildName
+      if (vdfq_WildCardMatch(lsFile)) begin
+        get row_count to liRow
+        set psFileName.i liRow to lsFile
+        get SEQ_ComposeAbsoluteFileName lsDir lsFile to lsFile
+        get SEQ_DirectInput lsFile to liChannel
+        set pnDateTime.i liRow to lnDateTime
+        set piSize.i     liRow to liSize
+        if (liChannel>-1) begin
+          readln channel liChannel lsFile
+          if (lsFile="FastView 1.0 - View definition") begin
+            readln lsViewTitle
+            set psViewTitle.i liRow to lsViewTitle
+            readln liFile // ViewType
+            set piViewType.i liRow to liFile // ViewType
+            readln lsFile // Throw away UseGenericDD
+            readln liFile // Main File
+            set piMainFile.i liRow to liFile
+            set psMainFileName.i liRow to (rtrim(FDX_AttrValue_FILE(ghFDX,DF_FILE_DISPLAY_NAME,liFile)))
+            readln liFile // Child file
+            set piChildFile.i liRow to liFile
+            if (lsViewTitle="") begin
+              get piMainFile.i liRow to liFile
+              get FDX_AttrValue_FILELIST ghFDX DF_FILE_DISPLAY_NAME liFile to lsViewTitle
+              move (rtrim(lsViewTitle)) to lsViewTitle
+              get piChildFile.i liRow to liFile
+              if liFile begin
+                get FDX_AttrValue_FILELIST ghFDX DF_FILE_DISPLAY_NAME liFile to lsChildName
+                move (rtrim(lsChildName)) to lsChildName
+                move (lsViewTitle*"/"*lsChildName) to lsViewTitle
+              end
+              set psViewTitle.i liRow to lsViewTitle
+            end
+          end
+          send SEQ_CloseInput liChannel
+        end
+      end
+    end_procedure
+    procedure DoSort integer liColumn
+      set piCurrentSortOrder to liColumn
+      send sort_rows liColumn
+    end_procedure
+    procedure ReadDirectory string lsDir string lsMask
+      send WildCardMatchPrepare lsMask
+      send delete_data
+      set psCurrentDirectory to lsDir
+      set psCurrentMask to lsMask
+      send SEQ_Load_ItemsInDir lsDir
+      send SEQ_CallBack_ItemsInDir SEQCB_FILES_ONLY MSG_AddFile self
+    end_procedure
+    procedure ReReadDir
+      send ReadDirectory (psCurrentDirectory(self)) (psCurrentMask(self))
+      send DoSort (piCurrentSortOrder(self))
+    end_procedure
+
+    // ------------------------------------------------------------
+    // From here on down (inside this object) is only concerned with
+    // the CopyFilesFromRootToUser procedure (and has nothing to do
+    // with the above).
+    property integer piFileCount  0
+    property string  psTargetPath ""
+
+              procedure HandleFileCount string lsFile string lsPath
+                if (vdfq_WildCardMatch(lsFile)) set piFileCount to (piFileCount(self)+1)
+              end_procedure
+              procedure HandleFileCopy string lsFile string lsPath
+                integer lbHopefullySuccess
+                string lsTargetPath
+                if (vdfq_WildCardMatch(lsFile)) begin
+                  get Files_AppendPath lsPath lsFile to lsPath
+                  get psTargetPath to lsTargetPath
+                  get Files_AppendPath lsTargetPath lsFile to lsTargetPath
+                  get SEQ_CopyFile lsPath lsTargetPath to lbHopefullySuccess
+                end
+              end_procedure
+
+    procedure CopyFilesFromRootToUser string lsRootPath string lsPath
+      set piFileCount to 0
+      send SEQ_Load_ItemsInDir lsRootPath
+      send WildCardMatchPrepare "*.fvw" // Views
+      send SEQ_CallBack_ItemsInDir SEQCB_FILES_ONLY MSG_HandleFileCount self
+      send WildCardMatchPrepare "*.fvc" // Collections
+      send SEQ_CallBack_ItemsInDir SEQCB_FILES_ONLY MSG_HandleFileCount self
+      if (piFileCount(self)) begin // Only if there were any files at all
+        if (MB_Verify("Do you want to copy the view definitions of the previous version of FastView?",1)) begin
+          set psTargetPath to lsPath
+          send WildCardMatchPrepare "*.fvw" // Views
+          send SEQ_CallBack_ItemsInDir SEQCB_FILES_ONLY MSG_HandleFileCopy self
+          send WildCardMatchPrepare "*.fvc" // Collections
+          send SEQ_CallBack_ItemsInDir SEQCB_FILES_ONLY MSG_HandleFileCopy self
+        end
+      end
+    end_procedure
+
+  end_object // oFastViewsOnDisk
+end_desktop_section
+
+function FastView_HomeDirectory global returns string
+  function_return (psCurrentDirectory(oFastViewsOnDisk(self)))
+end_function
+function FastView_RootDirectory global returns string
+  string lsRval
+  get FastView_HomeDirectory to lsRval
+  if (lsRval<>"") get SEQ_ExtractPathFromFileName lsRval to lsRval
+  function_return lsRval
+end_function
+
+procedure FastView_SetupHomeDirectory global returns integer
+  integer liExists lbCreateError lhChannel lbFastViewRootFolderExists
+  string lsFileListPath lsPath lsReadMe lsUser lsRootPath
+  set psCurrentDirectory of (oFastViewsOnDisk(self)) to ""
+  get SEQ_FindFileAlongDFPath "filelist.cfg" to lsPath
+  get Files_AppendPath lsPath "FastView" to lsPath
+  get SEQ_FileExists lsPath to lbFastViewRootFolderExists
+  move lsPath to lsRootPath
+
+//  move (SEQ_ComposeAbsoluteFileName(lsPath,"FastView")) to lsPath
+  get User_Windows_User_Name to lsUser
+  get Files_AppendPath lsPath lsUser to lsPath
+
+  get SEQ_FileExists lsPath to liExists
+  if (liExists=SEQIT_NONE) begin
+    if (MB_Verify4("FastView needs to create a folder for saving view definitions.","","The folder will be located under the 'data' folder at this location:",lsPath,DFTRUE)) begin
+
+      ifnot lbFastViewRootFolderExists begin // First we create the root folder if necessary-
+        get wvaWin32_CreateDirectory (ToAnsi(lsRootPath)) to lbCreateError
+        if lbCreateError begin
+          send obs "Sorry! Folder could not be created." lsPath "View definitions can not be saved to disk"
+          function_return DFFALSE
+        end
+      end
+
+      get wvaWin32_CreateDirectory (ToAnsi(lsPath)) to lbCreateError
+      if lbCreateError begin
+        send obs "Sorry! Folder could not be created." lsPath "View definitions can not be saved to disk."
+        function_return DFFALSE
+      end
+      else begin
+        get SEQ_ComposeAbsoluteFileName lsPath "ReadMe.txt" to lsReadMe
+        move (SEQ_DirectOutput(lsReadMe)) to lhChannel
+        if (lhChannel>=0) begin
+          writeln channel lhChannel ;
+                  "This folder was created by the FastView program as a placeholder"
+          writeln "for FastView definitions and associated files."
+          writeln ""
+          writeln "Extensions are as follows:"
+          writeln ""
+          writeln "  *.fvw         Files containing the definition of a View"
+          writeln ""
+          writeln "  *.fvc         Such a file defines a group of views (and thus"
+          writeln "                .fvw files) that may be opened in one go using"
+          writeln "                the 'Open View Collection' feature of FastView."
+          writeln "                  Deleting such a file does not delete the view "
+          writeln "                definitions themselves, only the grouping of them."
+          writeln ""
+          writeln "  Default.fvc   If this file is present FastView automatically"
+          writeln "                load this on starting the program."
+          writeln ""
+          writeln "  FastLoad.fdx  This file is used if the 'fast load' option is"
+          writeln "                enabled. Deleting the file will simply disable"
+          writeln "                'fast load'. It may be re-enabled by selecting"
+          writeln "                'File'->'WS Options'->'Fastload'"
+          writeln ""
+          writeln "This folder may safely be removed if the FastView program is no"
+          writeln "longer used."
+          send SEQ_CloseOutput lhChannel
+        end
+        if lbFastViewRootFolderExists begin
+          // Here we ask the user if he wants to copy the previous contents of
+          // the FastView folder into the new folder.
+          send CopyFilesFromRootToUser of oFastViewsOnDisk lsRootPath lsPath
+        end
+      end
+      set psCurrentDirectory of (oFastViewsOnDisk(self)) to lsPath
+      function_return DFTRUE
+    end
+    else function_return DFFALSE
+  end
+  if (liExists=SEQIT_FILE) begin
+    send obs "Path must be a folder (and not a file)" lsPath "View definitions can not be saved to disk"
+    function_return DFFALSE
+  end
+  if (liExists=SEQIT_DIRECTORY) begin
+    set psCurrentDirectory of (oFastViewsOnDisk(self)) to lsPath
+    function_return DFTRUE
+  end
+end_procedure
+
+desktop_section
+object oFastViewOpenFileSL is a aps.ModalPanel label "Open FastView definition"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult DFFALSE
+  object oLst is a aps.Grid
+//  send GridPrepare_AddCheckBoxColumn
+    send GridPrepare_AddColumn "View title" AFT_ASCII30
+    send GridPrepare_AddColumn "Type"       AFT_ASCII3
+    send GridPrepare_AddColumn "Main table" AFT_ASCII20
+    send GridPrepare_AddColumn "File name"  AFT_ASCII20
+    send GridPrepare_AddColumn "Size"       AFT_NUMERIC4.0
+    send GridPrepare_AddColumn "Modified"   AFT_ASCII20
+    send GridPrepare_Apply self
+    on_key KEY_CTRL+KEY_R send sort_data
+    on_key KEY_CTRL+KEY_W send DoWriteToFile
+    on_key kEnter send close_panel_ok
+
+    procedure mouse_click integer liItem integer liGrb
+      if ((liItem-1)<item_count(self)) send close_panel_ok
+    end_procedure
+
+    procedure DoWriteToFile
+      send Grid_DoWriteToFile self
+    end_procedure
+
+    procedure request_delete
+      integer lbDelete liRow liError
+      string lsFile lsPath
+      if (item_count(self)) begin
+        get Grid_CurrentRow (oLst(self)) to liRow
+        get psFileName.i of (oFastViewsOnDisk(self)) liRow to lsFile
+        get FastView_HomeDirectory to lsPath
+        get SEQ_ComposeAbsoluteFileName lsPath lsFile to lsFile
+        if (SEQ_FileExists(lsFile)=SEQIT_FILE) begin
+          get MB_Verify "Delete view definition?" 0 to lbDelete
+          if lbDelete begin
+            get wvaWin32_ShDeleteFile lsFile to liError
+            broadcast recursive send FastView_DefinitionsOnDiskChanged to desktop
+          end
+        end
+        send ReReadDir to (oFastViewsOnDisk(self))
+        send fill_list
+      end
+    end_procedure
+
+    on_key kdelete_record send request_delete
+
+    procedure SortByColumn integer liColumn
+      integer liArrayColumn
+      if (liColumn=0) move 4 to liArrayColumn
+      if (liColumn=1) move 3 to liArrayColumn
+      if (liColumn=2) move 5 to liArrayColumn
+      if (liColumn=3) move 0 to liArrayColumn
+      if (liColumn=4) move 7 to liArrayColumn
+      if (liColumn=5) move 6 to liArrayColumn
+      send DoSort to (oFastViewsOnDisk(self)) liArrayColumn
+      send fill_list
+    end_procedure
+    procedure sort_data
+      integer cc#
+      get Grid_CurrentColumn self to cc#
+      send SortByColumn cc#
+    end_procedure
+    procedure header_mouse_click integer itm#
+      send SortByColumn itm#
+      forward send header_mouse_click itm#
+    end_procedure
+    procedure fill_list
+      integer lhObj liRow liMax liViewType
+      string lsValue
+      send delete_data
+      move (oFastViewsOnDisk(self)) to lhObj
+      get row_count of lhObj to liMax
+      set dynamic_update_state to DFFALSE
+      decrement liMax
+      for liRow from 0 to liMax
+//      send Grid_AddCheckBoxItem self DFFALSE
+        get psViewTitle.i of lhObj liRow to lsValue
+        send add_item MSG_NONE lsValue
+        get piViewType.i of lhObj liRow to liViewType
+        if (liViewType=0) move "F" to lsValue
+        if (liViewType=1) move "G" to lsValue
+        if (liViewType=2) move "H/D" to lsValue
+        send add_item MSG_NONE lsValue
+        send add_item MSG_NONE (psMainFileName.i(lhObj,liRow))
+        send add_item MSG_NONE (psFileName.i(lhObj,liRow))
+        send add_item MSG_NONE (piSize.i(lhObj,liRow))
+        send add_item MSG_NONE (TS_ConvertToString(pnDateTime.i(lhObj,liRow)))
+      loop
+      send Grid_SetEntryState self DFFALSE
+      set dynamic_update_state to DFTRUE
+    end_procedure
+  end_object // oLst
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.delete send request_delete to (oLst(self))
+  end_object
+  object oBtn3 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    set piResult to DFTRUE
+    send close_panel
+  end_procedure
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oLst(self)) delta_rw# 0 // delta_cl#
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_register_multi_button (oBtn3(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+  function sPopup.s string lsCaption returns string
+    integer liRow
+    string lsFile lsPath
+    set label to lsCaption
+    set piResult to DFFALSE
+    get FastView_HomeDirectory to lsPath
+    set label to (lsCaption+" ("+lsPath+")")
+    send DoSort to (oFastViewsOnDisk(self)) 1
+    send fill_list to (oLst(self))
+    send popup
+    if (piResult(self)) begin
+      get Grid_CurrentRow (oLst(self)) to liRow
+      get psFileName.i of (oFastViewsOnDisk(self)) liRow to lsFile
+      get SEQ_ComposeAbsoluteFileName lsPath lsFile to lsFile
+      function_return lsFile
+    end
+    function_return ""
+  end_procedure
+end_object // oFastViewOpenFileSL
+end_desktop_section
+
+function FastView_SelectViewDefinition global returns string
+  string lsPath
+  get FastView_HomeDirectory to lsPath
+  if (lsPath="") begin
+    send obs "FastView folder not found." "This feature is not available"
+    function_return ""
+  end
+  send ReadDirectory to (oFastViewsOnDisk(self)) lsPath "*.fvw"
+  function_return (sPopup.s(oFastViewOpenFileSL(self),"Open existing FastView definition"))
+end_function
+
+desktop_section
+object oFastViewSaveFileSL is a aps.ModalPanel
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult DFFALSE
+  property string  psExt    ""
+  object oFrm is a aps.Form abstract AFT_ASCII80 label "File name:"
+    set p_extra_internal_width to -160
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  function iValidateFileName returns integer
+    string lsFileName lsExt
+    get psExt to lsExt
+    get value of (oFrm(self)) item 0 to lsFileName
+    if (lsFileName="") error 341 "Missing file name"
+    else begin
+      if (pos(" ",lsFileName)) error 342 "Spaces are not allowed in file name"
+      else begin
+        if (pos("\",lsFileName)) error 343 "Back slashes are not allowed in file name"
+        else begin
+          if (pos(".",lsFileName)) begin
+            send WildCardMatchPrepare ("*."+lsExt)
+            ifnot (vdfq_WildCardMatch(lsFileName)) error 344 "Dots (.) are not allowed in file name"
+            else function_return DFTRUE
+          end
+          else begin
+            set value of (oFrm(self)) item 0 to (lsFileName+"."+psExt(self))
+            function_return DFTRUE
+          end
+        end
+      end
+    end
+    function_return DFFALSE
+  end_function
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    integer lbOK
+    get iValidateFileName to lbOK
+    if lbOK begin
+      set piResult to DFTRUE
+      send close_panel
+    end
+  end_procedure
+  function sPopup.sss string lsCaption string lsCurrentName string lsExt returns string
+    integer liRow
+    string lsFile lsPath
+    set piResult to DFFALSE
+    set psExt to lsExt
+    get FastView_HomeDirectory to lsPath
+    set value of (oFrm(self)) item 0 to lsCurrentName
+    set label to lsCaption
+    send popup
+    if (piResult(self)) begin
+      get value of (oFrm(self)) item 0 to lsFile
+      get SEQ_ComposeAbsoluteFileName lsPath lsFile to lsFile
+      function_return lsFile
+    end
+    function_return ""
+  end_procedure
+end_object // oFastViewSaveFileSL
+end_desktop_section
+
+// For saving
+function FastView_SelectDiskFileName global string lsCaption string lsCurrentFile string lsExt returns string
+  function_return (sPopup.sss(oFastViewSaveFileSL(self),lsCaption,lsCurrentFile,lsExt))
+end_function
+
+desktop_section
+object oFastViewCollectionOpenSL is a aps.ModalPanel label "Open FastView collection"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult DFFALSE
+  object oLst is a aps.Grid
+    send GridPrepare_AddColumn "File name"  AFT_ASCII30
+    send GridPrepare_AddColumn "Size"       AFT_NUMERIC4.0
+    send GridPrepare_AddColumn "Modified"   AFT_ASCII20
+    send GridPrepare_Apply self
+    on_key KEY_CTRL+KEY_R send sort_data
+    on_key KEY_CTRL+KEY_W send DoWriteToFile
+    on_key kEnter send close_panel_ok
+    on_key kdelete_record send request_delete
+
+    procedure mouse_click integer liItem integer liGrb
+      if ((liItem-1)<item_count(self)) send close_panel_ok
+    end_procedure
+
+    procedure request_delete
+      integer lbDelete liRow liError
+      string lsFile lsPath
+      if (item_count(self)) begin
+        get FastView_HomeDirectory to lsPath
+        get sCurrentFile to lsFile
+        get SEQ_ComposeAbsoluteFileName lsPath lsFile to lsFile
+        if (SEQ_FileExists(lsFile)=SEQIT_FILE) begin
+          get MB_Verify "Delete view collection?" 0 to lbDelete
+          if lbDelete get wvaWin32_ShDeleteFile lsFile to liError
+        end
+        send fill_list.s lsPath
+      end
+    end_procedure
+
+    procedure DoWriteToFile
+      send Grid_DoWriteToFile self
+    end_procedure
+
+    procedure SortByColumn integer liColumn
+      send Grid_SortByColumn self liColumn
+    end_procedure
+    procedure sort_data
+      integer cc#
+      get Grid_CurrentColumn self to cc#
+      send SortByColumn cc#
+    end_procedure
+    procedure header_mouse_click integer itm#
+      send SortByColumn itm#
+      forward send header_mouse_click itm#
+    end_procedure
+    procedure fill_list_help string lsFile string lsDir integer liSize number lnDateTime
+      string lsViewTitle
+      if (vdfq_WildCardMatch(lsFile)) begin
+        send add_item MSG_NONE lsFile
+        get SEQ_ComposeAbsoluteFileName lsDir lsFile to lsFile
+        send add_item MSG_NONE liSize
+        send add_item MSG_NONE (TS_ConvertToString(lnDateTime))
+      end
+    end_procedure
+    procedure fill_list.s string lsDir
+      send delete_data
+      set dynamic_update_state to DFFALSE
+      send WildCardMatchPrepare "*.fvc"
+      send SEQ_Load_ItemsInDir lsDir
+      send SEQ_CallBack_ItemsInDir SEQCB_FILES_ONLY MSG_fill_list_help self
+      send Grid_SetEntryState self DFFALSE
+      set dynamic_update_state to DFTRUE
+    end_procedure
+    function sCurrentFile returns string
+      integer liBase
+      string lsFile
+      if (item_count(self)) begin
+        get Grid_BaseItem self to liBase
+        get value item liBase to lsFile
+      end
+      else move "" to lsFile
+      function_return lsFile
+    end_function
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.delete send request_delete to (oLst(self))
+  end_object
+  object oBtn3 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    set piResult to DFTRUE
+    send close_panel
+  end_procedure
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oLst(self)) delta_rw# 0 // delta_cl#
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_register_multi_button (oBtn3(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+  function sPopup.s string lsCaption returns string
+    integer liRow
+    string lsFile lsPath
+    set label to lsCaption
+    set piResult to DFFALSE
+    get FastView_HomeDirectory to lsPath
+    set label to (lsCaption+" ("+lsPath+")")
+    send fill_list.s to (oLst(self)) lsPath
+    send popup
+    if (piResult(self)) begin
+      get sCurrentFile of (oLst(self)) to lsFile
+      function_return lsFile
+    end
+    function_return ""
+  end_procedure
+end_object // oFastViewCollectionOpenSL
+end_desktop_section
+
+function FastView_OpenViewCollection global returns string
+  string lsPath
+  get FastView_HomeDirectory to lsPath
+  if (lsPath="") begin
+    send obs "FastView folder not found." "This feature is not available"
+    function_return ""
+  end
+  function_return (sPopup.s(oFastViewCollectionOpenSL(self),"Open FastView collection"))
+end_function
+
+function FastView_FileFullName global string lsFile returns string
+  string lsPath
+  get FastView_RootDirectory to lsPath
+  if (lsPath<>"") begin
+    get SEQ_ComposeAbsoluteFileName lsPath lsFile to lsFile
+    function_return lsFile
+  end
+  function_return ""
+end_function
+
+function FastView_FileExists global string lsFile returns integer
+  string lsPath
+  get FastView_RootDirectory to lsPath
+  if (lsPath<>"") begin
+    get SEQ_ComposeAbsoluteFileName lsPath lsFile to lsFile
+    function_return (SEQ_FileExists(lsFile))
+  end
+  function_return DFFALSE
+end_procedure
+function FastView_DirectInput global string lsFile returns integer
+  string lsPath
+  get FastView_RootDirectory to lsPath
+  if (lsPath<>"") begin
+    get SEQ_ComposeAbsoluteFileName lsPath lsFile to lsFile
+    function_return (SEQ_DirectInput(lsFile))
+  end
+  function_return -1
+end_procedure
+function FastView_DirectOutput global string lsFile returns integer
+  string lsPath
+  get FastView_RootDirectory to lsPath
+  if (lsPath<>"") begin
+    get SEQ_ComposeAbsoluteFileName lsPath lsFile to lsFile
+    function_return (SEQ_DirectOutput(lsFile))
+  end
+  function_return -1
+end_procedure
+

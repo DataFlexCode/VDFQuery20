@@ -1,0 +1,191 @@
+// Use OpenStat.pkg // Call DFMatrix, Display open tables ...
+
+Use OpenStat.nui // cTablesOpenStatus class (formely cFileAllFiles)
+Use Files.nui    // Utilities for handling file related stuff
+Use MsgBox.utl   // obs procedure
+Use GridUtil.utl // Grid and List utilities
+Use Version.nui
+Use DBMS.nui     // Basic DBMS functions (No User Interface)
+Use fieldinf.pkg // Global field info objects and abstract field types
+
+#IF LNG_DEFAULT=LNG_DUTCH
+ #REPLACE t.OpenStat.UserName         "Gebruikersnaam"
+ #REPLACE t.OpenStat.DFname           "Logische naam"
+ #REPLACE t.OpenStat.RootName         "Bestandsnaam"
+ #REPLACE t.OpenStat.LocOpenFiles     "Locatie van de open bestanden"
+ #REPLACE t.OpenStat.Location         "Locatie"
+ #REPLACE t.OpenStat.Driver           "DB-Driver"
+ #REPLACE t.OpenStat.PrgNotFound      "Extern programma # niet gevonden"            // PvM
+#ENDIF
+#IF LNG_DEFAULT=LNG_SPANISH   // 03/10/2002 to 31/01/2005 for 2.3 Pepe GuimarÆes Moose Software  pg@moose-software.com
+ #REPLACE t.OpenStat.UserName         "Usuario"
+ #REPLACE t.OpenStat.DFname           "Nombre l¢gico"
+ #REPLACE t.OpenStat.RootName         "Nombre de la tabla"
+ #REPLACE t.OpenStat.LocOpenFiles     "Localizaci¢n tablas abiertas"
+ #REPLACE t.OpenStat.Location         "Localizaci¢n"
+ #REPLACE t.OpenStat.Driver           "Driver Base de Datos"
+ #REPLACE t.OpenStat.PrgNotFound      "Programa # externo no encontrado"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ENGLISH
+ #REPLACE t.OpenStat.UserName         "User name"
+ #REPLACE t.OpenStat.DFname           "Logical name"
+ #REPLACE t.OpenStat.RootName         "File name"
+ #REPLACE t.OpenStat.LocOpenFiles     "Location of open files"
+ #REPLACE t.OpenStat.Location         "Location"
+ #REPLACE t.OpenStat.Driver           "DB-Driver"
+ #REPLACE t.OpenStat.PrgNotFound      "External program # not found"
+#ENDIF
+#IF LNG_DEFAULT=LNG_DANISH
+ #REPLACE t.OpenStat.UserName         "Bruger navn"
+ #REPLACE t.OpenStat.DFname           "Logisk navn"
+ #REPLACE t.OpenStat.RootName         "Filnavn"
+ #REPLACE t.OpenStat.LocOpenFiles     "Placering af †bne filer"
+ #REPLACE t.OpenStat.Location         "Placering"
+ #REPLACE t.OpenStat.Driver           "DB-Driver"
+ #REPLACE t.OpenStat.PrgNotFound      "Eksternt program '#' ikke fundet"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SWEDISH
+ #REPLACE t.OpenStat.UserName         "Anv„ndar namn"
+ #REPLACE t.OpenStat.DFname           "Logiskt namn"
+ #REPLACE t.OpenStat.RootName         "Fil namn"
+ #REPLACE t.OpenStat.LocOpenFiles     "Placering av ”ppna filer"
+ #REPLACE t.OpenStat.Location         "Placering"
+ #REPLACE t.OpenStat.Driver           "DB-Driver"
+ #REPLACE t.OpenStat.PrgNotFound      "External program # not found"
+#ENDIF
+#IF LNG_DEFAULT=LNG_NORWEGIAN   // 22.04.1999 torkild.resheim@emmaedb.no
+ #REPLACE t.OpenStat.UserName         "Navn"
+ #REPLACE t.OpenStat.DFname           "Logisk navn"
+ #REPLACE t.OpenStat.RootName         "Filnavn"
+ #REPLACE t.OpenStat.LocOpenFiles     "Plassering av †pne filer"
+ #REPLACE t.OpenStat.Location         "Plassering"
+ #REPLACE t.OpenStat.Driver           "dB-driver"
+ #REPLACE t.OpenStat.PrgNotFound      "External program # not found"
+#ENDIF
+#IF LNG_DEFAULT=LNG_GERMAN
+ #REPLACE t.OpenStat.UserName         "User Name"
+ #REPLACE t.OpenStat.DFname           "Log. Name"
+ #REPLACE t.OpenStat.RootName         "File Name"
+ #REPLACE t.OpenStat.LocOpenFiles     "Pfad der offenen Dateien"
+ #REPLACE t.OpenStat.Location         "Pfad"
+ #REPLACE t.OpenStat.Driver           "DB-Driver"
+ #REPLACE t.OpenStat.PrgNotFound      "External program # not found"
+#ENDIF
+#IF LNG_DEFAULT=LNG_PORTUGUESE    // by Claudio Rossoni (SP-Brasil)
+ #REPLACE t.OpenStat.UserName         "Nome para o Usu rio"
+ #REPLACE t.OpenStat.DFname           "Nome para o DataFlex"
+ #REPLACE t.OpenStat.RootName         "Nome Base"
+ #REPLACE t.OpenStat.LocOpenFiles     "Localiza‡Æo dos arquivos"
+ #REPLACE t.OpenStat.Location         "Localiza‡Æo"
+ #REPLACE t.OpenStat.Driver           "DB-Driver"
+ #REPLACE t.OpenStat.PrgNotFound      "External program # not found"
+#ENDIF
+#IF LNG_DEFAULT=LNG_FRENCH
+ #REPLACE t.OpenStat.UserName         "Nom utilisateur"
+ #REPLACE t.OpenStat.DFname           "Nom logique"
+ #REPLACE t.OpenStat.RootName         "Nom fichier"
+ #REPLACE t.OpenStat.LocOpenFiles     "Emplacement des fichiers"
+ #REPLACE t.OpenStat.Location         "Emplacement"
+ #REPLACE t.OpenStat.Driver           "Drivers DB"
+ #REPLACE t.OpenStat.PrgNotFound      "Programme externe # non trouv‚"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ITALIAN  // 16/10/2002 Paolo Zanni CO.AS.CO.
+ #REPLACE t.OpenStat.UserName         "Nome utente"
+ #REPLACE t.OpenStat.DFname           "Logical name"
+ #REPLACE t.OpenStat.RootName         "Nome File"
+ #REPLACE t.OpenStat.LocOpenFiles     "Posizione dei files aperti"
+ #REPLACE t.OpenStat.Location         "Posizione"
+ #REPLACE t.OpenStat.Driver           "DB-Driver"
+ #REPLACE t.OpenStat.PrgNotFound      "Programma esterno # non trovato"
+#ENDIF
+
+define OpenStat.PrgExt for "exe" // VDF 8 and on
+
+procedure OpenStat.Chain_Wait global string program# string parameters# integer lbDontWait
+  string path# prg_fn#
+  move (program#+"."+OpenStat.PrgExt) to prg_fn#
+  get SEQ_FindFileAlongDFPath prg_fn# to path#
+  if path# ne "" begin
+    move (SEQ_ComposeAbsoluteFileName(path#,prg_fn#)) to program#
+    send OpenStat_RegisterFiles
+    send OpenStat_CloseAllFiles
+
+    runprogram background (trim(prg_fn#*parameters#))
+    send OpenStat_RestoreFiles
+  end
+  else send obs (replace("#",t.OpenStat.PrgNotFound,prg_fn#))
+end_procedure
+
+procedure OpenStat.Chain_DFMatrix global
+  send OpenStat.Chain_Wait "Dfm" "" DFFALSE
+end_procedure
+
+procedure OpenStat.Chain_DbExplor global
+  send OpenStat.Chain_Wait "DbExplor" (If(OpenStat.PrgExt="exe","-x","")+"noworkspace") DFFALSE
+end_procedure
+
+procedure OpenStat.Chain_DbBuilder global
+  send OpenStat.Chain_Wait "DbBldr" "" DFTRUE
+end_procedure
+
+object oOpenStatTableLocations is a aps.ModalPanel label t.OpenStat.LocOpenFiles
+  set locate_mode to center_on_screen
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  set pMinimumSize to 80 0
+  on_key kcancel send close_panel
+  object oGrd is a aps.grid
+    set size to 205 0
+    set gridline_mode to GRID_VISIBLE_NONE
+    send GridPrepare_AddColumn "#" AFT_ASCII3
+    send GridPrepare_AddColumn t.OpenStat.UserName AFT_ASCII20
+    send GridPrepare_AddColumn t.OpenStat.Location AFT_ASCII50
+    send GridPrepare_AddColumn t.OpenStat.Driver   AFT_ASCII12
+    send GridPrepare_Apply self
+    set select_mode to no_select
+    set peAnchors to (anTop+anLeft+anRight+anBottom)
+    Set peResizeColumn to rcSelectedColumn // make sure mode is correct
+    Set piResizeColumn to 2
+
+    procedure fill_list
+      integer file# itm# max# type# lbIsOpenedAs
+      string str# cur_dir# driver#
+      get_current_directory to cur_dir#
+      send cursor_wait to (cursor_control(self))
+      send delete_data
+      move 0 to file#
+      repeat
+        get_attribute DF_FILE_NEXT_OPENED of file# to file#
+        if file# begin
+          send add_item msg_none (string(file#))
+          send add_item msg_none (File_Display_Name(file#))
+          get_attribute DF_FILE_DRIVER of file# to driver#
+          get DBMS_DriverNameToType driver# to type#
+          get DBMS_TablePath file# to str#
+          send add_item msg_none (uppercase(str#))
+          send add_item msg_none ("("+DBMS_Driver_UserName(type#)+")")
+        end
+      until file# eq 0
+      get item_count to max#
+      for itm# from 0 to (max#-1)
+        set entry_state item itm# to false
+      loop
+      send cursor_ready to (cursor_control(self))
+    end_procedure
+  end_object
+  object oBtn is a aps.Multi_Button
+    set peAnchors to (anRight+anBottom)
+    on_item t.btn.close send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure popup
+    send fill_list to (oGrd(self))
+    forward send popup
+  end_procedure
+end_object // oOpenStatTableLocations
+send aps_SetMinimumDialogSize (oOpenStatTableLocations(self))
+
+
+procedure OpenStat.DisplayFileLocations global
+  send popup to (oOpenStatTableLocations(self))
+end_procedure
+

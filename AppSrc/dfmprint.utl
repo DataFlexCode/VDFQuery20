@@ -1,0 +1,38 @@
+// Use DfmPrint.utl // Classes for printing DFMatrix reports.
+Use Output.utl   // Basic sequential output service
+
+/DFMatrix.Header
+     <BLD>DF-Matrix, <ITL>____________________________________________________<itl><bld> Page<pg>
+    컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴�
+
+/DFMatrix.Footer
+
+    컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴�
+     <ITL>_______________________________________<itl> Printed on <date---->, <time-->
+/*
+
+class cDFMatrixSimpleReport is a cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property string  psTitle      "Un-titled"
+    property integer piFDX_Server 0
+  end_procedure
+  function iStartReport returns integer
+    integer rval#
+    send obs "Before"
+    move (iDirect_Output_Title(seq.object#,psTitle(self))) to rval#
+    send obs "After"
+    if rval# begin
+      set pHeader_image  of seq.object# to DFMatrix.Header.N
+      set pHeader_height of seq.object# to DFMatrix.Header.LINES
+      set pFooter_image  of seq.object# to DFMatrix.Footer.N
+      set pFooter_height of seq.object# to DFMatrix.Footer.LINES
+      move (psTitle(self)) to DFMatrix.Header.1
+      move (sOriginAsText(piFDX_Server(self))) to DFMatrix.Footer.1
+    end
+    function_return rval#
+  end_function
+  procedure EndReport
+    seq.close_output
+  end_procedure
+end_class

@@ -1,0 +1,1244 @@
+// VPE6.PKG
+
+External_Function Vpe3OemToCharA   "OemToCharA"      User32.DLL Pointer hpszOem Pointer hpszWindow Returns Integer
+
+// Management functions
+
+External_Function VpeOpenDoc                        "VpeOpenDoc"                        VPE_DLL Handle hWndParent String sTitle Integer iFlags Returns DWord
+External_Function VpeOpenDocFile                    "VpeOpenDocFile"                    VPE_DLL Handle hWndParent String sFile_name String sTitle Integer iFlags Returns DWord
+External_Function VpeCloseDoc                       "VpeCloseDoc"                       VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetEditProtection              "VpeSetEditProtection"              VPE_DLL Handle hDoc Integer iValue Returns Integer
+External_Function VpeGetEditProtection              "VpeGetEditProtection"              VPE_DLL Handle hDoc Returns Integer
+External_Function VpeLicense                        "VpeLicense"                        VPE_DLL Handle hDoc String sSerial1 String sSerial2 Returns Integer // Void
+External_Function VpeEnableMultiThreading           "VpeEnableMultiThreading"           VPE_DLL Handle hDoc Integer iYes_no Returns Integer // Void
+External_Function VpeGetLastError                   "VpeGetLastError"                   VPE_DLL Handle hDoc Returns DWord
+External_Function VpePreviewDoc                     "VpePreviewDoc"                     VPE_DLL Handle hDoc Pointer pRecstruct Integer iShow_hide Returns Integer // Void
+External_Function VpePreviewDocSP                   "VpePreviewDocSP"                   VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 Integer iShow_hide Returns Integer // Void
+External_Function VpeCenterPreview                  "VpeCenterPreview"                  VPE_DLL Handle hDoc Real llWidth Real llHeight Handle Parent_window Returns Integer // Void
+External_Function VpeSetPreviewCtrl                 "VpeSetPreviewCtrl"                 VPE_DLL Handle hDoc Integer iSetting Returns Integer // Void
+External_Function VpeClosePreview                   "VpeClosePreview"                   VPE_DLL Handle hDoc Returns Integer // Void
+External_Function VpeIsPreviewVisible               "VpeIsPreviewVisible"               VPE_DLL Handle hDoc Returns Integer
+External_Function VpeGetVisualPage                  "VpeGetVisualPage"                  VPE_DLL Handle hDoc Returns Integer
+External_Function VpeGotoVisualPage                 "VpeGotoVisualPage"                 VPE_DLL Handle hDoc Integer iPage_no Returns Integer
+External_Function VpeDispatchAllMessages            "VpeDispatchAllMessages"            VPE_DLL Handle hDoc Returns Integer
+External_Function VpeMapMessage                     "VpeMapMessage"                     VPE_DLL Handle hDoc Integer iMessage Returns Integer  // UINT
+External_Function VpeRefreshDoc                     "VpeRefreshDoc"                     VPE_DLL Handle hDoc Returns Integer // Void
+External_Function VpeSetDocExportType               "VpeSetDocExportType"               VPE_DLL Handle hDoc Integer iDoc_type Returns Integer // Void
+External_Function VpeGetDocExportType               "VpeGetDocExportType"               VPE_DLL Handle hDoc Returns Integer // Int
+External_Function VpeSetCompression                 "VpeSetCompression"                 VPE_DLL Handle hDoc Integer iCompression Returns Integer // Void
+External_Function VpeGetCompression                 "VpeGetCompression"                 VPE_DLL Handle hDoc Returns Integer // Int
+External_Function VpeOpenFileDialog                 "VpeOpenFileDialog"                 VPE_DLL Handle hDoc Returns Integer // Void
+External_Function VpeSaveFileDialog                 "VpeSaveFileDialog"                 VPE_DLL Handle hDoc Returns Integer // Void
+External_Function VpeSetOpenFileName                "VpeSetOpenFileName"                VPE_DLL Handle hDoc String sFile_name Returns Integer // Void
+External_Function VpeGetOpenFileName                "VpeGetOpenFileName"                VPE_DLL Handle hDoc String sFile_name Integer iSize Returns Integer // Void
+External_Function VpeSetSaveFileName                "VpeSetSaveFileName"                VPE_DLL Handle hDoc String sFile_name Returns Integer // Void
+External_Function VpeGetSaveFileName                "VpeGetSaveFileName"                VPE_DLL Handle hDoc String sFile_name Integer iSize Returns Integer // Void
+External_Function VpeWriteDoc                       "VpeWriteDoc"                       VPE_DLL Handle hDoc String sFile_name Returns Integer // Int
+External_Function VpeWriteDocPageRange              "VpeWriteDocPageRange"              VPE_DLL Handle hDoc String sFile_name Integer iFrom_page Integer iTo_page Returns Integer // Int
+External_Function VpeReadDoc                        "VpeReadDoc"                        VPE_DLL Handle hDoc String sFile_name Returns Integer // Int
+External_Function VpeReadDocPageRange               "VpeReadDocPageRange"               VPE_DLL Handle hDoc String sFile_name Integer iFrom_page Integer iTo_page Returns Integer // Int
+
+
+External_Function VpeGetVersion                    "VpeGetVersion"                    VPE_DLL Handle hDoc Returns Integer
+External_Function VpeGetEdition                    "VpeGetEdition"                    VPE_DLL Handle hDoc Returns Integer
+External_Function VpeGetWindowHandle               "VpeGetWindowHandle"               VPE_DLL Handle hDoc Returns Handle
+External_Function VpeWindowHandle                  "VpeWindowHandle"                  VPE_DLL Handle hDoc Returns Handle
+External_Function VpeEnablePrintSetupDialog        "VpeEnablePrintSetupDialog"        VPE_DLL Handle hDoc Integer iEnabled Returns Integer // Void
+External_Function VpeSetGridMode                   "VpeSetGridMode"                   VPE_DLL Handle hDoc Integer iIn_foreground Returns Integer // Void
+External_Function VpeSetGridVisible                "VpeSetGridVisible"                VPE_DLL Handle hDoc Integer iYes_no Returns Integer // Void
+External_Function VpeEnableMailButton              "VpeEnableMailButton"              VPE_DLL Handle hDoc Integer iEnabled Returns Integer // Void
+External_Function VpeEnableCloseButton             "VpeEnableCloseButton"             VPE_DLL Handle hDoc Integer iEnabled Returns Integer // Void
+External_Function VpeEnableMouseScaling            "VpeEnableMouseScaling"            VPE_DLL Handle hDoc Integer iEnabled Returns Integer // Void
+External_Function VpeEnableHelpRouting             "VpeEnableHelpRouting"             VPE_DLL Handle hDoc Integer iEnabled Returns Integer // Void
+External_Function VpeSetPreviewWithScrollers       "VpeSetPreviewWithScrollers"       VPE_DLL Handle hDoc Integer iYes_no Returns Integer // Void
+External_Function VpeSetPaperView                  "VpeSetPaperView"                  VPE_DLL Handle hDoc Integer iOn_off Returns Integer // Void
+External_Function VpeSetPageFormat                 "VpeSetPageFormat"                 VPE_DLL Handle hDoc Integer iPage_dimension Returns Integer // Void
+External_Function VpeSetPageWidth                  "VpeSetPageWidth"                  VPE_DLL Handle hDoc Real llPage_width Returns Integer // Void
+External_Function VpeSetPageHeight                 "VpeSetPageHeight"                 VPE_DLL Handle hDoc Real llPage_height Returns Integer // Void
+External_Function VpeGetPageWidth                  "VpeGetPageWidth"                  VPE_DLL Handle hDoc Returns Real
+External_Function VpeGetPageHeight                 "VpeGetPageHeight"                 VPE_DLL Handle hDoc Returns Real
+External_Function VpeSetPageOrientation            "VpeSetPageOrientation"            VPE_DLL Handle hDoc Integer iOrientation Returns Integer // Void
+External_Function VpeGetPageOrientation            "VpeGetPageOrientation"            VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetPaperBin                   "VpeSetPaperBin"                   VPE_DLL Handle hDoc Integer iBin Returns Integer // Void
+External_Function VpeGetPaperBin                   "VpeGetPaperBin"                   VPE_DLL Handle hDoc Returns Integer
+External_Function VpeGetPaperBinName               "VpeGetPaperBinName"               VPE_DLL Handle hDoc Returns String
+External_Function VpeSetDefOutRect                 "VpeSetDefOutRect"                 VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 Returns Integer // Void
+External_Function VpeSetDefOutRectSP               "VpeSetDefOutRectSP"               VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 Returns Integer // Void
+External_Function VpeSetOutRect                    "VpeSetOutRect"                    VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 Returns Integer // Void
+External_Function VpeSetOutRectSP                  "VpeSetOutRectSP"                  VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 Returns Integer // Void
+External_Function VpeGetOutRect                    "VpeGetOutRect"                    VPE_DLL Handle hDoc Pointer pRecstruct Returns Integer // Void
+External_Function VpeGet                           "VpeGet"                           VPE_DLL Handle hDoc Real llWhat Returns Real
+External_Function VpeSet                           "VpeSet"                           VPE_DLL Handle hDoc Real llWhat Real llValue Returns Integer // Void
+External_Function VpeGetPosRect                    "VpeGetPosRect"                    VPE_DLL Handle hDoc Pointer pRecstruct Returns Integer // Void
+External_Function VpeSetPosRect                    "VpeSetPosRect"                    VPE_DLL Handle hDoc Pointer pRecstruct Returns Integer // Void
+External_Function VpeStorePos                      "VpeStorePos"                      VPE_DLL Handle hDoc Returns Integer // Void
+External_Function VpeRestorePos                    "VpeRestorePos"                    VPE_DLL Handle hDoc Returns Integer // Void
+External_Function VpeSetScale                      "VpeSetScale"                      VPE_DLL Handle hDoc Real rScale Returns Integer // Void
+External_Function VpeGetScale                      "VpeGetScale"                      VPE_DLL Handle hDoc Returns DWord
+External_Function VpeSetScalePercent               "VpeSetScalePercent"               VPE_DLL Handle hDoc Integer iScale Returns Integer // Void
+External_Function VpeGetScalePercent               "VpeGetScalePercent"               VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetRulersMeasure              "VpeSetRulersMeasure"              VPE_DLL Handle hDoc Integer iRulers_measure Returns Integer // Void
+External_Function VpeSetupPrinter                  "VpeSetupPrinter"                  VPE_DLL Handle hDoc String sFile_name Integer iDialog_control Returns Integer
+External_Function VpeSetPrintOptions               "VpeSetPrintOptions"               VPE_DLL Handle hDoc Real rFlags Returns Integer // Void
+External_Function VpePrintDoc                      "VpePrintDoc"                      VPE_DLL Handle hDoc Integer iWith_setup Returns Integer // Void
+External_Function VpeIsPrinting                    "VpeIsPrinting"                    VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetPen                        "VpeSetPen"                        VPE_DLL Handle hDoc Real llPen_size Integer iPen_style Integer iColor Returns Integer // Void
+External_Function VpeSetPenSize                    "VpeSetPenSize"                    VPE_DLL Handle hDoc Real llPen_size Returns Integer // Void
+External_Function VpeGetPenSize                    "VpeGetPenSize"                    VPE_DLL Handle hDoc Returns Real
+External_Function VpePenSize                       "VpePenSize"                       VPE_DLL Handle hDoc Real llPen_size Returns Integer // Void
+External_Function VpeSetPenStyle                   "VpeSetPenStyle"                   VPE_DLL Handle hDoc Integer iPen_style Returns Integer // Void
+External_Function VpeGetPenStyle                   "VpeGetPenStyle"                   VPE_DLL Handle hDoc Returns Integer
+External_Function VpePenStyle                      "VpePenStyle"                      VPE_DLL Handle hDoc Integer iPen_style Returns Integer // Void
+External_Function VpeSetPenColor                   "VpeSetPenColor"                   VPE_DLL Handle hDoc Integer iColor Returns Integer // Void
+External_Function VpeGetPenColor                   "VpeGetPenColor"                   VPE_DLL Handle hDoc Returns Integer
+External_Function VpePenColor                      "VpePenColor"                      VPE_DLL Handle hDoc Integer iColor Returns Integer // Void
+External_Function VpeNoPen                         "VpeNoPen"                         VPE_DLL Handle hDoc Returns Integer // Void
+External_Function VpeLine                          "VpeLine"                          VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 Returns Integer // Void
+External_Function VpePolyLine                      "VpePolyLine"                      VPE_DLL Handle hDoc Real llX Real llY Real llSize Returns DWord
+External_Function VpeAddPolyPoint                  "VpeAddPolyPoint"                  VPE_DLL Handle hDoc Real rP Real llX Real llY Returns Integer // Void
+External_Function VpePolygon                       "VpePolygon"                       VPE_DLL Handle hDoc Pointer pRestruct Real llSize Returns DWord
+External_Function VpeAddPolygonPoint               "VpeAddPolygonPoint"               VPE_DLL Handle hDoc Handle hPolygon Real llX Real llY Returns Integer // Void
+External_Function VpeSetBkgColor                   "VpeSetBkgColor"                   VPE_DLL Handle hDoc Integer iColor Returns Integer // Void
+External_Function VpeGetBkgColor                   "VpeGetBkgColor"                   VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetBkgGradientStartColor      "VpeSetBkgGradientStartColor"      VPE_DLL Handle hDoc Integer iColor_start Returns Integer // Void
+External_Function VpeSetBkgGradientEndColor        "VpeSetBkgGradientEndColor"        VPE_DLL Handle hDoc Integer iColor_end Returns Integer // Void
+External_Function VpeSetBkgGradientRotation        "VpeSetBkgGradientRotation"        VPE_DLL Handle hDoc Integer iAngle Returns Integer // Void
+External_Function VpeSetBkgGradientPrint           "VpeSetBkgGradientPrint"           VPE_DLL Handle hDoc Integer iMode Returns Integer // Void
+External_Function VpeSetBkgGradientPrintSolidColor "VpeSetBkgGradientPrintSolidColor" VPE_DLL Handle hDoc Integer iColor Returns Integer // Void
+External_Function VpeSetTransparentMode            "VpeSetTransparentMode"            VPE_DLL Handle hDoc Integer iOn_off Returns Integer // Void
+External_Function VpeSetBkgMode                    "VpeSetBkgMode"                    VPE_DLL Handle hDoc Integer iMode Returns Integer // Void
+External_Function VpeGetBkgMode                    "VpeGetBkgMode"                    VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetHatchStyle                 "VpeSetHatchStyle"                 VPE_DLL Handle hDoc Integer iStyle Returns Integer // Void
+External_Function VpeSetHatchColor                 "VpeSetHatchColor"                 VPE_DLL Handle hDoc Integer iColor Returns Integer // Void
+External_Function VpeBox                           "VpeBox"                           VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 Returns Integer // Void
+External_Function VpeEllipse                       "VpeEllipse"                       VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 Returns Integer // Void
+External_Function VpePie                           "VpePie"                           VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 Integer iBegin_angle Integer iEnd_angle Returns Integer // Void
+External_Function VpeSetBarcodeParms               "VpeSetBarcodeParms"               VPE_DLL Handle hDoc Integer iMain_text Integer iAdd_text Returns Integer // Void
+External_Function VpeSetBarcodeThinBar             "VpeSetBarcodeThinBar"             VPE_DLL Handle hDoc Integer iOption Returns Integer // Void
+External_Function VpeSetBarcodeThickBar            "VpeSetBarcodeThickBar"            VPE_DLL Handle hDoc Integer iOption Returns Integer // Void
+External_Function VpeSetBarcodeAutoChecksum        "VpeSetBarcodeAutoChecksum"        VPE_DLL Handle hDoc Integer iChecksum Returns Integer // Void
+External_Function VpeSetBarcodeAlignment           "VpeSetBarcodeAlignment"           VPE_DLL Handle hDoc Integer iAlignment Returns Integer // Void
+External_Function VpeBarcode                       "VpeBarcode"                       VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 Integer iCode_type String sCode String sAdd_code Returns Integer // Void
+External_Function VpeSetKeepPictureAspect          "VpeSetKeepPictureAspect"          VPE_DLL Handle hDoc Integer iOn_off Returns Integer // Void
+External_Function VpeKeepBitmapAspect              "VpeKeepBitmapAspect"              VPE_DLL Handle hDoc Integer iOn_off Returns Integer // Void
+External_Function VpeSetDefaultPictureDPI          "VpeSetDefaultPictureDPI"          VPE_DLL Handle hDoc Integer iDpix Integer iDpiy Returns Integer // Void
+External_Function VpeDefaultBitmapDPI              "VpeDefaultBitmapDPI"              VPE_DLL Handle hDoc Integer iDpix Integer iDpiy Returns Integer // Void
+External_Function VpeGetPictureTypes               "VpeGetPictureTypes"               VPE_DLL Handle hDoc Integer iWith_filters  String sS Integer iSize Returns Integer // Void
+External_Function VpeSetRotation                   "VpeSetRotation"                   VPE_DLL Handle hDoc Integer iX Returns Integer
+External_Function VpePicture                       "VpePicture"                       VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 String sFile_name Integer iFlags Returns Real
+External_Function VpePictureDIB                    "VpePictureDIB"                    VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 Real rHDIB Integer iFlags Returns Real
+External_Function VpePictureResID                  "VpePictureResID"                  VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 Integer hInstance Integer iRes_id Integer iFlags Returns Real
+External_Function VpePictureResName                "VpePictureResName"                VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 Integer hInstance String sRes_name Integer iFlags Returns Real
+External_Function VpeSetFont                       "VpeSetFont"                       VPE_DLL Handle hDoc String sName Integer iSize Returns Integer // Void
+External_Function VpeSelectFont                    "VpeSelectFont"                    VPE_DLL Handle hDoc String sName Integer iSize Returns Integer // Void
+External_Function VpeSetFontName                   "VpeSetFontName"                   VPE_DLL Handle hDoc String sName Returns Integer // Void
+External_Function VpeSetFontSize                   "VpeSetFontSize"                   VPE_DLL Handle hDoc Integer iSize Returns Integer // Void
+External_Function VpeSetCharset                    "VpeSetCharset"                    VPE_DLL Handle hDoc Real rCharset Returns Integer // Void
+External_Function VpeSetFontAttr                   "VpeSetFontAttr"                   VPE_DLL Handle hDoc Integer iAlignment Integer iBold Integer iUnderlined Integer iItalic Integer iStrikeout Returns Integer // Void
+External_Function VpeSetTextAlignment              "VpeSetTextAlignment"              VPE_DLL Handle hDoc Integer iAlignment Returns Integer // Void
+External_Function VpeSetAlign                      "VpeSetAlign"                      VPE_DLL Handle hDoc Integer iAlignment Returns Integer // Void
+External_Function VpeSetBold                       "VpeSetBold"                       VPE_DLL Handle hDoc Integer iBold Returns Integer // Void
+External_Function VpeSetUnderlined                 "VpeSetUnderlined"                 VPE_DLL Handle hDoc Integer iUnderlined Returns Integer // Void
+External_Function VpeSetStrikeOut                  "VpeSetStrikeOut"                  VPE_DLL Handle hDoc Integer iStrikeout Returns Integer // Void
+External_Function VpeSetItalic                     "VpeSetItalic"                     VPE_DLL Handle hDoc Integer iItalic Returns Integer // Void
+External_Function VpeSetTextColor                  "VpeSetTextColor"                  VPE_DLL Handle hDoc Integer iColor Returns Integer // Void
+External_Function VpePrint                         "VpePrint"                         VPE_DLL Handle hDoc Real llX Real llY String sText Returns Real
+External_Function VpePrintBox                      "VpePrintBox"                      VPE_DLL Handle hDoc Real llX Real llY String sText Returns Real
+External_Function VpeWrite                         "VpeWrite"                         VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 String sText Returns Real
+External_Function VpeWriteBox                      "VpeWriteBox"                      VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 String sText Returns Real
+External_Function VpeDefineHeader                  "VpeDefineHeader"                  VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 String sText Returns Integer // Void
+External_Function VpeDefineFooter                  "VpeDefineFooter"                  VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 String sText Returns Integer // Void
+External_Function VpePageBreak                     "VpePageBreak"                     VPE_DLL Handle hDoc Returns Integer
+External_Function VpeGetPageCount                  "VpeGetPageCount"                  VPE_DLL Handle hDoc Returns Integer
+External_Function VpeGetCurrentPage                "VpeGetCurrentPage"                VPE_DLL Handle hDoc Returns Integer
+External_Function VpeGotoPage                      "VpeGotoPage"                      VPE_DLL Handle hDoc Integer iPage Returns Integer
+External_Function VpeStoreSet                      "VpeStoreSet"                      VPE_DLL Handle hDoc Integer iId Returns Integer // Void
+External_Function VpeUseSet                        "VpeUseSet"                        VPE_DLL Handle hDoc Integer iId Returns Integer // Void
+External_Function VpeRemoveSet                     "VpeRemoveSet"                     VPE_DLL Handle hDoc Integer iId Returns Integer // Void
+External_Function VpeSetAutoBreak                  "VpeSetAutoBreak"                  VPE_DLL Handle hDoc Integer iMode Returns Integer // Void
+//External_Function VpeSetRotation                   "VpeSetRotation"                   VPE_DLL Handle hDoc Integer iAngle Returns Integer // Void
+External_Function VpeSetPictureCacheSize           "VpeSetPictureCacheSize"           VPE_DLL Handle hDoc Real rSize Returns Integer // Void
+External_Function VpeSetPicCacheSize               "VpeSetPicCacheSize"               VPE_DLL Handle hDoc Real rSize Returns Integer // Void
+External_Function VpeGetPictureCacheSize           "VpeGetPictureCacheSize"           VPE_DLL Handle hDoc Returns DWord
+External_Function VpeGetPicCacheSize               "VpeGetPicCacheSize"               VPE_DLL Handle hDoc Returns DWord
+External_Function VpeGetPictureCacheUsed           "VpeGetPictureCacheUsed"           VPE_DLL Handle hDoc Returns DWord
+External_Function VpeGetPicCacheUsed               "VpeGetPicCacheUsed"               VPE_DLL Handle hDoc Returns DWord
+External_Function VpeSetPrintPosMode               "VpeSetPrintPosMode"               VPE_DLL Handle hDoc Integer iMode Returns Integer // Void
+External_Function VpeSetPrintOffset                "VpeSetPrintOffset"                VPE_DLL Handle hDoc Real llOffset_x Real llOffset_y Returns Integer // Void
+External_Function VpeSetPrintOffsetX               "VpeSetPrintOffsetX"               VPE_DLL Handle hDoc Real llOffset_x Returns Integer // Void
+External_Function VpeSetPrintOffsetY               "VpeSetPrintOffsetY"               VPE_DLL Handle hDoc Real llOffset_y Returns Integer // Void
+External_Function VpeGetPrintOffsetX               "VpeGetPrintOffsetX"               VPE_DLL Handle hDoc Returns Real
+External_Function VpeGetPrintOffsetY               "VpeGetPrintOffsetY"               VPE_DLL Handle hDoc Returns Real 
+External_Function VpeSetPageScrollerTracking       "VpeSetPageScrollerTracking"       VPE_DLL Handle hDoc Integer iOn_off Returns Integer // Void
+External_Function VpeWriteStatusbar                "VpeWriteStatusbar"                VPE_DLL Handle hDoc String sText Returns Integer // Void
+External_Function VpeOpenProgressBar               "VpeOpenProgressBar"               VPE_DLL Handle hDoc Returns Integer // Void
+External_Function VpeSetProgressBar                "VpeSetProgressBar"                VPE_DLL Handle hDoc Integer iPercent Returns Integer // Void
+External_Function VpeCloseProgressBar              "VpeCloseProgressBar"              VPE_DLL Handle hDoc Returns Integer // Void
+External_Function VpeRenderPrint                   "VpeRenderPrint"                   VPE_DLL Handle hDoc Real llX Real llY String sText Returns Integer // Int
+External_Function VpeRenderPrintBox                "VpeRenderPrintBox"                VPE_DLL Handle hDoc Real llX Real llY String sText Returns Integer
+External_Function VpeRenderWrite                   "VpeRenderWrite"                   VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 String sText Returns Integer
+External_Function VpeRenderWriteBox                "VpeRenderWriteBox"                VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 String sText Returns Integer
+External_Function VpeRenderPicture                 "VpeRenderPicture"                 VPE_DLL Handle hDoc Real llWidth Real llHeight String sFile_name Integer iFlags Returns Integer // Void
+External_Function VpeRenderPictureDIB              "VpeRenderPictureDIB"              VPE_DLL Handle hDoc Real llWidth Real llHeight DWord hDIB Returns Integer // Void
+External_Function VpeRenderPictureResID            "VpeRenderPictureResID"            VPE_DLL Handle hDoc Real llWidth Real llHeight Integer hInstance Integer iRes_id Returns Integer // Void
+External_Function VpeRenderPictureResName          "VpeRenderPictureResName"          VPE_DLL Handle hDoc Real llWidth Real llHeight Integer hInstance String sRes_name Returns Integer // Void
+External_Function VpeDevice                        "VpeDevice"                        VPE_DLL Handle hDoc String sDevice Returns Integer
+External_Function VpeSetDevice                     "VpeSetDevice"                     VPE_DLL Handle hDoc String sDevice Returns Integer
+//External_Function VpeGetDevice                     "VpeGetDevice"                   VPE_DLL Handle hDoc String sDevice  Integer size Returns Integer // Void
+External_Function VpeGetDevice                "VpeGetDevice"                          VPE_DLL Handle hdoc Pointer device Integer size Returns Integer
+External_Function VpeDevEnum                       "VpeDevEnum"                       VPE_DLL Handle hDoc Returns Integer
+External_Function VpeGetDevEntry                   "VpeGetDevEntry"                   VPE_DLL Handle hDoc Integer iIndex String sDevice Integer iSize Returns Integer // Void
+External_Function VpeSetDevOrientation             "VpeSetDevOrientation"             VPE_DLL Handle hDoc Integer iOrientation Returns Integer
+External_Function VpeGetDevOrientation             "VpeGetDevOrientation"             VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetDevPaperFormat             "VpeSetDevPaperFormat"             VPE_DLL Handle hDoc Integer iFormat Returns Integer
+External_Function VpeGetDevPaperFormat             "VpeGetDevPaperFormat"             VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetDevPaperWidth              "VpeSetDevPaperWidth"              VPE_DLL Handle hDoc Real llWidth Returns Integer
+External_Function VpeGetDevPaperWidth              "VpeGetDevPaperWidth"              VPE_DLL Handle hDoc Returns Real
+External_Function VpeSetDevPaperHeight             "VpeSetDevPaperHeight"             VPE_DLL Handle hDoc Real llHeight Returns Integer
+External_Function VpeGetDevPaperHeight             "VpeGetDevPaperHeight"             VPE_DLL Handle hDoc Returns Real
+External_Function VpeSetDevScalePercent            "VpeSetDevScalePercent"            VPE_DLL Handle hDoc Integer iScale Returns Integer
+External_Function VpeGetDevScalePercent            "VpeGetDevScalePercent"            VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetDevPrintQuality            "VpeSetDevPrintQuality"            VPE_DLL Handle hDoc Integer iQuality Returns Integer
+External_Function VpeGetDevPrintQuality            "VpeGetDevPrintQuality"            VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetDevYResolution             "VpeSetDevYResolution"             VPE_DLL Handle hDoc Integer iYres Returns Integer
+External_Function VpeGetDevYResolution             "VpeGetDevYResolution"             VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetDevColor                   "VpeSetDevColor"                   VPE_DLL Handle hDoc Integer iColor Returns Integer
+External_Function VpeGetDevColor                   "VpeGetDevColor"                   VPE_DLL Handle hDoc Returns DWord
+External_Function VpeSetDevDuplex                  "VpeSetDevDuplex"                  VPE_DLL Handle hDoc Integer iDuplex Returns Integer
+External_Function VpeGetDevDuplex                  "VpeGetDevDuplex"                  VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetDevTTOption                "VpeSetDevTTOption"                VPE_DLL Handle hDoc Integer iOption Returns Integer
+External_Function VpeGetDevTTOption                "VpeGetDevTTOption"                VPE_DLL Handle hDoc Returns Integer
+External_Function VpeDevEnumPaperBins              "VpeDevEnumPaperBins"              VPE_DLL Handle hDoc Returns Integer
+External_Function VpeGetDevPaperBinName            "VpeGetDevPaperBinName"            VPE_DLL Handle hDoc Integer iIndex String sBin_name Integer iSize Returns Integer // Void
+//External_Function VpeGetDevPaperBinName            "VpeGetDevPaperBinName"            VPE_DLL Handle hDoc Integer iIndex Returns String
+External_Function VpeGetDevPaperBinID              "VpeGetDevPaperBinID"              VPE_DLL Handle hDoc Integer iIndex Returns Integer
+External_Function VpeSetDevPaperBin                "VpeSetDevPaperBin"                VPE_DLL Handle hDoc Integer iBin_id Returns Integer
+External_Function VpeGetDevPaperBin                "VpeGetDevPaperBin"                VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetDevCopies                  "VpeSetDevCopies"                  VPE_DLL Handle hDoc Integer iCopies Returns Integer // Void
+External_Function VpeGetDevCopies                  "VpeGetDevCopies"                  VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetDevCollate                 "VpeSetDevCollate"                 VPE_DLL Handle hDoc Integer iCollate Returns Integer // Void
+External_Function VpeGetDevCollate                 "VpeGetDevCollate"                 VPE_DLL Handle hDoc Returns Integer
+External_Function VpeGetDevPrinterOffsetX          "VpeGetDevPrinterOffsetX"          VPE_DLL Handle hDoc Returns Real
+External_Function VpeGetDevPrinterOffsetY          "VpeGetDevPrinterOffsetY"          VPE_DLL Handle hDoc Returns Real 
+External_Function VpeGetDevPhysPageWidth           "VpeGetDevPhysPageWidth"           VPE_DLL Handle hDoc Returns Real
+External_Function VpeGetDevPhysPageHeight          "VpeGetDevPhysPageHeight"          VPE_DLL Handle hDoc Returns Real
+External_Function VpeSetDevFromPage                "VpeSetDevFromPage"                VPE_DLL Handle hDoc Integer iFrom_page Returns Integer // Void
+External_Function VpeGetDevFromPage                "VpeGetDevFromPage"                VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetDevToPage                  "VpeSetDevToPage"                  VPE_DLL Handle hDoc Integer iTo_page Returns Integer // Void
+External_Function VpeGetDevToPage                  "VpeGetDevToPage"                  VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetDevToFile                  "VpeSetDevToFile"                  VPE_DLL Handle hDoc Integer iTo_file Returns Integer // Void
+External_Function VpeGetDevToFile                  "VpeGetDevToFile"                  VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetDevFileName                "VpeSetDevFileName"                VPE_DLL Handle hDoc String sFile_name Returns Integer // Void
+External_Function VpeGetDevFileName                "VpeGetDevFileName"                VPE_DLL Handle hDoc String sFile_name Integer iSize Returns Integer // Void
+External_Function VpeSetDevJobName                 "VpeSetDevJobName"                 VPE_DLL Handle hDoc String sJob_name Returns Integer // Void
+External_Function VpeGetDevJobName                 "VpeGetDevJobName"                 VPE_DLL Handle hDoc String sJob_name Integer iSize Returns Integer // Void
+External_Function VpeDevSendData                   "VpeDevSendData"                   VPE_DLL Handle hDoc String sData DWord sSize Returns Integer
+External_Function VpeReadPrinterSetup              "VpeReadPrinterSetup"              VPE_DLL Handle hDoc String sFile_name Returns Integer
+External_Function VpeWritePrinterSetup             "VpeWritePrinterSetup"             VPE_DLL Handle hDoc String sFile_name Returns Integer
+External_Function VpeDefineKey                     "VpeDefineKey"                     VPE_DLL Handle hDoc Integer iGui_function Integer iKey_code Integer iAdd_key_code1 Integer iAdd_key_code2 Returns Integer // Void
+External_Function VpeSendKey                       "VpeSendKey"                       VPE_DLL Handle hDoc Integer iVkey Returns Integer // Void
+External_Function VpeSetGUILanguage                "VpeSetGUILanguage"                VPE_DLL Handle hDoc Integer iLanguage Returns Integer // Void
+External_Function VpeGetPicturePageCount           "VpeGetPicturePageCount"           VPE_DLL Handle hDoc String sFile_name Returns DWord
+External_Function VpeSetPicturePage                "VpeSetPicturePage"                VPE_DLL Handle hDoc Real rPage_no Returns Integer // Void
+External_Function VpeGetPicturePage                "VpeGetPicturePage"                VPE_DLL Handle hDoc Returns DWord
+External_Function VpeSetPictureType                "VpeSetPictureType"                VPE_DLL Handle hDoc Real rPicture_type Returns Integer // Void
+External_Function VpeEnableAutoDelete              "VpeEnableAutoDelete"              VPE_DLL Handle hDoc Integer iYes_no Returns Integer // Void
+External_Function VpeSetBusyProgressBar            "VpeSetBusyProgressBar"            VPE_DLL Handle hDoc Integer iVisible Returns Integer // Void
+External_Function VpeSetDocFileReadOnly            "VpeSetDocFileReadOnly"            VPE_DLL Handle hDoc Integer iYes_no Returns Integer // Void
+External_Function VpeSetMailWithDialog             "VpeSetMailWithDialog"             VPE_DLL Handle hDoc Integer iYes_no Returns Integer // Void
+External_Function VpeSetMailSubject                "VpeSetMailSubject"                VPE_DLL Handle hDoc String sSubject Returns Integer // Void
+External_Function VpeSetMailText                   "VpeSetMailText"                   VPE_DLL Handle hDoc String sText Returns Integer // Void
+External_Function VpeSetMailSender                 "VpeSetMailSender"                 VPE_DLL Handle hDoc String sSender Returns Integer // Void
+External_Function VpeAddMailReceiver               "VpeAddMailReceiver"               VPE_DLL Handle hDoc String sReceiver Real rRecip_class Returns Integer // Void
+External_Function VpeClearMailReceivers            "VpeClearMailReceivers"            VPE_DLL Handle hDoc Returns Integer // Void
+External_Function VpeAddMailAttachment             "VpeAddMailAttachment"             VPE_DLL Handle hDoc String sPath String sFile_name Returns Integer // Void
+External_Function VpeClearMailAttachments          "VpeClearMailAttachments"          VPE_DLL Handle hDoc Returns Integer // Void
+External_Function VpeIsMAPIInstalled               "VpeIsMAPIInstalled"               VPE_DLL Handle hDoc Returns Integer
+External_Function VpeMailDoc                       "VpeMailDoc"                       VPE_DLL Handle hDoc Returns Integer
+External_Function VpeRegisterCtl3D                 "VpeRegisterCtl3D"                 VPE_DLL Handle hInstance Returns Integer
+External_Function VpeUnregisterCtl3D               "VpeUnregisterCtl3D"               VPE_DLL Handle hInstance Returns Integer // Void
+External_Function VpeSetMinScale                   "VpeSetMinScale"                   VPE_DLL Handle hDoc Real rMin_scale Returns Integer // Void
+External_Function VpeSetMinScalePercent            "VpeSetMinScalePercent"            VPE_DLL Handle hDoc Integer iMin_scale_percent Returns Integer // Void
+External_Function VpeSetMaxScale                   "VpeSetMaxScale"                   VPE_DLL Handle hDoc Real rMax_scale Returns Integer // Void
+External_Function VpeSetMaxScalePercent            "VpeSetMaxScalePercent"            VPE_DLL Handle hDoc Integer iMax_scale_percent Returns Integer // Void
+External_Function VpeSetScaleStep                  "VpeSetScaleStep"                  VPE_DLL Handle hDoc Real rScale_step Returns Integer // Void
+External_Function VpeSetScaleStepPercent           "VpeSetScaleStepPercent"           VPE_DLL Handle hDoc Integer iScale_step_percent Returns Integer // Void
+
+// ========================================================================
+//                      Editions returned by VpeGetEdition():
+// ========================================================================
+Define VEDITION_STANDARD       for 1000
+Define VEDITION_ENHANCED       for 2000
+Define VEDITION_PROFESSIONAL   for 3000
+Define VEDITION_ENTERPRISE     for 4000
+
+
+
+// ========================================================================
+//                      VpeOpenDoc() Flag Parameters:
+// ========================================================================
+Define VPE_NO_TOOLBAR           for    1   // Toolbar NOT visible
+Define VPE_NO_PRINTBUTTON       for    8   // Print-Button invisible, VpePrintDoc() works
+Define VPE_NO_MAILBUTTON        for   16   // Mail-Button invisible
+Define VPE_NO_SCALEBTNS         for   32   // No Scale Buttons in Toolbar
+Define VPE_GRIDBUTTON           for   64   // Grid Toolbar-Button visible
+Define VPE_NO_MOVEBTNS          for  128   // Move Buttons invisible
+Define VPE_NO_HELPBUTTON        for  256   // Help-Button invisible
+Define VPE_NO_INFOBUTTON        for  512   // Info-Button invisible
+Define VPE_NO_USER_CLOSE        for 1024   // User can't close VPE:
+                                           // Close-Button INVISIBLE and Sys-Menu
+                                           // disabled (if not embedded)
+                                           // VpeCloseDoc() works!
+
+Define VPE_NO_STATBAR           for 2048   // Statusbar invisible
+Define VPE_NO_PAGESCROLLER      for 4096   // Page Scroller in Statusbar invisible
+Define VPE_NO_STATUSSEG         for 8192   // Status Segment in Statusbar invisible
+
+Define VPE_NO_RULERS           for 16384   // Rulers invisible
+Define VPE_EMBEDDED            for 32768   // Preview is made child window of
+                                            // parent window specified in VpeOpenDoc()
+Define VPE_DOCFILE_READONLY   for  65536   // Document file is opened with read-only permission
+Define VPE_FIXED_MESSAGES     for 131072   // Messages are not registered by the Windows System
+
+
+
+// ========================================================================
+//                    VpePreviewDoc() Flag Parameters:
+// ========================================================================
+Enumeration_List
+   Define VPE_SHOW_NORMAL   for 1
+   Define VPE_SHOW_MAXIMIZED
+   Define VPE_SHOW_HIDE
+End_Enumeration_List
+
+
+
+// ========================================================================
+//                            Background Modes:
+// ========================================================================
+Define VBKG_SOLID       for 0      // solid background color
+Define VBKG_TRANSPARENT for 1      // transparent background
+Define VBKG_GRD_LINE    for 2      // line gradient background
+Define VBKG_GRD_RECT    for 3      // rectangular gradient background
+Define VBKG_GRD_ELLIPSE for 4      // elliptic gradient background
+
+
+
+// ========================================================================
+//                            Modes for GradientPrint:
+// ========================================================================
+Define VGRD_PRINT_AUTO     for 0   // if printer is a color printer, the gradient
+                                   // is printed, otherwise the alternative solid color
+Define VGRD_PRINT_GRADIENT for 1   // the gradient is always printed
+Define VGRD_PRINT_SOLID    for 2   // the alternative solid color is always printed
+
+
+
+// ========================================================================
+//                            Pen Styles:
+//
+// All PS_xxx styles are defined in windows.h:
+// ========================================================================
+// #define PS_SOLID            0
+// #define PS_DASH             1       /* -------  */
+// #define PS_DOT              2       /* .......  */
+// #define PS_DASHDOT          3       /* _._._._  */
+// #define PS_DASHDOTDOT       4       /* _.._.._  */
+
+
+
+// ========================================================================
+//                            Hatch Styles:
+// ========================================================================
+Define HS_NONE         for -1
+// All other HS_xxx styles are defined in windows.h:
+// HS_HORIZONTAL        0
+// HS_VERTICAL          1
+// HS_FDIAGONAL         2
+// HS_BDIAGONAL         3
+// HS_CROSS             4
+// HS_DIAGCROSS         5
+
+
+
+// ========================================================================
+//                      Text-Formatting Attributes:
+// ========================================================================
+Enumeration_List
+    Define VPE_ALIGN_LEFT
+    Define VPE_ALIGN_RIGHT
+    Define VPE_ALIGN_CENTER
+    Define VPE_ALIGN_JUSTIFIED
+    Define VPE_ALIGN_PRINT          // like ALIGN_LEFT, x2 and y2 are computed
+                                // - ONLY for internal usage: DO NOT USE
+    Define VPE_ALIGN_JUSTIFIED_AB   // Text will be aligned justified. In contrast to ALIGN_JUSTIFIED which aligns
+                                // the last line left aligned, the last line of the text will also be aligned
+                                // justified - if it is not ending with a CR / LF character.
+    Define VPE_ALIGN_PURE           // - ONLY for internal usage: DO NOT USE
+    Define VPE_ALIGN_LEFT_CUT       // last word clipped in the middle
+
+Define ALIGN_LEFT                 for 0
+Define ALIGN_RIGHT                for 1
+Define ALIGN_CENTER               for 2
+Define ALIGN_JUSTIFIED            for 3
+//DEFINE ALIGN_PRINT                for 4     // internal, do not use !
+Define ALIGN_JUSTIFIED_AB         for 5
+Define ALIGN_LEFT_CUT             for 7
+
+End_Enumeration_List
+
+
+
+// ========================================================================
+//                              Auto-Break Options:
+// ========================================================================
+Enumeration_List
+    Define AUTO_BREAK_ON               // Auto Break on; top and bottom of DefOutRect are used
+    Define AUTO_BREAK_OFF              // Same behaviour as AUTO_BREAK_ON (limited positioning /
+                                       // rendering), but no Auto Break performed
+    Define AUTO_BREAK_NO_LIMITS        // No Auto Break performed, no limited positioning / rendering
+    Define AUTO_BREAK_FULL             // Auto Break on; complete DefOutRect is used
+End_Enumeration_List
+
+
+
+
+// ========================================================================
+//                            Frame Attributes:
+// ========================================================================
+Enumeration_List
+    Define FRAME_INSIDE        // - ONLY for internal usage: DO NOT USE
+    Define FRAME_OUTSIDE       // - ONLY for internal usage: DO NOT USE
+    Define FRAME_ONCENTER      // - ONLY for internal usage: DO NOT USE
+End_Enumeration_List
+
+
+// ========================================================================
+//                              Color Attributes:
+// ========================================================================
+
+Define COLOR_BLACK for 0
+Define COLOR_DKGRAY for 8421504
+Define COLOR_GRAY for 12632256
+Define COLOR_LTGRAY for 15132390
+Define COLOR_WHITE for 16777215
+Define COLOR_DKRED for 128
+Define COLOR_RED for 192
+Define COLOR_LTRED for 255
+Define COLOR_DKORANGE for 16639
+Define COLOR_ORANGE for 33023
+Define COLOR_LTORANGE for 49407
+Define COLOR_DKYELLOW for 57568
+Define COLOR_YELLOW for 62194
+Define COLOR_LTYELLOW for 65535
+Define COLOR_DKGREEN for 32768
+Define COLOR_GREEN for 49152
+Define COLOR_LTGREEN for 65280
+Define COLOR_HIGREEN for 8453888
+Define COLOR_BLUEGREEN for 8421376
+Define COLOR_OLIVE for 32896
+Define COLOR_BROWN for 20608
+Define COLOR_DKBLUE for 8388608
+Define COLOR_BLUE for 16711680
+Define COLOR_LTBLUE for 16744448
+Define COLOR_LTLTBLUE for 16752640
+Define COLOR_HIBLUE for 16760832
+Define COLOR_CYAN for 16776960
+Define COLOR_DKPURPLE for 8388736
+Define COLOR_PURPLE for 12583104
+Define COLOR_MAGENTA for 16711935
+
+// ========================================================================
+//                              Picture Attributes:
+// ========================================================================
+Define PIC_MERGE            for    1  // merge background with bitmap (SRCAND instead of SRCCOPY)
+Define PIC_KEEPIMAGE        for    2  // always hold the image-data in memory
+Define PIC_DISCARD_DDB_DRAW for    4  // always discard the DDB from memory (immediately after drawing)
+Define PIC_KEEP_DDB_PAGE    for    8  // always hold the DDB in memory
+Define PIC_BESTFIT          for   16  // scale best fitting into given rectangle
+Define PIC_IN_FILE          for   32  // store image directly in file (not the pathname-link)
+Define PIC_ALLOWLZW         for   64  // allow import of GIF and TIFF-LZW files (forces user to make
+                                      // a license agreement with Unisys [www.unisys.com])
+Define PIC_X2YRESOLUTION    for  128  // set y-resolution of image to the value of x-resolution
+Define PIC_DXF_BW           for  256  // import DXF file in black & white
+Define PIC_SCALE2GRAY       for  512  // the image is scaled down to the screen resolution using
+                                      // the scale-to-gray technology for best readability at a 1:1 preview scale factor
+                                      // (only for b/w images) [Professional Edition and above only]
+Define PIC_SCALE2GRAY_FLOAT for 1024  // Same as PIC_SCALE2GRAY, but the image is always scaled to the *best*
+                                      // possible readability regardless of the preview scale factor (is slower)
+                                      // (only for b/w images) [Professional Edition and above only]
+Define PIC_EXACT           for 32768  // draw exact (and slow) to avoid seldom arising pixel-problem
+                                      // due to wysiwyg coordinate-rounding problem, or if graphics driver has bugs
+                                      // This is only useful for the preview, not for printing!
+
+
+// Flags for VpeSetPictureType()
+// =============================
+Define PIC_TYPE_AUTO   for 255     // Auto determination by filename-suffix (default)
+Define PIC_TYPE_BMP    for   0     // Windows-Bitmap
+Define PIC_TYPE_WMF    for   5     // WMF
+Define PIC_TYPE_EMF    for   6     // EMF
+Define PIC_TYPE_DXF    for   7     // Autocad DXF
+Define PIC_TYPE_TIFF   for  64     // TIF-File, note: *might* require PIC_ALLOWLZW
+Define PIC_TYPE_GIF    for  65     // GIF-File, note: requires PIC_ALLOWLZW
+Define PIC_TYPE_PCX    for  66     // PCX file
+Define PIC_TYPE_FLT    for  67     // Use a Microsoft / Aldus - Filterprogram
+Define PIC_TYPE_JPEG   for  68     // JPEG-File
+Define PIC_TYPE_PNG    for  69     // PNG (Portable Network Graphic)
+
+
+
+// ========================================================================
+//                          Printer- / Setup-Flags:
+// ========================================================================
+Define PRINTDLG_NEVER      for 0   // never show setup-dialog (if file_name is NULL, last setting
+                                   // or the setting of the default-printer will be taken)
+Define PRINTDLG_ONFAIL     for 1   // show setup-dialog only, if file-read fails
+Define PRINTDLG_ALWAYS     for 2   // show setup-dialog always
+Define PRINTDLG_FULL       for 4   // show FULL Dialog (with page range, collation, etc.)
+                                   // This is a flag, i.e. add it to one of the other PRINTDLG_xyz flags
+                                   // (example: PRINTDLG_ALWAYS +  PRINTDLG_FULL)
+                                   // The flag is especially useful, if you hide the Toolbar or the Print-Button.
+
+Define PRINT_ALL           for 0   // print all pages
+Define PRINT_EVEN          for 1   // print only even pages
+Define PRINT_ODD           for 2   // print only odd pages
+Define PRINT_NOABORTDLG    for 4   // show no abort / progress dialog during printing
+Define PRINTPOS_ABSOLUTE   for 0   // coordinates are absolute to the paper-edges (default)
+Define PRINTPOS_RELATIVE   for 1   // coordinates are relative to the first printable positon of the printer
+
+
+
+// ========================================================================
+//                        Notification Messages:
+// ========================================================================
+#Replace VPE_DESTROYWINDOW   (WM_USER + 2306)    // VPE was destroyed - lParam = Doc-Handle
+
+#Replace VPE_PRINT           (WM_USER + 2307)    // printing: wParam = one of the PRINT_MSG_xyz constants
+                                                 //           lParam = Doc-Handle
+                                                 //
+                                                 // Possible return codes: PRINT_ACTION_OK or
+                                                 //                        (only for wParam = PRINT_MSG_SETUPSTART) PRINT_ACTION_ABORT
+
+#Replace VPE_AUTOPAGEBREAK   (WM_USER + 2308)     // Auto Page Break occured. Engine is on the new page. This is either
+                                                  // a newly generated page, or an already existing page (if the text
+                                                  // was inserted on a page, that has already pages following) - lParam = Doc-Handle
+
+#Replace VPE_PRINT_NEWPAGE   (WM_USER + 2309)     // Event is sent (only while printing) exactly before printing a new page.
+                                                  // The event is useful to change the device properties on-the-fly during printing.
+                                                  // wParam = page no.
+                                                  // lParam = Doc-Handle
+                                                  // Possible return codes: PRINT_ACTION_OK or PRINT_ACTION_CHANGE
+
+#Replace VPE_PRINT_DEVDATA   (WM_USER + 2310)     // Event is sent (only while printing) exactly before printing a new page and
+                                                  // immediately after VPE_PRINT_NEWPAGE has been sent.
+                                                  // The event is useful to call VpeDevSendData() to send Escape sequences and other
+                                                  // binary data directly to the output device during printing.
+                                                  // wParam = page no.
+                                                  // lParam = Doc-Handle
+                                                  // Possible return codes: PRINT_ACTION_OK or PRINT_ACTION_CHANGE
+
+#Replace VPE_HELP            (WM_USER + 2311)     // User requests help - lParam = Doc-Handle
+#Replace VPE_CLOSEWINDOW     (WM_USER + 2312)     // Preview was closed, but document not destroyed - lParam = Doc-Handle
+#Replace VPE_OBJECTCLICKED   (WM_USER + 2313)     // An object with an assigned ObjectID has been clicked - lParam = Doc-Handle
+                                                  // retrieve the ObjectID with VpeGetObjectID() [Professional Edition and above]
+#Replace VPE_UDO_PAINT       (WM_USER + 2314)     // Notification for User Defined Object - lParam = Doc-Handle [Professional Edition and above]
+#Replace VPE_BEFORE_MAIL     (WM_USER + 2315)     // User pushed eMail-button, but email was not sent yet  - lParam = Doc-Handle
+#Replace VPE_AFTER_MAIL      (WM_USER + 2316)     // User pushed eMail-button and email was sent - wParam = VERR_xyz, lParam = Doc-Handle
+#Replace VPE_HIGHEST_MESSAGE (WM_USER + 2317)     // For internal use only
+
+
+// WPARAM of message VPE_PRINT:
+// ============================
+Enumeration_List
+   Define PRINT_MSG_ABORT       // User aborted
+   Define PRINT_MSG_START       // Print started
+   Define PRINT_MSG_END         // Print ended
+   Define PRINT_MSG_SETUPABORT  // User aborted Setup-Dialog
+   Define PRINT_MSG_SETUPSTART  // Setup-Dialog started
+   Define PRINT_MSG_SETUPEND    // Setup-Dialog ended
+End_Enumeration_List
+
+
+// Return codes for VPE_PRINT_xyz messages:
+// ========================================
+Define PRINT_ACTION_OK     for 0   // Engine shall continue its work (for all VPE_PRINT_xyz messages the same)
+Define PRINT_ACTION_ABORT  for 1   // for message VPE_PRINT with wParam=PRINT_MSG_SETUPSTART: Engine shall not start printing
+Define PRINT_ACTION_CHANGE for 1   // for messages VPE_PRINT_NEWPAGE and VPE_PRINT_DEVDATA:
+                                   // Engine shall use changed Device-Properties
+
+
+
+// ========================================================================
+//                      Barcode Parameters and Types:
+// ========================================================================
+Enumeration_List
+   Define BCP_BOTTOM           // Barcode Text at Bottom
+   Define BCP_TOP              // Barcode Text at Top
+   Define BCP_HIDE             // Barcode Text Hidden
+End_Enumeration_List
+
+
+Define BCT_EAN13            for 1
+Define BCT_EAN8             for 2
+Define BCT_UPCA             for 3
+Define BCT_CODABAR          for 5
+Define BCT_CODE39           for 6
+Define BCT_2OF5             for 7
+Define BCT_INTERLEAVED2OF5  for 8
+Define BCT_UPCE             for 9
+Define BCT_EAN13_2          for 10
+Define BCT_EAN13_5          for 11
+Define BCT_EAN8_2           for 12
+Define BCT_EAN8_5           for 13
+Define BCT_UPCA_2           for 14
+Define BCT_UPCA_5           for 15
+Define BCT_UPCE_2           for 16
+Define BCT_UPCE_5           for 17
+Define BCT_EAN128A          for 18
+Define BCT_EAN128B          for 19
+Define BCT_EAN128C          for 20
+Define BCT_CODE93           for 21
+Define BCT_POSTNET          for 22
+Define BCT_CODE128A         for 23          // Only available if add-on barcode library is licensed (bought as an extra)
+Define BCT_CODE128B         for 24          // Only available if add-on barcode library is licensed (bought as an extra)
+Define BCT_CODE128C         for 25          // Only available if add-on barcode library is licensed (bought as an extra)
+Define BCT_CODE128          for 26
+Define BCT_EAN128           for 27
+Define BCT_EAN2             for 28
+Define BCT_EAN5             for 29
+Define BCT_CODE39EXT        for 30
+Define BCT_CODE93EXT        for 31
+Define BCT_RM4SCC           for 32
+Define BCT_MSI              for 33
+Define BCT_ISBN             for 34
+Define BCT_ISBN_5           for 35
+Define BCT_IDENTCODE        for 36
+Define BCT_LEITCODE         for 37
+Define BCT_PZN              for 38
+Define BCT_CODE11           for 39
+Define BCT_2OF5MATRIX       for 40
+Define BCT_TELEPENA         for 41
+
+// ========================================================================
+//                          Positioning Codes:
+// ========================================================================
+
+Define VFREE            for -2147483549
+Define VLEFT            for -2147483550
+Define VRIGHT           for -2147483551
+Define VLEFTMARGIN      for -2147483552
+Define VRIGHTMARGIN     for -2147483553
+Define VTOP             for -2147483554
+Define VBOTTOM          for -2147483555
+Define VTOPMARGIN       for -2147483556
+Define VBOTTOMMARGIN    for -2147483557
+Define VCENTER          for -2147483558
+
+Define VWIDTH           for -100    // only usable for VpeGet()
+Define VHEIGHT          for -101    // only usable for VpeGet()
+Define VRENDERWIDTH     for -102    // only usable for VpeGet() / VpeSet()
+Define VRENDERHEIGHT    for -103    // only usable for VpeGet() / VpeSet()
+
+Define VUDO_LEFT        for -104    // only usable for VpeGet()
+Define VUDO_RIGHT       for -105    // only usable for VpeGet()
+Define VUDO_TOP         for -106    // only usable for VpeGet()
+Define VUDO_BOTTOM      for -107    // only usable for VpeGet()
+Define VUDO_WIDTH       for -108    // only usable for VpeGet()
+Define VUDO_HEIGHT      for -109    // only usable for VpeGet()
+
+
+// C/C++ Shortcuts:
+// ================
+//define nLeft(hDoc)           For VpeGet(hDoc, VLEFT)
+//define nTop(hDoc)            For VpeGet(hDoc, VTOP)
+//define nRight(hDoc)          For VpeGet(hDoc, VRIGHT)
+//define nBottom(hDoc)         For VpeGet(hDoc, VBOTTOM)
+//define nLeftMargin(hDoc)     For VpeGet(hDoc, VLEFTMARGIN)
+//define nTopMargin(hDoc)      For VpeGet(hDoc, VTOPMARGIN)
+//define nRightMargin(hDoc)    For VpeGet(hDoc, VRIGHTMARGIN)
+//define nBottomMargin(hDoc)   For VpeGet(hDoc, VBOTTOMMARGIN)
+//define nWidth(hDoc)          For VpeGet(hDoc, VWIDTH)
+//define nHeight(hDoc)         For VpeGet(hDoc, VHEIGHT)
+//define nRenderWidth(hDoc)    For VpeGet(hDoc, VRENDERWIDTH)
+//define nRenderHeight(hDoc)   For VpeGet(hDoc, VRENDERHEIGHT)
+//define nUDOLeft(hDoc)        For VpeGet(hDoc, VUDO_LEFT)
+//define nUDORight(hDoc)       For VpeGet(hDoc, VUDO_RIGHT)
+//define nUDOTop(hDoc)         For VpeGet(hDoc, VUDO_TOP)
+//define nUDOBottom(hDoc)      For VpeGet(hDoc, VUDO_BOTTOM)
+//define nUDOWidth(hDoc)       For VpeGet(hDoc, VUDO_WIDTH)
+//define nUDOHeight(hDoc)      For VpeGet(hDoc, VUDO_HEIGHT)
+
+
+
+
+
+// ==========================================================================
+// Return Codes of Rendering Functions for Text and RTF:
+// ==========================================================================
+Enumeration_List
+   Define RENDER_NO_BREAK      // NO Auto Break will occur
+   Define RENDER_BREAK         // Auto Break will occur
+   Define RENDER_SKIP_BREAK    // Auto Break will occur, but no text will be placed on the actual
+                               // page, all text will be skipped to the next page
+                               // (VRENDERWIDTH and VRENDERHEIGHT are not set)
+End_Enumeration_List
+
+
+
+// ==========================================================================
+// Return Codes for VpeIsMAPIInstalled:
+// ==========================================================================
+Enumeration_List
+   Define VMAPI_NOT_INSTALLED  // MAPI not installed
+   Define VMAPI_INSTALLED      // MAPI installed
+   Define VMAPI_UNSURE         // unsure
+End_Enumeration_List
+
+
+
+// ==========================================================================
+// Error-Codes returned by VpeLastError()
+// Note, that only functions setting the error state will also clear it, if
+// no error occured! All other functions will keep the error state untouched.
+// ==========================================================================
+Enumeration_List
+   Define VERR_OK                // no error
+   Define VERR_COMMON            // common error
+
+   Define VERR_MEMORY for 100      // out of memory
+
+   Define VERR_FILE_OPEN for 200 // error opening a file; occurs when calling functions like
+                                 // OpenDocFile(), VpeReadDoc(), VpeWriteDoc(), ReadPrinterSetup(),
+                                 // Picture(), WriteRTFFile(), etc.
+                                 // Meaning: The specified file could not be opened, it is either not
+                                 // existing, the path is not existing, it is locked, incorrect
+                                 // logical structure (for example corrupted file)
+   Define VERR_FILE_DOCVERSION   // Document file has the wrong (higher) version and cannot be opened / read
+   Define VERR_FILE_CREATE       // error creating file; occurs when calling functions like
+                                 // WriteDoc(), OpenDocFile(), WritePrinterSetup(),
+                                 // SetupPrinter() (only during write), etc.
+                                 // Meaning: Illegal path / filename, file locked, disk full
+   Define VERR_FILE_ACCESS       // Access denied (no permission); see also VpeSetDocFileReadOnly()
+   Define VERR_FILE_READ         // error during file read operation
+   Define VERR_FILE_WRITE        // error during file write operation
+
+   Define VERR_PIC_IMPORT for 300 // image could not be imported
+                                 // Meaning: File or resource not found, file not accessible,
+                                 // or image structure unreadable / corrupted, or not enough memory
+   Define VERR_PIC_NOLICENSE     // No license for image access
+                                 // (e.g. TIFF / GIF image is LZW compressed
+                                 // and flag PIC_ALLOWLZW not used)
+   Define VERR_PIC_DXFCOORD      // For DXF formats, x2 and y2 may not be VFREE at the same time,
+                                 // either x2 or y2 must be <> VFREE
+
+   Define VERR_PIC_EXPORT for 350 // image could not be exported
+                                  // Meaning: File could not be created, or not enough memory
+
+   Define VERR_MOD_GRAPH_IMP for 400  // Error loading Graphics Import Library (Dav3_16.DLL / Dav3_32.DLL)
+   Define VERR_MOD_GRAPH_PROC         // Error loading Graphics Processing Library (Leon3_16.DLL / Leon3_32.DLL)
+   Define VERR_MOD_BARCODE            // Error loading Barcode Library (Easybar.DLL / Ezbar32.DLL)
+   Define VERR_MOD_CHART              // Error loading Chart Library (VChart16.DLL / VChart32.DLL)
+
+   Define VERR_MAIL_LOAD_MAPI for 450          // Could not load MAPI
+   Define VERR_MAIL_CREATE                     // Could not create temporary file
+   Define VERR_MAIL_USER_ABORT
+   Define VERR_MAIL_FAILURE
+   Define VERR_MAIL_LOGON_FAILURE
+   Define VERR_MAIL_DISK_FULL
+   Define VERR_MAIL_INSUFFICIENT_MEMORY
+   Define VERR_MAIL_ACCESS_DENIED
+   Define VERR_MAIL_RESERVED
+   Define VERR_MAIL_TOO_MANY_SESSIONS
+   Define VERR_MAIL_TOO_MANY_FILES
+   Define VERR_MAIL_TOO_MANY_RECIPIENTS
+   Define VERR_MAIL_ATTACHMENT_NOT_FOUND
+   Define VERR_MAIL_ATTACHMENT_OPEN_FAILURE
+   Define VERR_MAIL_ATTACHMENT_WRITE_FAILURE
+   Define VERR_MAIL_UNKNOWN_RECIPIENT
+   Define VERR_MAIL_BAD_RECIPTYPE
+   Define VERR_MAIL_NO_MESSAGES
+   Define VERR_MAIL_INVALID_MESSAGE
+   Define VERR_MAIL_TEXT_TOO_LARGE
+   Define VERR_MAIL_INVALID_SESSION
+   Define VERR_MAIL_TYPE_NOT_SUPPORTED
+   Define VERR_MAIL_AMBIGUOUS_RECIPIENT
+   Define VERR_MAIL_MESSAGE_IN_USE
+   Define VERR_MAIL_NETWORK_FAILURE
+   Define VERR_MAIL_INVALID_EDITFIELDS
+   Define VERR_MAIL_INVALID_RECIPS
+   Define VERR_MAIL_NOT_SUPPORTED
+
+   Define VERR_RTF_BRACES for 1000  // RTF: unbalanced braces "{}"
+   Define VERR_RTF_OVERFLOW         // RTF: only 16-bit version; generated internal structure > 64 KB
+   Define VERR_RTF_FONTTBL          // RTF: error parsing font table
+   Define VERR_RTF_COLORTBL         // RTF: error parsing color table
+End_Enumeration_List
+
+
+
+// ========================================================================
+// Flags for Device-Functions
+// ========================================================================
+Define VORIENT_PORTRAIT  for 1
+Define VORIENT_LANDSCAPE for 2
+Define VORIENTATION_LANDSCAPE for 2
+
+Define VRES_DRAFT        for -1
+Define VRES_LOW          for -2
+Define VRES_MEDIUM       for -3
+Define VRES_HIGH         for -4
+
+Define VCOLOR_MONOCHROME for 1
+Define VCOLOR_COLOR      for 2
+
+Define VDUP_SIMPLEX      for 1
+Define VDUP_VERTICAL     for 2
+Define VDUP_HORIZONTAL   for 3
+
+Define VTT_BITMAP        for 1
+Define VTT_DOWNLOAD      for 2
+Define VTT_SUBDEV        for 3
+
+Define VPAPER_A4                  for -1      // A4 Sheet, 210- by 297-millimeters
+Define VPAPER_LETTER              for -2      // US Letter, 8 1/2- by 11-inches
+Define VPAPER_LEGAL               for -3      // Legal, 8 1/2- by 14-inches
+Define VPAPER_CSHEET              for -4      // C Sheet, 17- by 22-inches
+Define VPAPER_DSHEET              for -5      // D Sheet, 22- by 34-inches
+Define VPAPER_ESHEET              for -6      // E Sheet, 34- by 44-inches
+Define VPAPER_LETTERSMALL         for -7      // Letter Small, 8 1/2- by 11-inches
+Define VPAPER_TABLOID             for -8      // Tabloid, 11- by 17-inches
+Define VPAPER_LEDGER              for -9      // Ledger, 17- by 11-inches
+Define VPAPER_STATEMENT           for -10     // Statement, 5 1/2- by 8 1/2-inches
+Define VPAPER_EXECUTIVE           for -11     // Executive, 7 1/4- by 10 1/2-inches
+Define VPAPER_A3                  for -12     // A3 sheet, 297- by 420-millimeters
+Define VPAPER_A4SMALL             for -13     // A4 small sheet, 210- by 297-millimeters
+Define VPAPER_A5                  for -14     // A5 sheet, 148- by 210-millimeters
+Define VPAPER_B4                  for -15     // B4 sheet, 250- by 354-millimeters
+Define VPAPER_B5                  for -16     // B5 sheet, 182- by 257-millimeter paper
+Define VPAPER_FOLIO               for -17     // Folio, 8 1/2- by 13-inch paper
+Define VPAPER_QUARTO              for -18     // Quarto, 215- by 275-millimeter paper
+Define VPAPER_10X14               for -19     // 10- by 14-inch sheet
+Define VPAPER_11X17               for -20     // 11- by 17-inch sheet
+Define VPAPER_NOTE                for -21     // Note, 8 1/2- by 11-inches
+Define VPAPER_ENV_9               for -22     // #9 Envelope, 3 7/8- by 8 7/8-inches
+Define VPAPER_ENV_10              for -23     // #10 Envelope, 4 1/8- by 9 1/2-inches
+Define VPAPER_ENV_11              for -24     // #11 Envelope, 4 1/2- by 10 3/8-inches
+Define VPAPER_ENV_12              for -25     // #12 Envelope, 4 3/4- by 11-inches
+Define VPAPER_ENV_14              for -26     // #14 Envelope, 5- by 11 1/2-inches
+Define VPAPER_ENV_DL              for -27     // DL Envelope, 110- by 220-millimeters
+Define VPAPER_ENV_C5              for -28     // C5 Envelope, 162- by 229-millimeters
+Define VPAPER_ENV_C3              for -29     // C3 Envelope,  324- by 458-millimeters
+Define VPAPER_ENV_C4              for -30     // C4 Envelope,  229- by 324-millimeters
+Define VPAPER_ENV_C6              for -31     // C6 Envelope,  114- by 162-millimeters
+Define VPAPER_ENV_C65             for -32     // C65 Envelope, 114- by 229-millimeters
+Define VPAPER_ENV_B4              for -33     // B4 Envelope,  250- by 353-millimeters
+Define VPAPER_ENV_B5              for -34     // B5 Envelope,  176- by 250-millimeters
+Define VPAPER_ENV_B6              for -35     // B6 Envelope,  176- by 125-millimeters
+Define VPAPER_ENV_ITALY           for -36     // Italy Envelope, 110- by 230-millimeters
+Define VPAPER_ENV_MONARCH         for -37     // Monarch Envelope, 3 7/8- by 7 1/2-inches
+Define VPAPER_ENV_PERSONAL        for -38     // 6 3/4 Envelope, 3 5/8- by 6 1/2-inches
+Define VPAPER_FANFOLD_US          for -39     // US Std Fanfold, 14 7/8- by 11-inches
+Define VPAPER_FANFOLD_STD_GERMAN  for -40     // German Std Fanfold, 8 1/2- by 12-inches
+Define VPAPER_FANFOLD_LGL_GERMAN  for -41     // German Legal Fanfold, 8 1/2- by 13-inches
+Define VPAPER_USER_DEFINED        for   0     // User-Defined
+Define DIN_A_4                    for  -1     // for compatibility with older versions
+Define US_LETTER                  for  -2     // for compatibility with older versions
+
+
+
+// =========================================================================
+//                              Paper-Bins
+// =========================================================================
+Define VBIN_UNTOUCHED     for -1   // default
+Define VBIN_UPPER         for  1
+Define VBIN_ONLYONE       for  1
+Define VBIN_LOWER         for  2
+Define VBIN_MIDDLE        for  3
+Define VBIN_MANUAL        for  4
+Define VBIN_ENVELOPE      for  5
+Define VBIN_ENVMANUAL     for  6
+Define VBIN_AUTO          for  7
+Define VBIN_TRACTOR       for  8
+Define VBIN_SMALLFMT      for  9
+Define VBIN_LARGEFMT      for 10
+Define VBIN_LARGECAPACITY for 11
+Define VBIN_CASSETTE      for 14
+
+
+
+// =========================================================================
+//                              Mail
+// =========================================================================
+Define VMAIL_ORIG   for 0          // Recipient is message originator
+Define VMAIL_TO     for 1          // Recipient is a primary recipient
+Define VMAIL_CC     for 2          // Recipient is a copy recipient
+Define VMAIL_BCC    for 3          // Recipient is blind copy recipient
+
+
+
+
+// =========================================================================
+// Behavior of preview for page forward / backward action
+// (vertical positioning of page in the preview after user
+// moved a page forward / back)
+// =========================================================================
+//Enumeration_List PREVIEWCTRL
+//   Define PREVIEW_STAY         // vertical position unaffected
+//   Define PREVIEW_JUMPTOP      // vertical position on top of page (default)
+//End_Enumeration_List
+// VpeSetPreviewCtrl
+Enum_List
+    Define PREVIEW_STAY                 // Vertical position unaffected
+    Define PREVIEW_JUMPTOP              // Vertical position on top of page (default)
+End_Enum_List
+
+// VpeSetDocExportType
+Enum_List
+    Define VPE_DOC_TYPE_AUTO            // WriteDoc() will create VPE, PDF, HTML, XML or ODT files,
+                                        // depending on the file suffix of the supplied file name
+    Define VPE_DOC_TYPE_VPE             // WriteDoc() vill create VPE files, regardless of the file suffix
+    Define VPE_DOC_TYPE_PDF             // WriteDoc() vill create PDF files, regardless of the file suffix
+    Define VPE_DOC_TYPE_HTML            // WriteDoc() vill create HTML files, regardless of the file suffix
+    Define VPE_DOC_TYPE_XML             // WriteDoc() vill create XML files, regardless of the file suffix
+    Define VPE_DOC_TYPE_ODT             // WriteDoc() vill create ODT files, regardless of the file suffix
+End_Enum_List
+
+// VpeSetCompression
+Enum_List
+    Define DOC_COMPRESS_NONE            // No compression
+    Define DOC_COMPRESS_FLATE           // Flate (ZLIB) compression
+End_Enum_List
+
+// VpeSetRulersMeasure
+Enum_List
+    Define CM                           // Rulers are shown in metric units
+    Define INCH                         // Rulers are shown in inch units
+End_Enum_List
+
+// VpeSetScaleMode
+Enum_List
+    Define VSCALE_MODE_FULL_PAGE        // Show full page
+    Define VSCALE_MODE_PAGE_WIDTH       // Fit page width
+    Define VSCALE_MODE_ZOOM_TOOL        // Zoom tool activated
+    Define VSCALE_MODE_FREE             // Any scale allowed
+End_Enum_List
+
+
+
+
+// =========================================================================
+//                              Keyboard-Layout
+// =========================================================================
+Define VKEY_SCROLL_LEFT         for 0
+Define VKEY_SCROLL_PAGE_LEFT    for 1
+Define VKEY_SCROLL_RIGHT        for 2
+Define VKEY_SCROLL_PAGE_RIGHT   for 3
+Define VKEY_SCROLL_UP           for 4
+Define VKEY_SCROLL_PAGE_UP      for 5
+Define VKEY_SCROLL_DOWN         for 6
+Define VKEY_SCROLL_PAGE_DOWN    for 7
+Define VKEY_SCROLL_TOP          for 8
+Define VKEY_SCROLL_BOTTOM       for 9
+Define VKEY_PRINT               for 10
+Define VKEY_MAIL                for 11
+Define VKEY_FULL_PAGE           for 12
+Define VKEY_PAGE_WIDTH          for 13
+Define VKEY_ZOOM_IN             for 14
+Define VKEY_ZOOM_OUT            for 15
+Define VKEY_GRID                for 16
+Define VKEY_PAGE_FIRST          for 17
+Define VKEY_PAGE_LEFT           for 18
+Define VKEY_PAGE_RIGHT          for 19
+Define VKEY_PAGE_LAST           for 20
+Define VKEY_HELP                for 21
+Define VKEY_INFO                for 22
+Define VKEY_CLOSE               for 23
+Define VKEY_GOTO_PAGE           for 24
+Define VKEY_OPEN                for 25
+Define VKEY_SAVE                for 26
+Define VKEY_ESCAPE              for 27      //  for internal use only
+
+
+// =========================================================================
+//                             GUI Languages:
+// =========================================================================
+Define VGUI_LANGUAGE_USER_DEFINED   for -1
+Define VGUI_LANGUAGE_ENGLISH        for  0
+Define VGUI_LANGUAGE_GERMAN         for  1
+Define VGUI_LANGUAGE_FRENCH         for  2
+Define VGUI_LANGUAGE_DUTCH          for  3
+Define VGUI_LANGUAGE_SPANISH        for  4
+Define VGUI_LANGUAGE_DANISH         for  5
+Define VGUI_LANGUAGE_SWEDISH        for  6
+Define VGUI_LANGUAGE_FINNISH        for  7
+Define VGUI_LANGUAGE_ITALIAN        for  8
+Define VGUI_LANGUAGE_NORWEGIAN      for  9
+Define VGUI_LANGUAGE_PORTUGUESE     for 10
+
+
+
+// ========================================================================
+//                          Other Definitions:
+// ========================================================================
+//define CM      For 0       // Parameters for RulersMeasure
+//define INCH    For 1
+
+
+// ========================================================================
+//                                  DEFINES
+// ========================================================================
+
+// Options for VpeSetPictureExportOptions() (0 is default):
+// ========================================================
+Define PICEXP_WRITE_COMPRESSED for |CI$00000002   // Write compressed file
+                                                  // for JPEG: activate Huffman-Optimization (see also: PICEXP_JPEG_xyz flags)
+                                                  // for PNG : activate ZIP compression
+                                                  // for TIFF: see PICEXP_TIFF_xyz flags
+
+Define PICEXP_TIFF_NOCOMP      for |CI$00000020   // TIFF-Write: Uncompressed
+Define PICEXP_TIFF_LZW         for |CI$00000040   // TIFF-Write: LZW-Compression *specify PICEXP_ALLOWLZW also - see Unisys Patent License for LZW-compression*
+Define PICEXP_TIFF_CCITTRLE    for |CI$00000060   // TIFF-Write: CCITT Modified Huffman
+Define PICEXP_TIFF_CCITTFAX3   for |CI$00000080   // TIFF-Write: CCITT G3 Fax Compression (only b/w images)
+Define PICEXP_TIFF_CCITTFAX4   for |CI$000000a0   // TIFF-Write: CCITT G3 Fax Compression (only b/w images)
+Define PICEXP_TIFF_PACKBITS    for |CI$000000c0   // TIFF-Write: PACKBITS-Compression
+Define PICEXP_TIFF_APPEND      for |CI$00200000   // TIFF-Write: Append image as a new page to existing TIFF file
+Define PICEXP_ALLOWLZW         for |CI$00000400   // allow export of GIF and TIFF-LZW files (forces user to make
+                                                  // a license agreement with Unisys [www.unisys.com])
+Define PICEXP_JPEG_HIQUALITY   for |CI$0000F000   // JPEG-Write: very high quality, very low compression
+Define PICEXP_JPEG_GOODQUALITY for |CI$00009000   // JPEG-Write: good quality, lower compression
+Define PICEXP_JPEG_MIDQUALITY  for |CI$00003000   // JPEG-Write: medium quality, good compression
+Define PICEXP_JPEG_LOQUALITY   for |CI$00001000   // JPEG-Write: very low quality, very high compression
+
+Define PICEXP_INTERLACED       for |CI$0010000L   // GIF-/ PNG-Write: Write in interlaced Mode
+
+
+// Options for VpeSetPictureExportColorDepth():
+// ============================================
+Define PICEXP_COLOR_MONO       for 1
+Define PICEXP_COLOR_16         for 4
+Define PICEXP_COLOR_256        for 8       // default
+Define PICEXP_COLOR_HI         for 16
+Define PICEXP_COLOR_TRUE       for 24
+
+
+// Options for VpeSetPictureExportDither():
+// ========================================
+Define PICEXP_DITHER_NONE      for 0       // default
+Define PICEXP_DITHER_MONO      for 1
+Define PICEXP_DITHER_16        for 2
+Define PICEXP_DITHER_256       for 3
+
+
+
+
+// Chart Types:
+// ============
+Define VCHART_POINT                    for 0
+Define VCHART_LINE                     for 1
+Define VCHART_BAR                      for 2
+Define VCHART_STACKED_BAR_ABSOLUTE     for 3
+Define VCHART_STACKED_BAR_PERCENT      for 4
+Define VCHART_3D_BAR                   for 5
+Define VCHART_3D_STACKED_BAR_ABSOLUTE  for 6
+Define VCHART_3D_STACKED_BAR_PERCENT   for 7
+Define VCHART_PIE                      for 8
+Define VCHART_3D_PIE                   for 9
+Define VCHART_AREA_ABSOLUTE            for 10
+Define VCHART_AREA_PERCENT             for 11
+
+
+// Symbol Types (used in Point-Chart):
+// ==================================
+Define VCHART_SYMBOL_NONE           for -1
+Define VCHART_SYMBOL_SQUARE         for  0
+Define VCHART_SYMBOL_TRIANGLE       for  1
+Define VCHART_SYMBOL_CIRCLE         for  2
+Define VCHART_SYMBOL_CROSS          for  3
+Define VCHART_SYMBOL_X              for  4
+Define VCHART_SYMBOL_POINT          for  5
+
+
+// Legend Positions:
+// =================
+Define VCHART_LEGENDPOS_NONE           for -1
+Define VCHART_LEGENDPOS_RIGHT          for  0
+Define VCHART_LEGENDPOS_RIGHT_TOP      for  1
+Define VCHART_LEGENDPOS_RIGHT_BOTTOM   for  2
+Define VCHART_LEGENDPOS_LEFT           for  3
+Define VCHART_LEGENDPOS_LEFT_TOP       for  4
+Define VCHART_LEGENDPOS_LEFT_BOTTOM    for  5
+Define VCHART_LEGENDPOS_TOP            for  6
+Define VCHART_LEGENDPOS_BOTTOM         for  7
+
+
+// Label States:
+// =============
+Define VCHART_LABEL_NONE   for -1          // No labels are drawn
+Define VCHART_LABEL_USER   for  0          // User defined labels are drawn
+Define VCHART_LABEL_AUTO   for  1          // Labeling is done automatically
+
+
+// Grid Types:
+// ===========
+Define VCHART_GRID_NONE         for -1     // No Grid is drawn
+Define VCHART_GRID_BOTH_AXIS    for  0     // Grid is drawn for both axis
+Define VCHART_GRID_X_AXIS       for  1     // Grid is only drawn for the x-axis
+Define VCHART_GRID_Y_AXIS       for  2     // Grid is only drawn for the y-axis
+
+
+Define VUNIT_FACTOR_CM          for 100000  // coordinates are handled in cm units by the VPE API
+Define VUNIT_FACTOR_INCH        for 254000  // coordinates are handled in inch units by the VPE API
+Define VUNIT_FACTOR_MM10        for 1000    // coordinates are handled in 1/10 of a mm by the VPE API
+                                            // (compatible to VPE < v4.0)
+ 
+
+// ========================================================================
+//                      Additional VpeOpenDoc() Flag Parameters:
+// ========================================================================
+
+
+
+
+// ========================================================================
+//                              Prototypes:
+// ========================================================================
+
+External_Function VpeSetViewable                "VpeSetViewable"                VPE_DLL Handle hDoc Integer iYes_no Returns Integer // Void
+External_Function VpeSetPrintable               "VpeSetPrintable"               VPE_DLL Handle hDoc Integer iYes_no Returns Integer // Void
+External_Function VpeSetStreamable              "VpeSetStreamable"              VPE_DLL Handle hDoc Integer iYes_no Returns Integer // Void
+External_Function VpeSetShadowed                "VpeSetShadowed"                VPE_DLL Handle hDoc Integer iYes_no Returns Integer // Void
+External_Function VpeWriteRTF                   "VpeWriteRTF"                   VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 String sText Returns Real
+External_Function VpeWriteBoxRTF                "VpeWriteBoxRTF"                VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 String sText Returns Real
+External_Function VpeWriteRTFFile               "VpeWriteRTFFile"               VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 String sfile_name Returns Real
+External_Function VpeWriteBoxRTFFile            "VpeWriteBoxRTFFile"            VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 String sFile_name Returns Real
+External_Function VpeSetFirstIndent             "VpeSetFirstIndent"             VPE_DLL Handle hDoc Integer iIndent Returns Integer // Void
+External_Function VpeSetLeftIndent              "VpeSetLeftIndent"              VPE_DLL Handle hDoc Integer iIndent Returns Integer // Void
+External_Function VpeSetRightIndent             "VpeSetRightIndent"             VPE_DLL Handle hDoc Integer iIndent Returns Integer // Void
+External_Function VpeSetSpaceBefore             "VpeSetSpaceBefore"             VPE_DLL Handle hDoc Integer iSpace Returns Integer // Void
+External_Function VpeSetSpaceAfter              "VpeSetSpaceAfter"              VPE_DLL Handle hDoc Integer iSpace Returns Integer // Void
+External_Function VpeSetSpaceBetween            "VpeSetSpaceBetween"            VPE_DLL Handle hDoc Integer iSpace Returns Integer // Void
+External_Function VpeSetDefaultTabSize          "VpeSetDefaultTabSize"          VPE_DLL Handle hDoc Real llDefault_tab_size Returns Integer // Void
+External_Function VpeSetTab                     "VpeSetTab"                     VPE_DLL Handle hDoc Integer iTab_position Integer iReserved Returns Integer // Void
+External_Function VpeClearTab                   "VpeClearTab"                   VPE_DLL Handle hDoc Integer iTab_position Returns Integer // Void
+External_Function VpeClearAllTabs               "VpeClearAllTabs"               VPE_DLL Handle hDoc Returns Integer // Void
+External_Function VpeSetKeepLines               "VpeSetKeepLines"               VPE_DLL Handle hDoc Integer iYes_no Returns Integer // Void
+External_Function VpeSetKeepNextParagraph       "VpeSetKeepNextParagraph"       VPE_DLL Handle hDoc Integer iYes_no Returns Integer // Void
+External_Function VpeSetParagraphControl        "VpeSetParagraphControl"        VPE_DLL Handle hDoc Integer iYes_no Returns Integer // Void
+External_Function VpeResetParagraph             "VpeResetParagraph"             VPE_DLL Handle hDoc Returns Integer // Void
+External_Function VpeSetRTFFont                 "VpeSetRTFFont"                 VPE_DLL Handle hDoc Integer iID String sName Returns Integer // Void
+External_Function VpeSetRTFColor                "VpeSetRTFColor"                VPE_DLL Handle hDoc Integer iID Integer iColor Returns Integer // Void
+
+External_Function VpeRenderRTF                  "VpeRenderRTF"                  VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 String sText Returns Integer
+External_Function VpeRenderBoxRTF               "VpeRenderBoxRTF"               VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 String sText Returns Integer
+External_Function VpeRenderRTFFile              "VpeRenderRTFFile"              VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 String sFile_name Returns Integer
+External_Function VpeRenderBoxRTFFile           "VpeRenderBoxRTFFile"           VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 String sFile_name Returns Integer
+
+External_Function VpeSetPictureExportOptions    "VpeSetPictureExportOptions"    VPE_DLL Handle hDoc Real rOptions Returns Integer // Void
+External_Function VpeSetPictureExportColorDepth "VpeSetPictureExportColorDepth" VPE_DLL Handle hDoc Integer iDepth Returns Integer // Void
+External_Function VpeSetPictureExportDither     "VpeSetPictureExportDither"     VPE_DLL Handle hDoc Integer iDither Returns Integer // Void
+External_Function VpePictureExportPage          "VpePictureExportPage"          VPE_DLL Handle hDoc String sFile_name Integer iPage_no Returns Integer
+External_Function VpePictureExport              "VpePictureExport"              VPE_DLL Handle hDoc String sFile_name Integer iPage_no Real llX Real llY Real llX2 Real llY2 Returns Integer
+External_Function VpeEnableClickEvents          "VpeEnableClickEvents"          VPE_DLL Handle hDoc Integer iYes_no Returns Integer // Void
+External_Function VpeSetObjectID                "VpeSetObjectID"                VPE_DLL Handle hDoc Integer iId Returns Integer // Void
+External_Function VpeGetObjectID                "VpeGetObjectID"                VPE_DLL Handle hDoc Returns DWord
+
+External_Function VpeCreateUDO                  "VpeCreateUDO"                  VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 DWord lParam Returns Integer // Void
+External_Function VpeGetUDOlParam               "VpeGetUDOlParam"               VPE_DLL Handle hDoc Returns DWord
+External_Function VpeGetUDODC                   "VpeGetUDODC"                   VPE_DLL Handle hDoc Returns Handle
+External_Function VpeGetUDODrawRect             "VpeGetUDODrawRect"             VPE_DLL Handle hDoc Pointer pRecstruct Returns Integer // Void
+
+External_Function VpeSetCharPlacement           "VpeSetCharPlacement"           VPE_DLL Handle hDoc Integer iDistance Returns Integer // Void
+
+External_Function VpeInitCharts                 "VpeInitCharts"                 VPE_DLL Handle hDoc Returns Integer
+External_Function VpeChartDataCreate            "VpeChartDataCreate"            VPE_DLL Handle hDoc Integer iColumns Integer iRows Returns DWord
+External_Function VpeChartDataAddRow            "VpeChartDataAddRow"            VPE_DLL Handle hDoc Handle hData Returns Integer // Void
+External_Function VpeChartDataAddColumn         "VpeChartDataAddColumn"         VPE_DLL Handle hDoc Handle hData Returns Integer // Void
+External_Function VpeChartDataAddValue          "VpeChartDataAddValue"          VPE_DLL Handle hDoc Handle hData Integer iColumn  Real rValue Returns Integer // Void
+External_Function VpeChartDataAddGap            "VpeChartDataAddGap"            VPE_DLL Handle hDoc Handle hData Integer iColumn Returns Integer // Void
+External_Function VpeChartDataAddLegend         "VpeChartDataAddLegend"         VPE_DLL Handle hDoc Handle hData String sLegend Returns Integer // Void
+External_Function VpeChartDataAddXLabel         "VpeChartDataAddXLabel"         VPE_DLL Handle hDoc Handle hData String sXlabel Returns Integer // Void
+External_Function VpeChartDataAddYLabel         "VpeChartDataAddYLabel"         VPE_DLL Handle hDoc Handle hData String sYlabel Returns Integer // Void
+
+External_Function VpeChartDataSetXAxisTitle     "VpeChartDataSetXAxisTitle"     VPE_DLL Handle hDoc Handle hData String sX_axis_title Returns Integer // Void
+External_Function VpeChartDataSetYAxisTitle     "VpeChartDataSetYAxisTitle"     VPE_DLL Handle hDoc Handle hData String sY_axis_title Returns Integer // Void
+
+External_Function VpeChartDataSetColor          "VpeChartDataSetColor"          VPE_DLL Handle hDoc Handle hData Integer iColumn Integer iColor Returns Integer // Void
+External_Function VpeChartDataSetLineStyle      "VpeChartDataSetLineStyle"      VPE_DLL Handle hDoc Handle hData Integer iColumn Integer iPen_style Returns Integer // Void
+External_Function VpeChartDataSetHatchStyle     "VpeChartDataSetHatchStyle"     VPE_DLL Handle hDoc Handle hData Integer iColumn Integer iStyle Returns Integer // Void
+External_Function VpeChartDataSetPointType      "VpeChartDataSetPointType"      VPE_DLL Handle hDoc Handle hData Integer iColumn Integer iPointtype Returns Integer // Void
+External_Function VpeChartDataSetMaximum        "VpeChartDataSetMaximum"        VPE_DLL Handle hDoc Handle hData Real rMaximum Returns Integer // Void
+External_Function VpeChartDataSetMinimum        "VpeChartDataSetMinimum"        VPE_DLL Handle hDoc Handle hData Real rMinimum Returns Integer // Void
+
+External_Function VpeSetChartTitle              "VpeSetChartTitle"              VPE_DLL Handle hDoc String sTitle Returns Integer // Void
+External_Function VpeSetChartSubTitle           "VpeSetChartSubTitle"           VPE_DLL Handle hDoc String sSubtitle Returns Integer // Void
+External_Function VpeSetChartFootNote           "VpeSetChartFootNote"           VPE_DLL Handle hDoc String sFootnote Returns Integer // Void
+
+External_Function VpeSetChartAxisTitleFontSizeFactor "VpeSetChartAxisTitleFontSizeFactor" VPE_DLL Handle hDoc Real rFactor Returns Integer    // Void
+External_Function VpeSetChartTitleFontSizeFactor     "VpeSetChartTitleFontSizeFactor"     VPE_DLL Handle hDoc Real rFactor Returns Integer    // Void
+External_Function VpeSetChartSubTitleFontSizeFactor  "VpeSetChartSubTitleFontSizeFactor"  VPE_DLL Handle hDoc Real rFactor Returns Integer    // Void
+External_Function VpeSetChartFootNoteFontSizeFactor  "VpeSetChartFootNoteFontSizeFactor"  VPE_DLL Handle hDoc Real rFactor Returns Integer    // Void
+External_Function VpeSetChartLegendFontSizeFactor    "VpeSetChartLegendFontSizeFactor"    VPE_DLL Handle hDoc Real rFactor Returns Integer    // Void
+
+External_Function VpeSetChartRow                "VpeSetChartRow"                VPE_DLL Handle hDoc Integer iRow Returns Integer // Void
+External_Function VpeSetChartGridBkgColor       "VpeSetChartGridBkgColor"       VPE_DLL Handle hDoc Integer iBkgcolor Returns Integer // Void
+External_Function VpeSetChartGridBkgMode        "VpeSetChartGridBkgMode"        VPE_DLL Handle hDoc Integer iMode Returns Integer // Void
+External_Function VpeSetChartGridType           "VpeSetChartGridType"           VPE_DLL Handle hDoc Integer iGridtype Returns Integer // Void
+External_Function VpeSetChartGridColor          "VpeSetChartGridColor"          VPE_DLL Handle hDoc Integer iGridcolor Returns Integer // Void
+External_Function VpeSetChartYGridStep          "VpeSetChartYGridStep"          VPE_DLL Handle hDoc Real rGridstepy Returns Integer // Void
+External_Function VpeSetChartYAutoGridStep      "VpeSetChartYAutoGridStep"      VPE_DLL Handle hDoc Returns Integer // Void
+External_Function VpeSetChartLegendPosition     "VpeSetChartLegendPosition"     VPE_DLL Handle hDoc Integer iLegendpos Returns Integer // Void
+External_Function VpeSetChartLegendBorderStat   "VpeSetChartLegendBorderStat"   VPE_DLL Handle hDoc Integer iLegendborderstat Returns Integer // Void
+External_Function VpeSetChartXLabelState        "VpeSetChartXLabelState"        VPE_DLL Handle hDoc Integer iXlabelstate Returns Integer // Void
+External_Function VpeSetChartXLabelAngle        "VpeSetChartXLabelAngle"        VPE_DLL Handle hDoc Integer iXlabelangle Returns Integer // Void
+External_Function VpeSetChartXLabelStartValue   "VpeSetChartXLabelStartValue"   VPE_DLL Handle hDoc Integer iXlabelstartvalue Returns Integer // Void
+External_Function VpeSetChartYLabelState        "VpeSetChartYLabelState"        VPE_DLL Handle hDoc Integer iYlabelstate Returns Integer // Void
+External_Function VpeSetChartYLabelStep         "VpeSetChartYLabelStep"         VPE_DLL Handle hDoc Integer iYlabelstep Returns Integer // Void
+External_Function VpeSetChartYLabelDivisor      "VpeSetChartYLabelDivisor"      VPE_DLL Handle hDoc Real rYlabeldivisor Returns Integer // Void
+External_Function VpeSetChartGridRotation       "VpeSetChartGridRotation"       VPE_DLL Handle hDoc Integer iAxisangle Returns Integer // Void
+External_Function VpeSetChartYAxisAngle         "VpeSetChartYAxisAngle"         VPE_DLL Handle hDoc Integer iAngleyzaxis Returns Integer // Void
+External_Function VpeSetChartXAxisAngle         "VpeSetChartXAxisAngle"         VPE_DLL Handle hDoc Integer iAnglexzaxis Returns Integer // Void
+External_Function VpeChart                      "VpeChart"                      VPE_DLL Handle hDoc Real llX Real llY Real llX2 Real llY2 Handle hData Integer iChart_type Returns Integer // Void
+
+//  Clickable objects functions
+External_Function VpeGetClickedObject           "VpeGetClickedObject"           VPE_DLL Handle hDoc Returns Integer
+External_Function VpeSetUnitTransformation      "VpeSetUnitTransformation"      VPE_DLL Handle hDoc Real llFactor Returns Integer
+External_Function VpeGetUnitTransformation      "VpeSetUnitTransformation"      VPE_DLL Handle hDoc Returns Real
+
+// GUI functions
+Enum_List
+    Define VGUI_THEME_OFFICE2000
+    Define VGUI_THEME_OFFICE2003
+    Define VGUI_THEME_WHIDBEY    
+End_Enum_List
+
+External_Function VpeSetGUITheme                "VpeSetGUITheme"                VPE_DLL Handle hDoc Integer iTheme Returns Integer
+
+//  PDF functions
+External_Function VpeAddBookmark                "VpeAddBookmark"                VPE_DLL Handle hdoc Integer parent String title Returns Integer
+External_Function VpeSetAuthor                  "VpeSetAuthor"                  VPE_DLL Handle hdoc String author Returns Integer
+External_Function VpeSetTitle                   "VpeSetTitle"                   VPE_DLL Handle hdoc String title Returns Integer
+External_Function VpeSetSubject                 "VpeSetSubject"                 VPE_DLL Handle hdoc String subject Returns Integer
+External_Function VpeSetKeywords                "VpeSetKeywords"                VPE_DLL Handle hdoc String keywords Returns Integer
+External_Function VpeSetCreator                 "VpeSetCreator"                 VPE_DLL Handle hdoc String creator Returns Integer
+
+Define VPE_NO_OPEN_BUTTON           for 262144 // New
+Define VPE_NO_SAVE_BUTTON           for 524288 // New
+
+Define VPE_NULL   for $0000
+Define VPE_TRUE   for 1
+Define VPE_FALSE  for 0
+
+
+
+
+Function VPE_OemToChar Global String OemStr Returns String
+  Local String  CharStr
+  Local Integer OemAdress CharAdress iRetVal
+  Append OemStr (Character(0))
+  Move (Repeat(Character(0), (Length(OemStr)))) to CharStr
+  GetAddress of OemStr  to OemAdress
+  GetAddress of CharStr to CharAdress
+  Move (Vpe3OemToCharA(OemAdress, CharAdress)) to iRetVal
+  Function_Return (CString(CharStr))
+End_Function

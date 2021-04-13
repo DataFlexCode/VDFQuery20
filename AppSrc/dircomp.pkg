@@ -1,0 +1,268 @@
+// Use DirComp.pkg  // List class for comparing directory contents (cDirCompList)
+Use DirComp.nui  // Compare directory contents
+Use GridUtil.utl // Grid and List utilities
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+Use Dates.nui    // Date routines (No User Interface)
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+Use Buttons.utl  // Button texts
+object oDirCompCopyPanel is a aps.ModalPanel label "Copy newer files"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult 0
+  set p_left_margin to 30
+  send aps_init
+  object oRad is a aps.RadioContainer
+    object oRad1 is a aps.Radio label "Update left directory"
+    end_object
+    object oRad2 is a aps.Radio label "Update right directory" snap SL_DOWN
+      set p_extra_external_width to 30
+    end_object
+    object oRad3 is a aps.Radio label "Syncronize both" snap SL_DOWN
+    end_object
+  end_object
+  send aps_goto_max_row
+  send aps_make_row_space 4
+  object oUpdateExistingOnly is a aps.CheckBox label "Update existing files only"
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    set piResult to 1
+    send close_panel
+  end_procedure
+  function iPopup returns integer
+    integer iCurrentRad
+    set piResult to 0
+    send popup
+    if (piResult(self)) begin
+      get current_radio of (oRad(self)) to iCurrentRad
+      if (checked_state(oUpdateExistingOnly(self))) begin
+        if iCurrentRad eq 0 function_return CA_UPDATE_LEFT_DIR_EXISTING_ONLY
+        if iCurrentRad eq 1 function_return CA_UPDATE_RIGHT_DIR_EXISTING_ONLY
+        if iCurrentRad eq 2 function_return CA_UPDATE_BOTH_DIRS_EXISTING_ONLY
+      end
+      else begin
+        if iCurrentRad eq 0 function_return CA_UPDATE_LEFT_DIR
+        if iCurrentRad eq 1 function_return CA_UPDATE_RIGHT_DIR
+        if iCurrentRad eq 2 function_return CA_UPDATE_BOTH_DIRS
+      end
+    end
+    function_return CA_NO_COPYING
+  end_function
+end_object // oDirCompCopyPanel
+
+Use Aps.pkg
+Use RGB.utl      // Some color functions
+class cDirCompList is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piSetOfFilesObject 0
+    set select_mode to NO_SELECT
+    send GridPrepare_AddColumn "Filename" AFT_ASCII20
+    send GridPrepare_AddColumn "Size"     AFT_ASCII12
+    send GridPrepare_AddColumn "Time"     AFT_ASCII20
+    send GridPrepare_AddColumn "Size"     AFT_ASCII12
+    send GridPrepare_AddColumn "Time"     AFT_ASCII20
+    send GridPrepare_Apply self
+    set CurrentCellColor to (rgb(255,128,128))
+    set highlight_row_state to true
+    on_key KNEXT_ITEM     send switch
+    on_key KPREVIOUS_ITEM send switch_back
+    on_key KEY_CTRL+KEY_W send DoWriteToFile
+    on_key KEY_CTRL+KEY_R send sort_data
+  end_procedure
+
+  function iSpecialSortValueOnColumn.i integer liColumn returns integer
+    if liColumn gt 0 function_Return 1
+  end_function
+
+  function sSortValue.ii integer liColumn integer liItem returns string
+    number lnValue
+    string lsValue
+    get value item liItem to lsValue
+    if (liColumn=1 or liColumn=3) begin
+      move (replaces(",",lsValue,"")) to lsValue
+      move (replaces(".",lsValue,"")) to lsValue
+      function_return (IntToStrR(lsValue,9))
+    end
+    if (liColumn=2 or liColumn=4) begin
+      move (trim(lsValue)) to lsValue
+      if (length(lsValue)>10) get TS_Compose (date(left(lsValue,10))) (StringRightBut(lnValue,11)) to lnValue
+      else get TS_Compose 0 lsValue to lnValue
+      function_return (NumToStrR(lnValue,0,13))
+    end
+  end_function
+
+  procedure sort_data.i integer column#
+    send Grid_SortByColumn self column#
+  end_procedure
+
+  procedure sort_data
+    integer cc#
+    get Grid_CurrentColumn self to cc#
+    send sort_data.i cc#
+  end_procedure
+  procedure header_mouse_click integer itm#
+    send sort_data.i itm#
+    forward send header_mouse_click itm#
+  end_procedure
+
+  procedure DoSetTimeTolerance
+    send DirComp_SetTimeTolerance (oDirectoryCompareArray(self))
+  end_procedure
+
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+
+  function iCurrentRow returns integer
+    integer iItm
+    if (item_count(self)) begin
+      get Grid_BaseItem self to iItm
+      function_return (aux_value(self,iItm))
+    end
+    function_return -1
+  end_function
+
+  procedure UpdateRow
+    integer iBase iRow iObj
+    if (item_count(self)) begin
+      move (oDirectoryCompareArray(self)) to iObj
+      get Grid_BaseItem self to iBase
+      get aux_value item iBase to iRow
+      set value item (iBase+1) to (IntToStrTS(piFileSize1.i(iObj,iRow)))
+      set value item (iBase+2) to (TS_ConvertToString(pnFileTime1.i(iObj,iRow)))
+      set value item (iBase+3) to (IntToStrTS(piFileSize2.i(iObj,iRow)))
+      set value item (iBase+4) to (TS_ConvertToString(pnFileTime2.i(iObj,iRow)))
+      set ItemColor item (iBase+1) to clWhite
+      set ItemColor item (iBase+2) to clWhite
+      set ItemColor item (iBase+3) to clWhite
+      set ItemColor item (iBase+4) to clWhite
+    end
+  end_procedure
+  procedure DoCopyNew
+    send DoCopyFile to (oDirectoryCompareArray(self)) CA_COPY_ONE_NEWER (iCurrentRow(self))
+    send UpdateRow
+  end_procedure
+  procedure DoCopyLeft
+    send DoCopyFile to (oDirectoryCompareArray(self)) CA_COPY_ONE_LEFT_TO_RIGHT (iCurrentRow(self))
+    send UpdateRow
+  end_procedure
+  procedure DoCopyRight
+    send DoCopyFile to (oDirectoryCompareArray(self)) CA_COPY_ONE_RIGHT_TO_LEFT (iCurrentRow(self))
+    send UpdateRow
+  end_procedure
+  procedure DoCopyAdvanced
+    integer iAction
+    get iPopup of (oDirCompCopyPanel(self)) to iAction
+    if iAction ne CA_NO_COPYING begin
+      send DoCopyFiles to (oDirectoryCompareArray(self)) iAction
+      send fill_list.i 0
+    end
+  end_procedure
+  procedure add_row
+  end_procedure
+  procedure fill_list.i integer liChangesOnly
+    integer liObj liMax liRow liSize1 liSize2 liExists1 liExists2
+    integer liGreen liBase liChanged
+    number lnTime1 lnTime2
+    string lsName
+    send delete_data
+    set dynamic_update_state to false
+    move (oDirectoryCompareArray(self)) to liObj
+    get row_count of liObj to liMax
+    decrement liMax
+    move (RGB_Brighten(clGreen,75)) to liGreen
+    for liRow from 0 to liMax
+      get psFileName.i  of liObj liRow to lsName
+      get piExists1.i   of liObj liRow to liExists1
+      get piFileSize1.i of liObj liRow to liSize1
+      get pnFileTime1.i of liObj liRow to lnTime1
+      get piExists2.i   of liObj liRow to liExists2
+      get piFileSize2.i of liObj liRow to liSize2
+      get pnFileTime2.i of liObj liRow to lnTime2
+      get iIsChanged.i  of liObj liRow to liChanged
+      if (not(liChangesOnly) or liChanged) begin
+        get item_count to liBase
+        send add_item msg_none lsName
+        set aux_value item liBase to liRow
+        if liExists1 begin
+          send add_item msg_none (IntToStrTS(liSize1))
+          send add_item msg_none (TS_ConvertToString(lnTime1))
+        end
+        else begin
+          send add_item msg_none ""
+          send add_item msg_none ""
+        end
+        if liExists2 begin
+          send add_item msg_none (IntToStrTS(liSize2))
+          send add_item msg_none (TS_ConvertToString(lnTime2))
+        end
+        else begin
+          send add_item msg_none ""
+          send add_item msg_none ""
+        end
+        if (liChanged=-1) begin // Left is newer
+          set ItemColor item (liBase+1) to liGreen
+          set ItemColor item (liBase+2) to liGreen
+        end
+        if (liChanged=1) begin // Right is newer
+          set ItemColor item (liBase+3) to liGreen
+          set ItemColor item (liBase+4) to liGreen
+        end
+      end
+    loop
+    send Grid_SetEntryState self DFFALSE
+    set dynamic_update_state to true
+  end_procedure
+end_class // cDirCompList
+
+object oDircompTimeTolerance is a aps.ModalPanel label "Timestamp tolerance"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult 0
+  object oEdit is a aps.Edit
+    set object_shadow_state to DFTRUE
+    set border_style to BORDER_NONE
+    set size to 60 220
+    set scroll_bar_visible_state to DFFALSE
+    set value item 0 to "For reasons not understood at all, I (who made the"
+    set value item 1 to "program) frequently experience that the timestamp of"
+    set value item 2 to "identical files is offset by 1 or 2 seconds."
+    set value item 3 to "For that reason you may specify a time interval inside"
+    set value item 4 to "which the timestamps will be considered identical."
+  end_object
+  send aps_goto_max_row
+  object oFrm is a aps.Form abstract AFT_NUMERIC4.0 label "Tolerance in seconds:"
+    set p_extra_external_width to 100
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    set piResult to 1
+    send close_panel
+  end_procedure
+  procedure popup.i integer lhObj
+    set piResult to 0
+    set value of (oFrm(self)) item 0 to (pnTimeTolerance(lhObj))
+    send popup
+    if (piResult(self)) set pnTimeTolerance of lhObj to (value(oFrm(self),0))
+  end_procedure
+end_object // oDircompTimeTolerance
+
+procedure DirComp_SetTimeTolerance global integer lhObj
+  send popup.i to (oDircompTimeTolerance(self)) lhObj
+end_procedure

@@ -1,0 +1,490 @@
+//**********************************************************************
+// Use DFMatrix.utl // DFMatrix application glue
+//
+// By Sture Andersen
+// Version: 2.0-
+//
+// Create: Wed  09-02-2000
+// Update:
+//
+//
+//**********************************************************************
+
+Use CmdLine.nui  // Simple thing for reading command line parameters
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+Use Files.nui    // Utilities for handling file related stuff (No User Interface)
+Use Output.utl   // Basic sequential output service
+//Use DataScan.utl // Data scan classes
+Use FDX.nui      // cFDX class
+Use Fdx1.utl     // FDX aware display global attributes (FDX_DisplayGlobalAttributes procedure)
+Use Fdx2.utl     // FDX aware object for displaying a table definiton
+Use Fdx4.utl     // FDX aware cFileList_List selector object
+Use Fdx5.utl     // Basic adiministration of FDX objects
+Use ObjGroup.utl // Defining groups of objects
+Use DfmPrint.utl // Classes for printing DFMatrix reports.
+Use Login.utl    // DBMS_GetDriverLogin function
+Use Focus.utl    // Retrieve basic information about object
+Use ErrorHnd.nui // cErrorHandlerRedirector class and oErrorHandlerQuiet object (No User Interface)
+Use LogFile.nui  // Class for handling a log file (No User Interface)
+Use Flist.nui
+Use WsFunctions.pkg // Workspace functions encapsulated in WsFunctions object (VdfQueryLib)
+
+define app.DFMatrix.Title   for "The DataFlex Matrix"
+define app.DFMatrix.Version for "DFM10.0/FDX2.0"
+
+procedure DFMatrix_Create_FDX global
+  send fdx.entry_create_empty 0 // Primary FDX object
+  send fdx.entry_create_empty 1 // Secondary FDX object
+  set piFDX_Server of (oFdxSetOfFields(self))     to (fdx.object_id(0))
+  set piFDX_Server of (oFdxSetOfTables(self))     to (fdx.object_id(0))
+  set piFDX_Server of (oFdxSetOfIndices(self))    to (fdx.object_id(0))
+  set piFDX_Server of (oAuxFdxSetOfFields(self))  to (fdx.object_id(0))
+  set piFDX_Server of (oAuxFdxSetOfTables(self))  to (fdx.object_id(0))
+  set piFDX_Server of (oAuxFdxSetOfIndices(self)) to (fdx.object_id(0))
+end_procedure
+send DFMatrix_Create_FDX
+
+//send fdx.open_file 0 "lws.fdx"
+//send fdx.open_file 1 "multi.fdx"
+
+enumeration_list // Who are you's
+  define WAY_GLOBAL_ATTRIBUTES_VW
+  define WAY_TABLE_SELECTOR_VW
+  define WAY_TABLE_DEFINITION_VW
+  define WAY_DIRECTORY_CONTENTS_VW
+  define WAY_SET_OF_TABLES_VW
+  define WAY_SET_OF_FIELDS_VW
+  define WAY_SET_OF_INDICES_VW
+end_enumeration_list
+
+object oDFMatrixViewPanels is a cArray
+  property integer piCurrentFileInSelector 0
+  property integer piWorkSpaceLoaded       0
+  property string  psCurrentWorkSpace      "no workspace"
+  procedure add_row integer who_are_you# integer obj#
+    set value item who_are_you# to obj#
+  end_procedure
+end_object
+
+function DFMatrix_WorkSpaceLoaded global returns integer
+  function_return (piWorkSpaceLoaded(oDFMatrixViewPanels(self)))
+end_function
+function DFMatrix_CurrentWorkSpace global returns string
+  if (DFMatrix_WorkSpaceLoaded()) function_return (psCurrentWorkSpace(oDFMatrixViewPanels(self)))
+  function_return ""
+end_function
+
+procedure DFMatrix_Vw_Register global integer who_are_you# integer obj#
+  send add_row to (oDFMatrixViewPanels(self)) who_are_you# obj#
+end_procedure
+function DFMatrix_Vw_Object_ID global integer who_are_you# returns integer
+  function_return (value(oDFMatrixViewPanels(self),who_are_you#))
+end_function
+function DFMatrix_SelectorObject global returns integer
+  integer vw#
+  move (DFMatrix_Vw_Object_ID(WAY_TABLE_SELECTOR_VW)) to vw#
+  function_return (oLst(vw#))
+end_function
+procedure DFMatrix_NewFileInSelector global integer file#
+  set piCurrentFileInSelector of (oDFMatrixViewPanels(self)) to file#
+  send OnChangeFdxFile to (DFMatrix_Vw_Object_ID(WAY_TABLE_DEFINITION_VW))
+end_procedure
+procedure DFMatrix_CallBack_Selected_Files global integer msg# integer obj# integer selected# integer shaded# integer tmp#
+  integer oLst# master#
+  if num_arguments gt 4 move tmp# to master#
+  else move 0 to master#
+  get DFMatrix_SelectorObject to oLst#
+  send Callback_General to oLst# msg# obj# selected# shaded# master#
+end_procedure
+// (Probably) used by display definition view
+function DFMatrix_Current_File global returns integer
+  function_return (piCurrentFileInSelector(oDFMatrixViewPanels(self)))
+end_function
+
+function sFdxTitle.i global integer lhFDX returns string
+  string str#
+  if (piDataOrigin(lhFDX)) eq FDX_EMPTY move "(empty)" to str#
+  else begin
+    if (piDataOrigin(lhFDX)) eq FDX_REAL_WORLD begin
+      if (psFileName(lhFDX)<>"") move ("current ("+psFileName(lhFDX)+")") to str#
+      else move "Current" to str#
+    end
+    else begin
+      if (psTitle(lhFDX)<>"") move (psTitle(lhFDX)+" ("+psFileName(lhFDX)+")") to str#
+      else move (psFileName(lhFDX)) to str#
+    end
+  end
+  function_return str#
+end_function
+
+function DFMatrix_RealDataPrimary global returns integer
+  integer lhFDX
+  move (fdx.object_id(0)) to lhFDX
+  function_return (piDataOrigin(lhFDX)=FDX_REAL_WORLD)
+end_function
+
+procedure DFMatrix_Update_App_Title global
+  integer lhFDX
+  string str#
+  move (fdx.object_id(0)) to lhFDX
+  if (piDataOrigin(lhFDX)) eq FDX_EMPTY move " (empty)" to str#
+  else begin
+    if (piDataOrigin(lhFDX)) eq FDX_REAL_WORLD begin
+      if (psFileName(lhFDX)<>"") move (", current ("+psFileName(lhFDX)+")") to str#
+      else move " (current)" to str#
+    end
+    else begin
+      if (psTitle(lhFDX)<>"") move (", "+psTitle(lhFDX)+" ("+psFileName(lhFDX)+")") to str#
+      else move (" ("+psFileName(lhFDX)+")") to str#
+    end
+  end
+  set DFMatrix_App_Label to (app.dfMatrix.Title+", "+psCurrentWorkSpace(oDFMatrixViewPanels(self))+str#)
+end_procedure
+
+Procedure DoSelect_FileList String lsFileList
+  String lsPath
+  if (lsFileList<>"") begin
+    get SEQ_ExtractPathFromFileName lsFileList to lsPath
+    send FLIST_SetOpenPath lsPath
+    send FLIST_SetCurrentFilelist lsFileList
+    set psCurrentWorkSpace of (oDFMatrixViewPanels(self)) to lsFilelist
+    set piWorkSpaceLoaded of (oDFMatrixViewPanels(self)) to DFFALSE
+    send DFMatrix_CloseAll
+    send DFMatrix_PrimaryOpenCurrentFilelist
+  end
+End_Procedure
+
+Procedure DFMatrix_Select_FileList
+  string lsFilelist
+  get SEQ_SelectFile "Open FILELIST.CFG" "filelist.cfg|filelist.cfg|*.cfg|*.CFG" to lsFileList
+  Send DoSelect_FileList lsFileList
+end_procedure
+
+  Use SelectWorkspace.dg
+  Use WorkSpc.utl
+  Procedure DFMatrix_Clear_WorkSpace
+  End_Procedure
+
+  Procedure DoSelect_Sws String sFile
+    Integer iRval
+    String sErr
+    Integer hoWorkspace
+    String sWorkspace DataPath# FileListPath# WsDescription#
+
+    If (sFile<>"") Begin
+        Get WorkSpaceObject of WsFunctions to hoWorkspace
+        Send DoClearPaths of hoWorkspace
+        Get OpenWorkspace of WsFunctions sFile to iRval
+        If (iRval=wsWorkspaceOpened) Begin
+            Get psDataPath of hoWorkspace to DataPath#
+            Get psFileList of hoWorkspace to FileListPath#
+            Get psDescription of hoWorkspace to WsDescription#
+
+            Send FLIST_SetOpenPath DataPath#
+            Send FLIST_SetCurrentFilelist FileListPath#
+
+            Set psCurrentWorkSpace of (oDFMatrixViewPanels(Self)) to WsDescription#
+            Set piWorkSpaceLoaded of (oDFMatrixViewPanels(Self)) to DFTRUE
+            Send DFMatrix_CloseAll
+//            If (MB_Verify("Open table definitions in the selected workspace?",1)) 
+            Send DFMatrix_PrimaryOpenCurrentFilelist
+        End
+        Else Begin
+            Get OpenWorkspaceErrorText of WsFunctions iRval to sErr
+            Send Info_Box sErr
+        End
+    End
+  End_Procedure
+
+  Procedure DFMatrix_Select_WorkSpace
+    String sFile
+ ///Integer iRval
+ ///String sFile sErr
+ ///Integer hoWorkspace
+ ///String sWorkspace DataPath# FileListPath# WsDescription#
+
+    Get SelectRecentWorkspaceFile of WsFunctions to sFile
+    send DoSelect_Sws sFile
+ // If (sFile<>"") Begin
+ //     Get WorkSpaceObject of WsFunctions to hoWorkspace
+ //     Send DoClearPaths of hoWorkspace
+ //     Get OpenWorkspace of WsFunctions sFile to iRval
+ //     If (iRval=wsWorkspaceOpened) Begin
+ //         Get psDataPath of hoWorkspace to DataPath#
+ //         Get psFileList of hoWorkspace to FileListPath#
+ //         Get psDescription of hoWorkspace to WsDescription#
+ //
+ //         Send FLIST_SetOpenPath DataPath#
+ //         Send FLIST_SetCurrentFilelist FileListPath#
+ //
+ //         Set psCurrentWorkSpace of (oDFMatrixViewPanels(Self)) to WsDescription#
+ //         Set piWorkSpaceLoaded of (oDFMatrixViewPanels(Self)) to DFTRUE
+ //         Send DFMatrix_CloseAll
+ //         If (MB_Verify("Open table definitions in the selected workspace?",1)) Send DFMatrix_PrimaryOpenCurrentFilelist
+ //     End
+ //     Else Begin
+ //         Get OpenWorkspaceErrorText of WsFunctions iRval to sErr
+ //         Send Info_Box sErr
+ //     End
+ // End
+ //
+ // //integer hoWorkspace eOpened
+ // //string sWorkspace DataPath# FileListPath# WsDescription#
+//
+    //get phoWorkspace of ghoApplication To hoWorkspace
+    //get WorkSpc_SelectWS to sWorkspace
+    //If (sWorkspace<>"") Begin
+      //Send DoClearPaths of hoWorkspace
+      //Get OpenWorkspace of hoWorkspace sWorkspace To eOpened
+      //If (eOpened <> WSWORKSPACEOPENED) Begin
+        //send stop_box "The current default workspace is invalid."
+      //End
+      //else begin
+        //get psDataPath of hoWorkspace to DataPath#
+        //get psFileList of hoWorkspace to FileListPath#
+        //get psDescription of hoWorkspace to WsDescription#
+//
+        //send FLIST_SetOpenPath DataPath#
+        //send FLIST_SetCurrentFilelist FileListPath#
+//
+        //set psCurrentWorkSpace of (oDFMatrixViewPanels(self)) to WsDescription#
+        //set piWorkSpaceLoaded of (oDFMatrixViewPanels(self)) to DFTRUE
+        //send DFMatrix_CloseAll
+        //if (MB_Verify("Open table definitions in the selected workspace?",1)) send DFMatrix_PrimaryOpenCurrentFilelist
+      //end
+    //end
+  end_procedure
+
+//> This procedure will read in the 'current' data definitions in the
+//> primary slot.
+procedure DFMatrix_PrimaryOpenCurrentFilelist global
+  send fdx.entry_read_current 0
+  send DFMatrix_NotifyFdxChange
+  send Activate_Table_Selector
+end_procedure
+procedure DFMatrix_PrimaryReread global // This isn't actually a reread
+  send fdx.entry_read_current 0         // (It's called after a restructure)
+  send DFMatrix_NotifyFdxChange
+end_procedure
+procedure DFMatrix_SecondaryOpenCurrentFilelist global
+  send fdx.entry_read_current 1
+end_procedure
+
+procedure DFMatrix_OpenDirectoryContents global
+  integer lhFDX
+  move (fdx.object_id(0)) to lhFDX
+  if (piDataOrigin(lhFDX)) ne FDX_EMPTY begin
+    send fdx.wait.on
+    if (piDataOrigin(lhFDX)) eq FDX_REAL_WORLD send Read_Directory_Contents to lhFDX
+    if (piDataOrigin(lhFDX)) eq FDX_READ_FROM_FILE send Read_Directory_Contents_From_File to lhFDX
+    send fdx.wait.off
+    send OnChangeFDX to (DFMatrix_Vw_Object_ID(WAY_DIRECTORY_CONTENTS_VW))
+    send Activate_Directory_Contents
+  end
+end_procedure
+
+register_procedure OnChangeFDX_Broadcasted
+
+procedure DFMatrix_NotifyFdxChange global
+  send OnChangeFDX to (DFMatrix_Vw_Object_ID(WAY_GLOBAL_ATTRIBUTES_VW))
+  send OnChangeFDX to (DFMatrix_Vw_Object_ID(WAY_TABLE_SELECTOR_VW))
+  send OnChangeFDX to (DFMatrix_Vw_Object_ID(WAY_TABLE_DEFINITION_VW))
+  send OnChangeFDX to (DFMatrix_Vw_Object_ID(WAY_DIRECTORY_CONTENTS_VW))
+  send OnChangeFDX to (DFMatrix_Vw_Object_ID(WAY_SET_OF_TABLES_VW))
+  send OnChangeFDX to (DFMatrix_Vw_Object_ID(WAY_SET_OF_FIELDS_VW))
+  send OnChangeFDX to (DFMatrix_Vw_Object_ID(WAY_SET_OF_INDICES_VW))
+  broadcast recursive send OnChangeFDX_Broadcasted to desktop
+  send DFMatrix_Update_App_Title
+end_procedure
+
+procedure DFMatrix_CloseAll global
+  send fdx.reset_all
+  send DFMatrix_Create_FDX
+  send DFMatrix_NotifyFdxChange
+end_procedure
+
+procedure DFMatrix_PrimaryOpenFdxFile global
+  if (fdx.open_file_browse(0)) begin
+    send DFMatrix_NotifyFdxChange
+    send Activate_Table_Selector
+  end
+end_procedure
+function DFMatrix_SecondaryOpenFdxFile global returns integer
+  function_return (fdx.open_file_browse(1))
+end_function
+procedure DFMatrix_PrimarySaveFdxAs global
+  integer lhFDX
+  move (fdx.object_id(0)) to lhFDX
+  if (piDataOrigin(lhFDX)) ne FDX_EMPTY begin
+    send fdx.entry_save_as 0
+    send DFMatrix_Update_App_Title
+  end
+end_procedure
+function DFMatrix_Vw_Active global integer who_are_you# returns integer
+  function_return (active_state(value(oDFMatrixViewPanels(self),who_are_you#)))
+end_function
+
+procedure DFMatrix_Transfer_Set global integer origin# integer target# integer intersection#
+  if target# eq WAY_TABLE_SELECTOR_VW begin
+    if origin# eq WAY_SET_OF_TABLES_VW begin
+      send make_set_of_files to (oFdxSetOfTables(self)) (oAuxFdxSetOfTables(self))
+    end
+    if origin# eq WAY_SET_OF_FIELDS_VW begin
+      send make_set_of_files to (oFdxSetOfFields(self)) (oAuxFdxSetOfTables(self))
+    end
+    if origin# eq WAY_SET_OF_INDICES_VW begin
+      send make_set_of_fields to (oFdxSetOfIndices(self)) (oAuxFdxSetOfFields(self))
+      send make_set_of_files to (oAuxFdxSetOfFields(self)) (oAuxFdxSetOfTables(self))
+    end
+    if intersection# send DoTableSelector_Intersection to (oAuxFdxSetOfTables(self))
+    else send DoTableSelector_Union to (oAuxFdxSetOfTables(self))
+    send Activate_Table_Selector
+  end
+  if target# eq WAY_SET_OF_TABLES_VW begin
+    if origin# eq WAY_SET_OF_FIELDS_VW begin
+      send make_set_of_files to (oFdxSetOfFields(self)) (oAuxFdxSetOfTables(self))
+    end
+    if origin# eq WAY_SET_OF_INDICES_VW begin
+      send make_set_of_fields to (oFdxSetOfIndices(self)) (oAuxFdxSetOfFields(self))
+      send make_set_of_files to (oAuxFdxSetOfFields(self)) (oAuxFdxSetOfTables(self))
+    end
+    if intersection# send DoInterSection.i to (oFdxSetOfTables(self)) (oAuxFdxSetOfTables(self))
+    else send DoUnion.i to (oFdxSetOfTables(self)) (oAuxFdxSetOfTables(self))
+    send update_display to (DFMatrix_Vw_Object_ID(WAY_SET_OF_TABLES_VW))
+    send Activate_SetOfTables
+  end
+  if target# eq WAY_SET_OF_FIELDS_VW begin
+    if origin# eq WAY_SET_OF_INDICES_VW begin
+      send make_set_of_fields to (oFdxSetOfIndices(self)) (oAuxFdxSetOfFields(self))
+    end
+    if intersection# send DoInterSection.i to (oFdxSetOfFields(self)) (oAuxFdxSetOfFields(self))
+    else send DoUnion.i to (oFdxSetOfFields(self)) (oAuxFdxSetOfFields(self))
+    send update_display to (DFMatrix_Vw_Object_ID(WAY_SET_OF_FIELDS_VW))
+    send Activate_SetOfFields
+  end
+end_procedure
+
+
+// ********************** REPORT UTILITY SECTION ***************************
+// The order in which these symbols are defined determines the order in which
+// the reports appear in the report pull down menu:
+enumeration_list // FDX report identifiers
+  define FDXRPT_VALIDY_CHECK   // Check validity of table definitions
+  define FDXRPT_RELATION_TREE
+  define FDXRPT_DEFINITION
+  define FDXRPT_GLOBAL_ATTR
+  define FDXRPT_FIND_FIELDS    // Locate fields with specific characteristics
+end_enumeration_list
+
+object oFdxReportArray is a cArray
+  item_property_list
+    item_property string  psTitle.i
+    item_property integer piPreCond.i
+    item_property integer piUI_Object.i
+  end_item_property_list
+end_object
+procedure fdx.add_report global integer row# string title# integer obj# integer precond#
+  integer arr#
+  move (oFdxReportArray(self)) to arr#
+  set psTitle.i     of arr# row# to title#
+  set piUI_Object.i of arr# row# to obj#
+  set piPreCond.i   of arr# row# to precond#
+end_procedure
+class fdxrpt.ModalClient is a aps.ModalPanel
+  procedure construct_object integer img#
+    forward send construct_object img#
+    on_key kcancel send cancel
+    on_key ksave_record send DoReport
+    on_key key_ctrl+key_r send DoReport
+    on_key key_ctrl+key_s send DoProperties
+    property integer piId           0
+    property string  psTitle        ""
+    property integer piPrecond      0
+    property integer piFDX_Server   0
+    property integer piDontRegister 0 // Should the report automatically register with the main menu
+    set locate_mode to CENTER_ON_SCREEN
+  end_procedure
+  procedure define_report integer id# string title# integer precond#
+    set piId      to id#
+    set psTitle   to title#
+    set piPrecond to precond#
+  end_procedure
+  procedure DoReport
+  end_procedure
+  procedure DoProperties
+  end_procedure
+  procedure Callback_Filelist_Entry integer file# integer selected# integer shaded#
+  end_procedure
+  procedure Callback_Filelist_Entries integer selected# integer shaded#
+    integer oLst#
+    get DFMatrix_SelectorObject to oLst#
+    send Callback_General to oLst# msg_CallBack_Filelist_Entry self selected# shaded#
+  end_procedure
+  procedure end_construct_object
+    forward send end_construct_object
+    ifnot (piDontRegister(self)) send fdx.add_report (piId(self)) (psTitle(self)) self (piPrecond(self))
+  end_procedure
+  procedure DoDefaults
+  end_procedure
+  procedure popup
+    set piFDX_Server to (fdx.object_id(0))
+    send DoDefaults
+    forward send popup
+  end_procedure
+end_class // fdxrpt.client
+
+//enumeration_list
+//  define DFMOP_NONE      // No opearion
+//  define DFMOP_PRIMLOAD  // Load primary FDX
+//  define DFMOP_OPENVIEW  // Open a view
+//end_enumeration_list
+
+function DfmBatchMode global returns integer
+  function_return 0
+end_function
+
+function DfmBatchMode_LogfileName global returns string
+end_function
+
+
+procedure DFMatrix_Login global
+  integer rval# driver#
+  string server# user# pw#
+  get DBMS_GetDriverLogin 0 to rval#
+  if rval# begin
+    get DBMS_GetDriverLoginDriverID to driver#
+    get DBMS_GetDriverLoginServer   to server#
+    get DBMS_GetDriverLoginUserID   to user#
+    get DBMS_GetDriverLoginPassWord to pw#
+    login server# user# pw# (DBMS_TypeToDriverName(driver#))
+  end
+end_procedure
+procedure DFMatrix_Logout global
+  logout
+end_procedure
+
+class fdxrpt.report_control is a cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+  end_procedure
+end_class // fdxrpt.report_control
+// ********************** REPORT UTILITY SECTION ***************************
+
+function DFMatrix_RealData_Check global returns integer //
+  integer liDataOrigin
+  move (piDataOrigin(fdx.object_id(0))) to liDataOrigin
+  if (liDataOrigin=FDX_REAL_WORLD) function_return 1
+  if (liDataOrigin=FDX_READ_FROM_FILE) send obs "You cannot execute this function on definitions read from an FDX file"
+  else send obs "In order to execute this function you need to read some" "table definitions first (use the 'File' menu)."
+end_function
+
+function DFMatrix_Primary_Origin global returns integer
+  function_return (piDataOrigin(fdx.object_id(0)))
+end_function
+
+on_key key_ctrl+key_t send Request_Activate_Table_Selector
+procedure Request_Activate_Table_Selector
+  send Focus_Analyze_Focus
+  ifnot (integer(Focus_Info(FOCUS_DEO_MODAL))) send Activate_Table_Selector
+end_procedure
+

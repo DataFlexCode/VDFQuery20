@@ -1,0 +1,33 @@
+//> And here it comes:
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Dates.nui    // Date routines (No User Interface)
+
+class cXmlReader is a cArray
+  procedure construct_object
+    forward send construct_object
+  end_procedure
+
+  item_property_list // List of open elements
+    item_property string  psElement.i
+    item_property integer phXmlReader.i
+  end_item_property_list cXmlReader
+
+            procedure OnElement string lsElement
+            end_procedure
+            procedure OnElementValue string lsElement string lsValue
+            end_procedure
+            procedure OnEndElement string lsElement
+            end_procedure
+            procedure OnAttribute string lsAttribute string lsValue
+            end_procedure
+
+  procedure read_xml integer liChannel
+    integer liLevel
+    integer lbInString
+    string lsToken
+    string lChar
+    move 1 to liLevel
+  end_procedure
+
+end_class // cXmlReader

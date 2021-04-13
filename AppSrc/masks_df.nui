@@ -1,0 +1,95 @@
+// Use Masks_DF.nui // DataFlex related file masks
+Use WildCard.nui // vdfq_WildCardMatch function
+
+class cSetOfMasks_DFSource is a cSetOfMasks
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    set psName to "DataFlex source codes"
+    send DoAddMask "*.pkg"      "Package file"
+    send DoAddMask "*.utl"      "Package (Sture)"
+    send DoAddMask "*.dd"       "DataDictionary source"
+    send DoAddMask "*.dg"       "Dialog source"
+    send DoAddMask "*.gui"      "Package, graphical UI"
+    send DoAddMask "*.inc"      "Include file"
+    send DoAddMask "*.nui"      "Package, no UI (Sture)"
+    send DoAddMask "*.sl"       "Prompt list source"
+    send DoAddMask "webapp.src" "WebApp application source"
+    send DoAddMask "*.src"      "Application source"
+    send DoAddMask "*.vw"       "View source"
+    send DoAddMask "*.wo"       "Web business object source"
+    send DoAddMask "*.bpo"      "Business process objects"
+    send DoAddMask "*.rpt"      "Report source"
+    send DoAddMask "*.mn"       "Menus"
+    send DoAddMask "*.rv"       "Report views"
+  end_procedure
+end_class // cSetOfMasks_DFSource
+
+class cSetOfMasks_DFRuntime is a cSetOfMasks
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    set psName to "DataFlex runtime files"
+    send DoAddMask "*.flx"        "Charactermode App"
+    send DoAddMask "*.vdf"        "VDF 4 App"
+    send DoAddMask "*.vd5"        "VDF 5 App"
+    send DoAddMask "*.vd6"        "VDF 6 App"
+    send DoAddMask "*.vd7"        "VDF 7 App"
+    send DoAddMask "filelist.cfg" "List of tables"
+    send DoAddMask "termlist.cfg" "DF License file"
+    send DoAddMask "*.dfr"        "DF License file"
+    send DoAddMask "*.qry"        "VDFQuery definition"
+    send DoAddMask "*.fdx"        "DFMatrix, Tables definition file"
+  end_procedure
+end_class // cSetOfMasks_DFRuntime
+
+class cSetOfMasks_DFData is a cSetOfMasks
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    set psName to "DataFlex Data files"
+    send DoAddMask "*.dat"        "Table data"
+    send DoAddMask "*.k*"         "Index file"
+    send DoAddMask "*.tag"        "Field names"
+    send DoAddMask "*.vld"        "Variable length data"
+    send DoAddMask "*.hdr"        "Header backup file"
+    send DoAddMask "*.fd"         "Table definition file"
+  end_procedure
+end_class // cSetOfMasks_DFRuntime
+
+class cSetOfMasks_IIS is a cSetOfMasks
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    set psName to "IIS Files"
+    send DoAddMask "*.asp"        "ASP files"
+    send DoAddMask "*.htm"        "HTML files"
+    send DoAddMask "*.inc"        "Include files"
+    send DoAddMask "*.wsc"        "Windows scripting files"
+  end_procedure
+end_class // cSetOfMasks_DFRuntime
+
+class cSetOfMasks_CommandFiles is a cSetOfMasks
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    set psName to "Commands"
+    send DoAddMask "*.exe"        "Executable"
+    send DoAddMask "*.com"        "Executable"
+    send DoAddMask "*.bat"        "Batch file"
+  end_procedure
+end_class // cSetOfMasks_DFRuntime
+
+desktop_section
+  object oSetOfMasks_DFSource is a cSetOfMasks_DFSource 
+  end_object
+  object oSetOfMasks_DFRuntime is a cSetOfMasks_DFRuntime 
+  end_object
+  object oSetOfMasks_DFData is a cSetOfMasks_DFData 
+  end_object
+  object oSetOfMasks_DFAll is a cSetOfMasks 
+    set psName to "All DF files"
+    send DoImport (oSetOfMasks_DFSource(self))
+    send DoImport (oSetOfMasks_DFRuntime(self))
+    send DoImport (oSetOfMasks_DFData(self))
+  end_object
+  object oSetOfMasks_CommandFiles is a cSetOfMasks_CommandFiles 
+  end_object
+  object oSetOfMasks_IIS is a cSetOfMasks_IIS
+  end_object
+end_desktop_section

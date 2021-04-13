@@ -1,0 +1,215 @@
+// Use FTSWrdSp.nui // cFTS_WordSplitter class (to be used internally by cFreeText_Indexer and cFTS_Searcher classes)
+
+//> The cFTS_WordSplitter class is able to split up an article into words. It is done like this:
+//>
+//><CODE>
+//>   Send DoReset to lhWordSplitter
+//>   Send DoAddText to lhWordSplitter <text> // as many as needed
+//></CODE>
+//> Legal letters are determined by the psLetters property
+//>
+
+// Programmed by Sture Andersen for Sture ApS. E-mail: sture@stureaps.dk, Tel: +45 40 59 70 20
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Language.pkg
+
+define FTS_WORDCHARACTERS_DANISH  for "ABCDEFGHIJKLMNOPQRSTUVWXYZ’Ž™šµÖàéí·ÔÞãëabcdefghijklmnopqrstuvwxyz‘›†„” ‚¡¢£ì…Š•—"
+define FTS_WORDCHARACTERS_ENGLISH for "ABCDEFGHIJKLMNOPQRSTUVWXYZµÖàéí·ÔÞãëabcdefghijklmnopqrstuvwxyz ‚¡¢£ì…Š•—¤"
+
+enumeration_list
+  // Set this property to the string of letters that are considered to be legal in your langauge (or rather
+  // the language of the articles, you're going to index)
+  define FTS_WORDCHARACTERS
+  // If paragraphs can be trusted to not include CR/LF characters you may set this property to DFTRUE. This will
+  // prevent finding phrases that starts in one paragraph and ends in the next (and therefore technically are not
+  // phrases). If however, like in newsgroup articles, paragraphs are divided into a number of CR/LF delimited lines,
+  // it should be set DFFALSE (as indeed is the default value).
+  define FTS_CRLFCANBETRUSTED
+end_enumeration_list
+
+desktop_section
+  object oFTS_GlobalSetup is a cArray
+    // The set up values contained in this array are default values
+    // for properties of all objects of the cFTS_WordSplitter class.
+  end_object
+end_desktop_section
+
+procedure set FTS_Parameter global integer liItm string lsValue
+  set value of (oFTS_GlobalSetup(self)) item liItm to lsValue
+end_procedure
+function FTS_Parameter global integer liItm returns string
+  function_return (value(oFTS_GlobalSetup(self),liItm))
+end_function
+
+// Set up default parameters
+#IF LNG_DEFAULT=LNG_DANISH
+  set FTS_Parameter FTS_WORDCHARACTERS   to FTS_WORDCHARACTERS_DANISH
+#ELSE
+  set FTS_Parameter FTS_WORDCHARACTERS   to FTS_WORDCHARACTERS_ENGLISH
+#ENDIF
+
+set FTS_Parameter FTS_CRLFCANBETRUSTED to DFFALSE
+
+//> As the name implies an object of the cFTS_WordSplitter class is used to
+//> break up an article into words.
+class cFTS_WordSplitter is a cArray
+                procedure construct_object integer liImg
+                  forward send construct_object liImg
+                  property string   psLetters     private (FTS_Parameter(FTS_WORDCHARACTERS))
+                  property string   psDelimiters  private ""
+
+                  // Very private. Is used to temporarily make the DoAddText procedure but
+                  // the list of words to an external object instead of itself.
+                  property integer  phRedirectObj private 0
+                  property integer  pbDoNotRegisterWithParent false
+
+                  // Property pbCrLfCanBeTrusted should be set to TRUE if we can rely upon
+                  // hard coded line shifts.
+                  property integer  pbCrLfCanBeTrusted (FTS_Parameter(FTS_CRLFCANBETRUSTED))
+                end_procedure
+
+  item_property_list
+    item_property string  psWord.i
+    item_property integer piWordId.i    // Used by external procedures to assign word ID's
+    item_property integer piFrequency.i // Used by external procedures to assign word frequencies
+  end_item_property_list cFTS_WordSplitter
+
+                procedure BuildDelimiters // Private
+                  integer liAscii
+                  string lsDelimiters lsChar lsNotDelimiters
+                  move "" to lsDelimiters
+                  get psLetters to lsNotDelimiters
+                  move (lsNotDelimiters+"01234567890") to lsNotDelimiters
+                  for liAscii from 33 to 255
+                    ifnot (character(liAscii)) in lsNotDelimiters move (lsDelimiters+character(liAscii)) to lsDelimiters
+                  loop
+                  set cFTS_WordSplitter.psDelimiters to lsDelimiters
+                end_procedure
+
+  procedure set psLetters string lsLetters
+    set cFTS_WordSplitter.psLetters to lsLetters
+    send BuildDelimiters
+  end_procedure
+
+  function psLetters returns string
+    function_return (cFTS_WordSplitter.psLetters(self))
+  end_function
+
+                procedure end_construct_object // Private
+                  integer lhSelf
+                  forward send end_construct_object
+                  send BuildDelimiters
+                  ifnot (pbDoNotRegisterWithParent(self)) begin
+                    move self to lhSelf
+                    set phWordsplitterObject to lhSelf // This is resolved in the encapsulating cFTS_System object
+                  end
+                end_procedure
+
+  //> Use procedure DoReset to delete all data in the array.
+  procedure DoReset
+    send delete_data
+  end_procedure
+
+                enumeration_list // Private
+                  define PRIV_FTS_NOT_IN_ITEM // These are just constants used internally by the DoAddText
+                  define PRIV_FTS_WORD        // procedure for values of internal state variable liState:
+                  define PRIV_FTS_NUMBER
+                  define PRIV_FTS_DELIMITER
+                  define PRIV_FTS_BELOW32
+                end_enumeration_list
+
+  //> This procedure adds rows to item_property structure by filling the
+  //> psWord.i column only. The DoAddText procedure does not reset the
+  //> values in the array before doing this. This must be done manually
+  //> by calling the DoReset procedure.
+  //>
+  //> The function of this procedure is influenced by properties psLetters
+  //> and pbCrLfCanBeTrusted.
+  //>
+  //> If you want to fundamentally change the way words are being derived
+  //> from articles, this is the procedure to want to change.
+
+  procedure DoAddText string lsText
+    integer liLen liPos liRow liState lbBelow32CountsAsWord lhSelf
+    string lsChar lsWord lsLetter lsNumbers lsDelimiters
+
+    get cFTS_WordSplitter.phRedirectObj to lhSelf // If>0 the result of the splitting should be send elsewhere
+    ifnot lhSelf move self to lhSelf
+    set cFTS_WordSplitter.phRedirectObj to 0 // Make sure that the redirecting doesn't stick
+
+    move (trim(lsText)) to lsText
+    move (length(lsText)) to liLen
+    move "" to lsWord
+    move PRIV_FTS_NOT_IN_ITEM to liState
+    move 0 to liRow
+    get psLetters to lsLetter
+    get cFTS_WordSplitter.psDelimiters to lsDelimiters
+    get pbCrLfCanBeTrusted to lbBelow32CountsAsWord
+    move "0123456789" to lsNumbers
+
+    move (lsLetter+lsNumbers) to lsLetter
+    move "" to lsNumbers
+
+    for liPos from 1 to liLen
+      mid lsText to lsChar 1 liPos
+      if lsChar in lsLetter begin
+        if liState eq PRIV_FTS_WORD move (lsWord+lsChar) to lsWord
+        else begin
+          if (liState=PRIV_FTS_NUMBER or liState=PRIV_FTS_DELIMITER or liState=PRIV_FTS_BELOW32) begin
+            if (liState<>PRIV_FTS_BELOW32 or lbBelow32CountsAsWord<>0) begin
+              set psWord.i of lhSelf liRow to lsWord
+              increment liRow
+            end
+          end
+          move PRIV_FTS_WORD to liState
+          move lsChar to lsWord
+        end
+      end
+      else if lsChar in lsNumbers begin
+        if liState eq PRIV_FTS_NUMBER move (lsWord+lsChar) to lsWord
+        else begin
+          if (liState=PRIV_FTS_WORD or liState=PRIV_FTS_DELIMITER or liState=PRIV_FTS_BELOW32) begin
+            if (liState<>PRIV_FTS_BELOW32 or lbBelow32CountsAsWord<>0) begin
+              set psWord.i of lhSelf liRow to lsWord
+              increment liRow
+            end
+          end
+          move PRIV_FTS_NUMBER to liState
+          move lsChar to lsWord
+        end
+      end
+      else if (lsChar=" ") begin
+        if lsWord ne "" begin
+          set psWord.i of lhSelf liRow to lsWord
+          increment liRow
+        end
+        move PRIV_FTS_NOT_IN_ITEM to liState
+        move ""to lsWord
+      end
+      else if lsChar in lsDelimiters begin
+        if liState eq PRIV_FTS_DELIMITER move (lsWord+lsChar) to lsWord
+        else begin
+          if (liState=PRIV_FTS_WORD or liState=PRIV_FTS_NUMBER or liState=PRIV_FTS_BELOW32) begin
+            if (liState<>PRIV_FTS_BELOW32 or lbBelow32CountsAsWord<>0) begin
+              set psWord.i of lhSelf liRow to lsWord
+              increment liRow
+            end
+          end
+          move PRIV_FTS_DELIMITER to liState
+          move lsChar to lsWord
+        end
+      end
+      else if (ascii(lsChar)<32) begin
+        if lsWord ne "" begin
+          set psWord.i of lhSelf liRow to lsWord
+          increment liRow
+        end
+        move PRIV_FTS_BELOW32 to liState
+        move "" to lsWord
+      end
+    loop
+    if lsWord ne "" set psWord.i of lhSelf liRow to lsWord
+  end_procedure
+
+end_class // cFTS_WordSplitter

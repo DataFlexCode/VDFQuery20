@@ -1,0 +1,3048 @@
+﻿// *************************************************************************
+// Use APS.pkg      // Auto Positioning and Sizing classes for VDF
+//
+// Version: 2.1+
+// by Sture Andersen
+//
+// NOTE! The classes defined in this file are ONLY concerned with sizing and
+//       locating objects. They do not change the navigational behavior of
+//       your objects or in any other way extend or limit the functionality
+//       compared to standard VDF classes.
+//
+//       Once the objects have been created, sized and located APS makes
+//       no difference to the behavior to your objects.
+//
+// Support:           Contact via DAW news groups preferred.
+//
+//                    E-mail: sture@stureaps.dk
+//
+// ***********************************************************************
+//
+// The following classes are defined in this package:
+//
+//
+// Panel containers:  aps.View            aps.BasicPanel
+//                    aps.dbView          aps.TopMostModalPanel
+//                    aps.ModalPanel      aps.dbTopMostModalPanel
+//                    aps.dbModalPanel    aps.dbTabView
+//
+// Other containers:  aps.Group           aps.dbGroup
+//                    aps.Container3D     aps.dbContainer3D
+//                    aps.TabDialog       aps.dbTabDialog
+//                    aps.TabPage         aps.dbTabPage
+//                    aps.RadioGroup      aps.dbRadioGroup
+//                    aps.RadioContainer    //<-- NOTE: These do not have sizes
+//                    aps.dbRadioContainer  //<--       or locations.
+//
+// Controls:          aps.Form            aps.dbForm
+//                    aps.ComboForm       aps.dbComboForm
+//                    aps.SpinForm        aps.dbSpinForm
+//                    aps.CheckBox        aps.dbCheckBox
+//                    aps.Edit            aps.dbEdit
+//                    aps.RichEdit        aps.dbRichEdit
+//                    aps.TextEdit        aps.dbTextEdit
+//                    aps.TextBox         aps.Button
+//                    aps.Radio           aps.Multi_Button
+//
+// Grid controls:     aps.List            aps.dbList
+//                    aps.Grid            aps.dbGrid
+//
+// Exotics:           aps.BitmapContainer aps.ToolButton
+//                    aps.LineControl
+//
+// ***********************************************************************
+//
+// The following global alignment procedures are defined in this package:
+//
+//
+//   Align object 1 relative to object 2, by re-locating object 1:
+//           send APS_ALIGN_BY_MOVING obj1# obj2# align_mode#
+//
+//   Align object 1 relative to object 2, by re-sizing object 1:
+//           send APS_ALIGN_BY_SIZING obj1# obj2# align_mode#
+//
+//   Objects are sized to the bigger of the two:
+//           send APS_SIZE_IDENTICAL_MAX obj1# obj2# sizing_mode#
+//
+//   Align an object (with ID ctrl#) inside its parent by re-locating it:
+//           send APS_ALIGN_INSIDE_CONTAINER_BY_MOVING ctrl# align_mode#
+//
+//   Align an object (with ID ctrl#) inside its parent by re-sizing it:
+//           send APS_ALIGN_INSIDE_CONTAINER_BY_SIZING ctrl# align_mode#
+//
+//
+// align_mode#  : SL_ALIGN_LEFT   SL_ALIGN_RIGHT  SL_ALIGN_TOP
+//                SL_ALIGN_BOTTOM SL_ALIGN_CENTER SL_ALIGN_VCENTER
+//
+// sizing_mode# : SL_HORIZONTAL   SL_VERTICAL
+//
+//
+//
+// ***********************************************************************
+
+
+Use DfAllEnt.pkg // Standard DAW everything
+Use cTextEdit.pkg
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+Use Dftxtwin.pkg // dbedit
+Use Dfsellst.pkg // dbList
+Use Dftable.pkg  // dbGrid
+Use Dfline.pkg   // DAW
+Use Version.nui  //
+Use fieldinf.pkg // Global field info objects
+Use Macros.utl   // Various macros (DESKTOP_SECTION command)
+
+Use cDbRichEdit.pkg // RTF classes
+
+#Replace APS$BYEBYE                 0 // If 1 you can make a panel defined by APS
+                                      // classes dump object sizes and locations
+                                      // to the 'output window' when you press
+                                      // ctrl+F7 in that panel. This is useful if
+                                      // you're trying to get rid of APS from your
+                                      // packages and is willing to manually insert
+                                      // size and location for all objects.
+
+#REPLACE APS$TEST                   0 // If 1 you may query the size and
+                                      // location of objects runtime.
+#REPLACE APS$KILL_GRID_PROMPT_VALUE 0 // If 1 get's rid of ">>" in grids
+
+#REPLACE APS$TABDIALOG_NAVIGATION   1 // If 1 it will be possible to navigate
+                                      // between tab pages using ctrl+PgUp/PgDn.
+                                      // This is in sync. with standard MS beha.
+#REPLACE APS$SPINBUTTON_ACC_KEYS    0 // Never mind. It does not work.
+#REPLACE APS$SPOOKY_WIDTH_CORR      1 // Add to field width if 4N0. Spooky indeed!
+
+#IF APS$TEST
+  showln ""
+  showln "You have included APS test code in your application!"
+  showln ""
+  showln "ctrl+F2: Display size and location of current object"
+  showln "ctrl+F5: Display size and location of parent object"
+  showln "ctrl+F7: Display size and location of grand parent object"
+  showln ""
+#ENDIF
+
+#IF APS$BYEBYE
+  Use Win\ObjectInfo.pkg // This requires access to the StureApsPublicLib library
+  Use FileFunctions.pkg // This requires access to the StureApsPublicLib library
+  showln ""
+  showln "You have included APS-bye-bye code in your application"
+  showln ""
+  showln "ctrl+F7: Dump size and location of objects in panel to file"
+  showln ""
+
+  Use Files.nui
+#ENDIF
+
+// Relative location of objects:
+define SL_DOWN                             for -1
+define SL_LEFT                             for -2
+define SL_LOWER_RIGHT_CORNER_EXTEND_ROW    for -3
+define SL_CURRENT_POS_NO_LABEL_ADJUST      for -4
+define SL_RIGHT                            for -5
+define SL_UP                               for -6
+define SL_LOWER_RIGHT_CORNER               for -7
+define SL_XRIGHT                           for -8
+define SL_UPPER_RIGHT_CORNER_EXTEND_COLUMN for -9
+define SL_RIGHT_SPACE                      for -10
+define SL_CURRENT_POS                      for -11
+
+define SL_ALIGN_LEFT    for  1
+define SL_ALIGN_RIGHT   for  2
+define SL_ALIGN_TOP     for  4
+define SL_ALIGN_BOTTOM  for  8
+define SL_ALIGN_CENTER  for 16
+define SL_ALIGN_VCENTER for 32
+
+define SL_HORIZONTAL    for  1
+define SL_VERTICAL      for  2
+
+define APS.ITEM_OPTION_CAPSLOCK for 19
+
+//> This function translates form_margin to form_width (or column_width). It
+//> does so taking into account the data type and whether or not the field
+//> is capslocked.
+function aps.form_width.iii for cObject integer typ# integer mrg# integer caps# returns integer
+  integer rval#
+  if typ# eq ASCII_WINDOW begin // Ascii:
+    if caps# move (mrg#*8+5 max 20) to rval# // If capsl: 8 units per character.
+    else move (mrg#*5+5 max 20) to rval#     // Otherwise 5. At least 20.
+  end
+  else begin
+    if typ# eq DATE_WINDOW move 47 to rval# // Dates are 47, period!
+    else begin
+      move (mrg#*4+7) to rval# // Digits are easy. They always have the same width.
+      #IF APS$SPOOKY_WIDTH_CORR
+       if (mrg#=2) move (rval#+9) to rval# // Spooky correction!
+       if (mrg#=4) move (rval#+9) to rval# // Spooky correction!
+       if (mrg#=6) move (rval#+9) to rval# // Spooky correction!
+       if (mrg#=8) move (rval#+9) to rval# // Spooky correction!
+      #ENDIF
+    end
+  end
+  function_return rval#
+end_function
+
+function FieldWidthMDU global integer liFile integer liField returns integer
+  integer lhDD liType lbCaps liLen
+
+  move FALSE to lbCaps
+  if (liField<255) begin
+    get DataDictionary_Object liFile to lhDD
+    if lhDD get Field_Option of lhDD liField DD_CAPSLOCK to lbCaps
+  end
+
+  get FieldInf_FieldType liFile liField to liType
+  get FieldInf_Field_Length liFile liField to liLen
+
+  if (liType=DF_DATE) function_return 47
+  if (liType=DF_ASCII) begin
+    if lbCaps function_return (liLen*8+5 max 20) // If capsl: 8 units per character.
+    else function_return (liLen*5+5 max 20)      // Otherwise 5. At least 20.
+  end
+  if (liType=DF_BCD) begin
+    function_return (liLen*4+7) // Digits are easy. They always have the same width.
+  end
+  function_return 0
+end_function
+
+//External_Function ApsOemToCharA "OemToCharA" User32.DLL Pointer hpszOem Pointer hpszWindow Returns Integer
+//Function APS_OemToChar Global String OemStr Returns String
+//  String  CharStr
+//  Pointer OemAdress CharAdress 
+//  Integer grb#
+//  Append OemStr (Character(0))
+//  Move (Repeat(Character(0), (Length(OemStr)))) To CharStr
+//  GetAddress Of OemStr  To OemAdress
+//  GetAddress Of CharStr To CharAdress
+//  Move (ApsOemToCharA(OemAdress, CharAdress)) To grb#
+//  Function_Return (CString(CharStr))
+//End_Function
+
+// Insert:
+// I'm sure this can be done more gracefully. Still...
+number aps.gui2mdu_width# aps.gui2mdu_height#
+
+desktop_section
+  object ApsTestGuiConv is a dfcontainer
+    procedure damit
+      integer low_h# low_w#
+      integer hi_h# hi_w#
+      set guisize to 20 20
+      send adjust_logicals
+      get size to low_w#
+      move (hi(low_w#)) to low_h#
+      move (low(low_w#)) to low_w#
+      set guisize to 420 420
+      send adjust_logicals
+      get size to hi_w#
+      move (hi(hi_w#)) to hi_h#
+      move (low(hi_w#)) to hi_w#
+      move (hi_h#-low_h#/400.0) to aps.gui2mdu_height#
+      move (hi_w#-low_w#/400.0) to aps.gui2mdu_width#
+    end_procedure
+    send damit
+  end_object
+end_desktop_section
+
+Class aps.tabulator_array is an array
+  Procedure tab_column_define Integer tab# Integer val# Integer label_width# Integer label_just#
+    Integer base#
+    Move (tab#*3) to base#
+    Set value item base#     to val#
+    Set value item (base#+1) to label_width#
+    Set value item (base#+2) to label_just#
+  End_Procedure
+  Procedure tab_label_column_goto Integer tab#
+    delegate set p_cur_column to (integer(value(self,tab#*3))-integer(value(self,tab#*3+1)))
+  End_Procedure
+  Procedure tab_column_goto Integer tab#
+    Delegate Set p_cur_column to (value(Self,tab#*3))
+  End_Procedure
+  Function ilabel_width.i Integer tab# Returns Integer
+    Function_Return (value(Self,tab#*3+1))
+  End_Function
+  Function ilabel_just.i Integer tab# Returns Integer
+    Function_Return (value(Self,tab#*3+2))
+  End_Function
+End_Class
+
+#IF APS$BYEBYE
+Global_Variable Integer _giApsByeByeIndent
+#ENDIF
+
+//> Class aps_panel_mx is mixed into aps.(db)ModalPanel and aps.(db)View. All
+//> other APS objects must be nested inside one of these.
+class aps_panel_mx is a mixin
+  procedure define_aps_panel_mx
+    property integer p_resize_in_progress private DFTRUE
+    property integer pMinimumSize         private 0
+    set p_auto_column to false
+    #IF APS$BYEBYE
+     on_key KEY_CTRL+KEY_F7 send _byebye_panel_show_size_and_locations
+    #ENDIF
+  end_procedure
+
+#IF APS$BYEBYE
+  Procedure _byebye_begin_object Integer hObj Boolean bDoSizeLoc Boolean bDoLabel
+    Integer iSize iLoc iAnchor iCls
+    String sLabel
+    Integer iLblColOffSet iLblJustMode
+    Writeln (Repeat("    ",_giApsByeByeIndent)+"Object "+Name(hObj))
+    If (bDoSizeLoc) Begin
+        Get size of hObj to iSize
+        Get location of hObj to iLoc
+        Get peAnchors of hObj to iAnchor
+        Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set Size to " (hi(iSize)) " " (low(iSize))
+        Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set Location to " (hi(iLoc)) " " (low(iLoc))
+        If (iAnchor<>anNone) Begin
+            If (iAnchor=anTop            ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set peAnchors to anTop"    
+            If (iAnchor=anBottom         ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set peAnchors to anBottom"    
+            If (iAnchor=anTopBottom      ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set peAnchors to anTopBottom"    
+            If (iAnchor=anLeft           ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set peAnchors to anLeft"    
+            If (iAnchor=anTopLeft        ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set peAnchors to anTopLeft"    
+            If (iAnchor=anBottomLeft     ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set peAnchors to anBottomLeft"    
+            If (iAnchor=anTopBottomLeft  ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set peAnchors to anTopBottomLeft"    
+            If (iAnchor=anRight          ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set peAnchors to anRight"    
+            If (iAnchor=anTopRight       ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set peAnchors to anTopRight"    
+            If (iAnchor=anBottomRight    ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set peAnchors to anBottomRight"    
+            If (iAnchor=anTopBottomRight ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set peAnchors to anTopBottomRight"
+            If (iAnchor=anLeftRight      ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set peAnchors to anLeftRight"    
+            If (iAnchor=anTopLeftRight   ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set peAnchors to anTopLeftRight"    
+            If (iAnchor=anBottomLeftRight) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set peAnchors to anBottomLeftRight"    
+            If (iAnchor=anAll            ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set peAnchors to anAll"    
+        End
+        If (bDoLabel) Begin
+            Get _IO_Class of hObj to iCls
+            If (iCls=OIC_Form or iCls=OIC_dbForm or iCls=OIC_ComboForm or iCls=OIC_dbComboForm or iCls=OIC_SpinForm or iCls=OIC_dbSpinForm or iCls=OIC_Edit or iCls=OIC_dbEdit) Begin
+                Get Label of hObj to sLabel
+                If (sLabel<>"") Begin
+                    
+                    Get Label_Col_Offset of hObj to iLblColOffSet
+                    Get label_justification_mode of hObj to iLblJustMode
+                    
+                    Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set Label to '" sLabel "'"
+                    Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set Label_Col_Offset to " (String(iLblColOffSet))
+                    
+                    If (iLblJustMode=JMode_Left   ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set Label_Justification_Mode to JMode_Left"
+                    If (iLblJustMode=JMode_Center ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set Label_Justification_Mode to JMode_Center"
+                    If (iLblJustMode=JMode_Right  ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set Label_Justification_Mode to JMode_Right"
+                    If (iLblJustMode=JMode_Top    ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set Label_Justification_Mode to JMode_Top"
+                    If (iLblJustMode=JMode_Bottom ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set Label_Justification_Mode to JMode_Bottom"
+                    If (iLblJustMode=JMode_VCenter) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set Label_Justification_Mode to JMode_VCenter"
+                    If (iLblJustMode=JMode_Wrap   ) Writeln (Repeat("    ",_giApsByeByeIndent)) "    Set Label_Justification_Mode to JMode_Wrap"
+                End
+            End
+        End
+    End
+    Increment _giApsByeByeIndent
+  End_Procedure
+
+  Procedure _byebye_end_object Integer hObj
+    Decrement _giApsByeByeIndent
+    Writeln (Repeat("    ",_giApsByeByeIndent)+"End_Object")
+  End_Procedure
+
+  Procedure _byebye_panel_show_size_and_locations
+    Integer iChannel
+    String sPath
+    Get VdfFolderPath of oFileFunctions VDF_APPSRC to sPath
+    Get AppendPath of oFileFunctions sPath "byebyeaps.txt" to sPath
+    Get DirectOutput of oFileFunctions sPath to iChannel
+    
+    If (iChannel>=0) Begin
+        
+        Writeln channel iChannel "Welcome to Bye Bye"
+        Move 0 to _giApsByeByeIndent
+        Send _byebye_begin_object Self True False
+        Broadcast Send _byebye_show_object
+        Send _byebye_end_object Self
+        
+        Send CloseOutput of oFileFunctions iChannel
+        Send NotePad of oFileFunctions sPath
+    End
+  End_Procedure
+#ENDIF
+
+  procedure set pMinimumSize integer x# integer y#
+    set aps_panel_mx.pMinimumSize to (x#*65536+y#)
+  end_procedure
+
+  function pMinimumSize returns integer
+    function_return (aps_panel_mx.pMinimumSize(self))
+  end_function
+
+  procedure aps_MakeMinimumSize
+    integer size#
+    get size to size#
+    set pMinimumSize to (hi(size#)) (low(size#))
+  end_procedure
+
+  procedure end_define_aps_panel_mx
+    send aps_beautify
+    set aps_panel_mx.p_resize_in_progress to false
+  end_procedure
+
+  function aps_PanelID returns integer
+    function_return self
+  end_function
+
+  procedure aps_beautify
+  end_procedure
+
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    // SAMPLE09.SRC shows how to use this in a simple panel
+  end_procedure
+
+  procedure onResize // Event sent when panel is displayed or resized
+    integer old_rw# old_cl# new_rw# new_cl#
+    ifnot (aps_panel_mx.p_resize_in_progress(self)) begin
+      set aps_panel_mx.p_resize_in_progress to true
+      get size to old_cl#
+      move (hi(old_cl#)) to old_rw#
+      move (low(old_cl#)) to old_cl#
+      send adjust_logicals
+      get size to new_cl#
+      move (hi(new_cl#)) to new_rw#
+      move (low(new_cl#)) to new_cl#
+      send aps_init
+      if new_rw# lt (hi(aps_panel_mx.pMinimumSize(self))) move (hi(aps_panel_mx.pMinimumSize(self))) to new_rw#
+      if new_cl# lt (low(aps_panel_mx.pMinimumSize(self))) move (low(aps_panel_mx.pMinimumSize(self))) to new_cl#
+      send aps_onResize (new_rw#-old_rw#) (new_cl#-old_cl#)
+      set aps_panel_mx.p_resize_in_progress to false
+    end
+  end_procedure
+end_class
+
+desktop_section
+  object oAPS_Stack is an array
+    procedure Push.i integer value#
+      set value item (item_count(self)) to value#
+    end_procedure
+    function iPop returns integer
+      integer rval# itm#
+      move (item_count(self)-1) to itm#
+      get value item itm# to rval#
+      send delete_item itm#
+      function_return rval#
+    end_function
+  end_object
+  object oAPS_PresetColumnWidths is a array
+  end_object
+end_desktop_section
+
+//> Class aps_container_mx is mixed into all visual container classes. That
+//> means that all APS container classes have the properties and the methods
+//> defined by this class:
+class aps_container_mx is a mixin
+  procedure define_aps_container_mx
+    property integer p_left_margin          5  //─┬─These are all
+    property integer p_right_margin         5  // │  measured in
+    property integer p_top_margin           5  // │  map_dialog-
+    property integer p_bottom_margin        5  // │  units
+    property integer p_form_height          13 // │
+    property integer p_cur_row              5  // │
+    property integer p_cur_column           5  // │
+    property integer p_max_row              0  // │
+    property integer p_max_column           0  // │
+    property integer p_row_space            2  // │
+    property integer p_column_space         2  //─┘
+    property integer p_last_object          0  // Last object positioned
+                                                      // by container.
+    //> p_lrcer_offset is used to determine the amount of extra row space
+    //> inserted when snapping to SL_LOWER_RIGHT_CORNER_EXTEND_ROW (lrcer)
+    property integer p_lrcer_offset         3
+    //> p_urcec_offset is used to determine the amount of extra column space
+    //> inserted when snapping to SL_UPPER_RIGHT_CORNER_EXTEND_COLUMN (urcec)
+    property integer p_urcec_offset         3
+
+    property integer p_auto_column          private 1
+    property integer p_auto_column_just_set private 1
+
+    //> Should the container auto size?:
+    property integer p_auto_size_container_state true
+
+    object column_array is an aps.tabulator_array
+      send tab_column_define 1 60 55 JMODE_LEFT // Default column setting
+    end_object
+
+  end_procedure
+
+#IF APS$BYEBYE
+  procedure _byebye_show_object
+    Send _byebye_begin_object Self True False
+    broadcast send _byebye_show_object
+    send _byebye_end_object self
+  end_procedure
+#ENDIF
+  function aps_parent returns integer
+    function_return self
+  end_function
+
+  procedure set p_auto_column integer col#
+    set aps_container_mx.p_auto_column to col#
+    set aps_container_mx.p_auto_column_just_set to true // No automatic lf!
+  end_procedure
+  function p_auto_column returns integer
+    function_return (aps_container_mx.p_auto_column(self))
+  end_function
+
+  procedure end_define_aps_container_mx
+    if (p_auto_size_container_state(self)) send aps_auto_size_container
+  end_procedure
+
+  procedure tab_column_define integer tab# integer val# integer label_width# integer label_just#
+    send tab_column_define to (column_array(self)) tab# val# label_width# label_just#
+  end_procedure
+
+  procedure tab_column_define_adhoc integer tab#
+    integer lhObj loc#
+    get p_last_object to lhObj
+    get location of lhObj to loc#
+    move (low(loc#)) to loc#
+    send tab_column_define tab# loc# 100 jmode_right
+  end_procedure
+
+  procedure aps_push_current_position
+    integer lhObj
+    move (oAPS_Stack(self)) to lhObj
+    send push.i to lhObj (p_cur_row(self))
+    send push.i to lhObj (p_cur_column(self))
+    send push.i to lhObj (p_last_object(self))
+  end_procedure
+
+  procedure aps_pop_current_position
+    integer lhObj
+    move (oAPS_Stack(self)) to lhObj
+    set p_last_object to (iPop(lhObj))
+    set p_cur_column  to (iPop(lhObj))
+    set p_cur_row     to (iPop(lhObj))
+  end_procedure
+
+  procedure aps_push_max_positions
+    integer lhObj
+    move (oAPS_Stack(self)) to lhObj
+    send push.i to lhObj (p_max_row(self))
+    send push.i to lhObj (p_max_column(self))
+  end_procedure
+
+  procedure aps_pop_max_positions
+    integer lhObj p_max_row# p_max_column#
+    move (oAPS_Stack(self)) to lhObj
+    move (iPop(lhObj)) to p_max_column#
+    move (iPop(lhObj)) to p_max_row#
+    if p_max_column# gt (p_max_column(self)) set p_max_column to p_max_column#
+    if p_max_row#    gt (p_max_row(self))    set p_max_row    to p_max_row#
+  end_procedure
+
+  procedure tab_column_goto integer tab#
+    send tab_column_goto to (column_array(self)) tab#
+  end_procedure
+  procedure tab_label_column_goto integer tab#
+    send tab_label_column_goto to (column_array(self)) tab#
+  end_procedure
+
+  procedure make_row_space integer amount# // Move the cursor down
+    integer tmp#
+    ifnot num_arguments move (p_row_space(self)) to tmp#
+    else move amount# to tmp#
+    set p_cur_row to (tmp#+p_cur_row(self))
+  end_procedure
+
+  procedure make_column_space integer amount# // Advance cursor to the left
+    integer tmp#
+    ifnot num_arguments move (p_column_space(self)) to tmp#
+    else move amount# to tmp#
+    set p_cur_column to (tmp#+p_cur_column(self))
+  end_procedure
+
+  //> Because combo forms are the only objects (until now) that
+  //> does not have a visual size corresponding to their size-setting,
+  //> we have to treat combo's much differently. Therefore this
+  //> function is provided to help determine whether we are dealing
+  //> with a combo form or not.
+  function is_comboform integer lhObj returns integer
+    integer dm# rval#
+    get delegation_mode of lhObj to dm#
+    set delegation_mode of lhObj to NO_DELEGATE_OR_ERROR
+    get p_is_comboform of lhObj to rval#
+    set delegation_mode of lhObj to dm#
+    function_return rval#
+  end_function
+
+  //> The idea of this function is to retrieve value of property
+  //> p_extra_external_width. But since we are not sure that <lhObj>
+  //> is one of ours (meaning and APS object), we retrieve it this way:
+  function extra_external_width integer lhObj returns integer
+    integer dm# rval#
+    get delegation_mode of lhObj to dm#
+    set delegation_mode of lhObj to NO_DELEGATE_OR_ERROR
+    get p_extra_external_width of lhObj to rval#
+    set delegation_mode of lhObj to dm#
+    function_return rval#
+  end_function
+
+  //> The idea of this function is to retrieve value of property
+  //> p_extra_internal_width. But since we are not sure that <lhObj>
+  //> is one of ours (APS), we retrieve it this way.
+  function extra_internal_width integer lhObj returns integer
+    integer dm# rval#
+    get delegation_mode of lhObj to dm#
+    set delegation_mode of lhObj to NO_DELEGATE_OR_ERROR
+    get p_extra_internal_width of lhObj to rval#
+    set delegation_mode of lhObj to dm#
+    function_return rval#
+  end_function
+
+  //> This one is used internally by the mixin classes to update properties
+  //> p_max_row and p_max_column with respect to a (control) object. It
+  //> may be used externally to make the container aware of an object that
+  //> has been sized and located manually.
+  procedure aps_register_max_rc integer lhObj
+    integer row# col# size# loc#
+    get size of lhObj to size#
+
+    // The next line fools APS into thinking that the control is only
+    // 13 units high if it is a combo form.
+    if (is_comboform(self,lhObj)) move (13*65536+low(size#)) to size#
+    move (size#+extra_external_width(self,lhObj)) to size#
+
+    get location of lhObj to loc#
+    move (hi(size#)+hi(loc#)) to row#
+    move (low(size#)+low(loc#)) to col#
+    if (row#>p_max_row(self)) set p_max_row to row#
+    if (col#>p_max_column(self)) set p_max_column to col#
+  end_procedure
+
+  procedure new_field_row
+    // Carriage return
+    set p_cur_row to (p_cur_row(self)+p_form_height(self)+p_row_space(self))
+    set p_cur_column to (p_left_margin(self))
+  end_procedure
+
+  procedure increment_max_row integer val#
+    integer incr#
+    if num_arguments move val# to incr#
+    else get p_row_space to incr#
+    set p_max_row to (p_max_row(self)+incr#)
+  end_procedure
+
+  procedure increment_max_column integer val#
+    integer incr#
+    if num_arguments move val# to incr#
+    else get p_column_space to incr#
+    set p_max_column to (p_max_column(self)+incr#)
+  end_procedure
+
+  procedure aps_init
+    set p_cur_row    to (p_top_margin(self))
+    set p_cur_column to (p_left_margin(self))
+    set p_max_row    to 0
+    set p_max_column to 0
+    // To let each tab-page start a new, we must set p_auto_column_just_set:
+    set aps_container_mx.p_auto_column_just_set to true
+    set p_last_object to 0
+  end_procedure
+
+  procedure aps_auto_size_container
+    Integer cap_height# lhObj
+    Move 0 to cap_height#
+    Move self to lhObj
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)<140) // If 19.1 or later
+    If (caption_bar(lhObj)) Begin
+        Move (GetSystemMetrics (SM_CYSMCAPTION)) to cap_height# // 15
+    End
+#ELSE
+    If (not(pbSizeToClientArea(self))) begin
+      If (caption_bar(lhObj)) Begin
+          Move (GetSystemMetrics (SM_CYSMCAPTION)) to cap_height# // 15
+      End
+    End
+#ENDIF
+    Set size to (p_max_row(lhObj)+p_bottom_margin(lhObj)+cap_height#) (p_max_column(lhObj)+p_right_margin(lhObj))
+  end_procedure
+
+  function p_snap_location returns integer
+    // Default value for controls without property p_snap_location (non aps.-objects)
+  end_function
+
+  register_function p_extra_external_width returns integer
+  procedure aps_adjust_to_snap_location integer lhObj integer dictate_snap#
+    integer snap_location# label_size# label_offset# column_array# label_just# last_object#
+    integer vertical_offset# dm# label_obj# jmode_top_vert_offset#
+
+    get delegation_mode of lhObj to dm#
+    set delegation_mode of lhObj to NO_DELEGATE_OR_ERROR
+
+    get p_snap_location of lhObj to snap_location#
+    if num_arguments gt 1 move dictate_snap# to snap_location#
+    ifnot snap_location# begin
+      // If no snap_location has been defined we try to obtain one
+      // from our container. If we still have no snap_location
+      // we default to SL_RIGHT.
+      get p_auto_column to snap_location#
+      if snap_location# begin
+        ifnot (aps_container_mx.p_auto_column_just_set(self)) send new_field_row
+        else set aps_container_mx.p_auto_column_just_set to false
+      end
+      else move SL_RIGHT to snap_location#
+    end
+
+    get label_object of lhObj to label_obj#
+    move (if(label_obj#,low(size(label_obj#)),0)) to label_size#
+
+    // Make sure to make a vertical adjustment if a label is present
+    // and it is positioned above the control:
+    if (label_size# and label_justification_mode(lhObj)=jmode_top) begin
+      get p_jmode_top_vert_offset of lhObj to jmode_top_vert_offset#
+        move (hi(label_offset(lhObj))+jmode_top_vert_offset#) to vertical_offset#
+    end
+    else move 0 to vertical_offset#
+
+    if snap_location# gt 0 begin // Means that we should locate relative to tabulator
+      move (column_array(self)) to column_array#
+      send tab_column_goto to column_array# snap_location#
+      if label_size# begin
+        move (ilabel_just.i(column_array#,snap_location#)) to label_just#
+        set label_justification_mode of lhObj to label_just#
+        if label_just# eq jmode_left set label_offset of lhObj to 0 (ilabel_width.i(column_array#,snap_location#))
+        else                         set label_offset of lhObj to 0 0
+      end
+      // If snap_column and no label, we just go there (and we already have).
+    end
+    else begin
+      get p_last_object to last_object#
+      if (snap_location#=SL_RIGHT or snap_location#=SL_RIGHT_SPACE or snap_location#=SL_CURRENT_POS) begin
+      //if last_object# begin  // ????
+      //  set p_cur_column to (low(location(last_object#))+low(size(last_object#))+extra_external_width(self,last_object#)+p_column_space(self))
+      //  set p_cur_row    to (hi(location(last_object#)))
+      //end                    // ????
+        if label_size# begin
+          if (label_justification_mode(lhObj)=JMODE_TOP) begin
+            set p_cur_row    to (p_cur_row(self)+vertical_offset#)
+            set label_offset of lhObj to 0 0
+          end
+          else begin
+            // Advance p_cur_column:
+            set p_cur_column to (p_cur_column(self)+label_size#)
+            set label_justification_mode of lhObj to jmode_right
+            set label_offset of lhObj to 0 0
+          end
+        end
+        if snap_location# eq SL_RIGHT_SPACE set p_cur_column to (p_cur_column(self)+10)
+        // If no label and no tab column, we don't do a thing!
+      end
+      else begin
+        if (snap_location#=SL_XRIGHT and last_object#) begin
+          set p_cur_column to (low(location(last_object#))+low(size(last_object#))+extra_external_width(self,last_object#)+p_column_space(self))
+          set p_cur_row    to (hi(location(last_object#))+vertical_offset#)
+        end
+        if snap_location# eq SL_DOWN begin
+          set p_cur_column to (low(location(last_object#)))
+          ifnot (is_comboform(self,last_object#)) ;
+            set p_cur_row  to (hi(location(last_object#))+hi(size(last_object#))+p_row_space(self)+vertical_offset#)
+          else ;
+            set p_cur_row  to (hi(location(last_object#))+13+p_row_space(self)+vertical_offset#)
+        end
+        if snap_location# eq SL_UP begin
+          set p_cur_column to (low(location(last_object#)))
+          set p_cur_row    to (hi(location(last_object#))-p_row_space(self)-hi(size(lhObj))-vertical_offset#)
+        end
+        if snap_location# eq SL_LEFT begin
+          set p_cur_column to (low(location(last_object#))-p_column_space(self)-low(size(lhObj))-p_extra_external_width(lhObj))
+          set p_cur_row    to (hi(location(last_object#))+vertical_offset#)
+        end
+        if snap_location# eq SL_LOWER_RIGHT_CORNER_EXTEND_ROW begin
+          set p_cur_column to (p_max_column(self)-low(size(lhObj)))
+          set p_cur_row    to (p_max_row(self)+p_row_space(self)+vertical_offset#+p_lrcer_offset(self))
+        end
+        if snap_location# eq SL_LOWER_RIGHT_CORNER begin
+          set p_cur_column to (p_max_column(self)-low(size(lhObj)))
+          set p_cur_row    to (p_max_row(self)-hi(size(lhObj))-vertical_offset#)
+        end
+        if snap_location# eq SL_UPPER_RIGHT_CORNER_EXTEND_COLUMN begin
+          set p_cur_column to (p_max_column(self)+p_column_space(self)+p_urcec_offset(self))
+          set p_cur_row    to (p_top_margin(self)+vertical_offset#)
+        end
+        if snap_location# eq SL_CURRENT_POS begin
+          //set p_cur_column to (p_max_column(self))
+          //set p_cur_row    to (p_top_margin(self)+vertical_offset#)
+        end
+      end
+    end
+    set delegation_mode of lhObj to dm#
+  end_procedure
+
+  procedure aps_auto_locate_control integer lhObj integer dictate_snap# integer dictate_last_object#
+    integer extra_external_width# dm#
+    get delegation_mode of lhObj to dm#
+    set delegation_mode of lhObj to NO_DELEGATE_OR_ERROR
+    if num_arguments gt 1 begin
+      if num_arguments gt 2 set p_last_object to dictate_last_object#
+      send aps_adjust_to_snap_location lhObj dictate_snap#
+    end
+    else send aps_adjust_to_snap_location lhObj
+    get p_extra_external_width of lhObj to extra_external_width#
+    set location of lhObj to (p_cur_row(self)) (p_cur_column(self))
+    set p_cur_column to (p_cur_column(self)+low(size(lhObj))+p_column_space(self)+extra_external_width#)
+    set p_last_object to lhObj
+    send aps_register_max_rc lhObj
+    set delegation_mode of lhObj to dm#
+  end_procedure
+
+  procedure aps_goto_max_row integer row_space#
+    // Position the cursor on a new line below the
+    set p_cur_row    to (p_max_row(self)+p_row_space(self))
+    set p_cur_column to (p_left_margin(self))
+    set aps_container_mx.p_auto_column_just_set to true // No automatic lf!
+    if num_arguments send make_row_space row_space#
+  end_procedure
+
+  function aps_grid_column_start integer lhObj integer col# returns integer
+    integer itm# column#
+    move (low(location(lhObj))) to column# // Left edge of grid
+    for itm# from 0 to (col#-1)
+      move (column#+form_width(lhObj,itm#)) to column#
+    loop
+    function_return column#
+  end_function
+
+  procedure aps_goto_grid_column integer lhObj integer col#
+    // Position the object cursor by the left edge of column <column#>
+    // (0-base) in grid <lhObj>.
+    set p_cur_column to (aps_grid_column_start(self,lhObj,col#))
+  end_procedure
+
+  procedure aps_resize integer lhObj integer delta_rw# integer delta_cl# integer tmp#
+    integer old_rw# old_cl# register#
+    if num_arguments gt 3 move tmp# to register#
+    else move 1 to register#
+    get size of lhObj to old_cl#
+    move (hi(old_cl#)) to old_rw#
+    move (low(old_cl#)) to old_cl#
+    set size of lhObj to ((old_rw#+delta_rw#) max 0) ((old_cl#+delta_cl#) max 0)
+    if register# send aps_register_max_rc lhObj
+    set p_last_object to lhObj
+  end_procedure
+
+  procedure aps_relocate integer lhObj integer delta_rw# integer delta_cl# integer lbRegister
+    integer old_rw# old_cl# register#
+    if num_arguments gt 3 move lbRegister to register#
+    else move 1 to register#
+    get location of lhObj to old_cl#
+    move (hi(old_cl#)) to old_rw#
+    move (low(old_cl#)) to old_cl#
+    set location of lhObj to ((old_rw#+delta_rw#) max 0) ((old_cl#+delta_cl#) max 0)
+    if register# send aps_register_max_rc lhObj
+    set p_last_object to lhObj
+  end_procedure
+end_class // aps_container_mx
+
+//> Class aps_control_mx is mixed into all control classes and all
+//> containers that are not panel containers. That means that all the
+//> classes mentioned have the properties and the methods defined by
+//> this mix-in class:
+class aps_control_mx is a mixin
+  procedure define_aps_control_mx
+             //> Should the control attempt to auto size?:
+    property integer p_auto_size_control_state   true
+             //> Should the control attempt to locate itself
+             //> within the container?
+    property integer p_auto_locate_control_state true
+             //> Objects of class dbForm may or may not have
+             //> prompt buttons attached. When they do, this
+             //> button is created outside the form, and so
+             //> APS must reserve extra space. This is the purpose
+             //> of property p_extra_external_width.
+    property integer p_extra_external_width 0
+    property integer p_extra_internal_width 0
+             //> p_snap_location: 0 means current position
+             //>                 >0 means adjust to column
+             //>                 <0 means special adjustments
+    property integer p_snap_location 0
+             //> In the context of APS you can never trust the size of
+             //> a comboform. Therefore this property is provided to
+             //> let APS know when to handle a control as a comboform.
+    property integer p_is_comboform 0 // You ain't no friend of mine!
+             //> Should the object try to obtain a label from the global
+             //> label mechanism?
+    property integer p_auto_label_state true
+    property integer p_auto_label_add_colon_state true
+             //> Should the object conform to an abstract field type?
+    property integer p_auto_abstract_state 1
+             //> If yes, which?
+    property integer p_abstract 0
+             //> APS needs to know the ID of the server of each control.
+             //> Unfortunatly it is not possible to use the server function
+             //> to get that at the time of creation. Therefore this property
+             //> is used to store the server once manually found.
+    property integer p_server    private -1 // -1=not checked, 0=not found, >0=svr#
+             //
+    property integer p_jmode_top_vert_offset 10
+
+
+    property integer p_dbControl 0  //
+
+    #IF APS$TEST // For test purposes:
+     on_key KEY_CTRL+KEY_F2 send display_size_and_location_self
+     on_key KEY_CTRL+KEY_F5 send display_size_and_location_parent_object
+     on_key KEY_CTRL+KEY_F7 send display_size_and_location_pparent_object
+    #ENDIF
+  end_procedure
+
+  #IF APS$TEST // For test purposes:
+   procedure display_size_and_location integer lhObj
+     string str#
+     // This might generate a few errors, that's ok...
+     showln ("Object: "+name(lhObj)+":")
+     move "   Location: #,#   Size: #,#   Form_margin: #   Form_datatype: #" to str#
+     replace "#" in str# with (hi(location(lhObj)))
+     replace "#" in str# with (low(location(lhObj)))
+     replace "#" in str# with (hi(size(lhObj)))
+     replace "#" in str# with (low(size(lhObj)))
+     replace "#" in str# with (form_margin(lhObj,current))
+     replace "#" in str# with (form_datatype(lhObj,current))
+     showln str#
+     move "   Extra_External_Width: #   Extra_Internal_Width: #" to str#
+     replace "#" in str# with (p_Extra_External_Width(lhObj))
+     replace "#" in str# with (p_Extra_Internal_Width(lhObj))
+     showln str#
+     move "   Label_Row_Offset: #   Label_Col_Offset: #" to str#
+     replace "#" in str# with (Label_Row_Offset(lhObj))
+     replace "#" in str# with (Label_Col_Offset(lhObj))
+     showln str#
+   end_procedure
+   procedure display_size_and_location_self
+     integer lhObj
+     move self to lhObj
+     send display_size_and_location lhObj
+   end_procedure
+   procedure display_size_and_location_parent_object
+     integer lhObj
+     move self to lhObj
+     send display_size_and_location (parent(lhObj))
+   end_procedure
+   procedure display_size_and_location_pparent_object
+     integer lhObj
+     move self to lhObj
+     send display_size_and_location (parent(parent(lhObj)))
+   end_procedure
+  #ENDIF
+
+  #IF APS$BYEBYE
+   Procedure _byebye_show_object
+     Send _byebye_begin_object Self True True
+     Broadcast Send _byebye_show_object
+     Send _byebye_end_object Self
+   End_Procedure
+  #ENDIF
+
+
+  // *******************************************************************
+  Procedure aps_auto_label
+    Integer file# field# dm#
+    String label#
+    Get delegation_mode to dm#
+    set delegation_mode to NO_DELEGATE_OR_ERROR
+    Get label to label#
+    if label# eq "" begin
+      get data_file item 0 to file#
+      get data_field item 0 to field#
+      if (file# and field#) begin
+        // If p_auto_label_state lt 0 we obtain the short version of the label
+        if (p_auto_label_state(self)) ge 0 get FieldInf_FieldLabel_Long file# field# to label#
+        else get FieldInf_FieldLabel_Short file# field# to label#
+        if label# ne "" set label to (label#+if(p_auto_label_add_colon_state(self),":",""))
+      end
+    end
+    set delegation_mode to dm#
+  end_procedure
+
+  //> This function manually retrieves the server of a control. This is
+  //> necessary because the DSO structure is not connected at the time
+  //> of object creation.
+  function aps_server returns integer
+    integer PanelID# rval# lhObj dm#
+    get aps_control_mx.p_server to rval#
+    if rval# eq -1 begin // If we have not looked for it yet
+      move self to lhObj
+      get server of lhObj to rval#
+      ifnot rval# begin
+        get aps_PanelID to PanelID#
+        repeat // This loop does a manual delegation
+          get parent of lhObj to lhObj
+          // If db-controls are nested inside non db-panels errors will occur
+          // from asking what the server is. Thus we set delegation_mode while
+          // asking:
+          get delegation_mode of lhObj to dm#
+          set delegation_mode of lhObj to NO_DELEGATE_OR_ERROR
+          get server of lhObj to rval#
+          set delegation_mode of lhObj to dm#
+        until (lhObj=PanelID# or rval#) // Delegation stops when we hit the panel
+      end
+      set aps_control_mx.p_server to rval#
+    end
+    function_return rval#
+  end_function
+
+  // Wow! Try to hand-trace this function down, and you will see what kind of
+  // load it is to _really_ figure out if a field is capslock'ed or not:
+  function is_capslocked integer itm# returns integer
+    integer caps# svr# file# field# lhObj
+    if (p_dbControl(self)) begin
+      get prototype_object to lhObj // ???Why no invalid message from this???
+      ifnot lhObj move self to lhObj
+
+      get item_option of lhObj item itm# APS.ITEM_OPTION_CAPSLOCK to caps#
+      // extended_deo_state is not set yet!
+      ifnot caps# begin
+        get aps_server to svr#
+        if svr# begin
+          get data_file of lhObj item itm# to file#
+          get data_field of lhObj item itm# to field#
+          if (file# and field#) begin
+            get which_data_set of svr# file# to svr#
+            if (svr# and file# eq main_file(svr#) and Extended_DSO_State(svr#)) ;
+              get Field_Option of svr# field# dd_capslock to caps#
+          end
+        end
+      end
+    end
+    function_return caps#
+  End_Function
+            
+  Procedure OnSizeCalculated Integer iX Integer iY
+  End_Procedure
+
+  procedure aps_auto_size_control
+    Integer type# marg# caps# lhObj iSizeX iSizeY
+    move self to lhObj
+
+    get form_datatype item 0 to type#
+    get form_margin   item 0 to marg#
+
+    if type# eq ASCII_WINDOW get is_capslocked 0 to caps#
+    else move 0 to caps# // If not ascii_window it can't be capslocked!
+
+    ifnot (is_comboform(lhObj,lhObj)) Begin
+        Move (p_form_height(lhObj)) to iSizeX
+        Move (aps.form_width.iii(lhObj,type#,marg#,caps#)+extra_internal_width(lhObj,lhObj)) to iSizeY
+//       Set size to (p_form_height(lhObj)) (aps.form_width.iii(lhObj,type#,marg#,caps#)+extra_internal_width(lhObj,lhObj))
+    End
+    Else Begin                                                       // button width 
+        Move (hi(size(lhObj))) to iSizeX
+        Move (aps.form_width.iii(lhObj,type#,marg#,caps#)+10+extra_internal_width(lhObj,lhObj)) to iSizeY
+//       Set size to (hi(size(lhObj))) (aps.form_width.iii(lhObj,type#,marg#,caps#)+10+extra_internal_width(lhObj,lhObj))
+    End
+    Set Size to iSizeX iSizeY 
+    Send OnSizeCalculated iSizeX iSizeY 
+  end_procedure
+
+  procedure aps_copy_abstract integer abstract#
+    integer file# field# dm# type# marg#
+    ifnot abstract# begin
+      if (p_auto_abstract_state(self)) begin
+        // If an explicit abstract is not specified, we try to obtain one
+        // from the "global field info"-arrangement:
+        get delegation_mode to dm#
+        set delegation_mode to NO_DELEGATE_OR_ERROR
+        get data_file item 0 to file#
+        get data_field item 0 to field#
+        set delegation_mode to dm#
+        if (file# and field#) get gl_abstract file# field# to abstract#
+      end
+    end
+    if abstract# begin
+      if abstract# gt 0 begin
+        get gl_datatype 0 abstract# to type#
+        get gl_margin   0 abstract# to marg#
+        set form_datatype item 0 to type#
+        set form_margin   item 0 to marg#
+      end
+      else begin // Copy abstract from file.field
+        move ((0-abstract#)/4096) to file#
+        move (0-abstract#-(file#*4096)) to field#
+        move 0 to abstract#
+        if (file# and field#) begin
+          get gl_abstract file# field# to abstract#
+          if abstract# begin // if MODIFY_FIELD_TYPE has been applied
+            get gl_datatype 0 abstract# to type#
+            get gl_margin   0 abstract# to marg#
+            set form_datatype item 0 to type#
+            set form_margin   item 0 to marg#
+          end
+          else begin // We have to ask the DBMS
+            get gl_generic_form_datatype file# field# to type#
+            get gl_generic_form_margin   file# field# to marg#
+            set form_datatype item 0 to type#
+            set form_margin   item 0 to marg#
+          end
+        end
+      end
+    end
+  end_procedure
+
+  procedure end_define_aps_control_mx
+    integer lhObj
+    move self to lhObj
+    if (p_auto_label_state(self))          send aps_auto_label
+    send aps_copy_abstract (p_abstract(self))
+    if (p_auto_size_control_state(self))   send aps_auto_size_control
+    if (p_auto_locate_control_state(self)) delegate send aps_auto_locate_control lhObj
+  end_procedure
+
+  function caption_bar returns integer // Controls do not have captions
+  end_function
+end_class
+
+// Class aps_grid_mx is mixed into the APS grid classes:
+class aps_grid_mx is a mixin
+  procedure define_aps_grid_mx
+    property integer p_auto_size_columns_state      true
+    property integer p_max_column_width             999
+    set size to 100 0 // Default height
+  end_procedure
+  #IF APS$TEST // For test purposes:
+   procedure display_size_and_location_grid integer lhObj
+     integer itm# max# column_width#
+     string str# label#
+     move (low(matrix_size(self))-1) to max# // Get number of columns
+     for itm# from 0 to max#
+       get form_width item itm# to column_width#
+       move "      Column #: width: #, form_margin: #, form_datatype: #, label extent: #" to str#
+       replace "#" in str# with (string(itm#))
+       replace "#" in str# with (string(column_width#))
+       replace "#" in str# with (string(form_margin(self,itm#)))
+       replace "#" in str# with (string(form_datatype(self,itm#)))
+       get header_label item itm# to label#
+       if label# ne "" get text_extent label# to column_width#
+       else move 0 to column_width#
+       replace "#" in str# with (string(low(column_width#)))
+       showln str#
+     loop
+   end_procedure
+  #ENDIF
+  #IF APS$BYEBYE
+   procedure _byebye_writeln string sValue
+      Writeln (Repeat("    ",_giApsByeByeIndent)) sValue
+   end_procedure
+   procedure _byebye_show_object
+     integer iColumn iMax iWidth
+     string sLabel
+     Send _byebye_begin_object Self True False
+     move (low(matrix_size(self))-1) to iMax          // Get number of columns
+     for iColumn from 0 to iMax
+       get header_label iColumn to sLabel
+       get form_width iColumn to iWidth
+       send _byebye_writeln ('Set Form_Width    '+String(iColumn)+' to '+String(iWidth))
+       send _byebye_writeln ('Set Header_Label  '+String(iColumn)+' to "'+sLabel+'"')
+       send _byebye_writeln ('Set Form_Margin   '+String(iColumn)+' to '+String(form_margin(self,iColumn)))
+       send _byebye_writeln ('Set Form_Datatype '+String(iColumn)+' to '+String(form_datatype(self,iColumn)))
+     loop
+     send _byebye_end_object self
+   end_procedure
+  #ENDIF
+  procedure aps_auto_grid_labels
+    integer file# field# itm# max# p_obj#
+    string label#
+    move (low(matrix_size(self))-1) to max# // Get number of columns
+    get prototype_object to p_obj#     // Get object id of prototype
+    for itm# from 0 to max#
+      get header_label item itm# to label#
+      if label# eq "" begin
+        get data_file of p_obj# item itm# to file#
+        get data_field of p_obj# item itm# to field#
+        if (file# and field#) begin
+          get FieldInf_FieldLabel_Short file# field# to label#
+          if label# ne "" set header_label item itm# to label#
+        end
+      end
+    loop
+    if (p_extra_internal_width(self)) eq 0 ;
+      if max# eq 0 set p_extra_internal_width to 5
+    set p_auto_label_state to false // Disable standard auto_label
+  end_procedure
+
+  procedure aps_auto_grid_abstracts
+    integer file# field# itm# max# p_obj# abstract# type# marg#
+    move (low(matrix_size(self))-1) to max# // Get number of columns
+    get prototype_object to p_obj#     // Get object id of prototype
+    for itm# from 0 to max#
+      get data_file of p_obj# item itm# to file#
+      get data_field of p_obj# item itm# to field#
+      if (file# and field#) begin
+        get gl_abstract file# field# to abstract#
+        if abstract# begin
+          get gl_datatype 0 abstract# to type#
+          get gl_margin   0 abstract# to marg#
+          set form_datatype item itm# to type#
+          set form_margin   item itm# to marg#
+        end
+      end
+    loop
+    set p_auto_abstract_state to false // Disable standard auto_label
+  end_procedure
+
+  procedure set aps_fixed_column_width integer column# integer value#
+    set value of (oAPS_PresetColumnWidths(self)) item column# to value#
+  end_procedure
+
+  procedure set aps_column_abstract integer column# integer file# integer field#
+    set form_margin item column# to (gl_margin(self,file#,field#))
+    set form_datatype item column# to (gl_datatype(self,file#,field#))
+  end_procedure
+
+  function aps_ColumnCorrection integer liColumn returns integer
+  end_function
+
+  procedure aps_auto_size_columns
+    // This will not size perfectly, but pretty close!
+    integer itm# max# tbl_sz# tbl_width# fld# lhObj
+    integer column_width# type# marg# caps# label_size# field_width# label_width#
+    integer max_column_width# auto_create_prompt_button#
+    integer svr# dd# file# field# p_obj# len# add_it# dm#
+    integer oFixedWidths# liColumnCorrection
+    string label_value# pbv# // pbv# is prompt_button_value
+
+    move (oAPS_PresetColumnWidths(self)) to oFixedWidths#
+
+    if (p_dbControl(self)) begin
+      get aps_server to svr#
+      get prototype_object to p_obj# // Get object id of prototype
+      get delegation_mode to dm# // dbList's do not understand what we about to do:
+      set delegation_mode to NO_DELEGATE_OR_ERROR
+      get prompt_button_value to pbv#
+      get auto_create_prompt_button to auto_create_prompt_button#
+      if (auto_create_prompt_button#<>0 and pbv#<>'') length pbv# to len#
+      set delegation_mode to dm#
+    end
+
+    move self to lhObj
+    move (hi(size(lhObj))) to tbl_sz#                 // Get height of grid
+    move (low(matrix_size(lhObj))-1) to max#          // Get number of columns
+    move (extra_internal_width(lhObj,lhObj)) to tbl_width#  // Initialize total width
+    get p_max_column_width to max_column_width#
+    for itm# from 0 to max#
+      get header_label item itm# to label_value#
+      // We have to try to figure out if we need to append ">>" to the label
+      if (svr# and len# and right(label_value#,len#)<>pbv#) begin // If dbControl:
+        get data_file of lhObj item itm# to file#
+        get data_field of lhObj item itm# to field#
+        if (file# and field#) begin
+          if (Prompt_Object(p_obj#,itm#) and not(Shadow_State(p_obj#,itm#))) ;
+            move 1 to add_it#
+          else begin
+            get which_data_set of svr# file# to dd#
+            if (dd# and file# eq main_file(dd#) and Extended_DSO_State(dd#)) ;
+              get field_prompt_object of dd# field# dd_capslock to add_it#
+          end
+          if add_it# move (label_value#*pbv#) to label_value#
+        end
+      end
+
+      move (value(oFixedWidths#,itm#)) to column_width#
+
+      ifnot column_width# begin
+        get form_datatype item itm# to type#
+        get form_margin   item itm# to marg#
+
+        if type# eq ascii_window get is_capslocked itm# to caps#
+        else move 0 to caps# // If not ascii_window it can't be capslocked!
+
+        get aps.form_width.iii type# marg# caps# to field_width#
+        if label_value# ne "" get text_extent label_value# to label_size#
+        else move 0 to label_size#
+        move (low(label_size#)*aps.gui2mdu_width#+12.5) to label_width#
+        if itm# eq 0 move (label_width#+2) to label_width#
+
+        move ((field_width# max label_width#) min max_column_width#) to column_width#
+      end
+      get aps_ColumnCorrection itm# to liColumnCorrection
+      move (column_width#+liColumnCorrection) to column_width#
+      if column_width# lt 0 move 0 to column_width#
+      move (tbl_width#+column_width#) to tbl_width#
+      set size to tbl_sz# (tbl_width#+5)
+      set form_width item itm# to column_width#
+    loop
+    send delete_data to oFixedWidths#
+  end_procedure
+end_class
+
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+//  Global procedures for manipulating size and location
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+procedure aps_align_objects$help for cObject integer obj1# integer obj2# integer alignment_mode# integer move#
+  // This procedure should not be called directly from your component code.
+  // It is used by the aps_align_by_moving and aps_align_by_sizing procedures
+  // that are defined just below it.
+  //
+  // We assume that they have a common visible container.
+  // (What this procedure really needed to do is to find a common ancestor
+  // for obj1# and obj2# and then go through all of it to really figure
+  // location offsets out.)
+  integer sz_rw2# sz_cl2# sz_rw1# sz_cl1#
+  integer lc_rw2# lc_cl2# lc_rw1# lc_cl1# eew#
+  get size of obj2# to sz_rw2#
+  get size of obj1# to sz_rw1#
+  move (low(sz_rw2#)) to sz_cl2#
+  move (hi(sz_rw2#))  to sz_rw2#
+  move (low(sz_rw1#)) to sz_cl1#
+  move (hi(sz_rw1#))  to sz_rw1#
+
+  move (extra_external_width(obj1#,obj1#)) to eew#
+  move (sz_cl1#+eew#) to sz_cl1#
+  move (sz_cl2#+extra_external_width(obj2#,obj2#)) to sz_cl2#
+
+  get location of obj2# to lc_rw2#
+  get location of obj1# to lc_rw1#
+  move (low(lc_rw2#)) to lc_cl2#
+  move (hi(lc_rw2#))  to lc_rw2#
+  move (low(lc_rw1#)) to lc_cl1#
+  move (hi(lc_rw1#))  to lc_rw1#
+  if move# begin
+    if (alignment_mode# iand SL_ALIGN_LEFT   ) move lc_cl2# to lc_cl1#
+    if (alignment_mode# iand SL_ALIGN_TOP    ) move lc_rw2# to lc_rw1#
+    if (alignment_mode# iand SL_ALIGN_RIGHT  ) move (lc_cl2#+sz_cl2#-sz_cl1#) to lc_cl1#
+    if (alignment_mode# iand SL_ALIGN_BOTTOM ) move (lc_rw2#+sz_rw2#-sz_rw1#) to lc_rw1#
+    if (alignment_mode# iand SL_ALIGN_CENTER ) move (sz_cl2#-sz_cl1#/2+lc_cl2#) to lc_cl1#
+    if (alignment_mode# iand SL_ALIGN_VCENTER) move (sz_rw2#-sz_rw1#/2+lc_rw2#) to lc_rw1#
+  end
+  else begin
+    if (alignment_mode# iand SL_ALIGN_LEFT  ) move lc_cl2# to lc_cl1#
+    if (alignment_mode# iand SL_ALIGN_TOP   ) move lc_rw2# to lc_rw1#
+    if (alignment_mode# iand SL_ALIGN_RIGHT ) move (lc_cl2#+sz_cl2#-lc_cl1#) to sz_cl1#
+    if (alignment_mode# iand SL_ALIGN_BOTTOM) move (lc_rw2#+sz_rw2#-lc_rw1#) to sz_rw1#
+  end
+  set size of obj1# to sz_rw1# (sz_cl1#-eew#)
+  set location of obj1# to lc_rw1# lc_cl1#
+end_procedure
+
+procedure aps_align_by_moving for cObject integer obj1# integer obj2# integer alignment_mode#
+  // Align object 1 relative to object 2, by re-locating object 1
+  send aps_align_objects$help obj1# obj2# alignment_mode# 1
+end_procedure
+
+procedure aps_align_by_sizing for cObject integer obj1# integer obj2# integer alignment_mode#
+  // Align object 1 relative to object 2, by re-sizing object 1
+  send aps_align_objects$help obj1# obj2# alignment_mode# 0
+end_procedure
+
+procedure aps_size_identical_max for cObject integer obj1# integer obj2# integer sizing_mode#
+  // Objects are sized to the bigger of the two.
+  integer sz_rw1# sz_cl1# sz_rw2# sz_cl2#
+  get size of obj1# to sz_rw1#
+  get size of obj2# to sz_rw2#
+  move (low(sz_rw1#)) to sz_cl1#
+  move (hi(sz_rw1#))  to sz_rw1#
+  move (low(sz_rw2#)) to sz_cl2#
+  move (hi(sz_rw2#))  to sz_rw2#
+  if (sizing_mode# iand SL_HORIZONTAL) begin
+    move (sz_cl1# max sz_cl2#) to sz_cl1#
+    move sz_cl1# to sz_cl2#
+  end
+  if (sizing_mode# iand SL_VERTICAL) begin
+    move (sz_rw1# max sz_rw2#) to sz_rw1#
+    move sz_rw1# to sz_rw2#
+  end
+  set size of obj1# to sz_rw1# sz_cl1#
+  set size of obj2# to sz_rw2# sz_cl2#
+end_procedure
+
+procedure aps_size_identical_min for cObject integer obj1# integer obj2# integer sizing_mode#
+  // Objects are sized to the smaller of the two.
+  integer sz_rw1# sz_cl1# sz_rw2# sz_cl2#
+  get size of obj1# to sz_rw1#
+  get size of obj2# to sz_rw2#
+  move (low(sz_rw1#)) to sz_cl1#
+  move (hi(sz_rw1#))  to sz_rw1#
+  move (low(sz_rw2#)) to sz_cl2#
+  move (hi(sz_rw2#))  to sz_rw2#
+  if (sizing_mode# iand SL_HORIZONTAL) begin
+    move (sz_cl1# min sz_cl2#) to sz_cl1#
+    move sz_cl1# to sz_cl2#
+  end
+  if (sizing_mode# iand SL_VERTICAL) begin
+    move (sz_rw1# min sz_rw2#) to sz_rw1#
+    move sz_rw1# to sz_rw2#
+  end
+  set size of obj1# to sz_rw1# sz_cl1#
+  set size of obj2# to sz_rw2# sz_cl2#
+end_procedure
+
+
+procedure aps_align_inside_container$help for cObject integer ctrl# integer jmode# integer move#
+  // This procedure should not be called directly from your component
+  // code. It is used by the aps_align_inside_container_by_moving and
+  // the aps_align_inside_container_by_sizing procedures that are defined,
+  // just below it.
+  integer ctrl_sz_rw# ctrl_sz_cl# cont_sz_rw# cont_sz_cl# cap_height#
+  integer ctrl_lc_rw# ctrl_lc_cl# cont# dm# eew#
+  get delegation_mode of ctrl# to dm#
+  set delegation_mode of ctrl# to NO_DELEGATE_OR_ERROR
+  get p_extra_external_width of ctrl# to eew#
+  set delegation_mode of ctrl# to dm#
+  // There has to be an APS-container out there! This way we go through
+  // non visible containers and TabPages:
+  get aps_parent of (parent(ctrl#)) to cont#
+  get size of ctrl#                 to ctrl_sz_rw#
+  move (low(ctrl_sz_rw#)+eew#)      to ctrl_sz_cl#
+  move (hi(ctrl_sz_rw#))            to ctrl_sz_rw#
+
+  get size of cont#       to cont_sz_rw#
+  move (low(cont_sz_rw#)) to cont_sz_cl#
+  move (hi(cont_sz_rw#))  to cont_sz_rw#
+
+  get location of ctrl#   to ctrl_lc_rw#
+  move (low(ctrl_lc_rw#)) to ctrl_lc_cl#
+  move (hi(ctrl_lc_rw#))  to ctrl_lc_rw#
+
+  if (caption_bar(cont#)) move (GetSystemMetrics(SM_CYSMCAPTION)) to cap_height# // 15
+  else move 0 to cap_height#
+
+  if move# begin
+    if (jmode# iand SL_ALIGN_LEFT   ) move (p_left_margin(cont#)) to ctrl_lc_cl#
+    if (jmode# iand SL_ALIGN_RIGHT  ) move (cont_sz_cl#-ctrl_sz_cl#-p_right_margin(cont#)) to ctrl_lc_cl#
+    if (jmode# iand SL_ALIGN_CENTER ) move (cont_sz_cl#-ctrl_sz_cl#-p_left_margin(cont#)-p_right_margin(cont#)/2+p_left_margin(cont#)) to ctrl_lc_cl#
+    if (jmode# iand SL_ALIGN_TOP    ) move (p_top_margin(cont#)) to ctrl_lc_rw#
+    if (jmode# iand SL_ALIGN_BOTTOM ) move (cont_sz_rw#-ctrl_sz_rw#-p_bottom_margin(cont#)-cap_height#) to ctrl_lc_rw#
+    if (jmode# iand SL_ALIGN_VCENTER) move (cont_sz_rw#-ctrl_sz_rw#-p_top_margin(cont#)-p_bottom_margin(cont#)/2+p_top_margin(cont#)) to ctrl_lc_rw#
+  end
+  else begin // sizing (and moving)
+    if (jmode# iand SL_ALIGN_LEFT) begin
+      move (ctrl_sz_cl#+ctrl_lc_cl#-p_left_margin(cont#)) to ctrl_sz_cl#
+      move (p_left_margin(cont#)) to ctrl_lc_cl#
+    end
+    if (jmode# iand SL_ALIGN_RIGHT) move (cont_sz_cl#-ctrl_lc_cl#-p_right_margin(cont#)) to ctrl_sz_cl#
+
+    if (jmode# iand SL_ALIGN_TOP) begin
+      move (ctrl_sz_rw#+ctrl_lc_rw#-p_top_margin(cont#)) to ctrl_sz_rw#
+      move (p_top_margin(cont#)) to ctrl_lc_rw#
+    end
+    if (jmode# iand SL_ALIGN_BOTTOM) move (cont_sz_rw#-ctrl_lc_rw#-p_bottom_margin(cont#)) to ctrl_sz_rw#
+
+    if (jmode# iand SL_ALIGN_TOP or jmode# iand SL_ALIGN_BOTTOM or jmode# iand SL_ALIGN_VCENTER) ;
+      set size of ctrl# to (ctrl_sz_rw#-cap_height#) (ctrl_sz_cl#-eew#)
+    else ;
+      set size of ctrl# to ctrl_sz_rw# (ctrl_sz_cl#-eew#)
+  end
+  set location of ctrl# to ctrl_lc_rw# ctrl_lc_cl#
+end_procedure
+
+procedure aps_align_inside_container_by_moving for cObject integer ctrl# integer jmode#
+  // Align an object (with ID ctrl#) inside its parent by re-locating it.
+  send aps_align_inside_container$help ctrl# jmode# 1
+end_procedure
+procedure aps_align_inside_container_by_sizing for cObject integer ctrl# integer jmode#
+  // Align an object (with ID ctrl#) inside its parent by re-sizing it.
+  send aps_align_inside_container$help ctrl# jmode# 0
+end_procedure
+
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+// This section defines a number of macros that are used for binding
+// object command line parameters. These are:
+//
+// Keywords covered:
+//
+//        SNAP <rel.loc.> ;   This will make the object locate itself
+//        [RELATIVE_TO obj]   relative to a previous objects within the
+//                            current container. Valid <rel.loc.>'s are:
+//
+//                               SL_DOWN
+//                               SL_LEFT
+//                               SL_LOWER_RIGHT_CORNER_EXTEND_ROW
+//                               SL_CURRENT_POS_NO_LABEL_ADJUST
+//                               SL_RIGHT
+//                               SL_RIGHT_SPACE
+//                               SL_UP
+//                               SL_LOWER_RIGHT_CORNER
+//                               SL_UPPER_RIGHT_CORNER_EXTEND_COLUMN
+//
+//                            Default action is to locate the object
+//                            relative to the previous (APS) object in
+//                            the current container. It is possible to
+//                            change that by adding key word RELATIVE_TO
+//                            to the object command line:
+//
+//                            ...snap SL_DOWN relative_to (xx(self))
+//
+//        NEXT_ROW            Is the equivalent of: "send new_field_row"
+//                            before the object declaration.
+//
+//        NEW_COLUMN          Seldom used. Will make the object cursor
+//                            go back to the top of the container.
+//
+//        MAX_ROW             Is the equivalent of: send aps_goto_max_row
+//                            before the object declaration.
+//
+//    (1) LABEL "label"       Will make the object use label as its label.
+//                            Same as: set label to "label"
+//
+//    (2) LABEL NONE          Will disable automatic label assignment. Is the
+//                            equivalent of setting p_auto_label_state to
+//                            false.
+//
+//    (3) LABEL SHORT         Will make the control use the short (grid-)
+//                            version of its standard label. Is the
+//                            equivalent of setting p_auto_label_state to -1.
+//
+//    (4) LABEL COPY ;        Will make the control use the standard label
+//           dffile.field     of another DBMS field. This is the equivalent
+//                            of setting label to:
+//
+//                               (FieldInf_FieldLabel_Long(file#,field#))
+//
+//                            for the dffile.field desired.
+//
+//        ABSTRACT <abstrID>  (Re-)defines the form_margin and form_type for
+//                            that (db)Form to be equal to those defined
+//                            for abstract field type <abstrID>.
+//
+//                            Also works with (db)SpinForms and (db)Comboform.
+//
+
+#COMMAND APS.BIND_NEXT_ROW
+ #IF (!0>0)
+  #IFSAME !1 NEXT_ROW
+   delegate send new_field_row
+  #ELSE
+   APS.BIND_NEXT_ROW !2 !3 !4 !5 !6 !7 !8 !9
+  #ENDIF
+ #ENDIF
+#ENDCOMMAND
+
+#COMMAND APS.BIND_NEW_COLUMN
+ #IF (!0>0)
+  #IFSAME !1 NEW_COLUMN
+   delegate set p_cur_row to (p_top_margin(parent(self)))
+  #ELSE
+   APS.BIND_NEW_COLUMN !2 !3 !4 !5 !6 !7 !8 !9
+  #ENDIF
+ #ENDIF
+#ENDCOMMAND
+
+#COMMAND APS.BIND_MAX_ROW
+ #IF (!0>0)
+  #IFSAME !1 MAX_ROW
+   delegate send aps_goto_max_row
+  #ELSE
+   APS.BIND_MAX_ROW !2 !3 !4 !5 !6 !7 !8 !9
+  #ENDIF
+ #ENDIF
+#ENDCOMMAND
+
+#COMMAND APS.BIND_LABEL
+ #IF (!0>0)
+  #IFSAME !1 LABEL
+   #IFSAME !2 NONE
+    set p_auto_label_state to false
+   #ELSE
+    #IFSAME !2 SHORT
+     set p_auto_label_state to -1
+    #ELSE
+     #IFSAME !2 COPY
+      #PUSH !e
+      #PUSH !f
+      #SET E$ !3
+      #SET F$ %!3
+      set label to (FieldInf_FieldLabel_Long(!e,!f))
+      #POP F$
+      #POP E$
+     #ELSE
+      set label to !2
+     #ENDIF
+    #ENDIF
+   #ENDIF
+  #ELSE
+   APS.BIND_LABEL !2 !3 !4 !5 !6 !7 !8 !9
+  #ENDIF
+ #ENDIF
+#ENDCOMMAND
+
+#COMMAND APS.BIND_ABSTRACT
+ #IF (!0>0)
+  #IFSAME !1 ABSTRACT
+   #IFSAME !2 COPY
+    #PUSH !e
+    #PUSH !f
+    #SET E$ !3  // File number
+    #SET F$ %!3 // Field number
+    #SET E$ (0-((!e*4096)+!f)) // If max number of files is changed one day, so will this line
+    set p_abstract to !e
+    #POP F$
+    #POP E$
+   #ELSE
+    set p_abstract to !2
+   #ENDIF
+  #ELSE
+   APS.BIND_ABSTRACT !2 !3 !4 !5 !6 !7 !8 !9
+  #ENDIF
+ #ENDIF
+#ENDCOMMAND
+
+#COMMAND APS.BIND_SNAP$HELP
+ #IF (!0>1)
+  #IFSAME !1 SNAP
+   set p_snap_location to !2
+   #IFSAME !3 RELATIVE_TO
+    if !2 eq SL_RIGHT set p_snap_location to SL_XRIGHT
+   #ENDIF
+  #ELSE
+   APS.BIND_SNAP$HELP !2 !3 !4 !5 !6 !7 !8 !9
+  #ENDIF
+ #ENDIF
+#ENDCOMMAND
+#COMMAND APS.BIND_RELATIVE_TO
+ #IF (!0>1)
+  #IFSAME !1 RELATIVE_TO
+   delegate set p_last_object to !2 // Set on parent!
+  #ELSE
+   APS.BIND_RELATIVE_TO !2 !3 !4 !5 !6 !7 !8 !9
+  #ENDIF
+ #ENDIF
+#ENDCOMMAND
+
+#COMMAND APS.BIND_SNAP
+ APS.BIND_SNAP$HELP !1 !2 !3 !4 !5 !6 !7 !8 !9
+ APS.BIND_RELATIVE_TO !1 !2 !3 !4 !5 !6 !7 !8 !9
+ APS.BIND_NEXT_ROW !1 !2 !3 !4 !5 !6 !7 !8 !9
+ APS.BIND_NEW_COLUMN !1 !2 !3 !4 !5 !6 !7 !8 !9
+ APS.BIND_MAX_ROW !1 !2 !3 !4 !5 !6 !7 !8 !9
+#ENDCOMMAND
+
+#COMMAND APS.STARTMAC_LABEL
+ FORWARD_BEGIN_CONSTRUCT !1 !2 !3 !4 !5 !6 !7 !8 !9
+ APS.BIND_LABEL !1 !2 !3 !4 !5 !6 !7 !8 !9
+#ENDCOMMAND
+
+#COMMAND APS.STARTMAC_SNAP
+ FORWARD_BEGIN_CONSTRUCT !1 !2 !3 !4 !5 !6 !7 !8 !9
+ APS.BIND_SNAP !1 !2 !3 !4 !5 !6 !7 !8 !9
+#ENDCOMMAND
+
+#COMMAND APS.STARTMAC_LABEL_SNAP
+ FORWARD_BEGIN_CONSTRUCT !1 !2 !3 !4 !5 !6 !7 !8 !9
+ APS.BIND_LABEL !1 !2 !3 !4 !5 !6 !7 !8 !9
+ APS.BIND_ABSTRACT !1 !2 !3 !4 !5 !6 !7 !8 !9
+ APS.BIND_SNAP !1 !2 !3 !4 !5 !6 !7 !8 !9
+#ENDCOMMAND
+
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+// Panel containers
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+class aps.View is a View startmac APS.STARTMAC_LABEL
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_panel_mx
+    set p_right_margin to 8
+    send aps_init
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_panel_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_container_mx
+    send end_define_aps_panel_mx
+  end_procedure
+end_class
+
+class aps.dbView is a dbView startmac APS.STARTMAC_LABEL
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_panel_mx
+    property integer p_auto_label_state true
+    set p_right_margin to 8
+    send aps_init
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_panel_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_container_mx
+    send end_define_aps_panel_mx
+    if (p_auto_label_state(self) and label(self)="" and main_dd(self)) ;
+          set label to (File_Display_Name(main_file(main_dd(self))))
+  end_procedure
+end_class
+
+class aps.ModalPanel is a ModalPanel startmac APS.STARTMAC_LABEL
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_panel_mx
+    set p_right_margin to 8
+    send aps_init
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_panel_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_container_mx
+    send end_define_aps_panel_mx
+  end_procedure
+end_class
+
+//> Unlike ModalPanel's, dbModalPanel's have a mechanism for adding buttons
+//> to the panel. This means that the APS augmentation needs an extra
+//> procedure for positioning the buttons that are added this way. The
+//> procedure is a re-write of the position_child_objects method in the
+//> super class.
+class aps.dbModalPanel is a dbModalPanel startmac APS.STARTMAC_LABEL
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_panel_mx
+    set p_right_margin to 8
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_panel_mx
+  procedure position_child_objects // Position add_button-buttons:
+    integer button_count# btn_obj# lhObj itm# max#
+    move (button_ids(self)) to lhObj
+    get item_count of lhObj to max#
+    if max# begin
+      for itm# from 0 to (max#-1)
+        move (value(lhObj,max#-1-itm#)) to btn_obj#
+        if itm# send aps_auto_locate_control btn_obj# SL_LEFT
+        else send aps_auto_locate_control btn_obj# SL_LOWER_RIGHT_CORNER_EXTEND_ROW
+      loop
+    end
+  end_procedure
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_container_mx
+    send end_define_aps_panel_mx
+  end_procedure
+end_class
+
+
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+// Other containers
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+class aps.Group is a Group startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_control_mx
+    set p_auto_size_control_state to false // Do not autosize as control
+    set p_top_margin to 10  // Set non-default top margin
+    send aps_init           // Reflect this in object cursor position
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_container_mx   // Size the object
+    send end_define_aps_control_mx     // Locate the object
+  end_procedure
+end_class
+
+class aps.dbGroup is a dbGroup startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_control_mx
+    set p_auto_size_control_state to false // Do not autosize as control
+    set p_top_margin to 10      // Set non-default top margin
+    send aps_init               // Reflect this in object cursor position
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_container_mx // Size the object
+    send end_define_aps_control_mx   // Locate the object
+  end_procedure
+end_class
+
+class aps.Container3D is a Container3D startmac APS.STARTMAC_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_control_mx
+    set p_auto_size_control_state to false // Do not autosize as control
+    set p_bottom_margin to 7     // Set non-default margins
+    set p_right_margin to 8
+    send aps_init                // Reflect this in object cursor position
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_container_mx // Size the object
+    send end_define_aps_control_mx   // Locate the object
+  end_procedure
+end_class
+
+class aps.dbContainer3D is a dbContainer3D startmac APS.STARTMAC_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_control_mx
+    set p_auto_size_control_state to false // Do not autosize as control
+    set p_bottom_margin to 7     // Set non-default margins
+    set p_right_margin to 8
+    send aps_init                // Reflect this in object cursor position
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_container_mx // Size the object
+    send end_define_aps_control_mx   // Locate the object
+  end_procedure
+end_class
+
+class aps.TabDialog is a TabDialog startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_control_mx
+    set p_auto_size_control_state to false
+    set p_right_margin  to 8
+    set p_bottom_margin to 20
+    property integer p_max_row_on_tabdialog    0
+    property integer p_max_column_on_tabdialog 0
+    #IF APS$TABDIALOG_NAVIGATION
+     on_key KEY_CTRL+KEY_PGUP send request_previous_tab
+     on_key KEY_CTRL+KEY_PGDN send request_next_tab
+    #ENDIF
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    set p_max_row    to (p_max_row_on_tabdialog(self))
+    set p_max_column to (p_max_column_on_tabdialog(self))
+    forward send end_construct_object
+    send end_define_aps_container_mx   // Size the object
+    send end_define_aps_control_mx     // Locate the object
+  end_procedure
+end_class
+
+class aps.dbTabDialog is a dbTabDialog startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_control_mx
+    set p_auto_size_control_state to false
+    set p_right_margin  to 8
+    set p_bottom_margin to 20
+    property integer p_max_row_on_tabdialog    0
+    property integer p_max_column_on_tabdialog 0
+    #IF APS$TABDIALOG_NAVIGATION
+     on_key KEY_CTRL+KEY_PGUP send request_previous_tab
+     on_key KEY_CTRL+KEY_PGDN send request_next_tab
+    #ENDIF
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    set p_max_row    to (p_max_row_on_tabdialog(self))
+    set p_max_column to (p_max_column_on_tabdialog(self))
+    forward send end_construct_object
+    send end_define_aps_container_mx   // Size the object
+    send end_define_aps_control_mx     // Locate the object
+  end_procedure
+end_class
+
+Class aps.TabPage is a TabPage startmac APS.STARTMAC_LABEL
+  Procedure Construct_Object
+    Forward Send Construct_Object
+    Send aps_init
+  End_Procedure
+
+  #IF APS$BYEBYE
+      Procedure _byebye_show_object
+        Send _byebye_begin_object Self False False
+        Broadcast Send _byebye_show_object
+        Send _byebye_end_object Self
+      End_Procedure
+  #ENDIF
+
+  Procedure End_Construct_Object
+    Integer max_row# max_column#
+    Get p_max_row    to max_row#
+    Get p_max_column to max_column#
+    If max_row# gt (p_max_row_on_tabdialog(Self)) ;
+                              set p_max_row_on_tabdialog to max_row#
+    If max_column# gt (p_max_column_on_tabdialog(Self)) ;
+                              Set p_max_column_on_tabdialog to max_column#
+    Forward Send End_Construct_Object
+  End_Procedure
+End_Class
+
+Class aps.dbTabPage is a dbTabPage startmac APS.STARTMAC_LABEL
+  Procedure construct_object
+    Forward Send construct_object
+    Send aps_init
+  End_Procedure
+  
+  #IF APS$BYEBYE
+      Procedure _byebye_show_object
+        Send _byebye_begin_object Self False False
+        Broadcast Send _byebye_show_object
+        Send _byebye_end_object Self
+      End_Procedure
+  #ENDIF
+  
+  Procedure End_Construct_Object
+    Integer max_row# max_column#
+    Get p_max_row    to max_row#
+    Get p_max_column to max_column#
+    If max_row# gt (p_max_row_on_tabdialog(Self)) ;
+                              set p_max_row_on_tabdialog to max_row#
+    If max_column# gt (p_max_column_on_tabdialog(Self)) ;
+                              set p_max_column_on_tabdialog to max_column#
+    Forward Send end_construct_object
+  End_Procedure
+End_Class
+
+class aps.RadioGroup is a RadioGroup startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_control_mx
+    property integer p_radio_minimum_label_width 0
+    set p_auto_size_control_state to false // Do not autosize as control
+    set p_top_margin to 10  // Set non-default top margin
+    send aps_init           // Reflect this in object cursor position
+    send tab_column_define 1 5 0 jmode_left
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_container_mx // Size the object
+    send end_define_aps_control_mx   // Locate the object
+  end_procedure
+end_class
+
+//> Child objects to this class (aps.radio's) will have their
+//> label set from either DD settings or from values set in
+//> the Fill_list procedure.
+//> The label value will then not have been set on object
+//> creation time, and this class (the container) will not be
+//> able to size correct. To prevent the container object to
+//> be sized too narrow the property p_radio_minimum_label_width
+//> can be used to set a minimum width for the radio's label.
+class aps.dbRadioGroup is a dbRadioGroup startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_control_mx
+    property integer p_radio_minimum_label_width 0
+    set p_auto_size_control_state to false // Do not autosize as control
+    set p_top_margin to 10  // Set non-default top margin
+    send aps_init           // Reflect this in object cursor position
+    send tab_column_define 1 5 0 jmode_left
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_container_mx // Size the object
+    send end_define_aps_control_mx   // Locate the object
+  end_procedure
+end_class
+
+class aps.RadioContainer is a RadioContainer
+  function p_radio_minimum_label_width returns integer
+  end_function
+end_class
+
+class aps.dbRadioContainer is a dbRadioContainer
+  function p_radio_minimum_label_width returns integer
+  end_function
+end_class
+
+
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+// Controls
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+class aps.Form is a form startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+  end_procedure
+  procedure set form_button integer itm# integer val#
+    forward set form_button item itm# to val#
+    // val#= 0: Create if needed, and expand size
+    // val#= 1: Create prompt button, period! Do not expand size.
+    // val#= 2: Remove prompt button (Don't use this)
+    if (val#=1 and not(p_extra_internal_width(self))) ;
+      set p_extra_internal_width to 10
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+class aps.dbForm is a dbForm startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_dbControl to true
+  end_procedure
+
+  procedure auto_extra_external_width
+    integer svr# prompt_object# file# field#
+    if (not(p_extra_external_width(self)) and auto_create_prompt_button(self)) begin
+      get aps_server to svr#
+      if svr# begin
+        get data_file item 0 to file#
+        get data_field item 0 to field#
+        if (file# and field#) begin
+          get which_data_set of svr# file# to svr#
+          if (svr# and file# eq main_file(svr#) and Extended_DSO_State(svr#)) begin
+            get Field_Prompt_Object of svr# field# to prompt_object#
+            if prompt_object# set p_extra_internal_width to (p_extra_internal_width(self)+13) // Makes APS resize the object
+          end
+        end
+      end
+    end
+  end_procedure
+
+  procedure set form_button integer itm# integer val#
+    forward set form_button item itm# to val#
+    if (val#=1 and not(p_extra_internal_width(self))) ;
+                                    set p_extra_internal_width to 13
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send auto_extra_external_width
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+class aps.ComboForm is a ComboForm startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_is_comboform to true
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+#IFDEF SET_Label_FontPointHeight 
+    // It is not known why it is necessary to set this property for combo-forms
+    Set Label_FontPointHeight to (FontPointHeight(Self))
+#ENDIF
+  End_Procedure
+end_class
+
+class aps.dbComboForm is a dbComboForm startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_dbControl to true
+    set p_is_comboform to true
+  end_procedure
+  procedure set form_button integer itm# integer val#
+    forward set form_button item itm# to val#
+    ifnot (p_extra_external_width(self)) ;
+              set p_extra_external_width to 10 // It always has a button
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+class aps.SpinForm is a dbSpinForm startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_dbControl to true
+    set p_extra_internal_width to 10 // It always has a button
+    #IF APS$SPINBUTTON_ACC_KEYS
+      on_key kuparrow send increment_current_position
+      on_key kdownarrow send decrement_current_position
+    #ENDIF
+  end_procedure
+  #IF APS$SPINBUTTON_ACC_KEYS
+    procedure increment_current_position
+      set current_position to (current_position(self)+1)
+    end_procedure
+    procedure decrement_current_position
+      set current_position to (current_position(self)-1)
+    end_procedure
+  #ENDIF
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+class aps.dbSpinForm is a dbSpinForm startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_dbControl to true
+    set p_extra_internal_width to 10 // It always has a button
+    #IF APS$SPINBUTTON_ACC_KEYS
+      on_key kuparrow send increment_current_position
+      on_key kdownarrow send decrement_current_position
+    #ENDIF
+  end_procedure
+  #IF APS$SPINBUTTON_ACC_KEYS
+    procedure increment_current_position
+      set current_position to (current_position(self)+1)
+    end_procedure
+    procedure decrement_current_position
+      set current_position to (current_position(self)-1)
+    end_procedure
+  #ENDIF
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+class aps.CheckBox is a CheckBox startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_auto_label_add_colon_state to false
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure aps_auto_size_control
+    integer sz#
+    get size to sz#
+    set size to (p_form_height(self)) (low(sz#) max 9)
+  end_procedure
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+class aps.dbCheckBox is a dbCheckBox startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_dbControl to true
+    set p_auto_label_add_colon_state to false
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure aps_auto_size_control
+    integer sz#
+    get size to sz#
+    set auto_size_state to false
+    set size to (p_form_height(self)) (low(sz#) max 9)
+  end_procedure
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+class aps.Edit is an Edit startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_auto_size_control_state to false
+    set label_justification_mode to default_label_jmode // Default is jmode_top
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+class aps.dbEdit is a dbEdit startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_dbControl to true
+    set p_auto_size_control_state to false
+    set label_justification_mode to default_label_jmode // (dflblmx.pkg)
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>100) // If 10.1 or later
+Class aps.RichEdit is an cRichEdit startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_auto_size_control_state to false
+    set label_justification_mode to default_label_jmode // Default is jmode_top
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+class aps.dbRichEdit is a cdbRichEdit startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_dbControl to true
+    set p_auto_size_control_state to false
+    set label_justification_mode to default_label_jmode // (dflblmx.pkg)
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+class aps.TextEdit is an cTextEdit startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_auto_size_control_state to false
+    set label_justification_mode to default_label_jmode // Default is jmode_top
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+class aps.dbTextEdit is a cdbTextEdit startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_dbControl to true
+    set p_auto_size_control_state to false
+    set label_justification_mode to default_label_jmode // (dflblmx.pkg)
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+#ENDIF
+
+class aps.TextBox is a TextBox startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    // set justification_mode to (JMODE_CENTER+JMODE_VCENTER)
+    set p_auto_size_control_state to false
+    property integer p_fixed_width 0
+    property integer p_fixed_height 0
+  end_procedure
+  procedure set fixed_size integer h# integer w#
+    set p_fixed_height to h#
+    set p_fixed_width  to w#
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    integer fixed_width# fixed_height#
+    forward send end_construct_object
+    set auto_size_state to false
+    get p_fixed_width to fixed_width#
+    get p_fixed_height to fixed_height#
+    set size to (if(fixed_height#,fixed_height#,p_form_height(self))) (if(fixed_width#,fixed_width#,low(size(self))))
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+// This is a stupid class that will probably go away!
+class aps.TextBoxEx is an aps.Edit startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    set object_shadow_state to true
+    set border_style to BORDER_NONE
+    set scroll_bar_visible_state to false
+  end_procedure
+end_class
+
+class aps.Button is a Button startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    set size to 14 60
+    send define_aps_control_mx
+    set p_auto_size_control_state to false
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+//> When objects of this class are used within a aps.dbRadioGroup
+//> the label value will be set from either DD settings or from
+//> values set in the Fill_list procedure in the group
+//> The label value will then not have been set on object
+//> creation time, and this class will not be able to size correct.
+//> To prevent this the container object has a property called
+//> p_radio_minimum_label_width that will be used to set a minimum
+//> width for the radio objects label.
+//> OBS!  If you want to place aps.Radio objects within an object
+//> of the RadioContainer or the dbRadioContainer class you must
+//> manually place a function in the container object to return
+//> the value of p_radio_minimum_label_width.
+class aps.Radio is a Radio startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_auto_label_add_colon_state to false
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure aps_auto_size_control
+    integer sz#
+    get size to sz#
+    set auto_size_state to false
+    set size to (p_form_height(self)) (low(sz#) MAX p_radio_minimum_label_width(self))
+  end_procedure
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+// Grid controls
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+class aps.List is a List startmac APS.STARTMAC_LABEL_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_auto_size_control_state to false
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+class aps.dbList is a dbList startmac APS.STARTMAC_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_dbControl to true
+    send define_aps_grid_mx
+    set p_auto_size_control_state to false
+  end_procedure
+  import_class_protocol aps_control_mx
+  import_class_protocol aps_grid_mx
+  #IF APS$TEST // For test purposes:
+   procedure display_size_and_location integer lhObj
+     forward send display_size_and_location lhObj
+     send display_size_and_location_grid lhObj
+   end_procedure
+  #ENDIF
+  procedure end_construct_object
+    forward send end_construct_object
+    If (p_auto_label_state(Self)) ;
+            Send aps_auto_grid_labels
+    If (p_auto_abstract_state(Self)) ;
+            Send aps_auto_grid_abstracts
+    If (p_auto_size_columns_state(Self)) ;
+            Send aps_auto_size_columns
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+class aps.Grid is a Grid startmac APS.STARTMAC_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    send define_aps_grid_mx
+    set p_auto_label_state        to false
+    set p_auto_size_control_state to false
+  end_procedure
+  import_class_protocol aps_control_mx
+  import_class_protocol aps_grid_mx
+  #IF APS$TEST // For test purposes:
+   procedure display_size_and_location integer lhObj
+     forward send display_size_and_location lhObj
+     send display_size_and_location_grid lhObj
+   end_procedure
+  #ENDIF
+  procedure end_construct_object
+    forward send end_construct_object
+//  if (p_auto_abstract_state(self)) send aps_auto_grid_abstracts
+    If (p_auto_size_columns_state(Self)) ;
+            Send aps_auto_size_columns        // Defined in define_aps_grid_mx
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+class aps.dbGrid is a dbGrid startmac APS.STARTMAC_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_dbControl to true
+    send define_aps_grid_mx
+    set p_auto_size_control_state to false
+    #IF APS$KILL_GRID_PROMPT_VALUE
+     set prompt_button_value to ""
+    #ENDIF
+  end_procedure
+  import_class_protocol aps_control_mx
+  import_class_protocol aps_grid_mx
+  #IF APS$TEST // For test purposes:
+   procedure display_size_and_location integer lhObj
+     forward send display_size_and_location lhObj
+     send display_size_and_location_grid lhObj
+   end_procedure
+  #ENDIF
+  procedure entry_display integer iFile integer iType
+    forward send entry_display iFile iType
+  end_procedure
+  procedure end_construct_object
+    forward send end_construct_object
+    If (p_auto_label_state(Self)) ;
+            Send aps_auto_grid_labels
+    If (p_auto_abstract_state(Self)) ;
+            Send aps_auto_grid_abstracts
+    If (p_auto_size_columns_state(Self)) ;
+            Send aps_auto_size_columns // Defined in define_aps_grid_mx
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+// Freaks
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+class aps.dbTabView is a dbTabView startmac APS.STARTMAC_LABEL
+  procedure construct_object
+    forward send construct_object
+    send aps_init
+  end_procedure
+  procedure end_construct_object
+    integer max_row# max_column#
+    get p_max_row    to max_row#
+    get p_max_column to max_column#
+    if max_row# gt (p_max_row_on_tabdialog(self)) set p_max_row_on_tabdialog to max_row#
+    if max_column# gt (p_max_column_on_tabdialog(self)) set p_max_column_on_tabdialog to max_column#
+    forward send end_construct_object
+  end_procedure
+end_class
+
+//> The aps.DataDictionary class only differs from the standard VDF class
+//> in that when queried about field specific status help, it will first
+//> check its internal array (this is standard class behavior). If that
+//> does not return a value the global status_help array (defined in
+//> fieldinf.pkg) will be checked. Don't use it.
+
+class aps.DataDictionary is a DataDictionary
+  function status_help integer fld# returns string
+    string rval#
+    forward get status_help fld# to rval#
+    if rval# eq "" get gl_status_help (main_file(self)) fld# to rval#
+    function_return rval#
+  end_function
+end_class
+
+
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+// Multi Buttons
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+//
+// aps.Multi_Button
+//
+//> An aps.Multi_Button does not have a name equivalent in the standard VDF
+//> class hierarchy. It is a normal button and it is only "multi" in that
+//> you often declare a number of them in a row. What makes it special is
+//> that APS is capable of locating them more easily than normal aps.Buttons.
+//>
+//> aps.Multi_Buttons are not "snapped" anywhere. They are all located at
+//> the same time, when sending the aps_locate_multi_buttons message.
+//>
+//> One word of WARNING: If more aps.Multi_Button's are defined than
+//> will fit in the container (horizontally) the container will collapse
+//> (negative size). No check is built into APS for this condition. It's one
+//> of those oddities you'll have to know about.
+
+desktop_section
+  object aps.multi_button_array is an array
+    // Upon declaration of a multi_button its object ID is registered in this
+    // global array. This way all multi_buttons are collected and when
+    // sending the message aps_locate_multi_buttons all multi_buttons are
+    // located, and the array is reset.
+    set delegation_mode to delegate_to_parent
+    property integer p_aps_container 0
+    property integer p_mb_height 0
+    property integer p_mb_width 0
+    property integer p_mb_space -1
+    procedure register_button.i integer lhObj
+      integer item_count#
+      get item_count to item_count#
+      set value item item_count# to lhObj
+      // If first object, we retrieve the obj_id of the container in which
+      // the buttons are located:
+      ifnot item_count# set p_aps_container to (aps_parent(lhObj))
+    end_procedure
+    procedure arrange_objects.iii integer snap_tmp# integer orientation_tmp# integer relative_to_tmp#
+      integer relative_to# aps_cont# max# orientation# itm# lhObj dm# spc# org_spc#
+      integer backwards# trailing_snap# snap#
+      integer restore_spc#
+      get item_count to max#
+      if max# begin // If there is any objects registered at all?
+        get p_aps_container to aps_cont#
+
+        if num_arguments gt 0 move snap_tmp# to snap#
+        else move SL_LOWER_RIGHT_CORNER_EXTEND_ROW to snap#
+        if num_arguments gt 1 move orientation_tmp# to orientation#
+        else move SL_HORIZONTAL to orientation#
+        if num_arguments gt 2 move relative_to_tmp# to relative_to#
+        else get p_last_object of aps_cont# to relative_to#
+
+        move 0 to restore_spc#
+        if snap# eq SL_VERTICAL begin
+          move SL_UPPER_RIGHT_CORNER_EXTEND_COLUMN to snap#
+          move SL_VERTICAL to orientation#
+          get p_mb_space to spc#
+          if spc# ne -1 begin
+            get p_row_space of aps_cont# to org_spc#
+            set p_row_space of aps_cont# to spc#
+            move 1 to restore_spc#
+          end
+        end
+        if snap# eq SL_HORIZONTAL begin
+          move SL_LOWER_RIGHT_CORNER_EXTEND_ROW to snap#
+          move SL_HORIZONTAL to orientation#
+          get p_mb_space to spc#
+          if spc# ne -1 begin
+            get p_column_space of aps_cont# to org_spc#
+            set p_column_space of aps_cont# to spc#
+            move 2 to restore_spc#
+          end
+        end
+
+        // Now we have to figure out in which order to locate the
+        // objects (forwards or backwards).
+
+        if orientation# eq SL_HORIZONTAL begin
+          if (snap#=SL_LEFT or snap#=SL_LOWER_RIGHT_CORNER_EXTEND_ROW or snap#=SL_LOWER_RIGHT_CORNER) begin
+            move 1 to backwards#
+            move SL_LEFT to trailing_snap#
+          end
+          else begin // Forward horizontal
+            move 0 to backwards#
+            move SL_RIGHT to trailing_snap#
+          end
+        end
+        else begin // vertical
+          if (snap#=SL_LOWER_RIGHT_CORNER_EXTEND_ROW or snap#=SL_UP) begin
+            move 1 to backwards#
+            move SL_UP to trailing_snap#
+          end
+          else begin // Forward vertical
+            move 0 to backwards#
+            move SL_DOWN to trailing_snap#
+          end
+        end
+
+        set p_last_object of aps_cont# to relative_to#
+        if backwards# get value item (max#-1) to lhObj
+        else get value item 0 to lhObj
+        send aps_auto_locate_control to aps_cont# lhObj snap#
+        send aps_push_current_position to aps_cont#
+        if lhObj begin
+          get delegation_mode of lhObj to dm#
+          set delegation_mode of lhObj to NO_DELEGATE_OR_ERROR
+          send Locate_Extra_Label to lhObj
+          set delegation_mode of lhObj to dm#
+        end
+        send aps_pop_current_position to aps_cont#
+
+        for itm# from 1 to (max#-1)
+          if backwards# get value item (max#-1-itm#) to lhObj
+          else          get value item itm# to lhObj
+          send aps_auto_locate_control to aps_cont# lhObj trailing_snap#
+          send aps_push_current_position to aps_cont#
+          get delegation_mode of lhObj to dm#
+          set delegation_mode of lhObj to NO_DELEGATE_OR_ERROR
+          send Locate_Extra_Label to lhObj
+          set delegation_mode of lhObj to dm#
+          send aps_pop_current_position to aps_cont#
+        loop
+        send delete_data
+      end
+      set p_mb_height to 0 // Reset temporary Multi_Button size
+      set p_mb_width  to 0
+      set p_mb_space  to -1
+      if restore_spc# eq 1 set p_row_space of aps_cont# to org_spc#
+      if restore_spc# eq 2 set p_column_space of aps_cont# to org_spc#
+    end_procedure
+  end_object
+end_desktop_section
+
+procedure aps_locate_multi_buttons global integer snap_tmp# integer orientation_tmp# integer relative_to_tmp#
+  if num_arguments gt 2 send arrange_objects.iii to (aps.multi_button_array(self)) snap_tmp# orientation_tmp# relative_to_tmp#
+  else begin
+    if num_arguments gt 1 send arrange_objects.iii to (aps.multi_button_array(self)) snap_tmp# orientation_tmp#
+    else begin
+      if num_arguments gt 0 send arrange_objects.iii to (aps.multi_button_array(self)) snap_tmp#
+      else send arrange_objects.iii to (aps.multi_button_array(self))
+    end
+  end
+end_procedure
+
+procedure aps_register_multi_button global integer lhObj
+  send register_button.i to (aps.multi_button_array(self)) lhObj
+end_procedure
+
+procedure set multi_button_size global integer x# integer y#
+  set p_mb_height of (aps.multi_button_array(self)) to x#
+  set p_mb_width  of (aps.multi_button_array(self)) to y#
+end_procedure
+
+procedure set multi_button_spacing global integer x#
+  set p_mb_space  of (aps.multi_button_array(self)) to x#
+end_procedure
+
+class aps.Multi_Button is a aps.Button
+  procedure construct_object
+    forward send construct_object
+    set p_auto_locate_control_state to false
+    on_key kleftarrow  send previous  // Since buttons of this class are
+    on_key krightarrow send next      // arranged in a row (horizontally or
+    on_key kuparrow    send previous  // vertically), we make them respond
+    on_key kdownarrow  send next      // to the arrow keys.
+    property string  psExtraLabel   ""
+    property integer piExtraLabelID 0
+  end_procedure
+  procedure Locate_Extra_Label
+    string str#
+    integer lhObj parent# self# liAnchorValue
+    set delegation_mode to DELEGATE_TO_PARENT
+    get psExtraLabel to str#
+    if str# ne "" begin
+      get piExtraLabelID to lhObj
+      move self to self#
+#IFDEF MSG_DoApplyAnchors // VDF 8
+      get peAnchors to liAnchorValue
+#ENDIF
+      ifnot lhObj begin
+        get parent to parent#
+        move parent# to self
+        object oExtraLabel is a aps.TextBox label str# snap SL_DOWN relative_to self#
+          set auto_size_state to false
+          set fixed_size to 8 0
+          move self to lhObj
+#IFDEF MSG_DoApplyAnchors // VDF 8
+          set peAnchors to liAnchorValue
+#ENDIF
+        end_object
+        set piExtraLabelID of self# to lhObj
+        move self# to self
+      end
+      send aps_auto_locate_control lhObj SL_DOWN self#
+      send aps_align_by_moving lhObj self# SL_ALIGN_CENTER
+    end
+  end_procedure
+  procedure end_construct_object
+    integer self#
+    forward send end_construct_object
+    move self to self#
+    send aps_register_multi_button self#
+    if (p_mb_height(aps.multi_button_array(self))) set size to (p_mb_height(aps.multi_button_array(self))) (p_mb_width(aps.multi_button_array(self)))
+  end_procedure
+end_class
+
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+// Exotics
+// -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+function aps_read_bitmap_guisize global string bitmap# integer ch# returns integer
+  integer guisize#
+  string str#                  // The method used for reading the size
+  direct_input channel ch# bitmap#   // of a bitmap has been stolen from
+  [~seqeof] begin                    // splash.pkg by Andrew S. Kaplan
+    set_channel_position ch# to 18
+    read_block channel ch# str# 6
+    move (             ascii(mid(str#,1,6))) to guisize#
+    move (guisize#*256+ascii(mid(str#,1,5))) to guisize#
+    move (guisize#*256+ascii(mid(str#,1,2))) to guisize#
+    move (guisize#*256+ascii(mid(str#,1,1))) to guisize#
+  end
+  close_input channel ch#
+  function_return guisize#
+end_function
+
+class aps.BitmapContainer is a BitmapContainer startmac APS.STARTMAC_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_control_mx
+    set p_auto_size_control_state to false // Do not autosize as control
+    set p_bottom_margin to 7 // Set non-default bottom margin
+    set p_right_margin to 8
+    send aps_init            // Reflect this in object cursor position
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_control_mx
+
+  function read_channel returns integer // Objects of this class needs to read
+    function_return 5                   // from a file via a channel.  These
+  end_function                          // hooks are provided for augmentation
+  procedure release_channel integer ch# // purposes, if you do not want to use
+  end_procedure                         // channel 5.
+
+  procedure end_construct_object
+    integer size_h# size_w# bitmap_h# bitmap_w# ch#
+    forward send end_construct_object
+    get read_channel to ch#
+    get aps_read_bitmap_guisize (bitmap(self)) ch# to bitmap_h#
+    send release_channel ch#
+    move (low(bitmap_h#)) to bitmap_w#
+    move (hi(bitmap_h#)) to bitmap_h#
+    set guisize to bitmap_h# bitmap_w#
+    send adjust_logicals
+    get size to bitmap_h#
+    move (low(bitmap_h#)) to bitmap_w#
+    move (hi(bitmap_h#)) to bitmap_h# // Now we have the bitmap size
+
+    send end_define_aps_container_mx  // Size the object
+    send end_define_aps_control_mx    // Locate the object
+
+    get size to size_h#
+    move (low(size_h#)) to size_w#
+    move (hi(size_h#)) to size_h#
+
+    set size to (size_h# max bitmap_h#) (size_w# max bitmap_w#)
+    delegate send aps_register_max_rc self
+  end_procedure
+end_class
+
+define APS.TBSTYLE_WRAPABLE for |CI$200 // Mystery! Got it from Sam Cannone
+
+//> aps.ToolButton is not an authorized class. I invented it for use within
+//> Views and ModalPanels. Its purpose is that of a normal button, but
+//> instead of a text it should display bitmaps (like toolbar's). What
+//> further differentiates it from a normal button is its ability to
+//> display tool-tips and status help. It will not take focus!
+//>
+//> Its interface is that of a BasicToolbar except that only the following
+//> messages are implemented:
+//>
+//>     imagelist_add, add_button, add_tooltip and set status_help
+//>
+//> If you add more than one button they will appear next to each other
+//> horizontally. However, you may set property p_horizontal_button_count to
+//> x to make it wrap after x buttons. (Set it to 1 to make the buttons
+//> appear vertically).
+//>
+//> It will probably only work with small bitmaps. SAMPLE06.SRC displays
+//> an example.
+//
+
+class aps.ToolButton is a Container3D startmac APS.STARTMAC_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_control_mx
+    set p_auto_size_control_state to false // Do not autosize as control
+    set border_style to border_none        // No visible border
+    object oToolBar is a basictoolbar
+      set window_style to APS.TBSTYLE_WRAPABLE true // Wrap if necessary
+      set focus_mode to pointer_only         // Do not take focus
+      set window_style to CCS_NODIVIDER true // Do not display line above buttons
+    end_object
+    property integer p_horizontal_button_count 999
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_control_mx
+
+  procedure aps_auto_size_container // Augmented to calculate size from
+                                    // number of buttons in the object
+    integer tb# count# sz# buttons_w# buttons_h#
+    move (oToolBar(self)) to tb#
+    get p_horizontal_button_count to buttons_w#
+    get item_count of tb# to count#
+    if buttons_w# gt count# begin
+      move count# to buttons_w#
+      move 1 to buttons_h#
+    end
+    else move (count#-1/buttons_w#+1) to buttons_h#
+    get guisize of tb# to sz#
+    set guisize to (hi(sz#)-5*buttons_h#+1) (low(sz#)-5*buttons_w#)
+    send adjust_logicals
+  end_procedure
+
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_container_mx // Size the object
+    send end_define_aps_control_mx   // Locate the object
+  end_procedure
+
+  // Redirect the following messages to embedded toolbar object:
+  procedure set status_help string itm# string str#
+    if num_arguments gt 1 set status_help of (oToolBar(self)) item itm# to str#
+    else                  set status_help of (oToolBar(self)) to itm#
+  end_procedure
+  procedure add_button integer bmp# integer msg# integer lhObj
+    if num_arguments gt 2 send add_button to (oToolBar(self)) bmp# msg# lhObj
+    else                  send add_button to (oToolBar(self)) bmp# msg#
+  end_procedure
+  procedure add_tooltip string tip#
+    send add_tooltip to (oToolBar(self)) tip#
+  end_procedure
+  procedure imagelist_add string bmp#
+    send imagelist_add to (oToolBar(self)) bmp#
+  end_procedure
+end_class
+
+class aps.ComboFormAux is a aps.ComboForm
+  procedure construct_object
+    forward send construct_object
+    object oAux_Values is an array
+    end_object
+    set combo_sort_state to false
+  end_procedure
+  // Private message:
+  procedure set aux_value integer liItm integer liValue
+    set value of (oAux_Values(self)) item liItm to liValue
+  end_procedure
+  // Private message:
+  function aux_value integer liItm returns integer
+    function_return (value(oAux_Values(self),liItm))
+  end_function
+  // Augmented Combo_Add_Item:
+  Procedure Combo_Add_Item string lsValue integer liAuxValue
+    integer liAux liItm
+    forward send Combo_Add_Item lsValue
+    if num_arguments gt 1 move liAuxValue to liAux
+    get Combo_Item_Count to liItm
+    set aux_value item (liItm-1) to liAux
+  End_Procedure
+  // Returns the aux value of the currently selected value:
+  Function Combo_Current_Aux_Value returns integer
+    integer liItm
+    get Combo_Item_Matching (value(self,0)) to liItm
+    function_return (aux_value(self,liItm))
+  End_Function
+  // Set the value corresponding to aux value passed in liAuxValue
+  Procedure set Combo_Current_Aux_Value integer liAuxValue
+    integer liItm liMax lhObj
+    move (oAux_Values(self)) to lhObj
+    get item_count of lhObj to liMax
+    for liItm from 0 to (liMax-1)
+      if (value(lhObj,liItm)=liAuxValue) Set Value item 0 to (Combo_Value(self,liItm))
+    loop
+  End_Procedure
+
+  function iFindAuxValue integer liAuxValue returns integer
+    integer liItem liMax lhObj
+    move (oAux_Values(self)) to lhObj
+    get item_count of lhObj to liMax
+    decrement liMax
+    for liItem from 0 to liMax
+      if (value(lhObj,liItem)=liAuxValue) function_return liItem
+    loop
+    function_return -1
+  end_function
+
+
+
+  // Augmented Combo_Delete_Data
+  Procedure Combo_Delete_Data
+    forward send Combo_Delete_Data
+    send delete_data to (oAux_Values(self))
+  End_Procedure
+end_class // aps.ComboFormAux
+
+// The SetWindowPos external function and the constants below it are as
+// defined in the WinUser.pkg DAC package.
+External_Function ApsSetWindowPos "SetWindowPos" User32.dll Handle hWnd# Handle hWndAfter# Integer x# Integer y# Integer cx# Integer cy# Integer uFlags# Returns Integer
+#REPLACE APS.SWP_NOSIZE      1
+#REPLACE APS.SWP_NOMOVE      2
+#REPLACE APS.HWND_TOPMOST   -1
+
+class aps.TopMostModalPanel is a aps.ModalPanel
+  Procedure Popup_Group
+    Integer swp#
+    Forward Send Popup_Group
+    Move (ApsSetWindowPos(Window_Handle(self), APS.HWND_TOPMOST, 0, 0, 0, 0, APS.SWP_NOMOVE ior APS.SWP_NOSIZE)) to swp#
+  End_Procedure
+End_Class
+
+class aps.dbTopMostModalPanel is a aps.dbModalPanel
+  //procedure popup
+  //  Set Extended_Window_Style to WS_EX_TOOLWINDOW False
+  //  forward send popup
+  //end_procedure
+  Procedure Popup_Group
+    Integer swp#
+    Forward Send Popup_Group
+    Move (ApsSetWindowPos(Window_Handle(self), APS.HWND_TOPMOST, 0, 0, 0, 0, APS.SWP_NOMOVE ior APS.SWP_NOSIZE)) to swp#
+  End_Procedure
+End_Class
+
+class aps.BasicPanel is a BasicPanel startmac APS.STARTMAC_LABEL
+  procedure construct_object
+    forward send construct_object
+    send define_aps_container_mx
+    send define_aps_panel_mx
+    set p_right_margin to 8
+    send aps_init           // Reflect this in object cursor position
+  end_procedure
+  import_class_protocol aps_container_mx
+  import_class_protocol aps_panel_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_container_mx
+    send end_define_aps_panel_mx
+  end_procedure
+end_class
+
+class aps.LineControl is a LineControl
+  procedure construct_object
+    forward send construct_object
+    set location to (p_cur_row(self)) (p_cur_column(self))
+    set guisize to 2 25
+    send adjust_logicals
+  end_procedure
+  procedure set size integer height# integer width#
+    integer gui#
+    forward set size to height# width#
+    get guisize to gui#
+    set guisize to 2 (low(gui#))
+    send adjust_logicals
+  end_procedure
+  procedure end_construct_object
+    forward send end_construct_object
+    send aps_register_max_rc self
+  end_procedure
+end_class
+
+procedure aps_SetMinimumDialogSize global integer lhPanel
+ #IFDEF MSG_DoApplyAnchors // VDF 8
+  set piMinSize of lhPanel to (hi(size(lhPanel))) (low(size(lhPanel)))
+ #ENDIF
+end_procedure
+
+//  class aps.ReportView is a ReportView startmac APS.STARTMAC_LABEL
+//    procedure construct_object
+//      forward send construct_object
+//      send define_aps_container_mx
+//      send define_aps_panel_mx
+//      set p_right_margin to 8
+//      send aps_init
+//    end_procedure
+//    import_class_protocol aps_container_mx
+//    import_class_protocol aps_panel_mx
+//    procedure end_construct_object
+//      forward send end_construct_object
+//      send end_define_aps_container_mx
+//      send end_define_aps_panel_mx
+//    end_procedure
+//  end_class
+
+#REPLACE aps_tab_column_define     tab_column_define
+#REPLACE aps_tab_column_goto       tab_column_goto
+#REPLACE aps_tab_label_column_goto tab_label_column_goto
+#REPLACE aps_make_row_space        make_row_space
+#REPLACE aps_make_column_space     make_column_space
+#REPLACE aps_new_field_row         new_field_row
+#REPLACE aps_increment_max_row     increment_max_row
+#REPLACE aps_increment_max_column  increment_max_column
+
+// Subclass all APS classes
+//
+// You are encouraged to sub-class the APS classes since these only
+// addresses APS-issues. You probably want to add further customization.
+//
+//   class my.View             is a aps.View
+//   end_class
+//   class my.dbView           is a aps.dbView
+//   end_class
+//   class my.ModalPanel       is a aps.ModalPanel
+//   end_class
+//   class my.dbModalPanel     is a aps.dbModalPanel
+//   end_class
+//   class my.Group            is a aps.Group
+//   end_class
+//   class my.dbGroup          is a aps.dbGroup
+//   end_class
+//   class my.Container3D      is a aps.Container3D
+//   end_class
+//   class my.dbContainer3D    is a aps.dbContainer3D
+//   end_class
+//   class my.TabDialog        is a aps.TabDialog
+//   end_class
+//   class my.dbTabDialog      is a aps.dbTabDialog
+//   end_class
+//   class my.TabPage          is a aps.TabPage
+//   end_class
+//   class my.dbTabPage        is a aps.dbTabPage
+//   end_class
+//   class my.RadioGroup       is a aps.RadioGroup
+//   end_class
+//   class my.dbRadioGroup     is a aps.dbRadioGroup
+//   end_class
+//   class my.RadioContainer   is a aps.RadioContainer
+//   end_class
+//   class my.dbRadioContainer is a aps.dbRadioContainer
+//   end_class
+//   class my.Form             is a aps.Form
+//   end_class
+//   class my.dbForm           is a aps.dbForm
+//   end_class
+//   class my.ComboForm        is a aps.ComboForm
+//   end_class
+//   class my.dbComboForm      is a aps.dbComboForm
+//   end_class
+//   class my.SpinForm         is a aps.SpinForm
+//   end_class
+//   class my.dbSpinForm       is a aps.dbSpinForm
+//   end_class
+//   class my.CheckBox         is a aps.CheckBox
+//   end_class
+//   class my.dbCheckBox       is a aps.dbCheckBox
+//   end_class
+//   class my.Edit             is a aps.Edit
+//   end_class
+//   class my.dbEdit           is a aps.dbEdit
+//   end_class
+//   class my.TextBox          is a aps.TextBox
+//   end_class
+//   class my.Button           is a aps.Button
+//   end_class
+//   class my.Radio            is a aps.Radio
+//   end_class
+//   class my.List             is a aps.List
+//   end_class
+//   class my.dbList           is a aps.dbList
+//   end_class
+//   class my.Grid             is a aps.Grid
+//   end_class
+//   class my.dbGrid           is a aps.dbGrid
+//   end_class
+//   class my.Multi_Button     is a aps.Multi_Button
+//   end_class
+//   class my.BitmapContainer  is a aps.BitmapContainer
+//   end_class
+//   class my.ToolButton       is a aps.ToolButton
+//   end_class
+

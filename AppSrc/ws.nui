@@ -1,0 +1,109 @@
+// Use WS.nui       //
+// Handling of workspaces has changed between VDF 11.1 and 12.
+Use Version.nui
+
+Use cApplication.pkg
+Use cIniFile.pkg
+Use SelectWorkspace.dg
+Use WsFunctions.pkg
+
+object oWsTempObject is a array
+  procedure WS_OnCloseWorkSpace string lsOldWS
+  end_procedure
+  procedure WS_OnOpenWorkSpace string lsNewWS
+  end_procedure
+end_object
+
+//> Returns the name of the current WS
+function WS_CurrentEffectiveID global returns string
+  string lsRval
+  integer lhWS
+  get phoWorkspace of ghoApplication to lhWS // ghoWorkSpace
+  //Get psWorkspaceName of lhWS to lsRval
+  Get psWorkspaceWSFile of lhWS to lsRval
+  function_return lsRval
+end_function
+
+Function WS_CurrentDefaultID Global Returns String
+    Handle hoRegistry
+    String sWorkspace sVdfVer sVdfRev sVdfBuild sVdfKey
+    Boolean bOpened
+
+    Get Create U_cRegistry to hoRegistry
+
+    Version_Information sVdfVer sVdfRev sVdfBuild
+    Move (sVdfVer+"."+sVdfRev) to sVdfKey
+
+    Get OpenKey of hoRegistry ("Software\Data Access Worldwide\Visual DataFlex Tools\"+sVdfKey+"\Studio\Workspaces") to bOpened
+    
+    If bOpened Begin
+        If (ValueExists(hoRegistry, "Current Workspace")) begin
+            Get ReadString of hoRegistry "Current Workspace" to sWorkspace
+        End
+        Send CloseKey of hoRegistry
+    End
+
+    Send Destroy of hoRegistry
+    Function_Return sWorkspace
+    
+    //String lsRval lsWsFile
+    //Get GetCurrentUserWorkspace to lsRval
+    //Function_Return lsRval
+end_function
+
+function WS_IdToDescription global string lsWS returns string
+  integer hoWorkspace hoIniFile
+  string lsRval lsWsFile
+  If (lsWS="") Function_Return "No Workspace"
+  Function_Return lsWS
+  //get phoWorkspace of ghoApplication To hoWorkspace
+  //get GetWorkspaceFileName of hoWorkspace lsWS to lsWsFile
+  //Get Create U_cIniFile To hoIniFile
+//
+  //Set psFilename of hoIniFile To lsWsFile
+  //Get ReadString of hoIniFile "Workspace" "Description" "" To lsRval
+  //Send Destroy of hoIniFile // destroy dynaically created inifile object
+  //function_return lsRval
+End_Function
+
+function WS_CurrentEffectiveDescription global returns string
+  string lsRval
+  get WS_CurrentEffectiveID to lsRval
+  get WS_IdToDescription lsRval to lsRval
+//  get CurrentWorkSpaceDescription of ghoWorkSpace to lsRval
+  function_return lsRval
+end_function
+
+function WS_Select global string lsWS returns integer
+  integer hoWorkspace liOpened
+  string lsCurrentEffectiveID
+  get WS_CurrentEffectiveID to lsCurrentEffectiveID
+  broadcast recursive send WS_OnCloseWorkSpace to desktop lsCurrentEffectiveID
+  get phoWorkspace of ghoApplication To hoWorkspace
+  Send DoClearPaths of hoWorkspace
+  //Get OpenWorkspace of hoWorkspace lsWS to liOpened
+  Get OpenWorkspace of WsFunctions lsWS to liOpened
+  If (liOpened <> WSWORKSPACEOPENED) Begin
+    send stop_box "Selected workspace is invalid."
+  End
+  broadcast recursive send WS_OnOpenWorkSpace to desktop lsWS // function WS_Select
+  function_return DFTRUE
+end_function
+
+function WS_MakePath global returns string
+  integer hoWorkspace
+  string lsAppSrc lsPrograms lsDDSrc lsData lsBitmaps lsSystemMakePath lsRval
+  get phoWorkspace of ghoApplication To hoWorkspace
+  get psAppSrcPath     of hoWorkspace to lsAppSrc
+  get psProgramPath    of hoWorkspace to lsPrograms
+  get psDdSrcPath      of hoWorkspace to lsDDSrc
+  get psDataPath       of hoWorkspace to lsData
+  get psBitmapPath     of hoWorkspace to lsBitmaps
+  get psSystemMakePath of hoWorkspace to lsSystemMakePath
+  move (lsAppSrc+";"+lsPrograms+";"+lsDDSrc+";"+lsData+";"+lsBitmaps+";"+lsSystemMakePath) to lsRval
+  function_return lsRval
+end_function
+
+function WS_SelectNone global string lsWS returns integer
+end_function
+

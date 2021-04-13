@@ -1,0 +1,211 @@
+// Use Splash.utl   //
+
+Use VdfGraph.utl // Graphics for Visual DataFlex
+Use AppInfo.utl  // Setup application information
+
+class cSplashGraphicArea is a GraphicArea
+  procedure construct_object integer img#
+    forward send construct_object img#
+    set location to 0 0
+    set size to 200 300
+  end_procedure
+  procedure Draw_AppInfo_Item integer itm#
+    integer color#
+    string str#
+    get AppInfo itm# to str#
+    if str# ne "" begin
+      if itm# eq AI_TITLE begin
+        send SetTTFont "Arial" 80 0 1 1 0
+        send SetTextColor clBlack
+        send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_VCENTER)
+        send AddText str# 2500 5000
+      end
+      if itm# eq AI_SUBTITLE begin
+        send SetTTFont "Arial" 50 0 1 1 0
+        send SetTextColor clBlack
+        send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_VCENTER)
+        send AddText "for" 5000 5000
+        send AddText str# 7500 5000
+      end
+      if itm# eq AI_SUBTITLE2 begin
+        send SetTTFont "Arial" 12 0 1 0 0
+        send SetTextColor clWhite
+        send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_VCENTER)
+        send AddText str# 8700 5000
+      end
+      if itm# eq AI_VERSION begin
+        send SetTTFont "Arial" 12 0 1 0 0
+        send SetTextColor clWhite
+        send SetTextAlign (VDFGR_TA_LEFT+VDFGR_TA_BOTTOM)
+        send AddText ("Version "+str#) 9500 500
+      end
+      if itm# eq AI_REVISION begin
+      end
+      if itm# eq AI_AUTHOR begin
+        send SetTextAlign (VDFGR_TA_RIGHT+VDFGR_TA_BOTTOM)
+        send SetTextColor clWhite
+        send AddText str# 9500 9500
+      end
+      if itm# eq AI_WATERMARK begin
+        get iWaterMarkColor to color#
+        send SetTTFont "Arial" 180 0 1 1 0
+        send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_VCENTER)
+        send SetTextColor color#
+        send AddText str# 5000 5000
+      end
+      if itm# eq AI_RELEASEDATE begin
+      end
+    end
+  end_procedure
+  procedure Draw_BackGround.i integer color#
+    integer count#
+    send SetPenStyle PS_NULL
+    send SetPenWidth 0
+    for count# from 0 to 39
+      send SetFillColor color#
+      send SetPenColor color#
+      send AddRectangle (count#*250) 0 (count#+1*250+100) 10000
+      move (RGB_Darken(color#,2)) to color# // Darken by 2 percent
+    loop
+  end_procedure
+  procedure Draw_Data
+    integer color#
+    forward send draw_data
+    get iRandomBackColor to color#
+    delegate send Draw_BackGround.i color#
+    send Draw_AppInfo_Item AI_WATERMARK
+    send Draw_AppInfo_Item AI_TITLE
+    send Draw_AppInfo_Item AI_SUBTITLE
+    send Draw_AppInfo_Item AI_SUBTITLE2
+    send Draw_AppInfo_Item AI_VERSION
+    send Draw_AppInfo_Item AI_REVISION
+    send Draw_AppInfo_Item AI_AUTHOR
+    send Draw_AppInfo_Item AI_RELEASEDATE
+  end_procedure
+  procedure end_construct_object
+    integer ram#
+    forward send end_construct_object
+    get piProgram_RAM to ram#
+    set AppInfo TMP_GA_OBJECTID to (piProgram_RAM(self))
+  end_procedure
+end_class // cSplashGraphicArea
+
+class cGraphicSplash is a ToolPanel
+  procedure construct_object integer img#
+    forward send construct_object img#
+    set Size to 200 300
+    set Caption_Bar to false
+    set Border_Style to BORDER_DIALOG
+    property integer piBackColor 0
+    object oGA is a cSplashGraphicArea
+      set location to 0 0
+      set size to 200 300
+    end_object
+  end_procedure
+  procedure Draw_BackGround.i integer color#
+    send Draw_BackGround.i to (oGA(self)) color#
+  end_procedure
+  function iRandomBackColor returns integer
+    integer rval#
+    sysdate rval# rval# rval# rval#
+    move (mod(rval#,5)) to rval#
+    if rval# eq 0 move clRed to rval#
+    if rval# eq 1 move clGreen to rval#
+    if rval# eq 2 move clBlue to rval#
+    if rval# eq 3 move clYellow to rval#
+    if rval# eq 4 move clWhite to rval#
+    set piBackColor to rval#
+    function_return rval#
+  end_function
+  function iWaterMarkColor returns integer
+    function_return (RGB_Brighten(piBackColor(self),2))
+  end_function
+  procedure activate
+    send Draw_Data to (oGA(self))
+    forward send activate
+  end_procedure
+end_class // cGraphicSplash
+
+
+//object oGraphicSplash is a ToolPanel
+//  set size to 200 300
+//  set caption_bar to false
+//  set Border_Style to BORDER_DIALOG
+//  object oGA is a GraphicArea
+//    set location to 0 0
+//    set size to 200 300
+//    procedure draw_data
+//      integer count# color#
+//      integer watermark_color#
+//      forward send draw_data
+//      // This command will land the seconds in the color# variable:
+//      sysdate color# color# color# color#
+//      move (mod(color#,5)) to color#
+//      if color# eq 0 move clRed to color#
+//      if color# eq 1 move clGreen to color#
+//      if color# eq 2 move clBlue to color#
+//      if color# eq 3 move clYellow to color#
+//      if color# eq 4 move clWhite to color#
+//      move (RGB_Brighten(color#,2)) to watermark_color#
+//      send SetPenStyle PS_NULL
+//      send SetPenWidth 0
+//      for count# from 0 to 39
+//        send SetFillColor color#
+//        send SetPenColor color#
+//        send AddRectangle (count#*250) 0 (count#+1*250+100) 10000
+//        move (RGB_Darken(color#,2)) to color# // Darken by 2 percent
+//      loop
+//      send SetTTFont "Courier New" 12 0 0 0 0
+//      send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_VCENTER)
+//      send SetTextColor watermark_color#
+//      send AddText "8213 9921 9050 3853 0023 8127 8213 9921 9050 3853 4580 0893 0599"   500 5000
+//      send AddText "7401 7049 2039 5072 0892 3823 7401 7049 2039 5072 3059 0293 2570"  1000 5000
+//      send AddText "2798 1359 2159 5023 4050 2348 2798 1359 2159 5023 5324 8090 9313"  1500 5000
+//      send AddText "9934 6897 7567 5712 4312 9593 9921 6897 7567 5712 0827 9862 4668"  2000 5000
+//      send AddText "8230 0109 4197 0704 0912 0230 8230 0109 4197 0704 0214 9273 4901"  2500 5000
+//      send AddText "3908 9028 2308 0928 3592 5097 3908 9028 2308 0928 0984 9820 8090"  3000 5000
+//      send AddText "7401 7049 2039 5072 0892 3823 7401 7049 2039 5072 3059 0293 2570"  3500 5000
+//      send AddText "2397 0197 4972 3975 7250 9273 2397 0197 4972 3975 7213 5970 9301"  4000 5000
+//      send AddText "8490 8323 8509 8309 2350 7239 8490 8323 8509 8309 4098 0980 5983"  4500 5000
+//      send AddText "3068 3040 0994 9740 0490 1290 3068 3040 0994 9740 0470 1409 7330"  5000 5000
+//      send AddText "4568 7875 7657 2708 2095 3099 4568 7875 7657 2708 7398 2346 3178"  5500 5000
+//      send AddText "2798 1359 2159 5023 4050 2348 2798 1359 2159 5023 5324 8090 9313"  6000 5000
+//      send AddText "4568 7875 7657 2708 2095 3099 4568 7875 7657 2708 7398 2346 3178"  6500 5000
+//      send AddText "3068 3040 0994 9740 0490 1290 3068 3040 0994 9740 0470 1409 7330"  7000 5000
+//      send AddText "8490 8323 8509 8309 2350 7239 8490 8323 8509 8309 4098 0980 5983"  7500 5000
+//      send AddText "2397 0197 4972 3975 7250 9273 2397 0197 4972 3975 7213 5970 9301"  8000 5000
+//      send AddText "7401 7049 2039 5072 0892 3823 7401 7049 2039 5072 3059 0293 2570"  8500 5000
+//      send AddText "3908 9028 2308 0928 3592 5097 3908 9028 2308 0928 0984 9820 8090"  9000 5000
+//      send AddText "8230 0109 4197 0704 0912 0230 8230 0109 4197 0704 0214 9273 4901"  9500 5000
+//      send AddText "9934 6897 7567 5712 4312 9593 9921 6897 7567 5712 0827 9862 4668" 10000 5000
+//
+//      send SetTTFont "Arial" 180 0 1 1 0
+//      send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_VCENTER)
+//      send SetTextColor watermark_color#
+//      send AddText (AppInfo(AI_WATERMARK)) 5000 5000
+//      send SetTTFont "Arial" 80 0 1 1 0
+//      send SetTextColor clBlack
+//      send AddText (AppInfo(AI_TITLE)) 2500 5000
+//      send SetTTFont "Arial" 50 0 1 1 0
+//      send AddText "for" 5000 5000
+//      send AddText (AppInfo(AI_SUBTITLE)) 7500 5000
+//      send SetTTFont "Arial" 12 0 1 0 0
+//      send SetTextAlign (VDFGR_TA_LEFT+VDFGR_TA_BOTTOM)
+//      send AddText (AppInfo(AI_VERSION)) 9500 500
+//      send SetTextAlign (VDFGR_TA_RIGHT+VDFGR_TA_BOTTOM)
+//      send SetTextColor clWhite
+//      send AddText (AppInfo(AI_AUTHOR)) 9500 9500
+//    end_procedure
+//  end_object
+//  procedure activate
+//    send draw_data to (oGA(self))
+//    forward send activate
+//  end_procedure
+//end_object
+
+// procedure Splash_On global
+//   send activate to (oGraphicSplash(self))
+// end_procedure
+// procedure Splash_Off global
+//   send deactivate to (oGraphicSplash(self))
+// end_procedure

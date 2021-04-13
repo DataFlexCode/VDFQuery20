@@ -1,0 +1,660 @@
+// **********************************************************************
+// Use QryOrder.utl // Ad-hoc index thing for query classes
+//
+// By Sture Andersen
+//
+// Update: Wed  24-09-2003 - Lower limit of for loop fixed in function sReverseValue.s
+//
+// **********************************************************************
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use FieldInf     // Global field info objects and abstract field types
+Use Collate.nui  // A little collating thing
+Use QryExpr.utl  // Expression handling for queries
+Use Query.nui    // Basic things needed for a query tool
+Use FdxIndex.utl // Index analysing functions
+
+#IF LNG_DEFAULT=LNG_DUTCH
+ define t.QryOrder.Break      for "Break"
+ define t.QryOrder.Segment    for "Segment"
+ define t.QryOrder.Fields     for "Velden"
+ define t.QryOrder.Caps       for "Hoofdl"
+ define t.QryOrder.Reverse    for "Omgekeerd"
+ define t.QryOrder.Specify    for "Specificeer ad hoc index"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SPANISH   // 03/10/2002 to 31/01/2005 for 2.3 Pepe Guimar∆es Moose Software  pg@moose-software.com
+ define t.QryOrder.Break      for "Romper"
+ define t.QryOrder.Segment    for "Segmento"
+ define t.QryOrder.Fields     for "Columnas"
+ define t.QryOrder.Caps       for "May£sculas"
+ define t.QryOrder.Reverse    for "Invertir"
+ define t.QryOrder.Specify    for "Especificar °ndice ad hoc"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ENGLISH
+ define t.QryOrder.Break      for "Break"
+ define t.QryOrder.Segment    for "Segment"
+ define t.QryOrder.Fields     for "Fields"
+ define t.QryOrder.Caps       for "Caps"
+ define t.QryOrder.Reverse    for "Reverse"
+ define t.QryOrder.Specify    for "Specify ad hoc index"
+#ENDIF
+#IF LNG_DEFAULT=LNG_DANISH
+ define t.QryOrder.Break      for "Brud"
+ define t.QryOrder.Segment    for "Segment"
+ define t.QryOrder.Fields     for "Felter"
+ define t.QryOrder.Caps       for "Caps"
+ define t.QryOrder.Reverse    for "Baglëns"
+ define t.QryOrder.Specify    for "Specify ad hoc index"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SWEDISH
+ define t.QryOrder.Break      for "Break"
+ define t.QryOrder.Segment    for "Segment"
+ define t.QryOrder.Fields     for "Fields"
+ define t.QryOrder.Caps       for "Caps"
+ define t.QryOrder.Reverse    for "Reverse"
+ define t.QryOrder.Specify    for "Specify ad hoc index"
+#ENDIF
+#IF LNG_DEFAULT=LNG_NORWEGIAN
+ define t.QryOrder.Break      for "Break"
+ define t.QryOrder.Segment    for "Segment"
+ define t.QryOrder.Fields     for "Fields"
+ define t.QryOrder.Caps       for "Caps"
+ define t.QryOrder.Reverse    for "Reverse"
+ define t.QryOrder.Specify    for "Specify ad hoc index"
+#ENDIF
+#IF LNG_DEFAULT=LNG_GERMAN
+ define t.QryOrder.Break      for "Break"
+ define t.QryOrder.Segment    for "Segment"
+ define t.QryOrder.Fields     for "Fields"
+ define t.QryOrder.Caps       for "Caps"
+ define t.QryOrder.Reverse    for "Reverse"
+ define t.QryOrder.Specify    for "Specify ad hoc index"
+#ENDIF
+#IF LNG_DEFAULT=LNG_PORTUGUESE
+ define t.QryOrder.Break      for "Break"
+ define t.QryOrder.Segment    for "Segment"
+ define t.QryOrder.Fields     for "Fields"
+ define t.QryOrder.Caps       for "Caps"
+ define t.QryOrder.Reverse    for "Reverse"
+ define t.QryOrder.Specify    for "Specify ad hoc index"
+#ENDIF
+#IF LNG_DEFAULT=LNG_FRENCH
+ define t.QryOrder.Break      for "Break"
+ define t.QryOrder.Segment    for "Segment"
+ define t.QryOrder.Fields     for "Fields"
+ define t.QryOrder.Caps       for "Caps"
+ define t.QryOrder.Reverse    for "Reverse"
+ define t.QryOrder.Specify    for "Specify ad hoc index"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ITALIAN
+ define t.QryOrder.Break      for "Interrompi"
+ define t.QryOrder.Segment    for "Segmento"
+ define t.QryOrder.Fields     for "Campi"
+ define t.QryOrder.Caps       for "Maiuscolo"
+ define t.QryOrder.Reverse    for "Inverti"
+ define t.QryOrder.Specify    for "Specifica indice"
+#ENDIF
+
+
+
+class cQueryOrderExpression is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer phExprArr 0
+  end_procedure
+
+  item_property_list
+    item_property integer piFile.i
+    item_property integer piField.i
+    item_property integer piExprRow.i
+    item_property integer pbCapsLock.i
+    item_property integer pbReverse.i
+    item_property string  psValue.i
+
+    item_property integer pbBreak.i
+    item_property string  psLabel.i
+  end_item_property_list_extended cQueryOrderExpression
+
+  procedure DoCopyFromOtherObject integer lhObj
+    set phExprArr to (phExprArr(lhObj))
+    send Clone_Array lhObj self
+  end_procedure
+
+  procedure Add_Field integer liFile integer liField
+    integer liRow
+    get row_count to liRow
+    set piFile.i  liRow to liFile
+    set piField.i liRow to liField
+  end_procedure
+  procedure Add_Expr integer liExprRow
+    integer liRow
+    get row_count to liRow
+    set piExprRow.i liRow to liExprRow
+  end_procedure
+  procedure ReadValues // Of the record buffer
+    integer liRow liMax liFile liField liType liDec
+    integer lhExprArr liExprRow lbNegative
+    number lnValue
+    string lsRval lsValue
+    move "" to lsRval
+    get row_count to liMax
+    for liRow from 0 to (liMax-1)
+      get piFile.i  liRow to liFile
+      if liFile begin
+        get piField.i liRow to liField
+        get FieldInf_FieldValue liFile liField to lsValue
+        get FieldInf_FieldType liFile liField to liType
+        if liType eq DF_DATE begin
+          move (integer(date(lsValue))) to lsValue
+          move (NumToStrR(lsValue,0,6)) to lsValue
+        end
+        if liType eq DF_BCD begin
+          get FieldInf_DecPoints liFile liField to liDec
+          move lsValue to lnValue
+          move (lnValue<0) to lbNegative
+          if lbNegative move (abs(lnValue)) to lnValue
+          move (NumToStrR(lnValue,liDec,14)) to lsValue
+          ifnot lbNegative move ("+"+lsValue) to lsValue
+          else             move (" "+lsValue) to lsValue
+        end
+      end
+      else begin // Aha! Expression:
+        get phExprArr to lhExprArr
+        get piExprRow.i liRow to liExprRow
+        get sEvalExpression of (Query_ExprEvaluator(self)) (piExprId.i(lhExprArr,liExprRow)) to lsValue
+        get piType.i of lhExprArr liExprRow to liType
+
+        if liType eq DF_DATE begin
+          move (integer(date(lsValue))) to lsValue
+          move (NumToStrR(lsValue,0,6)) to lsValue
+        end
+        if liType eq DF_BCD begin
+          get piWidth.i of lhExprArr liExprRow to liDec
+//        move (NumToStrR(lsValue,liDec,14)) to lsValue
+          move lsValue to lnValue
+          move (lnValue<0) to lbNegative
+          if lbNegative move (abs(lnValue)) to lnValue
+          move (NumToStrR(lnValue,liDec,14)) to lsValue
+          ifnot lbNegative move ("+"+lsValue) to lsValue
+          else             move (" "+lsValue) to lsValue
+        end
+      end
+      set psValue.i liRow to lsValue
+    loop
+  end_procedure
+  function sReverseValue.s string lsValue returns string
+    integer liPos liLen
+    string lsRval lsChar
+    move (length(lsValue)) to liLen
+    move "" to lsRval
+    for liPos from 1 to liLen
+      move (mid(lsValue,1,liPos)) to lsChar
+      move (lsRval+mid(gs$ReversedCollateString,1,ascii(lsChar))) to lsRval
+    loop
+    function_return lsRval
+  end_function
+  function sIndexValue returns string
+    integer liRow liMax liLen liPos liChar
+    string lsValue lsSegmentValue lsgr
+    move "" to lsValue
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get psValue.i liRow to lsSegmentValue
+      if (pbCapsLock.i(self,liRow)) move (uppercase(lsSegmentValue)) to lsSegmentValue
+      if (pbReverse.i(self,liRow)) get sReverseValue.s lsSegmentValue to lsSegmentValue
+      move (lsValue+lsSegmentValue) to lsValue
+      if liRow ne liMax move (lsValue+" ") to lsValue
+    loop
+    function_return lsValue
+  end_function
+  function sSegmentName integer liRow returns string
+    integer liFile liField lhExprArr liExprRow
+    string lsRval
+
+    get piFile.i liRow to liFile
+    if liFile begin
+      get piField.i liRow to liField
+      get FieldInf_FieldLabel_Long liFile liField to lsRval
+    end
+    else begin
+      get phExprArr to lhExprArr
+      get piExprRow.i liRow to liExprRow
+      get psLabel.i of lhExprArr liExprRow to lsRval
+    end
+    function_return lsRval
+  end_function
+  function sIndexNames returns string
+    integer liRow liMax
+    string lsRval
+    move "" to lsRval
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      move (lsRval*sSegmentName(self,liRow)) to lsRval
+      if liRow ne liMax move (lsRval+",") to lsRval
+    loop
+    function_return lsRval
+  end_procedure
+
+  procedure SEQ_Read integer liChannel
+    integer liMax liRow
+    readln channel liChannel liMax
+    for liRow from 0 to liMax
+      set piFile.i     liRow to (SEQ_ReadLn(liChannel))
+      set piField.i    liRow to (SEQ_ReadLn(liChannel))
+      set piExprRow.i  liRow to (SEQ_ReadLn(liChannel))
+      set pbCapsLock.i liRow to (SEQ_ReadLn(liChannel))
+      set pbReverse.i  liRow to (SEQ_ReadLn(liChannel))
+    loop
+  end_procedure
+
+  procedure SEQ_Write integer liChannel
+    integer liMax liRow
+    get row_count to liMax
+    decrement liMax
+    writeln channel liChannel liMax
+    for liRow from 0 to liMax
+      writeln (piFile.i(self,liRow))
+      writeln (piField.i(self,liRow))
+      writeln (piExprRow.i(self,liRow))
+      writeln (pbCapsLock.i(self,liRow))
+      writeln (pbReverse.i(self,liRow))
+    loop
+  end_procedure
+  procedure MarkUsedExpressions
+    integer liRow liMax lhExprArr
+    get phExprArr to lhExprArr
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      ifnot (piFile.i(self,liRow)) send CleanUp_MarkAsUsed to lhExprArr (piExprRow.i(self,liRow))
+    loop
+  end_procedure
+
+  procedure GetNewExpressionIDs
+    integer liRow liMax lhExprArr liExprRow
+    get phExprArr to lhExprArr
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      ifnot (piFile.i(self,liRow)) begin
+        get piExprRow.i liRow to liExprRow
+        get pbCleanupNewRow.i of lhExprArr liExprRow to liExprRow
+        set piExprRow.i liRow to liExprRow
+      end
+    loop
+  end_procedure
+end_class // cQueryOrderExpression
+
+
+use aps.pkg
+class cFieldInf.IndexBreakList is a aps.list
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer pbDisplayFileNamesUser DFTRUE
+    send GridPrepare_AddColumn t.QryOrder.Break   AFT_ASCII4
+    send GridPrepare_AddColumn t.QryOrder.Segment AFT_ASCII25
+    send GridPrepare_Apply self
+    set select_mode to NO_SELECT
+    on_key KNEXT_ITEM send switch
+    on_key KPREVIOUS_ITEM send switch_back
+    property integer phServer 0 // of class cQueryOrderExpression
+    set select_mode to MULTI_SELECT
+  end_procedure
+
+  procedure select_toggling integer liItem integer i#
+    integer liColumn
+    get Grid_ItemColumn self liItem to liColumn
+    if (liColumn=0) forward send select_toggling liItem i#
+  end_procedure
+
+  procedure fill_list.iii integer liFile integer liIndex integer lhOrderExpression
+    integer liMax liSegment liField liBase lhObj liRow
+    set dynamic_update_state to DFFALSE
+    send delete_data
+    if liFile begin
+      if (liIndex<256) begin // Normal index
+        get FDX_AttrValue_INDEX 0 DF_INDEX_NUMBER_SEGMENTS liFile liIndex to liMax
+        if liMax begin
+          for liSegment from 1 to (liMax-1) // Exclude the least significant segment
+            get FDX_AttrValue_IDXSEG 0 DF_INDEX_SEGMENT_FIELD liFile liIndex liSegment to liField
+            get item_count to liBase
+            send add_item MSG_NONE ""
+            set aux_value item liBase to (liFile*65536+liField)
+            set checkbox_item_state item liBase to DFTRUE
+            send add_item MSG_NONE (FieldInf_FieldLabel_Long(liFile,liField)+": ")
+            set entry_state item (liBase+1) to DFTRUE
+          loop
+        end
+      end
+      else begin
+        if (liIndex=1023) begin // Ad hoc
+          move lhOrderExpression to lhObj
+          get row_count of lhObj to liMax
+          for liSegment from 0 to (liMax-1) // Exclude the least significant segment
+            get piFile.i  of lhObj liSegment to liFile
+            get piField.i of lhObj liSegment to liField
+            get item_count to liBase
+            send add_item MSG_NONE ""
+            set aux_value item liBase to (liFile*65536+liField)
+            set checkbox_item_state item liBase to DFTRUE
+            send add_item MSG_NONE (sSegmentName(lhObj,liSegment)+": ")
+            set aux_value item (liBase+1) to (piExprRow.i(lhObj,liSegment))
+            set entry_state item (liBase+1) to DFTRUE
+          loop
+        end
+        else begin // Virtual Index
+          move (liIndex-256) to liIndex
+          get FieldInf_VirtualIndex_Object liFile liIndex to lhObj
+          if lhObj begin
+            get row_count of lhObj to liMax
+            for liSegment from 0 to (liMax-2) // Exclude the least significant segment
+              get piField.i of lhObj liSegment to liField
+              get item_count to liBase
+              send add_item MSG_NONE ""
+              set aux_value item liBase to (liFile*65536+liField)
+              set checkbox_item_state item liBase to DFTRUE
+              send add_item MSG_NONE (sSegmentName(lhObj,liSegment)+": ")
+            set entry_state item (liBase+1) to DFTRUE
+            loop
+          end
+        end
+      end
+    end
+    set dynamic_update_state to DFTRUE
+  end_procedure
+
+end_class // cFieldInf.IndexBreak_List
+
+Use Buttons.utl  // Button texts
+Use GridUtil.utl
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+class cQueryOrderingGrid is a aps.Grid
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    send GridPrepare_AddColumn "#"       AFT_ASCII2
+    send GridPrepare_AddColumn t.QryOrder.Fields  AFT_ASCII20
+    send GridPrepare_AddColumn t.QryOrder.Caps    AFT_ASCII3
+    send GridPrepare_AddColumn t.QryOrder.Reverse AFT_ASCII3
+    send GridPrepare_Apply self
+    on_key KNEXT_ITEM send switch
+    on_key KPREVIOUS_ITEM send switch_back
+    property integer phServer 0 // of class cQueryOrderExpression
+    set select_mode to MULTI_SELECT
+    on_key key_ctrl+key_up_arrow   send MoveRowUp
+    on_key key_ctrl+key_down_arrow send MoveRowDown
+    on_key kDelete_Record send DeleteRow
+  end_procedure
+  procedure select_toggling integer liItem integer i#
+    integer liColumn
+    get Grid_ItemColumn self liItem to liColumn
+    if (liColumn=2 or liColumn=3) forward send select_toggling liItem i#
+  end_procedure
+  procedure fill_list
+    integer lhServer liRow liMax liBase
+    get phServer to lhServer
+    set dynamic_update_state to DFFALSE
+    send delete_data
+    get row_count of lhServer to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get item_count to liBase
+      send add_item MSG_NONE (liRow+1)
+      send add_item MSG_NONE (sSegmentName(lhServer,liRow))
+      send add_item MSG_NONE ""
+      set checkbox_item_state item (liBase+2) to DFTRUE
+      set select_state item (liBase+2) to (pbCapsLock.i(lhServer,liRow))
+      send add_item MSG_NONE ""
+      set checkbox_item_state item (liBase+3) to DFTRUE
+      set select_state item (liBase+3) to (pbReverse.i(lhServer,liRow))
+    loop
+    send Grid_SetEntryState self DFFALSE
+    set dynamic_update_state to DFTRUE
+  end_procedure
+  procedure RowFromGridToArray integer liRow integer liBase
+    integer lhServer
+    get phServer to lhServer
+    set pbCapsLock.i of lhServer liRow to (select_state(self,liBase+2))
+    set pbReverse.i  of lhServer liRow to (select_state(self,liBase+3))
+  end_procedure
+  procedure DoAddField integer liFile integer liField
+    integer liRow
+    get Grid_CurrentRow self to liRow
+    send MoveGridToArray
+    send Add_Field to (phServer(self)) liFile liField
+    send fill_list
+    set Grid_CurrentRow self to liRow
+  end_procedure
+  procedure MoveGridToArray
+    integer liMax liRow lhServer liBase
+    get phServer to lhServer
+    get row_count of lhServer to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get Grid_RowBaseItem self liRow to liBase
+      send RowFromGridToArray liRow liBase
+    loop
+  end_procedure
+  procedure DeleteRow
+    integer liRow lhServer liMax
+    get phServer to lhServer
+    if (item_count(self)) begin
+      get Grid_CurrentRow self to liRow
+      send MoveGridToArray
+      send delete_row to lhServer liRow
+      send fill_list
+      get row_count of lhServer to liMax
+      if liMax begin
+        if (liRow<liMax) set Grid_CurrentRow self to liRow
+        else set Grid_CurrentRow self to (liRow-1)
+      end
+    end
+  end_procedure
+  procedure MoveRowUp
+    integer liRow lhServer
+    get phServer to lhServer
+    if (item_count(self)) begin
+      get Grid_CurrentRow self to liRow
+      if (liRow>0) begin
+        send MoveGridToArray
+        send swap_rows to lhServer liRow (liRow-1)
+        send fill_list
+        set Grid_CurrentRow self to (liRow-1)
+      end
+    end
+  end_procedure
+
+  procedure MoveRowDown
+    integer liRow lhServer
+    get phServer to lhServer
+    if (item_count(self)) begin
+      get Grid_CurrentRow self to liRow
+      if (liRow<(row_count(lhServer)-1)) begin
+        send MoveGridToArray
+        send swap_rows to lhServer liRow (liRow+1)
+        send fill_list
+        set Grid_CurrentRow self to (liRow+1)
+      end
+    end
+  end_procedure
+end_class // cQueryOrderingGrid
+
+
+use aps.pkg
+class cFieldInf.IndexSelectList is a aps.list
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    set highlight_row_state to DFTRUE
+    property integer piFile 0
+  end_procedure
+  procedure AddIndex integer liFile integer liIndex string lsIndexDef integer liType
+    send add_item MSG_NONE (string(liIndex)+": "+FDX_IndexAsFieldNames(0,liFile,liIndex,0))
+    set aux_value item (item_count(self)-1) to liIndex
+  end_procedure
+  procedure AddBatchIndex integer liFile integer liIndex string lsIndexDef integer liType
+    send add_item MSG_NONE (string(liIndex)+": "+FDX_IndexAsFieldNames(0,liFile,liIndex,0))
+    set aux_value item (item_count(self)-1) to liIndex
+  end_procedure
+  procedure SetSelectedIndex integer liIndex
+    integer liMax liItem
+    get item_count to liMax
+    decrement liMax
+    for liItem from 0 to liMax
+      if (liIndex=aux_value(self,liItem)) set current_item to liItem
+    loop
+  end_procedure
+  procedure fill_list.iii integer liFile integer liIndex integer lbGenericIndicesOnly
+    integer lhObj liMax
+    set dynamic_update_state to DFFALSE
+    send delete_data
+    set piFile to liFile
+    if liFile begin
+      send add_item MSG_NONE "0: Recnum"
+      send FDX_IndexCallback 0 liFile DF_INDEX_TYPE_ONLINE MSG_AddIndex self
+      send FDX_IndexCallback 0 liFile DF_INDEX_TYPE_BATCH MSG_AddBatchIndex self
+      ifnot lbGenericIndicesOnly begin
+        send add_item MSG_NONE "Ad hoc"
+        set aux_value item (item_count(self)-1) to 1023
+
+        get FieldInf_VirtualIndices_Object liFile to lhObj
+        if lhObj begin
+          get row_count of lhObj to liMax
+          decrement liMax
+          for liIndex from 0 to liMax
+            send add_item MSG_NONE (psIndexName.i(lhObj,liIndex))
+            set aux_value item (item_count(self)-1) to (liIndex+256)
+          loop
+        end
+
+      end
+      send SetSelectedIndex liIndex
+    end
+    set dynamic_update_state to DFTRUE
+  end_procedure
+end_class // cFieldInf.IndexSelectList
+
+///////////////////////////////////////////////////////////////////////////
+
+
+Use QryFldSl.pkg // cFieldInf.Table_List and cFieldInf.Field_List classes
+
+object oQueryDefineAdhocIndexPn is a aps.ModalPanel label t.QryOrder.Specify
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+
+  object oQueryOrderExpression is a cQueryOrderExpression
+  end_object
+
+  property integer piResult DFFALSE
+  object oDBMS_Files is a cFieldInf.Table_List label t.DfQuery.DBMSfiles
+    set size to 60 150
+    set label_justification_mode to JMODE_TOP
+    on_key kenter send next
+    function bIncludeFile integer liFile returns integer
+      function_return (DfQuery_ExcludeFile(liFile)<>DFQ_ALWAYS)
+    end_function
+    procedure OnNewFile integer liFile
+      send notify_filechange liFile
+    end_procedure
+  end_object // oDBMS_Files
+
+  send aps_goto_max_row
+  send make_row_space
+
+  object oDBMS_Fields is a cFieldInf.Field_List
+    set size to 72 150
+    on_key kswitch send switch
+    on_key kswitch_back send switch_back
+    on_key kEnter Send do_add_field
+    procedure OnFieldSelect
+      Send do_add_field
+    end_procedure
+    function bIncludeField integer liFile integer liField returns integer
+      function_return (not(DfQuery_ExcludeField(liFile,liField)))
+    end_function
+  end_object // oDBMS_Files
+
+  set label of (oDBMS_Fields(self)) to t.DfQuery.DBMSfields
+  set label_justification_mode of (oDBMS_Fields(self)) to JMODE_TOP
+  set label_offset of (oDBMS_Fields(self)) to 0 0
+
+  procedure notify_filechange integer file#
+    send fill_list.i to (oDBMS_Fields(self)) file#
+  end_procedure
+
+  object oLst is a cQueryOrderingGrid snap SL_RIGHT relative_to (oDBMS_Files(self))
+    set size to 137 0
+  end_object
+
+  procedure do_add_field
+    integer liFile liField
+    get iCurrentFile of (oDBMS_Files(self)) to liFile
+    get iCurrentField of (oDBMS_Fields(self)) to liField
+    send DoAddField to (oLst(self)) liFile liField
+  end_procedure
+
+  object oBtn11 is a aps.Multi_Button
+    set size to 14 50
+    on_item t.btn.move_up send MoveRowUp to (oLst(self))
+  end_object
+  object oBtn12 is a aps.Multi_Button
+    set size to 14 50
+    on_item t.btn.move_down send MoveRowDown to (oLst(self))
+  end_object
+  object oBtn13 is a aps.Multi_Button
+    set size to 14 50
+    on_item t.btn.delete send DeleteRow to (oLst(self))
+  end_object
+  send aps_locate_multi_buttons
+  send aps_goto_max_row
+  object oLine is a aps.LineControl
+  end_object
+
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    send MoveGridToArray to (oLst(self))
+    set piResult to DFTRUE
+    send close_panel
+  end_procedure
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    integer lhFields
+//    send aps_resize (oDBMS_Fields(self)) delta_rw# 0
+    send aps_resize (oLst(self)) delta_rw# 0
+    send aps_align_by_sizing (oDBMS_Fields(self)) (oLst(self)) SL_ALIGN_BOTTOM
+    send aps_register_multi_button (oBtn11(self))
+    send aps_register_multi_button (oBtn12(self))
+    send aps_register_multi_button (oBtn13(self))
+    send aps_locate_multi_buttons
+    send aps_relocate (oLine(self)) delta_rw# 0
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+  procedure aps_beautify
+    send aps_align_inside_container_by_sizing (oLine(self)) SL_ALIGN_RIGHT
+  end_procedure
+  function iPopup.ii integer liFile integer lhQueryOrderExpression returns integer
+    integer lhExpr
+    move (oQueryOrderExpression(self)) to lhExpr
+    send DoCopyFromOtherObject to lhExpr lhQueryOrderExpression
+    set piResult to DFFALSE
+    send fill_list.i to (oDBMS_Files(self)) liFile
+    set phServer of (oLst(self)) to lhQueryOrderExpression
+    send fill_list to (oLst(self))
+    forward send popup
+    ifnot (piResult(self)) send DoCopyFromOtherObject to lhQueryOrderExpression lhExpr
+    function_return (piResult(self))
+  end_function
+end_object // oQueryDefineAdhocIndexPn

@@ -1,0 +1,206 @@
+// Use SortUtil.pkg // UI bricks for reindexing a set of tables
+
+Use SortUtil.utl // Basic code for reindexing a set of tables
+Use GridUtil.utl // Grid and List utilities
+
+object oWaitWhileReindexing is a cProcessStatusPanel
+  set allow_cancel_state to DFFALSE
+  procedure DoCaption string sCaption
+    set Caption_Text of ghoStatusPanel to sCaption
+    set Message_Text of ghoStatusPanel to ""
+    set Action_Text  of ghoStatusPanel to ""
+    set Title_Text   of ghoStatusPanel to ""
+  end_procedure
+  function callback string sText integer iType returns integer
+    integer iRval
+    get callback of gloReIndexer# sText iType to iRval
+    if (iType ge DF_MESSAGE_HEADING_1 and iType le DF_MESSAGE_HEADING_5) begin
+      set Message_Text of ghoStatusPanel to sText
+    end
+    else if iType eq DF_MESSAGE_PROGRESS_TITLE begin
+      set Action_Text of ghoStatusPanel to sText
+    end
+    else if iType eq DF_MESSAGE_PROGRESS_VALUE begin
+      set Title_Text of ghoStatusPanel to sText
+    end
+    else if iType eq DF_MESSAGE_WARNING begin
+      set Title_Text of ghoStatusPanel to sText
+    end
+    function_return iRval
+  end_function
+  set piCallbackObj of gloReIndexer# to self
+
+  procedure Start_StatusPanel
+    send DoCaption "Reindexing files"
+    send Start_StatusPanel of ghoStatusPanel
+  end_procedure
+  Procedure Stop_StatusPanel
+    send Stop_StatusPanel of ghoStatusPanel
+  End_Procedure
+end_object
+
+register_object oSortBufferSize
+object oSortUtil_Prop_Pn is a aps.ModalPanel label "Properties"
+  property integer pResult 0
+  set locate_mode to CENTER_ON_SCREEN
+  on_key kcancel send close_panel
+  procedure activate_next
+    send activate to (oSortBufferSize(self))
+  end_procedure
+  procedure activate_previous
+    send activate to (oBtn2(self))
+  end_procedure
+  object oRadio1 is a aps.RadioGroup label "Bad data"
+    on_key knext_item     send activate_next
+    on_key kprevious_item send activate_previous
+    object oRad1 is a aps.Radio label "No check"
+    end_object
+    object oRad2 is a aps.Radio label "Fill with spaces"
+    end_object
+    object oRad3 is a aps.Radio label "Write to file"
+    end_object
+    object oRad4 is a aps.Radio label "Abort on bad data"
+      set object_shadow_state to true
+    end_object
+  end_object
+  object oRadio2 is a aps.RadioGroup label "Duplicate records"
+    object oRad1 is a aps.Radio label "Write to file"
+      set object_shadow_state to true
+    end_object
+    object oRad2 is a aps.Radio label "Abort on duplicates"
+      set object_shadow_state to true
+    end_object
+  end_object
+  send aps_size_identical_max (oRadio1(self)) (oRadio2(self)) sl_vertical
+  send aps_goto_max_row
+  object oSortBufferSize is a aps.Form label "Sort buffer size (Kb):" abstract aft_numeric6.0
+    procedure switch_back
+      send activate to (oRadio1(self))
+    end_procedure
+    on_key kprevious_item send switch_back
+  end_object
+  send aps_align_by_moving (oSortBufferSize(self)) (oRadio2(self)) sl_align_left
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    set pResult to true
+    send close_panel
+  end_procedure
+//procedure popup
+//  integer itm# grb# buffer#
+//  integer iNull
+//  string sNull
+//  move 0 to iNull
+//  move "" to sNull
+//  move 0 to itm#
+//  if (oVdfSort_SortOptions# iand DF_SORT_OPTION_NO_DATA_CHECK ) move 0 to itm#
+//  if (oVdfSort_SortOptions# iand DF_SORT_OPTION_BAD_DATA_FIXUP) move 1 to itm#
+//  if (oVdfSort_SortOptions# iand DF_SORT_OPTION_BAD_DATA_FILE ) move 2 to itm#
+//  if (oVdfSort_SortOptions# iand DF_SORT_OPTION_BAD_DATA_ABORT) move 3 to itm#
+//  set current_radio of (oRadio1(self)) to itm#
+//  move 0 to itm#
+//  if (oVdfSort_SortOptions# iand DF_SORT_OPTION_DUP_DATA_FILE ) move 0 to itm#
+//  if (oVdfSort_SortOptions# iand DF_SORT_OPTION_DUP_DATA_ABORT) move 1 to itm#
+//  set current_radio of (oRadio2(self)) to itm#
+//
+//  call_driver iNull "DATAFLEX" function FLEX_GET_MAX_SORT_BUFFER callback iNull passing sNull iNull iNull result buffer#
+//  set value of (oSortBufferSize(self)) item 0 to buffer#
+//
+//  set pResult to false
+//  forward send popup
+//  if (pResult(self)) begin
+//    move 0 to oVdfSort_SortOptions#
+//    get current_radio of (oRadio1(self)) to itm#
+//    if itm# eq 0 move DF_SORT_OPTION_NO_DATA_CHECK  to oVdfSort_SortOptions#
+//    if itm# eq 1 move DF_SORT_OPTION_BAD_DATA_FIXUP to oVdfSort_SortOptions#
+//    if itm# eq 2 move DF_SORT_OPTION_BAD_DATA_FILE  to oVdfSort_SortOptions#
+//    if itm# eq 3 move DF_SORT_OPTION_BAD_DATA_ABORT to oVdfSort_SortOptions#
+//    get current_radio of (oRadio2(self)) to itm#
+//    if itm# eq 0 move (DF_SORT_OPTION_DUP_DATA_FILE +oVdfSort_SortOptions#) to oVdfSort_SortOptions#
+//    if itm# eq 1 move (DF_SORT_OPTION_DUP_DATA_ABORT+oVdfSort_SortOptions#) to oVdfSort_SortOptions#
+//
+//    get value of (oSortBufferSize(self)) item 0 to buffer#
+//    call_driver iNull "DATAFLEX" function FLEX_SET_MAX_SORT_BUFFER callback iNull passing sNull iNull buffer# result grb#
+//  end
+//end_procedure
+end_object //oSortUtil_Prop_Pn
+
+Use Aps.pkg
+Use RGB.utl      // Some color functions
+class cSortUtilList is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piReIndexerObject gloReIndexer# // Global integer defined in SortUtil.utl
+    send GridPrepare_AddCheckBoxColumn
+    send GridPrepare_AddColumn "Table"  AFT_ASCII60
+    send GridPrepare_AddColumn "Status" AFT_ASCII12
+    send GridPrepare_Apply self
+    set select_mode to MULTI_SELECT
+    set highlight_row_state to true
+    on_key KNEXT_ITEM     send switch
+    on_key KPREVIOUS_ITEM send switch_back
+  end_procedure
+
+  procedure select_toggling integer itm# integer i#
+    integer ci# iColumns
+    get Grid_Columns self to iColumns
+    get current_item to ci#
+    move ((ci#/iColumns)*iColumns) to ci# // Redirect to first column
+    forward send select_toggling ci# i#
+  end_procedure
+
+  procedure fill_list
+    integer iObj iRow iMax iBase
+    send delete_data
+    set dynamic_update_state to false
+    get piReIndexerObject to iObj
+    get row_count of iObj to iMax
+    decrement iMax
+    for iRow from 0 to iMax
+      get item_count to iBase
+      send Grid_AddCheckBoxItem self DFTRUE
+      set aux_value item iBase to iRow
+      send add_item msg_none (psRootName.i(iObj,iRow))
+      send add_item msg_none (SU_TableStatusText(piStatus.i(iObj,iRow)))
+    loop
+    send Grid_SetEntryState self DFFALSE
+    set dynamic_update_state to true
+    send update_total (iMax+1)
+  end_procedure
+
+  procedure update_total integer iItemsInList
+  end_procedure
+
+  procedure DoSort_Help integer iRow integer iBase
+    send Add_Rootname to (piReIndexerObject(self)) (value(self,iBase+1))
+  end_procedure
+
+  procedure DoProperties
+    send popup to (oSortUtil_Prop_Pn(self))
+  end_procedure
+
+  procedure DoSort
+    integer iCallBackTmp iReIndexerObject
+    get piReIndexerObject to iReIndexerObject
+    get piCallbackObj of iReIndexerObject to iCallBackTmp
+    set piCallbackObj of iReIndexerObject to (oWaitWhileReindexing(self))
+    send Start_StatusPanel to (oWaitWhileReindexing(self))
+    send reset to iReIndexerObject
+    send Grid_RowCallBackSelected self msg_DoSort_Help
+    send DoSort to iReIndexerObject
+    send Stop_StatusPanel to (oWaitWhileReindexing(self))
+    send fill_list
+    set piCallbackObj of iReIndexerObject to iCallBackTmp
+  end_procedure
+  procedure Reset
+    send reset to (piReIndexerObject(self))
+    send fill_list
+  end_procedure
+end_class // cSortUtilList
+
+

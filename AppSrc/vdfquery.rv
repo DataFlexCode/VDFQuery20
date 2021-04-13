@@ -1,0 +1,9 @@
+use vdfquery.utl
+
+#IF 0=1
+Activate_View Activate_Query_Vw for oPhantomRv
+Object oPhantomRv is a ReportView
+    Set Label to "Ad hoc query tool"
+End_Object    // oPhantomRv
+#ENDIF
+

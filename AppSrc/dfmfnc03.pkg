@@ -1,0 +1,202 @@
+// Use DfmFnc03.pkg // Find stray index files (Popup_FindStrayIndexFiles)
+
+Use Files.utl    // Utilities for handling file related stuff
+Use Strings.nui  // String manipulation for VDF
+Use GridUtil.utl // Grid and List utilities
+
+Use wvaW32fh.pkg // Wil's windows routines
+
+/DfmFnc03 // Max 60 characters *************************
+Clicking the 'Search files' button will detect index files
+that are not located next to their respective data file.
+
+Subsequently clicking the 'Move files' button will then move
+the index files to the data file directory.
+
+The latter operation requires exclusive access to the data
+files meaning that no other users are allowed on the data
+base while executing.
+/* // ******************************************************
+
+object oFindStrayIndexFiles_Arr is a cArray
+  item_property_list
+    item_property integer piType.i // 0=move 1=not found
+    item_property integer piFile.i
+    item_property string  psSourceFile.i
+    item_property string  psTargetFile.i
+    item_property integer piTargetFileAlreadyExists.i
+    item_property integer piOverWrite.i
+  end_item_property_list
+  procedure add_file_move integer file# string source# string target# integer type# integer exists#
+    integer row#
+    get row_count to row#
+    set piType.i       row# to type# // 0=move 1=not found
+    set piFile.i       row# to file#
+    set psSourceFile.i row# to source#
+    set psTargetFile.i row# to target#
+    set piTargetFileAlreadyExists.i row# to exists#
+  end_procedure
+  procedure check_index integer file# integer idx# string home# string root#
+    integer exists#
+    string fn# path# source# target#
+    move (root#+".K"+string(idx#)) to fn#
+    get SEQ_FindFileAlongDFPath fn# to path#
+    if path# ne "" begin // Meaning we found it!
+      if (right(path#,1)) eq (sysconf(SYSCONF_DIR_SEPARATOR)) move (StringLeftBut(path#,1)) to path#
+      if (lowercase(path#)) ne (lowercase(home#)) begin
+        move (SEQ_ComposeAbsoluteFileName(path#,fn#)) to source#
+        move (SEQ_ComposeAbsoluteFileName(home#,fn#)) to target#
+        move (SEQ_FileExists(target#)) to exists#
+        send add_file_move file# source# target# 0 exists#
+      end
+    end
+    else send add_file_move file# fn# "" 1 0 // Not found!
+  end_procedure
+  procedure Search_Files_Help integer file#
+    integer oFdx# idx# seg_max#
+    string root# home#
+    move (fdx.object_id(0)) to oFDX#
+    if oFDX# begin
+      move (sDatPath.i(oFDX#,file#)) to root#
+      if (right(lowercase(root#),4)) eq ".dat" begin
+        move (StringLeftBut(root#,4)) to root#
+        move (SEQ_ExtractPathFromFileName(root#)) to home#
+        move (SEQ_RemovePathFromFileName(root#)) to root#
+        for idx# from 1 to 15
+          get FDX_AttrValue_INDEX oFDX# DF_INDEX_NUMBER_SEGMENTS file# idx# to seg_max#
+          if seg_max# send check_index file# idx# home# root#
+        loop
+      end
+    end
+  end_procedure
+  procedure Search_Files
+    send delete_data
+    send Callback_General to (DFMatrix_SelectorObject()) msg_Search_Files_Help self 1 0 1
+  end_procedure
+  procedure Move_Files
+    integer max# row# exists# overwrite# grb#
+    string source# target#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      if (piType.i(self,row#)) eq 0 begin
+        get piTargetFileAlreadyExists.i row# to exists#
+        get piOverWrite.i               row# to overwrite#
+        if (not(exists#) or overwrite#) begin
+          get psSourceFile.i row# to source#
+          get psTargetFile.i row# to target#
+          get wvaWin32_ShMoveFile source# target# to grb#
+        end
+      end
+    loop
+  end_procedure
+end_object // oFindStrayIndexFiles_Arr
+
+class cFindStrayIndexFiles_Grid is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    set line_width to 3 0
+    set header_label item 0 to "Type"
+    set header_label item 1 to "Stray file"
+    set header_label item 2 to "!"
+    set form_margin item 0 to 3   //
+    set form_margin item 1 to 60  //
+    set form_margin item 2 to 2   //
+    set highlight_row_state to TRUE
+//   set highlight_row_color to (rgb(0,255,255))
+//   set current_item_color to (rgb(0,255,255))
+    set CurrentCellColor     to clHighlight
+    set CurrentCellTextColor to clHighlightText
+    set CurrentRowColor      to clHighlight
+    set CurrentRowTextColor  to clHighlightText
+    set select_mode to no_select
+    on_key knext_item send switch
+    on_key kprevious_item send switch_back
+    on_key kenter send next
+    on_key key_ctrl+key_r send sort_data
+  end_procedure
+  function sTypeText.i integer type# returns string
+    if type# eq 0 function_return "MOV"
+    if type# eq 1 function_return "ERR"
+    function_return "?"
+  end_function
+  procedure sort_data.i integer column#
+    send Grid_SortByColumn self column#
+  end_procedure
+  procedure sort_data
+    integer cc#
+    get Grid_CurrentColumn self to cc#
+    send sort_data.i cc#
+  end_procedure
+  procedure fill_list
+    integer max# row# obj# type# exists#
+    move (oFindStrayIndexFiles_Arr(self)) to obj#
+    send delete_data
+    get row_count of obj# to max#
+    for row# from 0 to (max#-1)
+      get piType.i of obj# row# to type#
+      send add_item msg_none (sTypeText.i(self,type#))
+      send add_item msg_none (psSourceFile.i(obj#,row#))
+      get piTargetFileAlreadyExists.i of obj# row# to exists#
+      send add_item msg_none (if(exists#,"!",""))
+    loop
+    send Grid_SetEntryState self DFFALSE
+    set dynamic_update_state to true
+  end_procedure
+end_class // cFindStrayIndexFiles_Grid
+
+object oFindStrayIndexFiles_Vw is a aps.ModalPanel label "Find stray index files"
+  set locate_mode to CENTER_ON_SCREEN
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  set pMinimumSize to 50 130 // Resize to no less than this!
+  on_key kcancel send close_panel
+  object oLst is a cFindStrayIndexFiles_Grid
+    set size to 150 0
+  end_object
+  procedure Search_Files
+    send cursor_wait to (cursor_control(self))
+    send Search_Files to (oFindStrayIndexFiles_Arr(self))
+    send fill_list to (oLst(self))
+    send cursor_ready to (cursor_control(self))
+    ifnot (item_count(oLst(self))) send obs "No index files are astray"
+  end_procedure
+  procedure Move_Files
+    send cursor_wait to (cursor_control(self))
+    send Move_Files to (oFindStrayIndexFiles_Arr(self))
+    send Search_Files to (oFindStrayIndexFiles_Arr(self))
+    send fill_list to (oLst(self))
+    send cursor_ready to (cursor_control(self))
+  end_procedure
+  object oBtn1 is a aps.Multi_Button
+    on_item "Search files" send Search_Files
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item "Move files"   send Move_Files
+  end_object
+  object oBtn3 is a aps.Multi_Button
+    on_item "Close"        send close_panel
+  end_object
+  send aps_locate_multi_buttons
+
+  procedure popup
+    integer select_count#
+    get File_Select_Count of (DFMatrix_SelectorObject()) to select_count#
+    if select_count# begin
+      if (DFMatrix_RealDataPrimary()) forward send popup
+      else send obs "This function is not available when you are" "working with remote table definitions." "" "Select 'Open current definitions' from the 'File' pulldown"
+    end
+    else send obs "No tables selected!"
+  end_procedure
+
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oLst(self)) delta_rw# 0
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_register_multi_button (oBtn3(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+end_object // oFindStrayIndexFiles_Vw
+
+procedure Popup_FindStrayIndexFiles
+  send popup to (oFindStrayIndexFiles_Vw(self))
+end_procedure

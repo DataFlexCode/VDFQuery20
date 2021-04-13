@@ -1,0 +1,54 @@
+// Use About.utl
+
+Use AppInfo.utl  // Setup application information
+Use Buttons.utl  // Button texts
+Use Spec0007.utl // Display modal text (DoDisplayText)
+Use Spec0012.utl // Read image to string (sTextDfFromImage function)
+Use vdfgraph.utl
+
+procedure DoDisplayLog global
+  integer liLogImage
+  string lsLog
+  get AppInfo AI_LOG_IMAGE to liLogImage
+  get sTextFromDfImage liLogImage to lsLog
+  send DoDisplayText "Program log" lsLog
+end_procedure
+procedure DoDisplayKnownIssues global
+  integer liLogImage
+  string lsLog
+  get AppInfo AI_KNOWN_ISSUES to liLogImage
+  get sTextFromDfImage liLogImage to lsLog
+  send DoDisplayText "Known Issues" lsLog
+end_procedure
+
+object oAboutPanel is a aps.ModalPanel label ("About "+AppInfo(AI_TITLE))
+  set locate_mode to CENTER_ON_SCREEN
+  on_key kcancel send close_panel
+  object oGraph is a GraphicArea
+    set size to 200 300
+    send aps_auto_locate_control self
+  end_object
+  object oBtn1 is a aps.multi_button
+    on_item "Log" send DoDisplayLog
+  end_object
+  object oBtn2 is a aps.multi_button
+    on_item "Known issues" send DoDisplayKnownIssues
+  end_object
+  object oBtn3 is a aps.multi_button
+    on_item t.btn.close send close_panel
+  end_object
+  procedure popup
+    integer liLogImage
+    get AppInfo AI_LOG_IMAGE to liLogImage
+    set object_shadow_state of (oBtn1(self)) to (not(liLogImage))
+    get AppInfo AI_KNOWN_ISSUES to liLogImage
+    set object_shadow_state of (oBtn2(self)) to (not(liLogImage))
+    set piProgram_RAM of (oGraph(self)) to (AppInfo(TMP_GA_OBJECTID))
+    forward send popup
+  end_procedure
+  send aps_locate_multi_buttons
+end_object
+
+procedure DoAbout global
+  send popup to (oAboutPanel(self))
+end_procedure

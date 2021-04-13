@@ -1,0 +1,92 @@
+// Use StrucPgm.pkg // Display restructure program (procedure StructPgm_Display)
+Use StrucPgm.nui // Class for storing a sequence of restructure instructions
+Use GridUtil.utl // Grid and List utilities
+
+Use Aps.pkg
+class StrucPgmDisplayList is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    set highlight_row_state to dfTrue
+    property integer piPgm_Object 0
+    set line_width to 1 0
+    send GridPrepare_AddColumn "" AFT_ASCII60
+    send GridPrepare_Apply self
+    set header_visible_state to false
+    set gridline_mode to GRID_VISIBLE_NONE
+    set form_margin item 0 to  60   //
+    set select_mode to no_select
+    on_key key_ctrl+key_w send DoWriteToFile
+  end_procedure
+
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+
+  procedure prv.fill_list integer obj#
+    integer row# max#
+    string val# prev_val# str#
+    get row_count of obj# to max#
+    for row# from 0 to (max#-1)
+      send add_item msg_none (sInstructionText.i(obj#,row#))
+    loop
+  end_procedure
+
+  procedure fill_list_filelist
+    send prv.fill_list (oFileListPgm(piPgm_Object(self)))
+  end_procedure
+  procedure fill_list_file
+    send prv.fill_list (oFilePgm(piPgm_Object(self)))
+  end_procedure
+  procedure fill_list_fields
+    send prv.fill_list (oFieldPgm(piPgm_Object(self)))
+  end_procedure
+  procedure fill_list_indices
+    send prv.fill_list (oIndexPgm(piPgm_Object(self)))
+    send prv.fill_list (oIndexSegPgm(piPgm_Object(self)))
+  end_procedure
+  procedure fill_list.i integer pgm#
+    integer max# itm#
+    set piPgm_Object to pgm#
+    send delete_data
+    send add_item msg_none "******* Filelist parameters *******"
+    send fill_list_filelist
+    send add_item msg_none "******* File parameters *******"
+    send fill_list_file
+    send add_item msg_none "******* Field parameters *******"
+    send fill_list_fields
+    send add_item msg_none "******* Index parameters *******"
+    send fill_list_indices
+    send Grid_SetEntryState self 0
+    set dynamic_update_state to true
+  end_procedure
+end_class // StrucPgmDisplayList
+
+object oDisplayStrucPgm is a aps.ModalPanel
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  on_key kcancel send close_panel
+  set locate_mode to CENTER_ON_SCREEN
+  set pMinimumSize to 100 100
+  object oLst is a StrucPgmDisplayList
+    set size to 200 0
+  end_object
+  object oBtn is a aps.Multi_Button
+    on_item "Close" send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure popup.i integer pgm#
+    integer rval#
+    set label to (sTitle(pgm#))
+    send fill_list.i to (oLst(self)) pgm#
+    send popup
+  end_procedure
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oLst(self)) delta_rw# delta_cl#
+    send aps_register_multi_button (oBtn(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+end_object // oDisplayStrucPgm
+
+procedure StructPgm_Display global integer pgm#
+  send popup.i to (oDisplayStrucPgm(self)) pgm#
+end_procedure

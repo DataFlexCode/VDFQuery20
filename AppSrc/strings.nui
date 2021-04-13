@@ -1,0 +1,960 @@
+// **********************************************************************
+// Use Strings.nui  // String manipulation for VDF (No User Interface)
+//
+// By Sture Andersen
+//
+// The file contains a number of global functions for manipulating
+// strings and converting numbers to strings. The package may be used
+// with DataFlex 3.2 and Visual DataFlex. This package is domain.
+//
+//
+// Create: Fri  23-05-1997 - Merger of s_utl002, 006.
+// Update: Tue  25-08-1997 - Fixes by Magnus Bergh
+//         Sun  14-12-1997 - Added the following functions:
+//                             ExtractWord           ExtractInteger
+//                             HowManyWords          HowManyIntegers
+//                             ExtractItemNeg        IsIntegerPresent
+//         Tue  31-03-1998 - Added the following functions:
+//                             Text_RemoveTrailingCr Text_CompressSubstCr
+//                             Text_RTrim            Text_Format.sii
+//                             Text_Trim             Text_FormattedLine.i
+//                             Text_Compress
+//         Fri  06-11-1998 - Added function InsertThousandsSep
+//         Sun  14-02-1999 - Added function Byte_ToHex
+//         Wed  27-04-1999 - Added function CurrentDecimalSeparator
+//         Mon  08-11-1999 - Added procedure Text_SetEditObjectValue and
+//                           function Text_EditObjectValue
+//         Mon  22-11-1999 - Function Text_RemoveTrailingCr strengthened
+//         Wed  01-12-1999 - Function StringFieldType added
+//         Wed  12-01-2000 - Functions StringOemToAnsi and StringAnsiToOem
+//                           added when compiled using the Windows compiler
+//         Wed  17-05-2000 - Function NumToStr fixed for use with VDF 6.0.
+//         Mon  29-05-2000 - Attempt to fix function Text_EditObjectValue
+//         Fri  21-07-2000 - InsertThousandsSep fixed for use with negative
+//                           numbers.
+//                         - Functions IntToStrRTS, NumToStrRTS and NumToStrTS
+//                           added.
+//         Fri  25-08-2000 - Function NumToStrRzf added
+//         Wed  28-02-2001 - Add function OldHexToByte, renamed existing function
+//                           Byte_ToHex to OldByteToHex
+//         Mon  19-03-2001 - Functions StringBeginsWith and StringEndsWith
+//                           added
+//         Thu  19-07-2001 - StringIsInteger added
+//         Sat  05-04-2002 - Global strings str.Chr10 and str.Chr1013 added.
+//         Tue  04-06-2002 - Oem to ANSI and vice versa for DF3.2 UNIX/DOS/LINUX
+//         Tue  09-09-2003 - Function StringFieldText added
+//         Tue  18-01-2005 - Function String_NegateSortOrder added
+//         Mon  14-03-2005 - Functions StringHead and StringTail added
+//         Sun  12-11-2006 - Functions renamed: ByteToHex     -> vdfq_ByteToHex
+//                                              HexToByte     -> vdfq_HexToByte
+//                                              StringToHex   -> vdfq_StringToHex
+//                                              HexToString   -> vdfq_HexToString
+//                                              WildCardMatch -> vdfq_WildCardMatch
+//
+//
+//
+// ***********************************************************************
+
+Use VdfBase.pkg // Define FMAC_VERSION and FMAC_REVISION
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+
+// Returns the string of length len# inside which src# is right justified:
+Function RightShift global string src# integer len# returns string
+  trim src# to src#
+  if (length(src#)) lt len# insert (left(pad("",len#),len#-length(src#))) in src# at 1
+  function_return (left(src#,len#))
+End_Function
+
+// Returns the string of length len# inside which src# is centered:
+Function CenterString global string src# integer len# returns string
+  trim src# to src#
+  if (length(src#)) lt len# insert (left(pad("",len#),len#-length(src#)/2)) in src# at 1
+  function_return (left(src#,len#))
+End_Function
+
+// Returns all characters to the right of position pos# (including the character at
+// posistion pos#)
+Function RightFromPos global string str# integer pos# returns string
+  function_return (right(str#,length(str#)-pos#+1))
+End_Function
+
+// Number converting functions:
+
+#REPLACE NUMTOSTR_THOUSANDS_SEPARATOR_OFF 0
+#REPLACE NUMTOSTR_THOUSANDS_SEPARATOR_ON  1
+integer NumToStringConversionMode#
+
+string str.Chr10   1
+string str.Chr13   1
+string str.Chr1013 2
+move (character(13)) to str.Chr13
+move (character(10)) to str.Chr10
+move (character(10)+character(13)) to str.Chr1013
+
+move NUMTOSTR_THOUSANDS_SEPARATOR_OFF to NumToStringConversionMode#
+procedure set pNumToStringConversionMode global integer value#
+  move value# to NumToStringConversionMode#
+end_procedure
+function pNumToStringConversionMode global returns integer
+  function_return NumToStringConversionMode#
+end_function
+
+function InsertThousandsSep global string str# returns string
+  integer pos# tmp# neg#
+  string sep#
+  trim str# to str#
+  move (left(str#,1)="-") to neg#
+  if neg# get StringRightBut str# 1 to str#
+  get_attribute DF_DECIMAL_SEPARATOR to pos#
+  character pos# to sep#
+  move (pos(sep#,str#)) to pos#
+  ifnot pos# move (length(str#)+1) to pos#
+  get_attribute DF_THOUSANDS_SEPARATOR to tmp#
+  character tmp# to sep#
+  while pos# gt 4
+    move (pos#-3) to pos#
+    insert sep# in str# at pos#
+  loop
+  if neg# move ("-"+str#) to str#
+  function_return str#
+end_function
+
+// Calling the function below will convert the number stored in src# to a
+// string containing dcp# decimals rounding excess decimals. Parameter dcp#
+// may be negative. The expression (NumToStr(1789,-3)) will evaluate to "2000".
+// The functions in this package all respects the value of global attribute
+// DF_DECIMAL_SEPARATOR.
+Function NumToStr global number src# integer dcp# returns string
+  integer pos#
+  number correction#
+  string rval# radix#
+  if dcp# lt 0 function_return (NumToStr(src#*(10^dcp#),0)+left("00000000",-dcp#))
+  move (0.5/(10^dcp#)) to correction#
+//    move (0.5/(10^dcp#)+src#) to src# // This does not always work with VDF 6.x!!!
+  if src# ge 0 move (correction#+src#) to src#
+  else move (src#-correction#) to src#
+  get_attribute DF_DECIMAL_SEPARATOR to pos# // Overload
+  character pos# to radix# // End overload
+  move src# to rval#
+  ifnot (pos(radix#,rval#)) append rval# radix#
+  append rval# "00000000"
+  move (pos(radix#,rval#)) to pos#
+  if dcp# eq 0 decrement pos#
+  move (left(rval#,pos#+dcp#)) to rval#
+  if NumToStringConversionMode# move (InsertThousandsSep(rval#)) to rval#
+  function_return rval#
+End_Function
+
+// This function is the same as NumToStr except that you have to specify
+// the length of the target string (len#). The number will be right
+// justified accordingly. Post-fix `R' means right justify:
+Function NumToStrR global number src# integer dcp# integer len# returns string
+  function_return (RightShift(NumToStr(src#,dcp#),len#))
+End_Function
+
+// Function NumToStrTS is the same as NumToStr except that thousand
+// separators are inserted. (TS=Thousand Separator)
+Function NumToStrTS global number src# integer dcp# returns string
+  integer Org#
+  string rval#
+  move NumToStringConversionMode# to org#
+  move NUMTOSTR_THOUSANDS_SEPARATOR_ON to NumToStringConversionMode#
+  move (NumToStr(src#,dcp#)) to rval#
+  move org# to NumToStringConversionMode#
+  function_return rval#
+End_Function
+
+Function IntToStrTS global number src# returns string
+  function_return (NumToStrTS(src#,0))
+End_Function
+
+Function NumToStrRTS global number src# integer dcp# integer len# returns string
+  function_return (RightShift(NumToStrTS(src#,dcp#),len#))
+End_Function
+
+// This function is the same as NumToStrR except that you do not specify
+// the number of decimals:
+Function IntToStrR global number src# integer len# returns string
+  function_return (NumToStrR(src#,0,len#)) // Fixed, Magnus Bergh
+End_Function
+
+// Same as IntToStrR (TS=Thousand Separator)
+Function IntToStrRTS global number src# integer len# returns string
+  function_return (NumToStrRTS(src#,0,len#))
+End_Function
+
+// Is the same as IntToStrR, except that leading blanks are substituted
+// for leading zeros (zf=zero fill):
+Function IntToStrRzf global number src# integer len# returns string
+  function_return (replaces(" ",NumToStrR(src#,0,len#),"0")) // Fixed, Magnus Bergh
+End_Function
+
+Function NumToStrRzf global number src# integer dcp# integer len# returns string
+  function_return (replaces(" ",NumToStrR(src#,dcp#,len#),"0"))
+End_Function
+
+// Use this to obtain the number of the least significant "non zero
+// decimal in src#. 0.702 will return 3 while 100 will return -2:
+Function NumberOfDecs global number src# returns integer
+  integer count#
+  string tmp# radix#
+  if src# eq 0 function_return 0 // Special case
+  move src# to tmp# // This removes superfluous decimals
+  get_attribute DF_DECIMAL_SEPARATOR to count# // Overload
+  character count# to radix# // End overload
+  if radix# in src# function_return (length(tmp#)-pos(radix#,tmp#))
+  move 0 to count#
+  while (right(tmp#,1)="0")
+    move (left(tmp#,length(tmp#)-1)) to tmp#
+    decrement count#
+  end
+  function_return count#
+End_Function
+
+Function CurrentDecimalSeparator global returns string
+  integer rval#
+  get_attribute DF_DECIMAL_SEPARATOR to rval#
+  function_return (character(rval#))
+End_Function
+
+Procedure Set CurrentDecimalSeparator global string value#
+  set_attribute DF_DECIMAL_SEPARATOR to (ascii(value#))
+End_Procedure
+
+
+// StripFromLastOccurance takes two strings (src# and val#) as
+// arguments. src# is scanned backwards for occurrances of substring
+// val#. If found, the function will return a string equal to src#
+// truncated at the first character of the right most occurance of substring
+// val#.
+//
+// StripFromLastOccurance("To be or not to be...","be") = "To be or not to "
+// StripFromLastOccurance("Mary had a little lamb","white") = ""
+// StripFromLastOccurance("Mary had a little lamb","") = "Mary had a little lamb"
+//
+Function StripFromLastOccurance global string src# string val# returns string
+  integer len# search_len#
+  string tmp#
+  length val# to search_len#
+  if search_len# eq 0 function_return src#
+  repeat
+    length src# to len#
+    if len# le search_len# function_return ""
+    move (right(src#,search_len#)) to tmp#
+    if tmp# eq val# function_return (left(src#,len#-search_len#))
+    move (left(src#,len#-1)) to src#
+  loop
+End_Function
+
+Function GetFromLastOccurance global string src# string val# returns string
+  function_return (replace(StripFromLastOccurance(src#,val#),src#,""))
+End_Function
+
+// (ExtractWord("item1 item2"," ",0)) = ""
+// (ExtractWord("item1 item2"," ",1)) = "item1"
+// (ExtractWord("item1 item2"," ",2)) = "item2"
+// (ExtractWord("item1 item2"," ",3)) = ""
+// (ExtractWord(" item1 item2 "," ",x)) =
+//                       (ExtractWord("item1 item2"," ",x))
+//
+                         //        source     delimiters  item number
+Function ExtractWord global string src# string dlm# integer itm# returns string
+  integer count# pos# in_item# len#
+  string rval# atom#
+  move "" to rval#
+  move 0 to count#
+  move 0 to in_item#
+  move (length(src#)) to len#
+  for pos# from 1 to len#
+    mid src# to atom# 1 pos#
+    if in_item# begin
+      if atom# in dlm# move 0 to in_item#
+      else if count# eq itm# append rval# atom#
+    end
+    else begin
+      ifnot atom# in dlm# begin
+        increment count#
+        move 1 to in_item#
+        if count# eq itm# move atom# to rval#
+      end
+    end
+  loop
+  function_return rval#
+End_Function
+
+Function ExtractItem global string src# string dlm# integer itm# returns string
+  Function_Return (ExtractWord(src#,dlm#,itm#))
+End_Function
+                          //        source     delimiters
+Function HowManyWords global string src# string dlm# returns integer
+  integer count# pos# in_item# len#
+  string atom#
+  move 0 to count#
+  move 0 to in_item#
+  move (length(src#)) to len#
+  for pos# from 1 to len#
+    mid src# to atom# 1 pos#
+    if in_item# begin
+      if atom# in dlm# move 0 to in_item#
+    end
+    else begin
+      ifnot atom# in dlm# begin
+        increment count#
+        move 1 to in_item#
+      end
+    end
+  loop
+  function_return count#
+end_function
+Function HowManyItems global string src# string dlm# returns integer
+  function_return (HowManyWords(src#,dlm#))
+end_function
+
+Function ExtractWord2 global string src# string dlm# integer itm# returns string
+  integer count# pos# len#
+  string rval# char#
+  move "" to rval#
+  move 1 to count#
+  move (length(src#)) to len#
+  for pos# from 1 to len#
+    mid src# to char# 1 pos#
+    if char# in dlm# begin
+      if itm# eq count# function_return rval#
+      increment count#
+    end
+    else if itm# eq count# move (rval#+char#) to rval#
+  loop
+  function_return rval#
+End_Function
+                          //        source     delimiters
+Function HowManyWords2 global string src# string dlm# returns integer
+  integer count# pos# len#
+  string char#
+  move 1 to count#
+  move (length(src#)) to len#
+  for pos# from 1 to len#
+    mid src# to char# 1 pos#
+    if char# in dlm# increment count#
+  loop
+  function_return count#
+end_function
+                            //        source     legal char  item number
+Function ExtractItemNeg global string src# string lch# integer itm# returns string
+  integer count# pos# in_item# len#
+  string rval# atom#
+  move "" to rval#
+  move 0 to count#
+  move 0 to in_item#
+  move (length(src#)) to len#
+  for pos# from 1 to len#
+    mid src# to atom# 1 pos#
+    if in_item# begin
+      ifnot atom# in lch# move 0 to in_item#
+      else if count# eq itm# append rval# atom#
+    end
+    else begin
+      if atom# in lch# begin
+        increment count#
+        move 1 to in_item#
+        if count# eq itm# move atom# to rval#
+      end
+    end
+  loop
+  function_return rval#
+end_function
+
+// ExtractInteger("123 456 789",0) = 0
+// ExtractInteger("123 456 789",2) = 456
+// ExtractInteger("123 456 789",4) = 0
+
+function ExtractInteger global string str# integer itm# returns integer
+  function_return (integer(ExtractItemNeg(str#,"0123456789",itm#)))
+end_function
+
+function HowManyIntegers global string str# returns integer
+  integer rval# pos# len# in_int#
+  move 0 to in_int# //in integer?
+  move 0 to rval#
+  move (length(str#)) to len#
+  for pos# from 1 to len#
+    if (mid(str#,1,pos#)) in "0123456789" begin
+      ifnot in_int# begin
+        increment rval#
+        move 1 to in_int#
+      end
+    end
+    else if in_int# move 0 to in_int#
+  loop
+  function_return rval#
+end_function
+
+function IsIntegerPresent global string str# integer int# returns integer
+  integer max# itm#
+  if str# eq "" function_return 0
+  move (HowManyIntegers(str#)) to max#
+  for itm# from 1 to max#
+    if (ExtractInteger(str#,itm#)=int#) function_return 1
+  loop
+  function_return 0
+end_function
+
+function AddIntegerToString global string str# integer int# returns string
+  function_return (trim(str#+" "+string(int#)))
+end_function
+
+// This function is used to compose a new string from an existing string. This
+// is similar to the way Windows 95 generates 8.3 file names.
+
+//    For example:    StringIncrementId("STURE",8) = "STURE ~1"
+//                    StringIncrementId("STURE ~1",8) = "STURE ~2"
+//                    StringIncrementId("STURE ~2",8) = "STURE ~3"
+//                    etc...
+function StringIncrementId global string id# integer len# returns string
+  string char#
+  if (mid(id#,1,len#-1)) eq "~" begin
+    move (mid(id#,1,len#)) to char#
+    if (ascii(char#)) lt 93 function_return (overstrike(character(ascii(char#)+1),id#,len#))
+    else function_return ""
+  end
+  function_return (overstrike("~1",id#,len#-1))
+end_function
+
+function StringUppercaseFirstLetters global string str# returns string
+  integer len# pos# in_word#
+  string rval# char#
+  move (lowercase(str#)) to str#
+  move (length(str#)) to len#
+  move 0 to in_word#
+  for pos# from 1 to len#
+    move (mid(str#,1,pos#)) to char#
+    if char# eq "" move 0 to in_word#
+    else begin
+      ifnot in_word# begin
+        uppercase char# to char#
+        move 1 to in_word#
+      end
+    end
+    move (rval#+char#) to rval#
+  loop
+  function_return rval#
+end_function
+
+function StringLeftBut global string str# integer but# returns string
+  function_return (left(str#,length(str#)-but# max 0))
+end_function
+
+function StringRightBut global string str# integer but# returns string
+  function_return (right(str#,length(str#)-but# max 0))
+end_function
+
+//> This function returns 1 if lsString is an integer and 2 if it
+//> is a number (the function does not handle thousand seps)
+function StringIsNumber global string lsString integer liDecSep returns integer
+  integer liLen liPos liDecSepFound liRval
+  string lsChar
+  move 1 to liRval
+  move 0 to liDecSepFound
+  move (trim(lsString)) to lsString
+  if (left(lsString,1)="-") move (replace("-",lsString,"")) to lsString
+  move (length(lsString)) to liLen
+  for liPos from 1 to liLen
+    move (mid(lsString,1,liPos)) to lsChar
+    if (ascii(lsChar)) eq liDecSep begin
+      if liDecSepFound function_return 0
+      move 1 to liDecSepFound
+    end
+    else ifnot ("0123456789" contains lsChar) function_return 0
+  loop
+  function_return liRval
+end_function
+function StringIsInteger global string lsString returns integer
+  integer liPos liLen
+  move (trim(lsString)) to lsString
+  if (left(lsString,1)="-") move (replace("-",lsString,"")) to lsString
+  move (length(lsString)) to liLen
+  for liPos from 1 to liLen
+    ifnot (pos(mid(lsString,1,liPos),"0123456789")) function_return DFFALSE
+  loop
+  function_return DFTRUE
+end_function
+
+function StringFieldType global integer liType returns string
+  if liType eq DF_ASCII   function_return "ASCII"
+  if liType eq DF_BCD     function_return "Number"
+  if liType eq DF_DATE    function_return "Date"
+  if liType eq DF_OVERLAP function_return "Overlap"
+  if liType eq DF_TEXT    function_return "Text"
+  if liType eq DF_BINARY  function_return "Binary"
+  function_return "Un-defined"
+end_function
+
+function StringFieldLenText global integer liType integer liLen integer liDec returns string
+  if liType eq DF_BCD function_return (NumToStr(liLen+(liDec/10.0),1))
+  else function_return (string(liLen))
+end_function
+function StringFieldText global integer liType integer liLen integer liDec returns string
+  string lsRval
+  move "# (#)" to lsRval
+  replace "#" in lsRval with (StringFieldType(liType))
+  replace "#" in lsRval with (StringFieldLenText(liType,liLen,liDec))
+  function_return lsRval
+end_function
+
+
+function StringConsistsOf global string src# string tpl# returns integer
+  integer count# len#
+  trim src# to src#
+  move (length(src#)) to len#
+  for count# from 1 to len#
+    ifnot (mid(src#,1,count#)) in tpl# function_return 0
+  loop
+  function_return 1
+end_function
+
+function StringBeginsWith global string lsHostString string lsLeadInCharacters returns integer
+  function_return (left(lsHostString,length(lsLeadInCharacters))=lsLeadInCharacters)
+end_function
+
+function StringEndsWith global string lsHostString string lsTrailingCharacters returns integer
+  function_return (right(lsHostString,length(lsTrailingCharacters))=lsTrailingCharacters)
+end_function
+
+function StringReverse global string lsValue returns string
+  integer liLen liPos
+  string lsRval lsChar
+  move "" to lsRval
+  move (length(lsValue)) to liLen
+  for_ex liPos from liLen down_to 1
+    move (lsRval+mid(lsValue,1,liPos)) to lsRval
+  loop
+  function_return lsRval
+end_function
+
+function StringHead global string lsValue string lsDlm returns string
+  integer liLen liPos
+  move (length(lsValue)) to liLen
+  for liPos from 1 to liLen
+    if (lsDlm contains mid(lsValue,1,liPos)) function_return (left(lsValue,liPos-1))
+  loop
+  function_return lsValue
+end_function
+
+function StringTail global string lsValue string lsDlm returns string
+  integer liLen liPos
+  move (length(lsValue)) to liLen
+  for liPos from 1 to liLen
+    if (lsDlm contains mid(lsValue,1,liPos)) function_return (right(lsValue,liLen-liPos))
+  loop
+  function_return ""
+end_function
+
+// If function ConvertChar is not already defined we define it here:
+#IFDEF get_ConvertChar
+#ELSE
+ use WinBase.pkg
+ Function ConvertChar Global integer bToAnsi String sString Returns String
+   pointer psString
+   integer iVoid bIsCString
+   Move (ascii(Right(sString,1))=0) to bIsCString
+   If Not bISCString Append sString (character(0))
+   GetAddress Of sString To psString // ok
+   if bToAnsi Move (OEMToANSI(psString,psString)) To iVoid
+   else       Move (ANSItoOEM(psString,psString)) To iVoid
+   Function_Return (if(bIsCString, sString, cstring(sString)))
+ End_Function
+#ENDIF
+
+function StringAnsiToOem global string str# returns string
+   function_return (ConvertChar(0,str#))
+end_function
+
+function StringOemToAnsi global string str# returns string
+   function_return (ConvertChar(1,str#))
+end_function
+
+function RemoveDblBlanks global string lsValue returns string
+  integer fin#
+  move 0 to fin#
+  repeat
+    move (replaces("  ",lsValue," ")) to lsValue
+    ifnot "  " in lsValue move 1 to fin#
+  until fin#
+  function_return lsValue
+end_function
+
+function vdfq_ByteToHex global integer byte# returns string
+  function_return (mid("0123456789ABCDEF",1,byte#/16+1)+mid("0123456789ABCDEF",1,(byte# iand 15)+1))
+end_function
+
+function vdfq_HexToByte global string lsHex returns integer
+  function_return (pos(left(lsHex,1),"0123456789ABCDEF")-1*16+pos(right(lsHex,1),"0123456789ABCDEF")-1)
+end_function
+
+function vdfq_StringToHex global string lsValue returns string
+  integer liLen liPos
+  string lsRval
+  move (length(lsValue)) to liLen
+  move "" to lsRval
+  for liPos from 1 to liLen
+    move (string(lsRval)+string(vdfq_ByteToHex(ascii(mid(lsValue,1,liPos))))) to lsRval
+  loop
+  function_return lsRval
+end_function
+
+function vdfq_HexToString global string lsValue returns string
+  integer liLen liPos
+  string lsRval
+  move (length(lsValue)/2) to liLen
+  move "" to lsRval
+  for liPos from 1 to liLen
+    //move (string(lsRval)+string(vdfq_HexToByte(ascii(mid(lsValue,2,liPos*2-1))))) to lsRval
+    // Fixed by Paolo Bruno
+    Move (String(lsRval)+Character(vdfq_HexToByte(mid(lsValue,2,liPos*2-1)))) to lsRval
+  loop
+  function_return lsRval
+end_function
+
+function Text_RemoveTrailingCr global string lsValue returns string
+  integer fin#
+  string char# char10# char255# char13#
+  move 0 to fin#
+  move (character(10)) to char10#
+  move (character(13)) to char13#
+  move (character(255)) to char255#
+  repeat
+    ifnot (length(lsValue)) function_return ""
+    move (right(lsValue,1)) to char#
+    if (char#=char10# or char#=" " or char#=char13# or char#=char255#) move (left(lsValue,(length(lsValue)-1))) to lsValue
+    else move 1 to fin#
+  until fin#
+  function_return lsValue
+end_function
+
+function Text_RTrim global string lsValue returns string
+  move (rtrim(replaces(character(255),lsValue," "))) to lsValue
+  function_return (Text_RemoveTrailingCr(lsValue))
+end_function
+
+function Text_Trim global string lsValue returns string
+  move (trim(replaces(character(255),lsValue," "))) to lsValue
+  function_return (Text_RemoveTrailingCr(lsValue))
+end_function
+
+function Text_Compress global string lsValue returns string
+  move (replaces(character(10),lsValue," ")) to lsValue
+  trim lsValue to lsValue
+  move (RemoveDblBlanks(lsValue)) to lsValue
+  function_return lsValue
+end_function
+
+function Text_CompressSubstCr global string lsValue string new_line# returns string
+  move (replaces(character(13),lsValue,"")) to lsValue
+  function_return (RemoveDblBlanks(trim(replaces(character(10),Text_RemoveTrailingCr(lsValue),new_line#))))
+end_function
+
+class cText_Formatter is an array
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer pRmargin        40
+    property integer pCompress_state 0
+    property integer pTrim_state     1 // 0=no trim, 1=trim, 2=rtrim
+    property integer pSubst_below_32_state 0
+  end_procedure
+
+  procedure add_item.s string lsValue
+    integer char#
+    if (pSubst_below_32_state(self)) begin
+      for char# from 0 to 31
+        move (replaces(character(char#),lsValue," ")) to lsValue
+      loop
+    end
+    set array_value item (item_count(self)) to lsValue
+  end_procedure
+
+  function split_word string lsValue integer len# returns string
+    integer pos#
+    string rval#
+    move (pos("-",lsValue)) to pos#
+    if (pos# and pos#<=len#) move (replace("-",lsValue," ")) to rval#
+    else begin
+      move (left(lsValue,len#)) to rval#
+      move (rval#+" "+replace(rval#,lsValue,"")) to rval#
+    end
+    function_return rval# // The space in the return value indicates
+  end_function            // where to split the word
+
+  procedure format.s string lsValue
+    integer Trim_state# done# pRmargin# word_done# pos# max# len#
+    string word# line# lf# left# char#
+
+    //pre-format:
+    get pTrim_state to Trim_state#
+    if Trim_state# eq 1 move (Text_Trim(lsValue)) to lsValue
+    else if Trim_state# eq 2 move (Text_RTrim(lsValue)) to lsValue
+    if (pCompress_state(self)) move (Text_Compress(lsValue)) to lsValue
+
+    move (character(10)) to lf#
+    get pRmargin to pRmargin#
+    if pRmargin# gt 1 begin // Otherwise nothing makes sense!
+      move 0 to done#
+      move "" to line#
+      move 1 to pos#
+      move (length(lsValue)) to max#
+      repeat
+
+        move "" to word#
+        move 0 to word_done#
+        repeat
+          if pos# gt max# move 1 to word_done#
+          else begin
+            mid lsValue to char# 1 pos#
+            if char# eq lf# begin // Line feed
+              if word# eq "" begin
+                move lf# to word#
+                increment pos#
+              end
+              move 1 to word_done#
+            end
+            else begin
+              if char# eq "" begin
+                if word# eq "" increment pos#
+                else move 1 to word_done#
+              end
+              else begin
+                move (word#+char#) to word#
+                increment pos#
+              end
+            end
+          end
+        until word_done#
+
+        if word# eq "" move 1 to done# // We're done!
+        else begin
+          if word# eq lf# begin // If hard return:
+            send add_item.s line#
+            move "" to line#
+          end
+          else begin //
+            if (length(line#)+length(word#)+1) gt pRmargin# begin // Soft new line
+              if line# ne "" begin
+                send add_item.s line# // Could be that word is longer that pRmargin
+                move "" to line#
+              end
+              if (length(word#)) gt pRmargin# begin // Word IS longer that line!
+                repeat
+                  if line# eq "" move (pRmargin#-1) to len#
+                  else move (pRmargin#-length(line#)-2) to len#
+                  move (split_word(self,word#,len#)) to word#
+                  move (ExtractItem(word#," ",1)) to left#
+                  move (ExtractItem(word#," ",2)) to word#
+                  if word# eq "" move left# to line#
+                  else send add_item.s (left#+"-")
+                until word# eq ""
+              end
+              else move word# to line#
+            end
+            else begin
+              if line# ne "" move (line#+" "+word#) to line# // add word to line
+              else move word# to line#
+            end
+          end
+        end
+      until done#
+      if line# ne "" send add_item.s line#
+    end
+  end_procedure
+end_class // cText_Formatter
+
+desktop_section
+  object oText_Formatter is a cText_Formatter
+    set pSubst_below_32_state to DFTRUE
+  end_object
+end_desktop_section
+
+procedure Text_Format_Reset global
+  send delete_data to (oText_Formatter(self))
+end_procedure
+
+function Text_Format_LineCount global returns integer
+  function_return (item_count(oText_Formatter(self)))
+end_function
+
+function Text_Format.sii global string lsValue integer liWidth integer lbReset returns integer
+  integer lhObj
+  if lbReset send Text_Format_Reset
+  move (oText_Formatter(self)) to lhObj
+  set pRmargin of lhObj to liWidth
+  send format.s to lhObj lsValue
+  function_return (item_count(lhObj))
+end_function
+
+function Text_FormattedLine.i global integer liLine returns string
+  function_return (string_value(oText_Formatter(self),liLine))
+end_function
+
+function Text_FormattedText global returns string
+  integer liItem liMax liObj
+  string lsRval
+  move "" to lsRval
+  move (oText_Formatter(self)) to liObj
+  get item_count of liObj to liMax
+  get Text_Format_LineCount to liMax
+  decrement liMax
+  for liItem from 0 to liMax
+    move (lsRval+value(liObj,liItem)) to lsRval
+    if liItem ne liMax move (lsRval+character(10)) to lsRval
+  loop
+  function_return lsRval
+end_function
+
+string gs$CollateString 255 // Here's the string
+
+object oCollateStringBuilder is an Array
+  procedure MakeCollateString
+    integer liCharacter liMax liItem
+    string lsRval
+    for liCharacter from 32 to 255
+      set value item (liCharacter-32) to (character(liCharacter))
+    loop
+    send sort_items DESCENDING // We need them backwards
+    get item_count to liMax
+    decrement liMax
+    move "" to lsRval
+    for liItem from 0 to liMax
+      move (lsRval+value(self,liItem)) to lsRval
+    loop
+    move (repeat(" ",31)+lsRval) to gs$CollateString
+    send delete_data
+  end_procedure
+  send MakeCollateString
+end_object
+
+function String_NegateSortOrder global string lsValue returns string
+  integer liPos liLen
+  string lsRval lsChar
+  move (length(lsValue)) to liLen
+  move "" to lsRval
+  for liPos from 1 to liLen
+    move (mid(lsValue,1,liPos)) to lsChar
+    move (lsRval+mid(gs$CollateString,1,ascii(lsChar))) to lsRval
+  loop
+  function_return lsRval
+end_function
+
+// The same function (StringEncrypt) is used to encrypt and decrypt a string:
+//
+//   ÚÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+//   ³                                                        ³
+//   ³       StringEncrypt(string,code)                       ³
+//   ³               ³  stringEncrypt(encrypted_string,code)  ³
+//   ³               ³                      ³                 ³
+//   ³                                                      ³
+//   ³     <string> -- <encrypted_string> -- <string>       ³
+//   ³                                                        ³
+//   ÀÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÙ
+//
+// The code used to encrypt a string may be any integer value and must
+// be the same when decrypting
+//
+
+         function iEncryptXor.iii global integer liX integer liY integer liBitCount returns integer
+           integer liRval liBit liXbit liYbit liBitExp
+           move 0 to liRval
+           for liBit from 0 to (liBitCount-1)
+             move (2^liBit) to liBitExp
+             move ((liX/liBitExp)-(((liX/liBitExp)/2)*2)) to liXbit
+             move ((liY/liBitExp)-(((liY/liBitExp)/2)*2)) to liYbit
+             if liXbit ne liYbit move (liRval+liBitExp) to liRval
+           loop
+           function_return liRval
+         end_function
+
+function StringEncrypt global string lsInput integer liCode integer liLen returns string
+  integer liPos
+  string lsRval
+  move "" to lsRval
+  for liPos from 1 to liLen
+    move (lsRval+character(iEncryptXor.iii(ascii(mid(pad(lsInput,liLen),1,liPos)),((liCode+(liPos*7)) iand 31),8))) to lsRval
+  loop
+  function_return lsRval
+end_function
+
+// The function returns the number of items that the value was split into. Negative if parsing error
+//
+// lsValue is the string to split
+// lsSeparatorChar is the separating character
+// lbDiscardDblSeps determines whether succeeding separating characters are to be considered as one
+// lbProtectQuotes determines if items in quotes should be
+function StringSplitToArrayObj global string lsValue string lsSeparatorChar integer lbDiscardDblSeps integer lbProtectQuotes integer lhTargetArray returns integer
+  integer liLen      // Length of the string we are parsing
+  integer liItem     // Pointer to the next available index in the target array (lhTargetArray)
+  integer liStartItem // Number of items originally in the target array
+  integer liPos      // The current position in the string (lsValue) we are parsing
+
+  string  lsChar      // The character currently being examined by the loop
+  string  lsItem      // The value of the next item as it is being built
+  string  lsQuoteChar // If " or ', we are currently in a quoted section of the string
+  string  lsQuotes    // Quotation characters: "'
+
+  move "" to lsQuoteChar
+  get item_count of lhTargetArray to liStartItem // If the array is not empty, we just add to its current content.
+  move liStartItem to liItem
+  move (length(lsValue)) to liLen
+  move "" to lsItem
+  move ("'"+'"') to lsQuotes
+
+  move 1 to liPos
+  while (liPos<=liLen)
+    move (mid(lsValue,1,liPos)) to lsChar
+    increment liPos
+
+    if (lsQuoteChar<>"") begin
+      if (lsChar=lsQuoteChar) begin
+        move "" to lsQuoteChar
+        if (liPos<=liLen) begin // Next item MUST be a separating character or end of string
+          move (mid(lsValue,1,liPos)) to lsChar
+          if (lsChar<>lsSeparatorChar) function_return (0-liPos) // Error: Illegal character after quoted string
+        end
+     // else it's the end of the string and we're therefore OK
+      end
+      else begin
+        move (lsItem+lsChar) to lsItem
+      end
+    end
+    else begin // We're not in a quote
+      if (lsChar=lsSeparatorChar) begin
+        set value of lhTargetArray item liItem to lsItem
+        increment liItem
+        move "" to lsItem
+
+        if lbDiscardDblSeps begin // succeeding separating characters are to be considered as one, we advance the position accordingly
+          while (liPos<liLen and mid(lsValue,1,liPos)=lsSeparatorChar)
+            increment liPos
+          end
+        end
+      end
+      else if (lbProtectQuotes<>0 and lsQuotes contains lsChar) begin
+        if (lsItem="") begin
+          move lsChar to lsQuoteChar
+        end
+        else function_return (0-liPos+1)  // Error: Illegal position of quotation character
+      end
+      else move (lsItem+lsChar) to lsItem
+    end
+  end
+
+  if (lsItem<>"") begin
+    set value of lhTargetArray item liItem to lsItem
+    increment liItem
+  end
+
+  if (lsQuoteChar<>"") function_return (0-liPos) // Error: Quoted string not terminated
+  function_return (liItem-liStartItem) // Return number of items added to the target array
+end_function // StringSplitToArrayObj
+
+

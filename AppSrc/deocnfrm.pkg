@@ -1,0 +1,63 @@
+// Use DeoCnfrm.pkg // DEO confirm save/delete functions
+
+use DFConfrm.Pkg // DAW package
+Use Nomencla.nui // Define nomenclature
+Use MsgBox.utl   // obs procedure
+
+function Verify_Save_AutoName for cObject returns integer
+  integer lbNoWay lhServer liFile
+  string lsRecordName lsQuestion
+  get server to lhServer
+  get main_file of lhServer to liFile
+  get record_name_singularis liFile to lsRecordName
+  if (lsRecordName="") move t.nomencla.record to lsRecordName
+  if (current_record(lhServer)) move t.nomencla.save_changes to lsQuestion
+  else move t.nomencla.create_new to lsQuestion
+  move (replace("#",lsQuestion,lsRecordName)) to lsQuestion
+  get confirm lsQuestion to lbNoWay
+  function_return lbNoWay
+end_function
+
+function Verify_Delete_AutoName for cObject returns integer
+  integer lbNoWay lhServer liFile
+  string lsRecordName lsQuestion
+  get server to lhServer
+  get main_file of lhServer to liFile
+  get record_name_singularis liFile to lsRecordName
+  if (lsRecordName="") move t.nomencla.record to lsRecordName
+  if (current_record(lhServer)) begin
+    move t.nomencla.delete_this to lsQuestion
+    move (replace("#",lsQuestion,lsRecordName)) to lsQuestion
+    get confirm lsQuestion to lbNoWay
+  end
+  else begin
+    move t.nomencla.no_active_delete to lsQuestion
+    move (replace("#",lsQuestion,lsRecordName)) to lsQuestion
+    send obs lsQuestion
+    move DFTRUE to lbNoWay
+  end
+  function_return lbNoWay
+end_function
+
+procedure request_save_no_confirm global integer lhDeo
+  integer lhVerify_save_msg
+  get verify_save_msg of lhDeo to lhVerify_save_msg
+  set verify_save_msg of lhDeo to get_No_Confirmation
+  send request_save to lhDeo
+  set verify_save_msg of lhDeo to lhVerify_save_msg
+end_procedure
+procedure request_delete_no_confirm global integer lhDeo
+  integer lhVerify_delete_msg
+  get verify_delete_msg of lhDeo to lhVerify_delete_msg
+  set verify_delete_msg of lhDeo to get_No_Confirmation
+  send request_delete to lhDeo
+  set verify_delete_msg of lhDeo to lhVerify_delete_msg
+end_procedure
+procedure request_clear_no_confirm global integer lhDeo
+  integer lhVerify_data_loss_msg
+  get verify_data_loss_msg of lhDeo to lhVerify_data_loss_msg
+  set verify_data_loss_msg of lhDeo to get_No_Confirmation
+  send request_clear to lhDeo
+  set verify_data_loss_msg of lhDeo to lhVerify_data_loss_msg
+end_procedure
+

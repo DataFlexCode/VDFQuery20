@@ -1,0 +1,865 @@
+//**********************************************************************
+// Use FieldInf     // Global field info objects and abstract field types
+//
+// By Sture Andersen
+//
+// Create:  Wed  28-01-1997
+// Update:  Tue  11-02-1997 - Abstract field thing added
+//          Thu  20-02-1997 - Register_abstract_field_label may now be
+//                            be used with only one argument (does nothing)
+//          Thu  04-03-1997 - ascii_window and date_window are now defined
+//                            if not already (for use with CM)
+//          Tue  22-04-1997 - File_Display_Name_Array added
+//          Tue  29-04-1997 - Changed REGISTER_FIELD_LABEL command
+//          Wed  04-02-1998 - Functions gl_generic_form_margin and
+//                            gl_generic_form_datatype added
+//          Fri  29-01-1999 - DataDictionary_Class property moved to here
+//                            from dynamo.utl.
+//          Wed  17-02-1999 - Class cVirtualFields added.
+//          Mon  15-03-1999 - DataDictionary classes are now used when
+//                            determining field labels
+//          Thu  03-07-2003 - Fixed error in procedure set pCurrentRecord
+//          Tue  12-08-2003 - Added piDescriptionImage.i
+//          Wed  14-09-2005 - Virtual fields now have a "call back" function
+//                          - Function FieldInf_Field_Length added.
+//          Mon  20-03-2006 - Functions FieldInf_ValidationTableObject and
+//                            FieldInf_ValidationTableDecodeValue added.
+//
+// Purpose: To provide a global mechanism for registering field labels.
+//          If used with APS, db-controls will automatically obtain their
+//          labels from here, unless they are set manually or they are
+//          specifically told not to.
+//
+//          The package also let's you define abstract field types for
+//          use with non-db controls or for overriding the definition of
+//          DBMS fields. A classical example of the latter is that while
+//          your data field is defined to have 4 decimal points you
+//          really want the field to display with only 3.
+//
+//          You set these global informations using the four commands
+//          listed here:
+//
+//      1   REGISTER_FIELD_LABEL dffile.field <field label> ;
+//                                   [<grid label> [<status help>]]
+//
+//      2   REGISTER_ABSTRACT_FIELD_TYPE <un-typed abstract_id> ;
+//                                       <length> <data_type>
+//
+//      3   MODIFY_FIELD_TYPE dffile.field <abstract_id>
+//
+//      4   REGISTER_FILE_ALIAS <master_dffile> <shadow_dffile>
+//
+//          As you can see it is possible to register status help lines.
+//          This was implemented since it felt to natural to do so. APS
+//          will make use of such registrations only if used with the
+//          aps.DataDictionary and only if status help has not been
+//          registered the standard DD way.
+//
+//
+// Note:    This package makes permanent use of compile-time variable J$.
+//          If this is in conflict with your application source it is
+//          easily changed since it is only referenced from within this
+//          file.
+//
+//**********************************************************************
+
+Use ui
+Use seq_chnl.pkg // Defines global sequential device management operations (DAW)
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Strings.nui  // String manipulation for VDF
+#SET J$ 0
+
+class cFieldInfoStuff is a cArray
+  function array_id.i integer file# returns integer
+    integer rval#
+    get value item file# to rval#
+    ifnot rval# begin
+      object fldinf.array is an array
+        move self to rval#
+      end_object
+      set value item file# to rval#
+    end
+    function_return rval#
+  end_function
+  procedure set string_value.ii integer file# integer field# string str#
+    set value of (array_id.i(self,file#)) item field# to str#
+  end_procedure
+  function string_value.ii integer file# integer field# returns string
+    integer arr#
+    get value item file# to arr#
+    if arr# function_return (value(arr#,field#))
+    function_return ""
+  end_function
+  procedure set integer_value.ii integer file# integer field# integer int#
+    set value of (array_id.i(self,file#)) item field# to int#
+  end_procedure
+  function integer_value.ii integer file# integer field# returns integer
+    integer arr#
+    get value item file# to arr#
+    if arr# function_return (value(arr#,field#))
+    function_return 0
+  end_function
+
+  // The purpose of the make_alias procedure is to redirect references
+  // to file number <alias#> refer to file number <master#> instead.
+  procedure make_alias integer master# integer alias#
+    integer master_arr#
+    get array_id.i master# to master_arr#
+    set value item alias# to master_arr#
+  end_procedure
+
+  procedure delete_fieldinfo_data
+    integer lhObj liMax liItm
+    get item_count to liMax
+    decrement liMax
+    for liItm from 1 to liMax // Leave the abstract definitions
+      get value item liItm to lhObj
+      if lhObj begin
+        send request_destroy_object to lhObj
+        set value item liItm to 0
+      end
+    loop
+  end_procedure
+end_class
+
+integer field_labels_array#  grid_labels_array# status_help_array#
+integer form_datatype_array# form_margin_array# abstract_array#
+
+object field_labels_array is a cFieldInfoStuff
+  move self to field_labels_array#
+end_object
+object grid_labels_array is a cFieldInfoStuff
+  move self to grid_labels_array#
+end_object
+object status_help_array is a cFieldInfoStuff
+  move self to status_help_array#
+end_object
+object form_datatype_array is a cFieldInfoStuff
+  move self to form_datatype_array#
+end_object
+object form_margin_array is a cFieldInfoStuff
+  move self to form_margin_array#
+end_object
+object abtract_array is a cFieldInfoStuff
+  // If a DBMS field (file,field) has an entry in this array it means
+  // that its corresponding form_datatype and form_margin should be
+  // looked up in the other arrays rather than using its original values.
+  move self to abstract_array#
+end_object
+object capslocked_array is a cFieldInfoStuff
+//  move self to abstract_array#
+end_object
+
+// Prefix "gl_" means "global"
+function gl_field_label for desktop integer file# integer field# returns string
+  string rval#
+  move (string_value.ii(field_labels_array#,file#,field#)) to rval#
+  if rval# eq "" begin
+    get_attribute df_field_name of file# field# to rval#
+    move (replaces("_",rval#," ")) to rval#
+    move (lowercase(rval#)) to rval#
+    move (overstrike(uppercase(left(rval#,1)),rval#,1)) to rval#
+    set string_value.ii of field_labels_array# file# field# to rval#
+  end
+  function_return rval#
+end_function
+function gl_grid_label for desktop integer file# integer field# returns string
+  string rval#
+  move (string_value.ii(grid_labels_array#,file#,field#)) to rval#
+  if rval# eq "" begin
+    get_attribute df_field_name of file# field# to rval#
+    move (replaces("_",rval#," ")) to rval#
+    move (lowercase(rval#)) to rval#
+    move (overstrike(uppercase(left(rval#,1)),rval#,1)) to rval#
+    set string_value.ii of grid_labels_array# file# field# to rval#
+  end
+  function_return rval#
+end_function
+function gl_status_help for desktop integer file# integer field# returns string
+  function_return (string_value.ii(status_help_array#,file#,field#))
+end_function
+function gl_datatype for desktop integer file# integer field# returns integer
+  function_return (integer_value.ii(form_datatype_array#,file#,field#))
+end_function
+function gl_margin for desktop integer file# integer field# returns integer
+  function_return (integer_value.ii(form_margin_array#,file#,field#))
+end_function
+function gl_abstract for desktop integer file# integer field# returns integer
+  function_return (integer_value.ii(abstract_array#,file#,field#))
+end_function
+
+
+// REGISTER_FIELD_LABEL dffile.field <field label> ;
+//                              [<grid label> [<status help>]]
+
+#COMMAND REGISTER_FIELD_LABEL R
+ #IF !0>1 // If any string arguments at all
+  #IF !0<3
+   REGISTER_FIELD_LABEL !1 !2 !2 ""
+  #ELSE
+   #IF !0<4
+    REGISTER_FIELD_LABEL !1 !2 !3 ""
+   #ELSE
+    #IFSAME !3 COPY
+     REGISTER_FIELD_LABEL !1 !2 !2 !4
+    #ELSE
+     #PUSH !e
+     #PUSH !f
+     #SET E$ !1
+     #SET F$ %!1
+     set string_value.ii of field_labels_array# !e !f to !2
+     set string_value.ii of grid_labels_array# !e !f to !3
+     set string_value.ii of status_help_array# !e !f to !4
+     #POP F$
+     #POP E$
+    #ENDIF
+   #ENDIF
+  #ENDIF
+ #ENDIF
+#ENDCOMMAND
+
+
+//  REGISTER_ABSTRACT_FIELD_TYPE <un-typed name> ;
+//                                            <margin> <data_type>
+
+#COMMAND REGISTER_ABSTRACT_FIELD_TYPE TR R R .
+ #REPLACE !1 !J
+ set integer_value.ii of form_margin_array#   0 !j to !2
+ set integer_value.ii of form_datatype_array# 0 !j to !3
+#ENDCOMMAND
+
+
+//  REGISTER_ABSTRACT_FIELD_LABEL <previously un-typed name> ;
+//                             <field label> [<grid label> [<status help>]]
+//
+//  Registrations done with the REGISTER_ABSTRACT_FIELD_LABEL are not
+//  currently used by APS
+
+#COMMAND REGISTER_ABSTRACT_FIELD_LABEL R R
+ #IF !0<3
+  REGISTER_ABSTRACT_FIELD_LABEL !1 !2 !2 !2
+ #ELSE
+  #IF !0<4
+   REGISTER_ABSTRACT_FIELD_LABEL !1 !2 !3 !2
+  #ELSE
+   set string_value.ii of field_labels_array# 0 !1 to !2
+   set string_value.ii of grid_labels_array# 0 !1 to !3
+   set string_value.ii of status_help_array# 0 !1 to !4
+  #ENDIF
+ #ENDIF
+#ENDCOMMAND
+
+
+//  MODIFY_FIELD_TYPE dffile.field <abstract_id>
+
+#COMMAND REGISTER_FIELDDEF_MODIFICATION R R .
+ #PUSH !e
+ #PUSH !f
+ #SET E$ !1
+ #SET F$ %!1
+ set integer_value.ii of abstract_array# !e !f to !2
+ #POP F$
+ #POP E$
+#ENDCOMMAND
+#COMMAND MODIFY_FIELD_TYPE
+ REGISTER_FIELDDEF_MODIFICATION !1 !2 !3 !4 !5 !6 !7 !8 !9
+#ENDCOMMAND
+
+//  REGISTER_FILE_ALIAS <master_dffile> <shadow_dffile>
+
+#COMMAND REGISTER_FILE_ALIAS R R .
+ #IFDEF !1.RECNUM
+  #IFDEF !2.RECNUM
+   #PUSH !e
+   #PUSH !f
+   #SET E$ !1.RECNUM
+   #SET F$ !2.RECNUM
+   send make_alias to field_labels_array#  !e !f
+   send make_alias to grid_labels_array#   !e !f
+   send make_alias to status_help_array#   !e !f
+   send make_alias to form_datatype_array# !e !f
+   send make_alias to form_margin_array#   !e !f
+   send make_alias to abstract_array#      !e !f
+   #POP F$
+   #POP E$
+  #ELSE
+   #ERROR 999 ILLEGAL ARGUMENT IN REGISTER_FILE_ALIAS COMMAND
+  #ENDIF
+ #ELSE
+  #ERROR 999 ILLEGAL ARGUMENT IN REGISTER_FILE_ALIAS COMMAND
+ #ENDIF
+#ENDCOMMAND
+
+#IFDEF ascii_window
+#ELSE
+ #REPLACE ascii_window 255
+#ENDIF
+#IFDEF date_window
+#ELSE
+ #REPLACE date_window 128
+#ENDIF
+
+#IFDEF DF_DS_SUBSYSTEM_REV // 3.2
+  function gl_generic_form_datatype global integer file# integer field# returns integer
+    integer type# rval#
+    get_attribute DF_FIELD_TYPE of file# field# to type#
+    if type# eq DF_ASCII function_return ascii_window
+    if type# eq DF_DATE  function_return date_window
+    if type# eq DF_BCD begin
+      get_attribute DF_FIELD_PRECISION of file# field# to rval#
+      function_return rval#
+    end
+    function_return ascii_window // DF_OVERLAP DF_TEXT DF_BINARY
+  end_function
+
+  function gl_generic_form_margin global integer file# integer field# returns integer
+    integer datatype# len#
+    move (gl_generic_form_datatype(file#,field#)) to datatype#
+    if datatype# eq date_window function_return 10
+    get_attribute DF_FIELD_LENGTH of file# field# to len#
+    if datatype# eq ascii_window function_return len#
+    function_return (len#+1) // Room for comma
+  end_function
+
+  function gl_effective_form_datatype global integer file# integer field# returns integer
+    integer abstract#
+    get gl_abstract file# field# to abstract#
+    if abstract# function_return (gl_datatype(self,0,abstract#))
+    function_return (gl_generic_form_datatype(file#,field#))
+  end_function
+  function gl_effective_form_margin global integer file# integer field# returns integer
+    integer rval#
+    get gl_margin file# field# to rval#
+    if rval# function_return rval#
+    function_return (gl_generic_form_margin(file#,field#))
+  end_function
+#ENDIF
+
+register_abstract_field_type AFT_ASCII1       1 ascii_window
+register_abstract_field_type AFT_ASCII2       2 ascii_window
+register_abstract_field_type AFT_ASCII3       3 ascii_window
+register_abstract_field_type AFT_ASCII4       4 ascii_window
+register_abstract_field_type AFT_ASCII5       5 ascii_window
+register_abstract_field_type AFT_ASCII6       6 ascii_window
+register_abstract_field_type AFT_ASCII7       7 ascii_window
+register_abstract_field_type AFT_ASCII8       8 ascii_window
+register_abstract_field_type AFT_ASCII10     10 ascii_window
+register_abstract_field_type AFT_ASCII12     12 ascii_window
+register_abstract_field_type AFT_ASCII14     14 ascii_window
+register_abstract_field_type AFT_ASCII15     15 ascii_window
+register_abstract_field_type AFT_ASCII20     20 ascii_window
+register_abstract_field_type AFT_ASCII25     25 ascii_window
+register_abstract_field_type AFT_ASCII30     30 ascii_window
+register_abstract_field_type AFT_ASCII32     32 ascii_window
+register_abstract_field_type AFT_ASCII35     35 ascii_window
+register_abstract_field_type AFT_ASCII40     40 ascii_window
+register_abstract_field_type AFT_ASCII45     45 ascii_window
+register_abstract_field_type AFT_ASCII50     50 ascii_window
+register_abstract_field_type AFT_ASCII60     60 ascii_window
+register_abstract_field_type AFT_ASCII70     70 ascii_window
+register_abstract_field_type AFT_ASCII80     80 ascii_window
+register_abstract_field_type AFT_ASCII100   100 ascii_window
+register_abstract_field_type AFT_ASCII255   255 ascii_window
+register_abstract_field_type AFT_NUMERIC1.0   1 0 // Length 4, 2 decimal points
+register_abstract_field_type AFT_NUMERIC1.2   4 2 // Length 4, 2 decimal points
+register_abstract_field_type AFT_NUMERIC2.0   2 0 // Length 2, 0 decimal points
+register_abstract_field_type AFT_NUMERIC2.1   4 1 // Length 4, 1 decimal points
+register_abstract_field_type AFT_NUMERIC2.2   5 2 // Length 5, 2 decimal points
+register_abstract_field_type AFT_NUMERIC3.0   3 0 // Length 3, 0 decimal points
+register_abstract_field_type AFT_NUMERIC3.3   7 3 // Length 7, 3 decimal points
+register_abstract_field_type AFT_NUMERIC4.0   4 0 // Length 4, 0 decimal points
+register_abstract_field_type AFT_NUMERIC4.2   7 2 // Length 7, 2 decimal points
+register_abstract_field_type AFT_NUMERIC5.1   8 1 // Length 7, 2 decimal points
+register_abstract_field_type AFT_NUMERIC6.0   6 0 // Length 6, 0 decimal points
+register_abstract_field_type AFT_NUMERIC8.0   8 0 // Length 8, 0 decimal points
+register_abstract_field_type AFT_NUMERIC10.0 10 0 // Length 10, 0 decimal points
+register_abstract_field_type AFT_NUMERIC14.0 14 0 // Length 14, 0 decimal points
+register_abstract_field_type AFT_DATE        10 date_window
+register_abstract_field_type AFT_BOOLEAN      1 0
+
+
+// An extra feature allows specifying a replacement to the user display name
+// of files (df_File_Display_Name). APS makes no use of such registrations.
+//
+//   REGISTER_FILE_DISPLAY_NAME dffile <string>
+
+desktop_section
+ object File_Display_Name_Array is a cArray
+ end_object
+end_desktop_section
+procedure set File_Display_Name global integer file# string name#
+  set value of (File_Display_Name_Array(self)) item file# to name#
+end_procedure
+function File_Display_Name global integer file# returns string
+  string rval#
+  move (value(File_Display_Name_Array(self),file#)) to rval#
+  if rval# eq "" begin
+    get_attribute DF_FILE_DISPLAY_NAME of file# to rval#
+    move (rtrim(rval#)) to rval#
+    set File_Display_Name file# to rval#
+  end
+  function_return rval#
+end_function
+
+#COMMAND REGISTER_FILE_DISPLAY_NAME
+ #PUSH !e
+ #SET E$ !1.recnum
+ set File_Display_Name !e to !2
+ #POP E$
+#ENDCOMMAND
+
+// In order for the aps_ObjectDynamo class to be able to use the
+// generic DD-classes a few lines is needed that will allow us to
+// register which classes to use when creating DDO's for the various
+// data files.
+//
+// Use like this:
+//
+//   set DataDictionary_Class OrderHdr.file_number to U_OrderHdr_DD
+//
+
+desktop_section
+ object oDataDictionary_Class_Array is a cArray
+ end_object
+end_desktop_section
+function DataDictionary_Class global integer file# returns integer
+  function_return (value(oDataDictionary_Class_Array(self),file#))
+end_function
+procedure set DataDictionary_Class global integer file# integer class#
+  set value of (oDataDictionary_Class_Array(self)) item file# to class#
+end_procedure
+
+desktop_section
+ object oDataDictionary_Object_Array is a cArray
+ end_object
+end_desktop_section
+function DataDictionary_Object global integer file# returns integer
+  function_return (value(oDataDictionary_Object_Array(self),file#))
+end_function
+procedure set DataDictionary_Object global integer file# integer obj#
+  set value of (oDataDictionary_Object_Array(self)) item file# to obj#
+end_procedure
+procedure DataDictionary_Objects_Destroy global
+  integer lhObj liItm liMax lhDD
+  move (oDataDictionary_Object_Array(self)) to lhObj
+  get item_count of lhObj to liMax
+  for liItm from 0 to liMax
+    get value of lhObj item liItm to lhDD
+    if lhDD send request_destroy_object to lhDD
+  loop
+  send delete_data to lhObj
+end_procedure
+
+function iDD_Object global integer file# returns integer
+  integer rval# class# self#
+  get DataDictionary_Object file# to rval#
+  ifnot rval# begin
+    get DataDictionary_Class file# to class#
+    if class# begin
+      name class# U_fieldinf_class             // ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
+      move self to self#                       // Push self                 ³
+      move desktop to self                     // Create at desktop         ³
+      object dynamo_object is a fieldinf_class // Create an object of classÄÙ
+        move self to rval#                     // Get the object ID to rval#
+      end_object                               //
+      move self# to self   // Pop self
+      set DataDictionary_Object file# to rval# // Register the new object
+    end
+  end
+  function_return rval#
+end_function
+
+class cVirtualFields is a cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer pMainFile              0
+    property integer private.pCurrentRecord -1
+    property string  pUserName              "Un-named"
+  end_procedure
+  item_property_list
+    // VDFQuery only considers active fields
+    item_property integer piFieldActive.i
+    item_property string  psFieldLabel.i
+    item_property string  psFieldLabel_Short.i
+    item_property integer piFieldType.i
+    item_property integer piFieldLength.i
+    item_property integer piFieldDecPoint.i
+    item_property integer piFieldCapslock.i
+    item_property integer piFieldLoadMessage.i        // Function to call in order to get the function value
+    item_property integer piFieldLoadObject.i         // Optional object in which to call the load-message
+    item_property integer pbFieldLoadParamSpecified.i // Indicates whether piFieldLoadParam.i has been specified
+    item_property integer piFieldLoadParam.i          // If specified, is sent to the function
+    item_property string  psFieldValue.i
+    item_property integer piFieldDirty.i
+    item_property integer piDescriptionImage.i
+  end_item_property_list cVirtualFields // When in class, class neame must be repeated here
+  procedure FieldsCallBack integer lhMsg integer lhObj
+    integer liRow liMax liFile
+    get pMainFile to liFile
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      if (piFieldActive.i(self,liRow)) begin
+        // procedure HandleField integer liFile integer liField string lsLabel integer liType integer liLenth integer liPrecision integer lhVF
+        send lhMsg to lhObj liFile liRow (psFieldLabel.i(self,liRow)) (piFieldType.i(self,liRow)) (piFieldLength.i(self,liRow)) (piFieldDecPoint.i(self,liRow)) self
+      end
+    loop
+  end_procedure
+  procedure SetAllFieldsDirty integer lbState
+    integer liMax liField
+    get row_count to liMax
+    for liField from 0 to (liMax-1)
+      set piFieldDirty.i liField to lbState
+    loop
+  end_procedure
+  procedure OnNewRecord
+  end_procedure
+  procedure set pCurrentRecord integer liRecnum
+    integer liField liPreviousRecnum
+    get private.pCurrentRecord to liPreviousRecnum
+    if liRecnum ne liPreviousRecnum begin
+      send SetAllFieldsDirty DFTRUE
+      send OnNewRecord
+    end
+    set private.pCurrentRecord to liRecnum
+  end_procedure
+  function pCurrentRecord returns integer
+    function_return (private.pCurrentRecord(self))
+  end_function
+  procedure LoadFieldValue integer liField
+    integer lhGet lhObj
+    string lsValue
+    get piFieldLoadMessage.i liField to lhGet
+    get piFieldLoadObject.i  liField to lhObj
+
+    if (pbFieldLoadParamSpecified.i(self,liField)) begin
+      if lhObj get lhGet of lhObj (piFieldLoadParam.i(self,liField)) to lsValue
+      else get lhGet (piFieldLoadParam.i(self,liField)) to lsValue
+    end
+    else begin
+      if lhObj get lhGet of lhObj to lsValue
+      else get lhGet to lsValue
+    end
+
+    set psFieldValue.i liField to lsValue
+    set piFieldDirty.i liField to DFFALSE
+  end_procedure
+  procedure CheckCurrentRecord
+    integer liFile liRecnum
+    get pMainFile to liFile
+    if liFile begin
+      get_field_value liFile 0 to liRecnum
+      if liRecnum ne (private.pCurrentRecord(self)) set pCurrentRecord to liRecnum
+    end
+  end_procedure
+  function sFieldValue.i integer liField returns string
+    send CheckCurrentRecord
+    if (piFieldDirty.i(self,liField)) send LoadFieldValue liField
+    function_return (psFieldValue.i(self,liField))
+  end_function
+  procedure define_field integer field# string Label# string Label_Short# integer Type# integer Length# integer DecPoint# integer LoadMessage# integer LoadObjectTmp#
+    integer LoadObject#
+    if num_arguments gt 7 move LoadObjectTmp# to LoadObject#
+    else move 0 to LoadObject#
+    set psFieldLabel.i field# to Label#
+
+    if Label_Short# ne "" ;
+         set psFieldLabel_Short.i field# to Label_Short#
+    else set psFieldLabel_Short.i field# to Label#
+
+    set piFieldType.i        field# to Type#
+    set piFieldLength.i      field# to Length#
+    set piFieldDecPoint.i    field# to DecPoint#
+    set piFieldLoadMessage.i field# to LoadMessage#
+    set piFieldLoadObject.i  field# to LoadObject#
+    set piFieldDirty.i       field# to DFTRUE
+    set piFieldActive.i      field# to DFTRUE
+    set piFieldCapslock.i    field# to DFFALSE
+  end_procedure
+  procedure set LoadParameter integer liField integer liAuxValue
+    set pbFieldLoadParamSpecified.i liField to 1
+    set piFieldLoadParam.i          liField to liAuxValue
+  end_procedure
+end_class // cVirtualFields
+
+integer oFieldInf_VitualFields#
+object oFieldInf_VitualFields is a cArray
+  move self to oFieldInf_VitualFields#
+end_object
+
+function FieldInf_VirtualFields_Object global integer file# returns integer
+  function_return (value(oFieldInf_VitualFields#,file#))
+end_function
+procedure set FieldInf_VirtualFields_Object global integer file# integer value#
+  set value of (oFieldInf_VitualFields#) item file# to value#
+end_procedure
+procedure FieldInf_VirtualFieldsCallBack global integer liFile integer lhMsg integer lhObj
+  integer lhVF
+  get FieldInf_VirtualFields_Object liFile to lhVF
+  if lhVF send FieldsCallBack to lhVF lhMsg lhObj
+End_Procedure
+Procedure FieldInf_FlushVirtualBuffer Global Integer iFile
+    Integer hObj
+    Get FieldInf_VirtualFields_Object iFile to hObj
+    If (hObj=>0) Begin
+        Set private.pCurrentRecord of hObj to -1
+    End
+End_Procedure
+
+function FieldInf_FieldType global integer liFile integer liField returns integer
+  integer liFieldType
+  if liField lt 256 get_attribute DF_FIELD_TYPE of liFile liField to liFieldType
+  else move (piFieldType.i(FieldInf_VirtualFields_Object(liFile),liField-256)) to liFieldType
+  function_return liFieldType
+end_function
+function FieldInf_FieldValue global integer liFile integer liField returns string
+  integer liPushFieldindex liPushFieldnumber
+  string lsValue
+  move fieldindex to liPushFieldindex
+  move fieldnumber to liPushFieldnumber
+  if liField lt 256 get_field_value liFile liField to lsValue
+  else move (sFieldValue.i(FieldInf_VirtualFields_Object(liFile),liField-256)) to lsValue
+  move liPushFieldindex  to fieldindex
+  move liPushFieldnumber to fieldnumber
+  function_return lsValue
+end_function
+function FieldInf_DecPoints global integer file# integer field# returns integer
+  integer rval#
+//  if field# lt 256 get_attribute DF_FIELD_PRECISION of file# field# to rval#
+  if field# lt 256 get gl_effective_form_datatype file# field# to rval#
+  else move (piFieldDecPoint.i(FieldInf_VirtualFields_Object(file#),field#-256)) to rval#
+  function_return rval#
+end_function
+function FieldInf_FieldLabel_Long global integer file# integer field# returns string
+  integer dd#
+  string rval#
+  move (string_value.ii(field_labels_array#,file#,field#)) to rval#
+  if field# lt 256 begin
+    if rval# eq "" begin // No global label was assigned
+      get iDD_Object file# to dd#
+      if dd# get Field_Label_Long of dd# field# to rval#
+      if rval# eq "" get gl_field_label file# field# to rval#
+    end
+  end
+  else move (psFieldLabel.i(FieldInf_VirtualFields_Object(file#),field#-256)) to rval#
+  function_return rval#
+end_function
+function FieldInf_FieldLabel_Short global integer file# integer field# returns string
+  integer dd#
+  string rval#
+  if field# lt 256 begin
+    move (string_value.ii(grid_labels_array#,file#,field#)) to rval#
+    if rval# eq "" begin // No global label was assigned
+      get iDD_Object file# to dd#
+      if dd# get Field_Label_Short of dd# field# to rval#
+      if rval# eq "" get gl_grid_label file# field# to rval#
+    end
+  end
+  else move (psFieldLabel_Short.i(FieldInf_VirtualFields_Object(file#),field#-256)) to rval#
+  function_return rval#
+end_function
+
+function FieldInf_Field_Length global integer liFile integer liField returns integer
+  integer liLen lhVF
+  move -1 to liLen
+  if (liField<256) get_attribute DF_FIELD_LENGTH of liFile liField to liLen
+  else begin
+    move (liField-256) to liField
+    get FieldInf_VirtualFields_Object liFile to lhVF
+    if lhVF get piFieldLength.i of lhVF liField to liLen
+  end
+  function_return liLen
+end_function
+
+function FieldInf_Field_Length_String global integer file# integer field# returns string
+  integer fieldtype# len# dec# obj#
+  string rval#
+  if field# lt 256 begin
+    get_attribute DF_FIELD_TYPE of file# field# to fieldtype#
+    get_attribute DF_FIELD_LENGTH of file# field# to len#
+    if fieldtype# eq DF_DATE move 10 to len#
+    move len# to rval#
+    if fieldtype# eq DF_BCD begin
+      get gl_effective_form_datatype file# field# to dec#
+      move "#.#" to rval#
+      //if dec# decrement len#
+      replace "#" in rval# with (string(len#-dec#))
+      replace "#" in rval# with (string(dec#))
+    end
+  end
+  else begin
+    get FieldInf_VirtualFields_Object file# to obj#
+    move (field#-256) to field#
+    get piFieldType.i of obj# field# to fieldtype#
+    get piFieldLength.i of obj# field# to len#
+    if fieldtype# eq DF_DATE move 10 to len#
+    move len# to rval#
+    if fieldtype# eq DF_BCD begin
+      get piFieldDecPoint.i of obj# field# to dec#
+      move "#.#" to rval#
+      replace "#" in rval# with (string(len#-dec#))
+      replace "#" in rval# with (string(dec#))
+    end
+  end
+  function_return rval#
+end_function
+
+function FieldInf_Field_Width global integer file# integer field# returns integer
+  integer liDecs lbComma
+  string lsLength
+  get FieldInf_Field_Length_String file# field# to lsLength
+  move (ExtractInteger(lsLength,2)) to liDecs
+  move (liDecs<>0) to lbComma
+  function_return (ExtractInteger(lsLength,1)+ExtractInteger(lsLength,2)+lbComma)
+end_function
+
+class cVirtualIndex is a cArray
+  item_property_list
+    item_property integer piFile.i
+    item_property integer piField.i
+    item_property string  psValue.i
+  end_item_property_list cVirtualIndex
+  procedure ReadValues
+    integer row# max# file# field# type# dec#
+    string rval# value#
+    move "" to rval#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      get piFile.i  row# to file#
+      get piField.i row# to field#
+      get FieldInf_FieldValue file# field# to value#
+      get FieldInf_FieldType file# field# to type#
+      if type# eq DF_DATE begin
+        move (integer(date(value#))) to value#
+        move (NumToStrR(value#,0,6)) to value#
+      end
+      if type# eq DF_BCD begin
+        get FieldInf_DecPoints file# field# to dec#
+        move (NumToStrR(value#,dec#,14)) to value#
+      end
+      set psValue.i row# to value#
+    loop
+  end_procedure
+  function sIndexValue returns string
+    integer row# max#
+    string rval#
+    move "" to rval#
+    get row_count to max#
+    decrement max#
+    for row# from 0 to max#
+      move (rval#+psValue.i(self,row#)) to rval#
+      if row# ne max# move (rval#+" ") to rval#
+    loop
+    function_return rval#
+  end_function
+  function sSegmentName integer seg# returns string
+    function_return (FieldInf_FieldLabel_Long(piFile.i(self,seg#),piField.i(self,seg#)))
+  end_function
+  function sIndexNames returns string // FieldInf_FieldLabel_Long
+    integer row# max#
+    string rval#
+    move "" to rval#
+    get row_count to max#
+    decrement max#
+    for row# from 0 to max#
+      move (rval#*FieldInf_FieldLabel_Long(piFile.i(self,row#),piField.i(self,row#))) to rval#
+      if row# ne max# move (rval#+",") to rval#
+    loop
+    function_return rval#
+  end_function
+  procedure reset
+    send delete_data
+  end_procedure
+  procedure add_segment integer file# integer field#
+    integer row#
+    get row_count to row#
+    set piFile.i row# to file#
+    set piField.i row# to field#
+  end_procedure
+end_class // cVirtualIndex
+
+class cVirtualIndices is a cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piCurrentIdx 0
+  end_procedure
+  item_property_list
+    item_property string  psIndexName.i
+    item_property integer piObj.i
+  end_item_property_list cVirtualIndices
+  function iObject.i integer index# returns integer
+    integer rval#
+    get piObj.i index# to rval#
+    ifnot rval# begin
+      object oVirtualIndex is a cVirtualIndex
+        move self to rval#
+      end_object
+      set piObj.i index# to rval#
+    end
+    function_return rval#
+  end_function
+  procedure define_index integer index# string name#
+    set psIndexName.i index# to name#
+    set piObj.i       index# to (iObject.i(self,index#))
+    set piCurrentIdx to index#
+  end_procedure
+  procedure add_segment integer file# integer field#
+    integer idx# obj#
+    get piCurrentIdx to idx#
+    get piObj.i idx# to obj#
+    send add_segment to obj# file# field#
+  end_procedure
+  procedure reset
+    integer row# max# obj#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      get piObj.i row# to obj#
+      if obj# send request_destroy_object to obj#
+    loop
+    send delete_data
+  end_procedure
+end_class // cVirtualIndices
+
+Integer oFieldInf_VitualIndices#
+object oFieldInf_VitualIndices is a cArray
+  move self to oFieldInf_VitualIndices#
+end_object
+
+function FieldInf_VirtualIndices_Object global integer file# returns integer
+  function_return (value(oFieldInf_VitualIndices#,file#))
+end_function
+procedure set FieldInf_VirtualIndices_Object global integer file# integer value#
+  set value of oFieldInf_VitualIndices# item file# to value#
+end_procedure
+function FieldInf_VirtualIndex_Object global integer file# integer idx# returns integer
+  integer obj#
+  get FieldInf_VirtualIndices_Object file# to obj#
+  if obj# get piObj.i of obj# idx# to obj#
+  function_return obj#
+end_function
+
+function FieldInf_ValidationTableObject global integer liFile integer liField returns integer
+  integer lhDD lhValTbl
+  get iDD_Object liFile to lhDD
+  if lhDD get Field_Table_Object of lhDD liField to lhValTbl
+  else move 0 to lhValTbl
+  function_return lhValTbl
+end_function
+function FieldInf_ValidationTableDecodeValue global integer liFile integer liField string lsValue returns string
+  integer lhValTbl liMax liRow
+  string lsData lsDescr
+  get FieldInf_ValidationTableObject liFile liField to lhValTbl
+  if lhValTbl begin
+    send fill_list of lhValTbl
+    get Data_Item_Count of lhValTbl to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get Data_Value of lhValTbl liRow to lsData
+      get Data_Description of lhValTbl liRow to lsDescr
+      if (lsDescr="") move lsData to lsDescr
+      if (lsValue=lsData) function_return lsDescr
+    loop
+
+  end
+  function_return "N/A"
+end_function

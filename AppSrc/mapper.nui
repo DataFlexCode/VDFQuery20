@@ -1,0 +1,225 @@
+// Use Mapper.nui   // Classes for (field) mapping
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+
+class cMapObject is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property string psTitle ""
+  end_procedure
+  item_property_list
+    item_property integer piIdentifier.i
+    item_property string  psName.i
+    item_property string  psExtraInfo.i
+  end_item_property_list cMapObject
+  procedure DoAddItem integer liIdentifier string lsName string lsExtraInfo
+    integer liRow
+    get row_count to liRow
+    set piIdentifier.i liRow to liIdentifier
+    set psName.i   liRow to lsName
+    set psExtraInfo.i  liRow to lsExtraInfo
+  end_procedure
+  function iFindName.s string lsName returns integer
+    integer liMax liRow
+    get row_count to liMax
+    move (uppercase(lsName)) to lsName
+    decrement liMax
+    for liRow from 0 to liMax
+      if (uppercase(psName.i(self,liRow))=lsName) function_return liRow
+    loop
+    function_return -1
+  end_function
+  function iFindIdentifier.i integer liIdent returns integer
+    integer liMax liRow
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      if (piIdentifier.i(self,liRow)=liIdent) function_return liRow
+    loop
+    function_return -1
+  end_function
+  procedure DoReset
+    send delete_data
+  end_procedure
+end_class // cMapObject
+
+class cMapper is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer piMapMode 0 // 0=Random, 1=Sequential
+    property integer phObject1 0
+    property integer phObject2 0
+    property string  psTitle1  ""
+    property string  psTitle2  ""
+    property string  psTitle3  ""
+    object oTmpArray is a cArray
+    end_object
+    object oPushStatus is a cArray
+    end_object
+    object oFastMap is a cArray
+    end_object
+    property integer pbFastMapState DFFALSE
+  end_procedure
+  procedure DoPushStatus
+    send Clone_Array self (oPushStatus(self))
+  end_procedure
+  procedure DoPopStatus
+    send Clone_Array (oPushStatus(self)) self
+  end_procedure
+  item_property_list
+    item_property integer piItem1.i
+    item_property integer piItem2.i
+  end_item_property_list cMapper
+  function piIdent1.i integer liRow returns integer
+    function_return (piIdentifier.i(phObject1(self),piItem1.i(self,liRow)))
+  end_function
+  function piIdent2.i integer liRow returns integer
+    function_return (piIdentifier.i(phObject2(self),piItem2.i(self,liRow)))
+  end_function
+  procedure DoReset
+    send delete_data
+    set pbFastMapState to DFFALSE
+  end_procedure
+  function iFindItem2Row integer liItem2 returns integer
+    integer liMax liRow
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      if (piItem2.i(self,liRow)=liItem2) function_return liRow
+    loop
+    function_return -1
+  end_function
+  procedure DoBuildFastMap
+    integer lhFastMap liRow liMax liIdent1 liIdent2
+    move (oFastMap(self)) to lhFastMap
+    send delete_data to lhFastMap
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get piItem1.i liRow to liIdent1
+      get piItem2.i liRow to liIdent2
+      set value of lhFastMap liIdent1 to (liIdent2+1)
+    loop
+    set pbFastMapState to DFTRUE
+  end_procedure
+  function iIdent1MapsTo.i integer liIdent1 returns integer
+    function_return (integer(value(oFastMap(self),liIdent1))-1)
+  end_function
+  procedure DoAddMap integer liIdent1 integer liIdent2
+    integer liRow liRow1 liRow2
+
+    get iFindIdentifier.i of (phObject1(self)) liIdent1 to liRow1
+    get iFindIdentifier.i of (phObject2(self)) liIdent2 to liRow2
+
+    get iFindItem2Row liRow2 to liRow
+    if liRow eq -1 get row_count to liRow
+
+    set piItem1.i liRow to liRow1
+    set piItem2.i liRow to liRow2
+    set pbFastMapState to DFFALSE
+  end_procedure
+  procedure DoClearMap integer liIdent2
+    integer liRow liRow2
+    get iFindIdentifier.i of (phObject2(self)) liIdent2 to liRow2
+    get iFindItem2Row liRow2 to liRow
+    if liRow ne -1 begin
+      send delete_row liRow
+      set pbFastMapState to DFFALSE
+    end
+  end_procedure
+            // Puts a 1 in each position in oTmpArray that is mapped
+            procedure MarkMappedItems1
+              integer lhTmpArray liRow liMax
+              move (oTmpArray(self)) to lhTmpArray
+              send delete_data to lhTmpArray
+              get row_count to liMax
+              decrement liMax
+              for liRow from 0 to liMax
+                set value of lhTmpArray item (piItem1.i(self,liRow)) to (piItem2.i(self,liRow)+1)
+              loop
+            end_procedure
+            // Puts a 1 in each position in oTmpArray that is mapped
+            procedure MarkMappedItems2
+              integer lhTmpArray liRow liMax
+              move (oTmpArray(self)) to lhTmpArray
+              send delete_data to lhTmpArray
+              get row_count to liMax
+              decrement liMax
+              for liRow from 0 to liMax
+                set value of lhTmpArray item (piItem2.i(self,liRow)) to (piItem1.i(self,liRow)+1)
+              loop
+            end_procedure
+  procedure DoCallback_UnmappedItems1 integer liMsg integer lhObj
+    integer lhTmpArray liRow liMax lhObj1
+    send MarkMappedItems1
+    move (oTmpArray(self)) to lhTmpArray
+    get phObject1 to lhObj1
+    get row_count of lhObj1 to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      ifnot (integer(value(lhTmpArray,liRow))) send liMsg to lhObj (piIdentifier.i(lhObj1,liRow)) (psName.i(lhObj1,liRow)) (psExtraInfo.i(lhObj1,liRow))
+    loop
+  end_procedure
+  procedure DoCallback_UnmappedItems2 integer liMsg integer lhObj
+    integer lhTmpArray liRow liMax lhObj2
+    send MarkMappedItems2
+    move (oTmpArray(self)) to lhTmpArray
+    get phObject2 to lhObj2
+    get row_count of lhObj2 to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      ifnot (integer(value(lhTmpArray,liRow))) send liMsg to lhObj (piIdentifier.i(lhObj2,liRow)) (psName.i(lhObj2,liRow)) (psExtraInfo.i(lhObj2,liRow))
+    loop
+  end_procedure
+  procedure DoCallback_AllItems1 integer liMsg integer lhObj
+    integer lhTmpArray liRow liMax lhObj1 lhObj2 liMapRow
+    send MarkMappedItems1
+    move (oTmpArray(self)) to lhTmpArray
+    get phObject1 to lhObj1
+    get phObject2 to lhObj2
+    get row_count of lhObj1 to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get value of lhTmpArray liRow to liMapRow
+      ifnot liMapRow send liMsg to lhObj (piIdentifier.i(lhObj1,liRow)) (psName.i(lhObj1,liRow)) (psExtraInfo.i(lhObj1,liRow)) DFFALSE 0 "" ""
+      else begin
+        decrement liMapRow
+        send liMsg to lhObj (piIdentifier.i(lhObj1,liRow)) (psName.i(lhObj1,liRow)) (psExtraInfo.i(lhObj1,liRow)) DFTRUE (piIdentifier.i(lhObj2,liMapRow)) (psName.i(lhObj2,liMapRow)) (psExtraInfo.i(lhObj2,liMapRow))
+      end
+    loop
+  end_procedure
+  procedure DoCallback_AllItems2 integer liMsg integer lhObj
+    integer lhTmpArray liRow liMax lhObj1 lhObj2 liMapRow
+    send MarkMappedItems2
+    move (oTmpArray(self)) to lhTmpArray
+    get phObject1 to lhObj1
+    get phObject2 to lhObj2
+    get row_count of lhObj2 to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get value of lhTmpArray liRow to liMapRow
+      ifnot liMapRow send liMsg to lhObj (piIdentifier.i(lhObj2,liRow)) (psName.i(lhObj2,liRow)) (psExtraInfo.i(lhObj2,liRow)) DFFALSE 0 "" ""
+      else begin
+        decrement liMapRow
+        send liMsg to lhObj (piIdentifier.i(lhObj2,liRow)) (psName.i(lhObj2,liRow)) (psExtraInfo.i(lhObj2,liRow)) DFTRUE (piIdentifier.i(lhObj1,liMapRow)) (psName.i(lhObj1,liMapRow)) (psExtraInfo.i(lhObj1,liMapRow))
+      end
+    loop
+  end_procedure
+  procedure DoAutoMapName_Help integer liIdent2 string lsName string lsExtra
+    integer lhObj1 liIdent1 liRow1
+    get phObject1 to lhObj1
+    get iFindName.s of lhObj1 lsName to liRow1
+    if (liRow1=-1) begin
+      // If we didn't find a match, we try one more time by
+      // replacing _ characters for spaces:
+      move (replaces("_",lsName," ")) to lsName
+      get iFindName.s of lhObj1 lsName to liRow1
+    end
+    if (liRow1>-1) begin
+      get piIdentifier.i of lhObj1 liRow1 to liIdent1
+      send DoAddMap liIdent1 liIdent2
+    end
+  end_procedure
+  procedure DoAutoMapName
+    send DoCallback_UnmappedItems2 msg_DoAutoMapName_Help self
+  end_procedure
+end_class // cMapper

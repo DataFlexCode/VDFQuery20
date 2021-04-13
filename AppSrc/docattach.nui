@@ -1,0 +1,350 @@
+// Use DocAttach.nui // Class for putting files 'attached' to records into one directory.
+//
+// Purpose
+//
+// Let us say that you want to store a number of files (called documents for
+// the purpose of this class) for each record in a given table (from now on
+// called the document parent table). You want to save all these files in a
+// single directory (or possibly in a directory structure).
+//
+// Even if this sounds simple enough, you will probably end up trying to
+// figure out how to avoid conflicting file names and how to copy these
+// documents (files) around your disk system.
+//
+// The cDocumentAttacher class defined in this package helps you get around
+// this problem.
+//
+// First you need to create a table that relates to the 'document parent table'
+// and that will hold one record for each attached document.
+//
+//
+//
+//
+//
+Use Windows
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Files.nui    // Utilities for handling file related stuff (No User Interface)
+Use HTML.utl     // HTML functions
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+
+//
+// Implementation template:
+//
+// object oMyDocumentAttacher is a cDocumentAttacher
+//
+//   // If you do not set the psHomeDirectory property it will default
+//   // a subdirectory called "attach" found under your data directory.
+//   set psHomeDirectory to "k:\documents"
+//
+//   // This function must return the root name of a record (no path
+//   // and *WITHOUT* extension)
+//   function CurrentRecordRootName returns string //
+//     function_return (IntToStrRzf(VmAttach.Udsted_Aar,4)+"-"+IntToStrRzf(VmAttach.Loebe_Nr,4)+"-"+IntToStrRzf(VmAttach.Nr,2))
+//   end_function
+//
+//   function CurrentRecordOriginalFileName returns string
+//     function_return Trex021.original_name
+//   end_function
+//
+//   procedure set CurrentRecordOriginalFileName string lsValue
+//     move lsValue to Trex021.original_name
+//   end_procedure
+//
+// end_object
+//
+// class Trex021_DataDictionary is a DataDictionary
+//   procedure request_save_document string lsExternalFileName
+//     integer lhDoc lbCheckIn lbExists lbSuccess
+//     string lsErrorMsg
+//     move (oMyDocumentAttacher(self)) to lhDoc
+//     // Does the document exist?
+//     if (SEQ_FileExists(lsExternalFileName)=SEQIT_FILE) begin
+//       // If so, make sure we have a record:
+//       set field_changed_Value field Trex021.original_name to Trex021.original_name
+//       send request_save
+//       ifnot (should_save(self)) begin // If it saved OK
+//         get Doc_Exists of lhDoc to lbExists // Do we already have it the database?
+//         if lbExists get MB_Verify "Document already exists, overwrite?" DFTRUE to lbCheckIn
+//         else move DFTRUE to lbCheckIn
+//         if lbCheckIn begin
+//           get Doc_CheckIn of lhDoc lsExternalFileName to lbSuccess
+//           ifnot lbSuccess begin
+//             move ("Error saving document Source: "+lsExternalFileName+" Internal target: "+CurrentRecordAbsoluteFileName(lhDoc)) to lsErrorMsg
+//             send error 224 lsErrorMsg
+//           end
+//           else begin
+//             set field_changed_Value field Trex021.original_name to (SEQ_RemovePathFromFileName(lsExternalFileName))
+//             send request_save
+//           end
+//         end
+//       end
+//     end
+//     else error 221 "Document not found"
+//   end_procedure
+//   procedure delete_main_file
+//     integer lhDoc liGrb lbSuccess
+//     string lsInternalFileName
+//     if (current_record(self)) begin
+//       move (oMyDocumentAttacher(self)) to lhDoc
+//       if (Doc_Exists(lhDoc)) begin
+//         get Doc_Delete of lhDoc to lbSuccess
+//       end
+//       else move 1 to lbSuccess
+//       ifnot lbSuccess error 223 "Document could not be deleted"
+//     end
+//     forward send delete_main_file
+//   end_procedure
+//   procedure save_main_file
+//     if (Trex021.filename="") move trex021.original_name to Trex021.filename
+//     forward send save_main_file
+//   end_procedure
+// end_class
+//
+// From within a grid:
+//
+//   procedure DoAddFile
+//     string lsFileName
+//     if (should_save(self)) send obs "Changes must be saved before document can be added"
+//     else begin
+//       if (current_record(self)) send add_or_remove_row
+//       ifnot (current_record(self)) begin
+//         get SEQ_SelectFile "Select document to attach" "All files|*.*" to lsFileName
+//         if (lsFileName<>"") ;
+//           send request_save_document to (server(self)) lsFileName
+//         else send add_or_remove_row
+//       end
+//     end
+//   end_procedure
+//   procedure DoLaunchFile
+//     integer lbOK
+//     string lsFileName
+//     if (current_record(server(self))) begin
+//       get Doc_Exists of oMyDocumentAttacher to lbOK
+//       if lbOK begin
+//         send Doc_Execute of oMyDocumentAttacher
+//       end
+//       else error 222 "Document not found"
+//     end
+//   end_procedure
+//
+//
+//
+//
+
+use files.nui
+Class cDocumentAttacher_vdfq is a cArray
+  procedure construct_object
+    forward send construct_object
+    property string  psHomeDirectory ""
+    property integer priv.pbHomeDirectoryOK -1 // Not checked yet
+    property string  priv.RenFrom ""
+  end_procedure
+
+           function pbHomeDirectoryOK returns integer
+             integer lbHomeDirectory lbCreateError
+             string lsPath
+             get priv.pbHomeDirectoryOK to lbHomeDirectory
+             if (lbHomeDirectory=-1) begin // Not checked yet
+               get psHomeDirectory to lsPath
+//               send obs "pbHomeDirectoryOK" lsPath
+               if (SEQ_FileExists(lsPath)=SEQIT_NONE) begin
+//                 send obs "Does not exist"
+                 // Doesn't exist, let's create it:
+                 get wvaWin32_CreateDirectory (ToAnsi(lsPath)) to lbCreateError
+                 if lbCreateError move DFFALSE to lbHomeDirectory
+                 else move DFTRUE to lbHomeDirectory
+               end
+               else move DFTRUE to lbHomeDirectory
+               set priv.pbHomeDirectoryOK to lbHomeDirectory
+             end
+             function_return lbHomeDirectory
+           end_procedure
+
+  procedure DoSetHomeDirectoryRelative string lsDir
+    string lsFileListPath
+    if (SEQ_FileExists("filelist.cfg")=SEQIT_FILE) begin
+      get SEQ_FindFileAlongDFPath "filelist.cfg" to lsFileListPath
+      get Files_AppendPath lsFileListPath lsDir to lsFileListPath
+      set psHomeDirectory to lsFileListPath
+    end
+  end_procedure
+
+  // If there is any dynamic "addition" to the home directory for the current
+  // record function CurrentRecordSubDirectory should return the segment to
+  // be added. Standard return value for this function is "".
+  function CurrentRecordSubDirectory returns string
+    function_return ""
+  end_function
+
+  // To be filled out at the instantiation level. Should return the 'root
+  // name' of the file for the current record (without any extension).
+  function CurrentRecordRootName returns string
+  end_function
+
+  // To be filled out at the instantiation level. Should return the 'root
+  // name' of the file for the current record.
+  function CurrentRecordOriginalFileName returns string
+    // To be filled out
+  end_function
+
+  procedure set CurrentRecordOriginalFileName string lsValue
+    // To be filled out
+  end_procedure
+
+           // Returns the extension of the original filename
+           function CurrentRecordOriginalExtension returns string
+             string lsFile lsRval
+             get CurrentRecordOriginalFileName to lsFile
+             get SEQ_ExtractExtensionFromFileName (trim(lsFile)) to lsRval
+             function_return lsRval
+           end_function
+
+  // This function returns the full path and filename of
+  // the attached file as named by this system.
+  function CurrentRecordAbsoluteFileName returns string
+    integer lbCreateError
+    string lsDir lsSubdir lsFile lsRval lsExt lsCheckPath
+    if (pbHomeDirectoryOK(self)) begin
+      get psHomeDirectory to lsDir
+
+      get CurrentRecordSubDirectory to lsSubdir
+      if (lsSubdir<>"") begin
+        get Files_AppendPath lsDir lsSubDir to lsCheckPath
+        if (SEQ_FileExists(lsCheckPath)=SEQIT_NONE) begin
+          // Doesn't exist, let's create it:
+          get wvaWin32_CreateDirectory (ToAnsi(lsCheckPath)) to lbCreateError
+          if lbCreateError function_return ""
+        end
+      end
+
+      get CurrentRecordRootName to lsFile
+//      showln "Bla 1 " lsFile
+      if (lsFile="") function_return "" // Supposedly an error condition!
+      if (lsSubdir<>"") begin
+        get Files_AppendPath lsDir lsSubDir to lsRval
+        get Files_AppendPath lsRval lsFile to lsRval
+      end
+      else get Files_AppendPath lsDir lsFile to lsRval
+//      showln "Bla 2 " lsRval
+      get CurrentRecordOriginalExtension to lsExt
+      if (lsExt<>"") move (lsRval+"."+lsExt) to lsRval
+//      showln "Bla 3 " lsRval
+    end
+    else move "" to lsRval
+    function_return lsRval
+  end_function
+
+  function Doc_Exists returns integer
+    string lsFileName
+    if (pbHomeDirectoryOK(self)) begin
+      get CurrentRecordAbsoluteFileName to lsFileName
+//      send obs "Doc exisis" lsFileName
+      function_return (SEQ_FileExists(lsFileName)=SEQIT_FILE)
+    end
+    function_return 0
+  end_function
+
+  function Doc_CheckIn string lsExtFileName returns integer
+    integer liRval
+    string lsRoot lsOrigName lsIntFileName
+    if (pbHomeDirectoryOK(self)) begin
+      // Remove the path from the incoming file name:
+//      showln "Doc_CheckIn 1" lsExtFileName
+      get SEQ_RemovePathFromFileName lsExtFileName to lsOrigName
+//      showln "Doc_CheckIn 2" lsOrigName
+      // Have the class descendant store the name in the record buffer:
+      set CurrentRecordOriginalFileName to lsOrigName
+      // Now, let's have the inseide file name:
+      get CurrentRecordAbsoluteFileName to lsIntFileName
+//      showln "Doc_CheckIn 3" lsIntFileName
+      // And now copy it:
+      get SEQ_CopyFile lsExtFileName lsIntFileName to liRval // Returns true if OK
+    end
+    else move 0 to liRval
+    function_return liRval //
+  end_function
+
+  function Doc_CopyOut string lsExtFileName returns integer
+    integer liRval
+    string lsIntFileName
+    if (pbHomeDirectoryOK(self)) begin
+      get CurrentRecordAbsoluteFileName to lsIntFileName
+      get SEQ_CopyFile lsIntFileName lsExtFileName to liRval // Returns true if OK
+    end
+    else move 0 to liRval
+    function_return liRval //
+  end_function
+
+  procedure Doc_Execute
+    string lsIntFileName
+    if (pbHomeDirectoryOK(self)) begin
+      get CurrentRecordAbsoluteFileName to lsIntFileName
+      send html_StartDoc lsIntFileName
+    end
+  end_procedure
+
+  Procedure OnDeleteDocumentPrepare String lsIntFileName
+  End_Procedure
+
+  Procedure OnDeleteDocumentFailure String lsIntFileName
+  End_Procedure
+
+  Procedure OnDeleteDocumentSuccess String lsIntFileName
+  End_Procedure
+
+  function Doc_Delete returns integer
+    integer liRval
+    string lsIntFileName
+    if (pbHomeDirectoryOK(self)) begin
+      get CurrentRecordAbsoluteFileName to lsIntFileName
+      send OnDeleteDocumentPrepare lsIntFileName
+      get SEQ_EraseFile lsIntFileName to liRval
+      if (liRval=1) begin
+        send OnDeleteDocumentSuccess lsIntFileName
+      end
+      else begin
+        send OnDeleteDocumentFailure lsIntFileName
+      end
+    end
+    else move 0 to liRval
+    function_return liRval
+  end_function
+
+  //> The Doc_Rename procedure works like this:
+  //>
+  //>  1. Find record
+  //>  2. Doc_Rename_Setup_From // Setup source path
+  //>  3. Rename the record and save
+  //>  4. Call Doc_Rename
+
+  procedure Doc_Rename_Setup_From
+    string lsFrom
+    get CurrentRecordAbsoluteFileName to lsFrom
+    set priv.RenFrom to lsFrom
+  end_procedure
+
+  procedure Doc_Rename
+    integer lbOk
+    string lsFrom lsTo
+    get priv.RenFrom to lsFrom
+    get CurrentRecordAbsoluteFileName to lsTo
+    if (SEQ_FileExists(lsFrom)=SEQIT_FILE) begin
+      // We only attempt this if the source document exists
+      get SEQ_MoveFile lsFrom lsTo to lbOk
+      ifnot lbOk error 225 "Document could not be renamed!"
+    end
+  end_procedure
+
+  procedure end_construct_object // Assign a standard value to psHomeDirectory
+    string lsFileListPath
+    forward send end_construct_object
+    if (psHomeDirectory(self)="") begin
+      send DoSetHomeDirectoryRelative "Attach"
+//    if (SEQ_FileExists("filelist.cfg")=SEQIT_FILE) begin
+//      get SEQ_FindFileAlongDFPath "filelist.cfg" to lsFileListPath
+//      get Files_AppendPath lsFileListPath "attach" to lsFileListPath
+//      set psHomeDirectory to lsFileListPath
+//    end
+    end
+  end_procedure
+end_class // cDocumentAttacher

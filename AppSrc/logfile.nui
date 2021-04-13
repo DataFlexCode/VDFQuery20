@@ -1,0 +1,186 @@
+// Use LogFile.nui  // Class for handling a log file (No User Interface)
+//
+// by Sture ApS
+//
+//
+// This package implements the cLogFile class. An object of this class may
+// be used to generate output to a logfile.
+//
+// Typical application:
+//
+//   Writing detailed information to a file as a batch process progresses.
+//   Could also be used to log information every time the application performs
+//   a specific action.
+//
+// Code sample:
+//
+//   object oStructure_LogFile is a cLogFile
+//     set psFileName to "dfmatrix.log" // Write to this file
+//     set piCloseOnWrite to DFTRUE     // Close the log file on each write
+//     set psPurpose to "Events during table restructuring" // A little friendliness won't hurt
+//   end_object // oStructure_LogFile
+//
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Files.nui    // Utilities for handling file related stuff
+Use Dates.nui    // Date manipulation for VDF
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+
+class cLogFile is a cArray
+  procedure construct_object integer liImg
+    forward send construct_object liImg
+    // Public
+    property integer piCloseOnWrite  DFFALSE
+    property string  psPurpose       ""
+    property integer pbANSI_State    1
+    // Private
+    property string  prv.psFileName  ""
+    property integer prv.piChannel   -1
+  end_procedure
+
+  function psFileName returns string
+    function_return (prv.psFileName(self))
+  end_function
+
+  procedure set psFileName string lsFileName
+    integer liExists
+    if (SEQ_ExtractPathFromFileName(lsFileName)="") begin
+      get SEQ_FileExists lsFileName to liExists
+      if liExists eq SEQIT_DIRECTORY error 123 "Illegal file name in cLogFile object"
+      else begin
+        if liExists eq SEQIT_NONE get SEQ_TranslatePathToAbsolute lsFileName to lsFileName
+        else get SEQ_ConvertToAbsoluteFileName lsFileName to lsFileName
+      end
+    end
+    set prv.psFileName to lsFileName
+  end_procedure
+
+            procedure DirectOutputHelp integer liAppend string lsFileName
+              integer liChannel liWasCreated
+              string lsFile
+              if NUM_ARGUMENTS eq 2 begin
+                move lsFileName to lsFile
+                set psFileName to lsFile
+              end
+              else get psFileName to lsFile
+              if liAppend begin
+                move (not(SEQ_FileExists(lsFile))) to liWasCreated
+                get SEQ_AppendOutput lsFile to liChannel
+              end
+              else begin
+                get SEQ_DirectOutput lsFile to liChannel
+                move 1 to liWasCreated
+              end
+              set prv.piChannel to liChannel
+              if (piCloseOnWrite(self)) Close_Output channel liChannel
+              if liWasCreated send OnLogFileCreated
+              send OnLogFileOpen
+            end_procedure
+
+  procedure OnLogFileOpen
+  end_procedure
+  procedure OnLogFileClose
+  end_procedure
+  procedure OnLogFileCreated
+    string lsPurpose
+    get psPurpose to lsPurpose
+    if (lsPurpose<>"") begin
+      send WriteLn lsPurpose
+      send WriteLn (repeat("-",length(lsPurpose)))
+      send DoWriteTimeEntry "File created"
+    end
+  end_procedure
+
+  procedure DeleteFile string lsFileName
+    string lsFile
+    if NUM_ARGUMENTS eq 1 move lsFileName to lsFile
+    else get psFileName to lsFile
+    get SEQ_TranslatePathToAbsolute lsFile to lsFile
+    erasefile lsFile
+  end_procedure
+
+  procedure DirectOutput string lsFileName
+    if NUM_ARGUMENTS send DirectOutputHelp DFFALSE lsFileName
+    else send DirectOutputHelp DFFALSE (psFileName(self))
+  end_procedure
+
+  procedure AppendOutput string lsFileName
+    if NUM_ARGUMENTS send DirectOutputHelp DFTRUE lsFileName
+    else send DirectOutputHelp DFTRUE (psFileName(self))
+  end_procedure
+
+  procedure CloseOutput
+    send OnLogFileClose
+    ifnot (piCloseOnWrite(self)) send SEQ_CloseOutput (prv.piChannel(self))
+    else send Seq_Release_Channel (prv.piChannel(self))
+    set prv.piChannel to -1
+  end_procedure
+
+  procedure WriteLn string lsLine
+    integer liCloseOnWrite liChannel lbRelease liPos liOriginalCloseOnWrite
+    if (pbANSI_State(self)) move (StringOemToAnsi(lsLine)) to lsLine
+    get piCloseOnWrite to liCloseOnWrite
+    get prv.piChannel to liChannel
+
+    if (liChannel=-1) begin
+      get Seq_New_Channel to liChannel
+      move (TRUE) to lbRelease
+      move liCloseOnWrite to liOriginalCloseOnWrite
+      move 1 to liCloseOnWrite
+    end
+
+    if liCloseOnWrite Append_Output channel liChannel (psFileName(self))
+    if lbRelease begin
+      get_channel_position liChannel to liPos
+      if (liPos<=0) begin
+        set piCloseOnWrite to 0
+        set prv.piChannel to liChannel
+        send OnLogFileCreated
+        set prv.piChannel to -1
+        set piCloseOnWrite to liOriginalCloseOnWrite
+      end
+    end
+    writeln channel liChannel lsLine
+    if liCloseOnWrite Close_Output channel liChannel
+
+    if lbRelease send Seq_Release_Channel liChannel
+  end_procedure
+
+  procedure DoWriteTimeEntry string lsValue
+    if NUM_ARGUMENTS send WriteLn (TS_ConvertToString(TS_SysTime())+": "+lsValue)
+    else send WriteLn (TS_ConvertToString(TS_SysTime()))
+  end_procedure
+
+  procedure Output_Image integer liImg
+    integer liAuxChannel liChannel liCloseOnWrite liSeqEof lbRelease
+    string lsLine
+
+    get Seq_New_Channel to liAuxChannel
+    get piCloseOnWrite to liCloseOnWrite
+    get prv.piChannel to liChannel
+
+    if (liChannel=-1) begin
+      get Seq_New_Channel to liChannel
+      move (TRUE) to lbRelease
+      move 1 to liCloseOnWrite
+    end
+
+    if liCloseOnWrite Append_Output channel liChannel (psFileName(self))
+
+    direct_input channel liAuxChannel ("image: "+string(liImg))
+    ifnot (SeqEof) readln channel liAuxChannel lsLine
+    repeat
+      move (SeqEof) to liSeqEof
+      ifnot liSeqEof begin
+        writeln channel liChannel (rtrim(lsLine))
+        readln channel liAuxChannel lsLine
+      end
+    until liSeqEof
+    close_input channel liAuxChannel
+
+    if liCloseOnWrite Close_Output channel liChannel
+    if lbRelease send Seq_Release_Channel liChannel
+
+    send Seq_Release_Channel liAuxChannel
+  end_procedure
+end_class // cLogFile
+

@@ -1,0 +1,3128 @@
+﻿// **********************************************************************
+// Use VdfGraph.utl // Graphics for Visual DataFlex
+//
+// by Sture Andersen and friends
+// Version: 1.4
+//
+// The basic mechanism of this package is derived from standard DAC package
+// dfshape.pkg by Stuart Booth. Some of the comments in here stems from that.
+//
+//
+// Create: Tue  27-05-1997 -
+// Update: Tue  10-06-1997 - cAutoScaler class added
+//         Fri  13-06-1997 - cCoordinateSystem class added
+//         Wed  25-06-1997 - Fixed various errors in coordinate
+//                           transformation functions
+//         Sun  21-09-1997 - Leak identified and fixed
+//         Wed  15-10-1997 - Bar chart added
+//         Sat  06-12-1997 - External paint mode added
+//         Wed  18-02-1998 - APS taken out (class now in apsgraph.pkg).
+//         Sat  28-03-1998 - Polylines and polygons added (Geoff Furlong
+//                           of MSG Systems implemented the methods needed)
+//         Fri  16-10-1998 - Added True Type font ability
+//         Mon  19-10-1998 - Re-worked mthd_TextOut to be able to vertically
+//                           center a text (using DrawText instead of TextOut)
+//         Wed  21-10-1998 - Properties that specified number of steps are
+//                           now of type integer
+//                         - Better control of axis texts
+//                         - Eliminated lack of precision when printing
+//                           to VPE (rectangles)
+//                         - Character conversion error fixed
+//         --- Ver 1.1 ---
+//         Fri  06-11-1998 - Fixed a leak in TT fonts.
+//                         - Procedure WMSG_GrphPaint source of pen and
+//                           brush leak. Procedure fixed.
+//                         - Procedure Add4Angle added
+//         --- Ver 1.2 ---
+//         Mon  30-11-1998 - Polylines may now consist of more than 32
+//                           points (thanks to Ben Weijers).
+//         Mon  21-12-1998 - Dots implemented
+//         Wed  23-12-1998 - Procedures DrawAxisTextX and DrawAxisTextY of
+//                           the cCoordinateSystem class have been changed
+//                           (now works in parent coordinates).
+//                         - Properties pxTextOffset and pyTextOffset have
+//                           been added to the cCoordinateSystem.
+//                         - Properties pViewPortX and pViewPortY added.
+//                         - Global functions RGB_Darken, RGB_Brighten,
+//                           RGB_Blend and RGB_Negate added.
+//         Sat  02-01-1999 - Procedures Write_To_File and Read_From_File
+//                           added.
+//         Wed  06-01-1999 - Events onMouseDown, onMouseDrag, onMouseMove
+//                           and onMouseUp are now captured.
+//         Wed  13-01-1999 - Procedure AddDot added to cCoordinateSystem class.
+//         Thu  05-10-2000 - Mouse trackable objects implemented (grtest25.pkg)
+//         --- Ver 1.3 ---
+//         Wed  19-09-2001 - Now updates global variable gr$TrackArray correctly
+//         Tue  02-10-2001 - Fixed incorrect mouse tracking on resize event. This
+//                           caused the "Number too large to convert to integer"
+//                           error seen when re-zising long enough.
+//                         - Added double click event (Doesn't work)
+//                         - Four new properties on GraphArea:
+//                             piX_Offset, piY_Offset (Pixel offset)
+//                             piX_Range, piY_Range (Default for both is 10000)
+//                           Don't use these!!
+//         --- Ver 1.4 ---
+//         Wed  09-02-2005 - Release_All_Content procedure added
+//                           Clears all added objects. (Note: You have to repaint
+//                           manually after cleaning up). May be handy for some reason.
+//                           (Chris Stammen)
+//         Tue  15-02-2005 - Offscreen image processing added (no more flickering)
+//                           Eraseback doesnt erase anymore.
+//                           Some GDI functions added for doing the job.
+//                           SRCCOPY defined for bitblitting the screen.
+//                           See GrphPaint procedure for changes (Chris Stammen)
+//
+//         Tue  15-02-2005 - Added new mechanism for setting background color (and
+//                           making sure it is ignored when printed via VPE).
+//                         - Updated grdemo.src a bit.
+//
+//         Tue  15-03-2005 - Changed procedure draw_background (Chris Stammen)
+//
+//         Mon  28-11-2005 - Added property pbPixelScale that will change the
+//                           coordinate system of a GraphicArea object from
+//                           10000x10000 no matter its visible size to the actual
+//                           number of pixels.
+//
+//
+// Jakob Kruse has been a great help on GDI issues.
+// Chris Stammen added some very clever code to get rid of screen flicker
+// when resizing and dragging.
+//
+// Drawing is what we do when we specify what is going to be inside
+// the area. Painting is what the object does to present our drawing
+// on the screen.
+//
+// By reasonable convention the origin of a graphic area is in the upper
+// left corner with the cursor moving down for increasing values of X and
+// moving right with increasing values of Y.
+//
+// ***********************************************************************
+
+use dfallent.pkg     // I cannot figure out which packages to use so we use 'em all
+
+CompilerWarnings Suspend
+
+//Use Dftypes.pkg
+Use font_dlg     // Standard DAC package. Contains useful constant declarations.
+use Strings.nui  // String manipulation for VDF
+Use RGB.utl      // Some color functions
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+
+Use tWinStructs.pkg
+
+Define SRCCOPY             For |CI$00CC0020 //* dest = source                   */
+
+External_Function GrphDeleteDC                 "DeleteDC"                 GDI32.DLL  Handle hDC Returns Integer
+External_Function GrphBitBlt                   "BitBlt"                   GDI32.DLL  Handle hDC_Dest Integer D_x Integer D_y Integer width Integer height Handle hDC_Source Integer S_x Integer S_y DWord dwType Returns Integer
+External_Function GrphCreateCompatibleBitmap   "CreateCompatibleBitmap"   GDI32.DLL  Handle hDC Integer dwWidth Integer dwHeight Returns Handle
+External_Function GrphCreateCompatibleDC       "CreateCompatibleDC"       GDI32.DLL  Handle hDC Returns Handle
+
+External_Function GrphOemToCharA       "OemToCharA"       USER32.DLL Pointer hpszOem Pointer hpszWindow Returns Integer
+External_Function GrphSetTextAlign     "SetTextAlign"     GDI32.DLL  Handle hDC UInteger TextAlign Returns Integer
+External_Function GrphCreateHatchBrush "CreateHatchBrush" GDI32.DLL  Integer nHatchStyle DWord crColor Returns Handle
+External_Function GrphPolygon          "Polygon"          GDI32.DLL  Handle hDC Pointer lpPolyRect Integer dwPoints Returns Integer
+External_Function GrphPolyLine         "Polyline"         GDI32.DLL  Handle hDC Pointer lpPolyRect Integer dwPoints Returns Integer
+External_Function GrphSetPolyFillMode  "SetPolyFillMode"  GDI32.DLL  Handle hDC Integer iFillMode Returns Integer
+External_Function GrphCFA "CreateFontA" GDI32.DLL Integer v1# Integer v2# Integer v3# Integer v4# Integer v5# DWord v6# DWord v7# DWord v8# DWord v9# DWord va# DWord vb# DWord vc# DWord vd# Pointer ve# Returns DWord
+External_Function GrphSetViewportOrgEx "SetViewportOrgEx" GDI32.DLL Handle hDC Integer x# Integer y# Pointer lpRect Returns Integer
+
+Struct tPOINTS3
+    Integer x1
+    Integer y1
+    Integer x2
+    Integer y2
+    Integer x3
+    Integer y3
+End_Struct
+Struct tPOINTS4
+    Integer x1
+    Integer y1
+    Integer x2
+    Integer y2
+    Integer x3
+    Integer y3
+    Integer x4
+    Integer y4
+End_Struct
+
+Function Grph_OemToChar Global String OemStr Returns String
+  string  CharStr
+  Integer Grb#
+  Address OemAdress CharAdress
+  Append OemStr (Character(0))
+  Move (Repeat(Character(0), (Length(OemStr)))) to CharStr
+  Move (AddressOf(OemStr)) to OemAdress
+  Move (AddressOf(CharStr)) to CharAdress
+  Move (GrphOemToCharA(OemAdress, CharAdress)) To grb#
+  Function_Return (CString(CharStr))
+End_Function
+
+Use version.nui
+
+#REPLACE GRAPH$TEST 0
+#COMMAND GRAPH$SHOWLN
+ #IF GRAPH$TEST
+  showln !1 !2 !3 !4 !5 !6 !7 !8 !9
+ #ENDIF
+#ENDCOMMAND
+
+#REPLACE GRAPH_RES$TEST 0 // Ressource test
+#COMMAND GRAPH_RES$SHOWLN
+ #IF GRAPH_RES$TEST
+  showln !1 !2 !3 !4 !5 !6 !7 !8 !9
+ #ENDIF
+#ENDCOMMAND
+
+// Text Alignments
+DEFINE TA_LEFT       FOR  0 //|CI$0000
+DEFINE TA_RIGHT      FOR  2 //|CI$0002
+DEFINE TA_CENTER     FOR  6 //|CI$0006
+DEFINE TA_TOP        FOR  0 //|CI$0000
+DEFINE TA_BOTTOM     FOR  8 //|CI$0008
+DEFINE TA_NOUPDATECP FOR  0 //|CI$0000
+DEFINE TA_UPDATECP   FOR  1 //|CI$0001
+DEFINE TA_BASELINE   FOR 24 //|CI$0024
+
+#REPLACE VDFGR_TA_LEFT      1
+#REPLACE VDFGR_TA_CENTER    2
+#REPLACE VDFGR_TA_RIGHT     3
+#REPLACE VDFGR_TA_TOP       4
+#REPLACE VDFGR_TA_VCENTER   8
+#REPLACE VDFGR_TA_BOTTOM   12
+
+#REPLACE VDFGR_DA_LEFT_SPACE      1
+#REPLACE VDFGR_DA_LEFT            2
+#REPLACE VDFGR_DA_CENTER          3
+#REPLACE VDFGR_DA_RIGHT           4
+#REPLACE VDFGR_DA_RIGHT_SPACE     5
+#REPLACE VDFGR_DA_TOP_SPACE       8
+#REPLACE VDFGR_DA_TOP            16
+#REPLACE VDFGR_DA_VCENTER        24
+#REPLACE VDFGR_DA_BOTTOM         32
+#REPLACE VDFGR_DA_BOTTOM_SPACE   40
+
+// Hatch Styles:
+DEFINE HS_NONE       FOR -1  //* ªªªªª */
+DEFINE HS_HORIZONTAL FOR  0  //* ----- */
+DEFINE HS_VERTICAL   FOR  1  //* ||||| */
+DEFINE HS_FDIAGONAL  FOR  2  //* \\\\\ */
+DEFINE HS_BDIAGONAL  FOR  3  //* ///// */
+DEFINE HS_CROSS      FOR  4  //* +++++ */
+DEFINE HS_DIAGCROSS  FOR  5  //* xxxxx */
+
+// Axis text states:
+DEFINE AT_NONE   FOR 0
+DEFINE AT_AUTO   FOR 1
+DEFINE AT_TEXT   FOR 2
+
+// Polygon fill modes:
+DEFINE FM_WINDING   FOR 0
+DEFINE FM_ALTERNATE FOR 1
+
+// DrawText Format Flags
+DEFINE XDT_TOP             FOR    0  // 0x00000000
+DEFINE XDT_LEFT            FOR    0  // 0x00000000
+DEFINE XDT_CENTER          FOR    1  // 0x00000001
+DEFINE XDT_RIGHT           FOR    2  // 0x00000002
+DEFINE XDT_VCENTER         FOR    4  // 0x00000004
+DEFINE XDT_BOTTOM          FOR    8  // 0x00000008
+DEFINE XDT_WORDBREAK       FOR   16  // 0x00000010
+DEFINE XDT_SINGLELINE      FOR   32  // 0x00000020
+DEFINE XDT_EXPANDTABS      FOR   64  // 0x00000040
+DEFINE XDT_TABSTOP         FOR  128  // 0x00000080
+DEFINE XDT_NOCLIP          FOR  256  // 0x00000100
+DEFINE XDT_EXTERNALLEADING FOR  512  // 0x00000200
+DEFINE XDT_CALCRECT        FOR 1024  // 0x00000400
+DEFINE XDT_NOPREFIX        FOR 2048  // 0x00000800
+DEFINE XDT_INTERNAL        FOR 4096  // 0x00001000
+
+enumeration_list // Dot types
+  define DT_PIXEL          // À
+  define DT_CROSS          // x
+  define DT_PLUS           // +
+  define DT_HORIZONTAL     // -
+  define DT_VERTICAL       // |
+  define DT_CIRCLE         // o
+  define DT_TRIANGLE_UP    // 
+  define DT_TRIANGLE_DOWN  // 
+  define DT_TRIANGLE_RIGHT // 
+  define DT_TRIANGLE_LEFT  // 
+  define DT_SQUARE         // ª
+  define DT_DIAMOND        // 
+end_enumeration_list
+
+// Graphic Operations
+enumeration_list
+  define GO_SetPenColor
+  define GO_SetPenWidth
+  define GO_SetPenStyle
+  define GO_SetFillColor
+  define GO_SetHatchStyle
+  define GO_SetBackColor
+  define GO_SetRoundRectFactor
+  define GO_SetPolyGonFillMode
+  define GO_SetTextAlign
+  define GO_SetTextColor
+  define GO_SetStockFont
+  define GO_SetTTFont
+  define GO_AddDot
+  define GO_SetDotStyle
+  define GO_SetDotSize
+  define GO_SetDotAlign
+  define GO_Rectangle
+  define GO_Ellipse
+  define GO_RoundRect
+  define GO_LineTo
+  define GO_MoveTo
+  define GO_TextOut
+  define GO_Polygon
+  define GO_PolyLine
+end_enumeration_list
+
+integer gr$PenColor  // Global variables used for speed
+integer gr$PenWidth
+integer gr$PenStyle
+integer gr$HatchStyle
+integer gr$FillColor
+integer gr$RoundRectFactor
+integer gr$PolyGonFillMode
+integer gr$BackColor
+integer gr$DotSize
+integer gr$DotType
+integer gr$DotAlign
+integer gr$CPU$RAM
+integer gr$CPU$PC
+handle  gr$hCurrentDC
+handle  gr$hCurrentPen
+handle  gr$hCurrentBrush
+handle  gr$hCurrentTemp
+handle  gr$hCurrentTTFont gr$PreviousFont
+integer gr$vCenterActive
+integer gr$PenDirty
+integer gr$BrushDirty
+integer gr$Void
+integer gr$CoordXY1#
+integer gr$CoordXY2#
+integer gr$Tmp#
+integer gr$GuiSizeX#
+integer gr$GuiSizeY#
+integer gr$TrackArray
+string  gr$Point 32
+
+number  gr$X_Range
+number  gr$Y_Range
+move 20000.0 to gr$X_Range
+move 20000.0 to gr$Y_Range
+integer gr$GuiOffsetX#
+integer gr$GuiOffsetY#
+move 0 to gr$GuiOffsetX#
+move 0 to gr$GuiOffsetY#
+
+if DFFALSE begin // Do not execution this on program start up.
+  // Good old fashioned subroutines also used for speed.
+  vdfgraph$Update_GDI_Objects:
+    if gr$PenDirty begin
+      move gr$hCurrentPen to gr$hCurrentTemp
+      move (CreatePen(gr$PenStyle,gr$PenWidth,gr$PenColor)) to gr$hCurrentPen
+      move (SelectObject(gr$hCurrentDC,gr$hCurrentPen)) to gr$Void
+      move 0 to gr$PenDirty
+      move (DeleteObject(gr$hCurrentTemp)) to gr$Void
+      graph_res$showln ("DeleteObject 1 "+string(gr$Void))
+    end
+    if gr$BrushDirty begin
+      move gr$hCurrentBrush to gr$hCurrentTemp
+      if gr$HatchStyle ne HS_NONE  ;
+        move (GrphCreateHatchBrush(gr$HatchStyle,gr$FillColor)) to gr$hCurrentBrush
+      else ;
+        move (CreateSolidBrush(gr$FillColor)) to gr$hCurrentBrush
+      move (SelectObject(gr$hCurrentDC,gr$hCurrentBrush)) to gr$Void
+      move 0 to gr$BrushDirty
+      move (DeleteObject(gr$hCurrentTemp)) to gr$Void
+      graph_res$showln ("DeleteObject 2 "+string(gr$Void))
+    end
+  return
+  vdfgraph$DeletePreviousTTFont:
+    if gr$hCurrentTTFont ne 0 begin
+      move (SelectObject(gr$hCurrentDC,gr$PreviousFont)) to gr$Void
+      move (DeleteObject(gr$hCurrentTTFont)) to gr$Void
+      graph_res$showln ("DeleteObject 6 "+string(gr$Void))
+    end
+  return
+  vdfgraph$PreparePoint:
+    gosub vdfgraph$Update_GDI_Objects
+    get value of gr$CPU$RAM item gr$CPU$PC to gr$CoordXY1#
+    gosub vdfgraph$ConvertToGUI1
+    increment gr$CPU$PC
+  return
+  vdfgraph$Prepare2Points:
+    gosub vdfgraph$Update_GDI_Objects
+    get value of gr$CPU$RAM item gr$CPU$PC to gr$CoordXY1#
+    gosub vdfgraph$ConvertToGUI1
+    increment gr$CPU$PC
+    get value of gr$CPU$RAM item gr$CPU$PC to gr$CoordXY2#
+    increment gr$CPU$PC
+    gosub vdfgraph$ConvertToGUI2
+  return
+  vdfgraph$ConvertToGui1:
+    move (integer(hi(gr$CoordXY1#)*gr$GuiSizeX#/gr$X_Range)+gr$GuiOffsetX#*65536+(low(gr$CoordXY1#)*gr$GuiSizeY#/gr$Y_Range)+gr$GuiOffsetY#) to gr$CoordXY1#
+  return
+  vdfgraph$ConvertToGui2:
+    move (integer(hi(gr$CoordXY2#)*gr$GuiSizeX#/gr$X_Range)+gr$GuiOffsetX#*65536+(low(gr$CoordXY2#)*gr$GuiSizeY#/gr$Y_Range)+gr$GuiOffsetY#) to gr$CoordXY2#
+  return
+  vdfgraph$ConvertToVirtual:
+    if gr$CoordXY1# lt 0 move 0 to gr$CoordXY1#
+    move (integer(hi(gr$CoordXY1#)-gr$GuiOffsetX#*gr$X_Range/gr$GuiSizeX#)*65536+(low(gr$CoordXY1#)-gr$GuiOffsetY#*gr$Y_Range/gr$GuiSizeY#)) to gr$CoordXY1#
+  return
+end
+
+#COMMAND vdfgraph$Procedure_OneArg
+  procedure !1 integer int#
+    set value of gr$CPU$RAM item gr$CPU$PC to !2
+    set value of gr$CPU$RAM item (gr$CPU$PC+1) to int#
+    move (gr$CPU$PC+2) to gr$CPU$PC
+  end_procedure
+#ENDCOMMAND
+#COMMAND vdfgraph$Procedure_PlaneArg
+  procedure !1 integer x1# integer y1# integer x2# integer y2#
+    set value of gr$CPU$RAM item gr$CPU$PC to !2
+    set value of gr$CPU$RAM item (gr$CPU$PC+1) to (x1#*65536+y1#)
+    set value of gr$CPU$RAM item (gr$CPU$PC+2) to (x2#*65536+y2#)
+    move (gr$CPU$PC+3) to gr$CPU$PC
+  end_procedure
+#ENDCOMMAND
+#COMMAND vdfgraph$Procedure_LineArg
+  procedure !1 integer x1# integer y1#
+    set value of gr$CPU$RAM item gr$CPU$PC to !2
+    set value of gr$CPU$RAM item (gr$CPU$PC+1) to (x1#*65536+y1#)
+    move (gr$CPU$PC+2) to gr$CPU$PC
+  end_procedure
+#ENDCOMMAND
+
+#IFDEF SET_DEFAULT_STATE
+#ELSE
+ #REPLACE FF_DONTCARE          0
+ #REPLACE DEFAULT_PITCH        0
+ #REPLACE DEFAULT_QUALITY      0
+ #REPLACE CLIP_DEFAULT_PRECIS  0
+ #REPLACE OUT_TT_PRECIS        4
+ #REPLACE ANSI_CHARSET         0
+#ENDIF
+
+Register_Procedure WMSG_GrphPaint dWord wParam dWord lParam
+Register_Procedure WMSG_GrphEraseBkGnd dWord wParam dWord lParam
+Register_Procedure WMSG_OnMouseDown
+Register_Procedure WMSG_OnMouseUp
+Register_Procedure WMSG_OnMouse2Down
+Register_Procedure WMSG_OnMouse2Up
+Register_Procedure WMSG_OnMouseMove
+Register_Procedure WMSG_OnMouseDblClick
+Register_Object oGraphOperationMsgTabel
+
+enumeration_list
+  define GR_TRACK_RECTANGLE
+  define GR_TRACK_LINE
+  define GR_TRACK_ELLIPSE
+end_enumeration_list
+
+class cTrackableObjects is a cArray
+  item_property_list
+    item_property integer piType.i  // RECTANGLE_CHECK LINE_CHECK ELLIPSE_CHECK
+    item_property integer piX1.i
+    item_property integer piY1.i
+    item_property integer piX2.i
+    item_property integer piY2.i
+    item_property integer piCB_Value.i // Callback value (when clicked)
+  end_item_property_list cTrackableObjects
+  procedure add_track integer type# integer x1# integer y1# integer x2# integer y2# integer cb_val#
+    integer row#
+    get row_count to row#
+    set piType.i     row# to type#
+    set piX1.i       row# to x1#
+    set piY1.i       row# to y1#
+    set piX2.i       row# to x2#
+    set piY2.i       row# to y2#
+    set piCB_Value.i row# to cb_val#
+  end_procedure
+  procedure delete_data
+    forward send delete_data
+  end_procedure
+  procedure TestTrackHit integer track_msg#
+    integer row# max# x# y# level#
+    get row_count to max#
+    move (low(gr$CoordXY1#)) to x#
+    move (hi(gr$CoordXY1#)) to y#
+    decrement max#
+    move 0 to level#
+    // GRAPH$SHOWLN
+    for_ex row# from max# down_to 0
+      GRAPH$SHOWLN "Test: " x# "," y# " against: " (piX1.i(self,row#)) "," (piX2.i(self,row#)) " " (piY1.i(self,row#)) "," (piY2.i(self,row#))
+      if (piType.i(self,row#)) eq GR_TRACK_RECTANGLE if ((x#>=piX1.i(self,row#)) and (x#<=piX2.i(self,row#)) and (y#>=piY1.i(self,row#)) and (y#<=piY2.i(self,row#))) begin
+        send track_msg# (piCB_Value.i(self,row#)) level#
+        increment level#
+      end
+    loop
+  end_procedure
+end_class // cTrackableObjects
+
+use cWinControl.pkg
+
+
+class GraphicArea is a cWinControl
+  Procedure Construct_Object
+    Set External_Class_Name "GraphicArea" to "static"
+    Forward Send Construct_Object
+
+    set window_style to SS_NOTIFY DFTRUE
+
+    set border_style to BORDER_STATICEDGE
+//    set border_style to BORDER_NONE
+    set delegation_mode to DELEGATE_TO_PARENT
+
+    property integer pPenColor        clBlack
+    property integer pPenWidth        1
+    property integer pFillColor       clRed
+    property integer pPenStyle        PS_SOLID
+    property integer pBackColor       (GetSysColor(COLOR_BTNFACE))
+    property integer pRoundRectFactor (25*65536+25)
+    property integer pHatchStyle      HS_NONE
+    property integer pPolyPointsOffS  0
+
+    property integer pOemToAnsi_State DFTRUE
+
+    property string  pTitle           ""
+    property string  pHeaderLeft      ""
+    property string  pHeaderMid       ""
+    property string  pHeaderRight     ""
+    property string  pFooterLeft      ""
+    property string  pFooterMid       ""
+    property string  pFooterRight     ""
+    property integer pHeaderHeight    1000
+    property integer pFooterHeight    1000
+    property integer pHeaderBackColor 0
+    property integer pFooterBackColor 0
+
+    property integer piX_Offset       0
+    property integer piY_Offset       0
+    property integer piX_Range        10000
+    property integer piY_Range        10000
+
+    property integer pbPixelScale     FALSE
+
+    Set Focus_Mode To NONFOCUSABLE
+
+    object Program_RAM is an array
+    end_object
+    property integer piProgram_RAM
+    set piProgram_RAM to (Program_RAM(self))
+
+    object oColors is an array
+      set value item  0 to (rgb(255,  0,  0)) // Red     Normal
+      set value item  1 to (rgb(  0,  0,255)) // Blue
+      set value item  2 to (rgb(  0,255,  0)) // Green
+      set value item  3 to (rgb(255,255,  0)) // Yellow
+      set value item  4 to (rgb(  0,255,255)) // Turkis
+      set value item  5 to (rgb(255,  0,255)) // Purple
+      set value item  6 to (rgb(128,128,128)) // Grey
+      set value item  7 to (rgb(255,128,  0)) // Orange
+
+      set value item  8 to (rgb(255,128,128)) // Red     Bright
+      set value item  9 to (rgb(128,128,255)) // Blue
+      set value item 10 to (rgb(128,255,128)) // Green
+      set value item 11 to (rgb(255,255,128)) // Yellow
+      set value item 12 to (rgb(128,255,255)) // Turkis
+      set value item 13 to (rgb(255,128,255)) // Purple
+      set value item 14 to (rgb(192,192,192)) // Grey
+      set value item 15 to (rgb(255,192,128)) // Orange
+
+      set value item 16 to (rgb(128,  0,  0)) // Red     Dark
+      set value item 17 to (rgb(  0,  0,128)) // Blue
+      set value item 18 to (rgb(  0,128,  0)) // Green
+      set value item 19 to (rgb(128,128,  0)) // Yellow
+      set value item 20 to (rgb(  0,128,128)) // Turkis
+      set value item 21 to (rgb(128,  0,128)) // Purple
+      set value item 22 to (rgb( 64, 64, 64)) // Grey
+      set value item 23 to (rgb(128, 64,  0)) // Orange
+
+      set value item 24 to (rgb( 64,  0,  0)) // Red     Very dark
+      set value item 25 to (rgb(  0,  0, 64)) // Blue
+      set value item 26 to (rgb(  0, 64,  0)) // Green
+      set value item 27 to (rgb( 64, 64,  0)) // Yellow
+      set value item 28 to (rgb(  0, 64, 64)) // Turkis
+      set value item 29 to (rgb( 64,  0, 64)) // Purple
+      set value item 30 to (rgb( 32, 32, 32)) // Grey
+      set value item 31 to (rgb( 64, 32,  0)) // Orange
+    end_object
+
+    object oHatches is an array
+      set value item 0 to HS_NONE
+      set value item 1 to HS_DIAGCROSS
+      set value item 2 to HS_CROSS
+      set value item 3 to HS_FDIAGONAL
+      set value item 4 to HS_BDIAGONAL
+      set value item 5 to HS_VERTICAL
+      set value item 6 to HS_HORIZONTAL
+    end_object
+
+    object xyObjects is an array
+    end_object
+
+    Set External_Message WM_PAINT         to msg_WMSG_GrphPaint // We want to trap WM_PAINT for efficient painting.
+    Set External_Message WM_ERASEBKGND    to msg_WMSG_GrphEraseBkGnd // The Windows-Class will not have a brush set, so let's 'brush' the object ourselves.
+    Set External_Message WM_LBUTTONDOWN   to msg_WMSG_OnMouseDown
+    Set External_Message WM_LBUTTONUP     to msg_WMSG_OnMouseUp
+    Set External_Message WM_MOUSEMOVE     to msg_WMSG_OnMouseMove
+    Set External_Message WM_RBUTTONDOWN   to msg_WMSG_OnMouse2Down
+    Set External_Message WM_RBUTTONUP     to msg_WMSG_OnMouse2Up
+    // This one doesn't work. Why not????:
+    Set External_Message WM_LBUTTONDBLCLK to msg_WMSG_OnMouseDblClick
+
+    property integer pViewPortX 0
+    property integer pViewPortY 0
+
+    object oTrackableObjects is a cTrackableObjects
+    end_object
+
+    property integer pbIncrementalPaint         DFFALSE
+    property integer pbNeverBeenPainted         DFTRUE
+    property integer piPreviousMaxCount         0
+    property integer piPreviousPenColor         0
+    property integer piPreviousPenWidth         0
+    property integer piPreviousFillColor        0
+    property integer piPreviousHatchStyle       0
+    property integer piPreviousPenStyle         0
+    property integer piPreviousRoundRectFactor  0
+    property integer piPreviousBackColor        0
+    property integer piPreviousvCenterActive    0
+    property integer piPreviousDotSize          0
+    property integer piPreviousDotType          0
+    property integer piPreviousDotAlign         0
+  End_Procedure
+
+  procedure DoSetPixelCoords
+    integer liGuiSize
+    get GuiSize to liGuiSize
+    set piX_Range to (hi(liGuiSize))
+    set piY_Range to (low(liGuiSize))
+  end_procedure
+
+  procedure end_construct_object
+    forward send end_construct_object
+    Set External_Message WM_PAINT         to msg_WMSG_GrphPaint // We want to trap WM_PAINT for efficient painting.
+    Set External_Message WM_ERASEBKGND    to msg_WMSG_GrphEraseBkGnd // The Windows-Class will not have a brush set, so let's 'brush' the object ourselves.
+    Set External_Message WM_LBUTTONDOWN   to msg_WMSG_OnMouseDown
+    Set External_Message WM_LBUTTONUP     to msg_WMSG_OnMouseUp
+    Set External_Message WM_MOUSEMOVE     to msg_WMSG_OnMouseMove
+    Set External_Message WM_RBUTTONDOWN   to msg_WMSG_OnMouse2Down
+    Set External_Message WM_RBUTTONUP     to msg_WMSG_OnMouse2Up
+    Set External_Message WM_LBUTTONDBLCLK to msg_WMSG_OnMouseDblClick
+  end_procedure
+
+  Procedure Reset_Viewport
+    set pViewPortX to 0
+    set pViewPortY to 0
+  End_Procedure
+
+  procedure register_xy_object integer obj# // GraphicArea
+    integer arr#
+    move (xyObjects(self)) to arr#
+    set value of arr# item (item_count(arr#)) to obj#
+  end_procedure
+
+  Function iColor integer color# returns integer
+    function_return (value(oColors(self),color#))
+  End_Function
+  Function iColorNuance.ii integer color# integer nuance# returns integer
+    integer base#
+    if nuance# eq 0 move 24 to base# // Very dark
+    if nuance# eq 1 move 16 to base# // Dark
+    if nuance# eq 2 move  0 to base# // Normal
+    if nuance# eq 3 move  8 to base# // Ligth
+    function_return (value(oColors(self),base#+color#))
+  End_Function
+  Function iColorNuance.iii integer color# integer nuance# integer maxnuance# returns integer
+    if maxnuance# ne 3 increment nuance#
+    function_return (iColorNuance.ii(self,color#,nuance#))
+  End_Function
+  Function iHatch integer hatch# returns integer
+    function_return (value(oHatches(self),hatch#))
+  End_Function
+
+  Procedure WMSG_GrphEraseBkGnd dWord wParam dWord lParam
+    handle hDC# hPen# hBrush# // This msg is sent if the fErase member of tPAINTSTRUCT is TRUE
+    integer iSize#          // during the WM_PAINT/BeginPaint() phase. This will be set
+    Move wParam To hDC#           // automatically by Windows, or explicitly by InvalidateRect() with
+    Get guiSize To iSize#         // TRUE as its 3rd arg
+
+    get pBackColor to gr$BackColor
+    Move (GetStockObject(NULL_PEN)) To hPen#   // we don't want an outline
+    Move (CreateSolidBrush(gr$BackColor)) To hBrush#
+
+    Move (SelectObject(hDC#,hPen#))   To gr$Void // select into Device Context
+    Move (SelectObject(hDC#,hBrush#)) To gr$Void
+
+    // Use a rectangle to draw-over entire window. Note the addition of
+    // one to both X & Y end-points, this is because Windows' Rectangle()
+    // function excludes the end-points in its drawing
+
+    //Move (Rectangle(hDC#,0,0,Low(iSize#)+1,Hi(iSize#)+1)) To gr$Void
+
+    // we must delete any GDI objects we create. Note, we don't delete the
+    // hPen object because it is a Windows' StockObject.
+    Move (DeleteObject(hBrush#)) To gr$Void
+    graph_res$showln ("DeleteObject 3 "+string(gr$Void))
+    move 1 to gr$PenDirty
+    move 1 to gr$BrushDirty
+    set pbNeverBeenPainted to DFTRUE
+  End_Procedure
+
+  // When this message is called the global integers defined in the top
+  // of this package are initialized and used by this class. They should
+  // be left very much alone while this procedure is running.
+  Procedure PaintArea
+    integer max# msg#
+    get item_count of gr$CPU$RAM to max#
+    while gr$CPU$PC lt max# // If this works well, it could be changed to
+      get value of gr$CPU$RAM item gr$CPU$PC to msg# // GOSUB label# instead
+      increment gr$CPU$PC // Increment beyond op-code
+      send msg#
+    end
+    set piPreviousMaxCount to max#
+  End_Procedure
+
+  Procedure WMSG_GrphPaint Integer wParam Integer lParam
+    Handle   hWnd# OriginalPen# OriginalBrush# hBrush#
+    Pointer  lpStruc#
+    Integer  lbIncrementalPaint cxyValue
+
+    Handle   hDC#                        //for offscreen
+    Pointer  address#                    //for offscreen
+    Handle   hdcMem# hbmOld#             //for offscreen
+    Handle   hbmMem#                     //for offscreen
+
+    tWinPaintStruct stPaintStruct
+
+    graph$showln "Paint"
+    Move (AddressOf(stPaintStruct)) to lpStruc#
+    Get Window_Handle to hWnd#
+    Move (piProgram_RAM(Self)) to gr$CPU$RAM  // Array of instructions
+    Move (oTrackableObjects(Self)) to gr$TrackArray  // Array of instructions
+
+    Get GuiSize to gr$Tmp#
+    Move (hi(gr$Tmp#))  to gr$GuiSizeX#
+    Move (low(gr$Tmp#)) to gr$GuiSizeY#
+
+    If (pbPixelScale(Self)) Send DoSetPixelCoords
+
+    Get piX_Offset to gr$GuiOffsetX#
+    Get piY_Offset to gr$GuiOffsetY#
+    Get piX_Range  to gr$X_Range
+    Get piY_Range  to gr$Y_Range
+    Set pViewPortX to gr$GuiOffsetX#
+    Set pViewPortY to gr$GuiOffsetY#
+    Move 0 to gr$GuiOffsetX#
+    Move 0 to gr$GuiOffsetY#
+
+    Move (BeginPaint(hWnd#, lpStruc#)) to gr$hCurrentDC
+
+    //Double buffered actions:
+    Get GuiSize to cxyValue
+    Move (GetDC(hWnd#)) to hDC#
+
+    //make a compatible copy for offscreen processing:
+    Move (GrphCreateCompatibleDC(hDC#)) to hdcMem#
+    Move (GrphCreateCompatibleBitmap(hDC#, Low(cxyValue)+1, Hi(cxyValue)+1)) to hbmMem#
+    Move (SelectObject(hdcMem#,hbmMem#)) to hbmOld#
+
+    //fill it with nice white space:
+    Move (CreateSolidBrush(clWhite)) to hBrush#
+    Move (SelectObject(hdcMem#,hBrush#)) to gr$Void
+    Move (Rectangle(hdcMem#,0,0,Low(cxyValue)+1,Hi(cxyValue)+1)) to gr$Void
+    Move (DeleteObject(hBrush#)) to gr$Void
+    Move hdcMem# to gr$hCurrentDC
+
+    // The hDC returned by BeginPaint(), will have its 'Clipping-Region'
+    // set, and is much more efficient than the old Flex msg_Paint,
+    // where a generic hDC had to be obtained. The 'Invalid-region' can
+    // be obtained from the tPAINTSTRUCT (sStruc) structure, and used in
+    // calculations for optimum efficiency.
+
+    Get pbIncrementalPaint to lbIncrementalPaint
+    If lbIncrementalPaint Begin
+      Get piPreviousMaxCount to gr$CPU$PC
+      Get piPreviousPenColor        to gr$PenColor
+      Get piPreviousPenWidth        to gr$PenWidth
+      Get piPreviousFillColor       to gr$FillColor
+      Get piPreviousHatchStyle      to gr$HatchStyle
+      Get piPreviousPenStyle        to gr$PenStyle
+      Get piPreviousRoundRectFactor to gr$RoundRectFactor
+      Get piPreviousBackColor       to gr$BackColor
+      Get piPreviousvCenterActive   to gr$vCenterActive
+      Get piPreviousDotSize         to gr$DotSize
+      Get piPreviousDotType         to gr$DotType
+      Get piPreviousDotAlign        to gr$DotAlign
+    End
+    Else Begin
+      Set piPreviousMaxCount to 0
+      Send delete_data to gr$TrackArray
+      Move 0               to gr$CPU$PC   // Program counter
+      Get pPenColor        to gr$PenColor
+      Get pPenWidth        to gr$PenWidth
+      Get pFillColor       to gr$FillColor
+      Get pHatchStyle      to gr$HatchStyle
+      Get pPenStyle        to gr$PenStyle
+      Get pRoundRectFactor to gr$RoundRectFactor
+      Get pBackColor       to gr$BackColor
+      Move 0               to gr$vCenterActive
+      Move 10              to gr$DotSize
+      Move DT_SQUARE       to gr$DotType
+      Move (VDFGR_DA_CENTER+VDFGR_DA_VCENTER) to gr$DotAlign
+    End
+
+    Move (GrphSetViewportOrgEx(gr$hCurrentDC,pViewPortY(Self),pViewPortX(Self),0)) to windowindex
+    Move (setBkMode(gr$hCurrentDC,TRANSPARENT)) to gr$Void
+
+    // Create and select GDI objects
+    Move (CreatePen(gr$PenStyle,gr$PenWidth,gr$PenColor)) to gr$hCurrentPen
+    Move (SelectObject(gr$hCurrentDC,gr$hCurrentPen)) to OriginalPen#
+    Move 0 to gr$PenDirty
+
+    Move (CreateSolidBrush(gr$FillColor)) to gr$hCurrentBrush
+    Move (SelectObject(gr$hCurrentDC,gr$hCurrentBrush)) to OriginalBrush#
+    Move 0 to gr$BrushDirty
+    Move 0 to gr$hCurrentTTFont
+
+    Send PaintArea
+
+    //here we copy the complete offscreen image to the screen.
+    Move (GrphBitBlt(hDC#,0,0,Low(cxyValue),Hi(cxyValue),gr$hCurrentDC,0,0,SRCcopy)) to gr$Void
+    Set pbNeverBeenPainted to DFFALSE
+
+    // Delete GDI objects:
+
+    Move (DeleteObject(hbmMem#)) to gr$Void   //for offscreen
+    Move (GrphDeleteDC(hdcMem#)) to gr$Void   //for offscreen
+    Move (ReleaseDC(hWnd#, hDC#)) to gr$Void  //for offscreen
+
+    Move (SelectObject(gr$hCurrentDC,OriginalPen#)) to gr$Void
+    Move (DeleteObject(gr$hCurrentPen)) to gr$Void // Overload
+    graph_res$showln ("DeleteObject 4 "+String(gr$Void))
+    Move (SelectObject(gr$hCurrentDC,OriginalBrush#)) to gr$Void
+    Move (DeleteObject(gr$hCurrentBrush)) to gr$Void // Overload
+    graph_res$showln ("DeleteObject 5 "+String(gr$Void))
+    gosub vdfgraph$DeletePreviousTTFont // Delete TT font, if any
+    Move (EndPaint(hWnd#, lpStruc#)) to gr$Void
+    Set pbIncrementalPaint to DFFALSE
+    Set piPreviousPenColor        to gr$PenColor
+    Set piPreviousPenWidth        to gr$PenWidth
+    Set piPreviousFillColor       to gr$FillColor
+    Set piPreviousHatchStyle      to gr$HatchStyle
+    Set piPreviousPenStyle        to gr$PenStyle
+    Set piPreviousRoundRectFactor to gr$RoundRectFactor
+    Set piPreviousBackColor       to gr$BackColor
+    Set piPreviousvCenterActive   to gr$vCenterActive
+    Set piPreviousDotSize         to gr$DotSize
+    Set piPreviousDotType         to gr$DotType
+    Set piPreviousDotAlign        to gr$DotAlign
+  End_Procedure
+
+  Procedure Release_All_Content
+    //set pbIncrementalPaint to DFFALSE
+    //handle hDC#
+    //Move (Rectangle(hDC#,0,0,Low(iSize#)+1,Hi(iSize#)+1)) To gr$Void
+     Move 0 to gr$CPU$PC
+     send delete_data to gr$CPU$RAM
+  End_Procedure
+
+
+  Procedure RePaint
+    handle hWnd hVoid
+    Get Window_Handle To hWnd
+    If hWnd Move (InvalidateRect(hWnd, 0, FALSE)) To hVoid
+    // InvalidateRect() inflates the Invalid-Region for the hWnd.
+    // the second arg, 0, means invalidate the whole window-rect.
+    // the third arg, TRUE|FALSE, determines if window cleared prior
+    // to re-draw.
+  End_Procedure
+
+  Procedure RePaintFull
+    handle hWnd hVoid
+    Get Window_Handle To hWnd
+    If hWnd Move (InvalidateRect(hWnd, 0, TRUE)) To hVoid
+  End_Procedure
+
+  Procedure RePaintIncremental
+    handle hWnd hVoid
+    if (pbNeverBeenPainted(self)) send RePaintFull
+    else begin
+      Get Window_Handle To hWnd
+      If hWnd begin
+        set pbIncrementalPaint to DFTRUE
+        Move (InvalidateRect(hWnd, 0, DFFALSE)) To hVoid
+      end
+    end
+  End_Procedure
+
+  Procedure Draw_Background
+  //send SetFillColor (pBackColor(self))
+  //send SetPenStyle PS_NULL
+  //send AddRectangleBackground 0 0 10000 10000
+  //send SetPenStyle PS_SOLID
+    send SetFillColor (pBackColor(self))
+    send SetPenColor (pBackColor(self))
+    send SetPenStyle PS_SOLID
+    send AddRectangleBackground 0 0 (piX_Range(self)) (piY_Range(self))
+
+    send SetPenColor (pPenColor(self))
+  End_Procedure
+
+  Procedure Draw_Data // GraphicArea
+    integer arr# itm# max# obj#
+    string title#
+    send BeginDraw
+    send Draw_Background
+    get pTitle to title#
+
+    if title# ne "" begin
+      send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_BOTTOM)
+      send SetTextColor clBlack
+      send SetStockFont SYSTEM_FONT
+      send AddText title# 800 5000
+    end
+    move (xyObjects(self)) to arr#
+    get item_count of arr# to max#
+    for itm# from 0 to (max#-1)
+      send Draw_Data to (value(arr#,itm#))
+    loop
+  End_Procedure
+
+  procedure mthd_MakeAreaTrackable
+    integer cb_val# type#
+    move (value(gr$CPU$RAM,gr$CPU$PC)) to type#
+    increment gr$CPU$PC
+    gosub vdfgraph$Prepare2Points
+    move (value(gr$CPU$RAM,gr$CPU$PC)) to cb_val#
+    increment gr$CPU$PC
+    send add_track to gr$TrackArray type# (low(gr$CoordXY1#)) (hi(gr$CoordXY1#)) (low(gr$CoordXY2#)) (hi(gr$CoordXY2#)) cb_val#
+  end_procedure
+  procedure mthd_SetPenColor
+    get value of gr$CPU$RAM item gr$CPU$PC to gr$PenColor
+    move 1 to gr$PenDirty
+    increment gr$CPU$PC
+  end_procedure
+  procedure mthd_SetPenWidth
+    get value of gr$CPU$RAM item gr$CPU$PC to gr$PenWidth
+    move 1 to gr$PenDirty
+    increment gr$CPU$PC
+  end_procedure
+  procedure mthd_SetPenStyle
+    get value of gr$CPU$RAM item gr$CPU$PC to gr$PenStyle
+    move 1 to gr$PenDirty
+    increment gr$CPU$PC
+  end_procedure
+  procedure mthd_SetFillColor
+    get value of gr$CPU$RAM item gr$CPU$PC to gr$FillColor
+    move 1 to gr$BrushDirty
+    increment gr$CPU$PC
+  end_procedure
+  procedure mthd_SetHatchStyle
+    get value of gr$CPU$RAM item gr$CPU$PC to gr$HatchStyle
+    move 1 to gr$BrushDirty
+    increment gr$CPU$PC
+  end_procedure
+  procedure mthd_SetBackColor
+    get value of gr$CPU$RAM item gr$CPU$PC to gr$BackColor
+    increment gr$CPU$PC
+  end_procedure
+  procedure mthd_SetRoundRectFactor
+    get value of gr$CPU$RAM item gr$CPU$PC to gr$RoundRectFactor
+    increment gr$CPU$PC
+  end_procedure
+  procedure mthd_SetPolyGonFillMode
+    get value of gr$CPU$RAM item gr$CPU$PC to gr$PolyGonFillMode
+    increment gr$CPU$PC
+  end_procedure
+  procedure mthd_SetTextAlign
+    integer tmp# vert# horz#
+    UInteger tAlign# 
+    get value of gr$CPU$RAM item gr$CPU$PC to tAlign#
+    increment gr$CPU$PC
+    move (tAlign# iand 3) to horz#       // 1:left 2:center 3:right
+    move ((tAlign# iand 12)/4) to vert#  // 1:top 2:vcenter 3:bottom
+    if vert# ne 2 begin
+      // Left:
+      if (horz#=1 and vert#=1) move (TA_LEFT+TA_TOP) to tAlign#
+      if (horz#=1 and vert#=2) move (TA_LEFT+TA_BASELINE) to tAlign#
+      if (horz#=1 and vert#=3) move (TA_LEFT+TA_BASELINE) to tAlign#
+      // Center:
+      if (horz#=2 and vert#=1) move (TA_CENTER+TA_TOP) to tAlign#
+      if (horz#=2 and vert#=2) move (TA_CENTER+TA_BASELINE) to tAlign#
+      if (horz#=2 and vert#=3) move (TA_CENTER+TA_BASELINE) to tAlign#
+      // Right:
+      if (horz#=3 and vert#=1) move (TA_RIGHT+TA_TOP) to tAlign#
+      if (horz#=3 and vert#=2) move (TA_RIGHT+TA_BASELINE) to tAlign#
+      if (horz#=3 and vert#=3) move (TA_RIGHT+TA_BASELINE) to tAlign#
+      move (GrphSetTextAlign(gr$hCurrentDC,tAlign#)) to gr$Void
+      move 0 to gr$vCenterActive
+    end
+    else begin
+      move (GrphSetTextAlign(gr$hCurrentDC,0)) to gr$Void
+      if horz# eq 1 move (XDT_LEFT  +XDT_VCENTER+XDT_NOCLIP+XDT_SINGLELINE) to gr$vCenterActive // Left
+      if horz# eq 2 move (XDT_CENTER+XDT_VCENTER+XDT_NOCLIP+XDT_SINGLELINE) to gr$vCenterActive // Center
+      if horz# eq 3 move (XDT_RIGHT +XDT_VCENTER+XDT_NOCLIP+XDT_SINGLELINE) to gr$vCenterActive // Right
+    end
+  end_procedure
+  procedure mthd_SetTextColor
+    dword tColor#
+    get value of gr$CPU$RAM item gr$CPU$PC to tColor#
+    increment gr$CPU$PC
+    move (SetTextColor(gr$hCurrentDC,tColor#)) to gr$Void
+  end_procedure
+  procedure mthd_SetStockFont
+    handle hFont#
+    integer StockFont#
+    get value of gr$CPU$RAM item gr$CPU$PC to StockFont#
+    increment gr$CPU$PC
+    gosub vdfgraph$DeletePreviousTTFont
+    Move (GetStockObject(StockFont#)) To hFont#
+    Move (SelectObject(gr$hCurrentDC, hFont#)) To gr$Void // select into Device Context
+  end_procedure
+  procedure mthd_SetTTFont
+    handle hFont#
+    integer pitch# angle# bold# italic# underline#
+    pointer address#
+    string name#
+    gosub vdfgraph$DeletePreviousTTFont
+    get value of gr$CPU$RAM item (gr$CPU$PC) to name#
+    get value of gr$CPU$RAM item (gr$CPU$PC+1) to pitch#
+    get value of gr$CPU$RAM item (gr$CPU$PC+2) to angle#
+    get value of gr$CPU$RAM item (gr$CPU$PC+3) to bold#
+    get value of gr$CPU$RAM item (gr$CPU$PC+4) to italic#
+    get value of gr$CPU$RAM item (gr$CPU$PC+5) to underline#
+    move (gr$CPU$PC+6) to gr$CPU$PC
+    Move (AddressOf(name#)) to address#
+    move (GrphCFA(-pitch#,0,angle#,0,if(bold#,700,0),italic#,underline#,0,ANSI_CHARSET,OUT_TT_PRECIS,CLIP_DEFAULT_PRECIS,DEFAULT_QUALITY,DEFAULT_PITCH ior FF_DONTCARE,address#)) to hFont#
+    move (SelectObject(gr$hCurrentDC, hFont#)) To gr$PreviousFont // select into Device Context
+    move hFont# to gr$hCurrentTTFont
+  end_procedure
+  procedure mthd_AddDot
+    Integer dsz# type# corr_x# corr_y# just# x# y#
+    String struct#
+    Address address# 
+    tPOINTS3 st3Points
+    tPOINTS4 st4Points
+
+    move (gr$DotSize/2) to dsz#
+    if type# eq DT_SQUARE move (dsz#/1.2) to dsz#
+    if dsz# lt 1 move 1 to dsz#
+    move gr$DotType to type#
+    gosub vdfgraph$PreparePoint
+    if type# eq DT_PIXEL begin
+      move 1 to dsz#
+      move DT_PLUS to type#
+    end
+
+    if type# ne DT_PIXEL begin // If dot type is pixel, we do no aligning
+      // Check for horizontal alignment
+      if type# ne DT_VERTICAL begin
+        move (gr$DotAlign iand 7) to just#       // 1:left_sp 2:left 3:center 4:right 5:right_sp
+        if just# eq 1 move (dsz#*2)  to corr_y#
+        if just# eq 2 move dsz#  to corr_y#
+        if just# eq 4 move (-dsz#) to corr_y#
+        if just# eq 5 move (-dsz#*2) to corr_y#
+      end
+      // Check for vertical alignment
+      if type# ne DT_HORIZONTAL begin
+        move ((gr$DotAlign iand 56)/8) to just#  // 1:top_sp 2:top 3:vcenter 4:bottom 5:bottom_sp
+        if just# eq 1 move (-dsz#*2) to corr_x#
+        if just# eq 2 move (-dsz#) to corr_x#
+        if just# eq 4 move dsz# to corr_x#
+        if just# eq 5 move (dsz#*2) to corr_x#
+      end
+    end
+    move (low(gr$CoordXY1#)+corr_y#) to y#
+    move (hi(gr$CoordXY1#)+corr_x#)  to x#
+    if type# eq DT_CROSS           begin
+      move (MoveTo(gr$hCurrentDC,y#-dsz#+1,x#-dsz#+1,0)) to gr$Void
+      move (LineTo(gr$hCurrentDC,y#+dsz#,x#+dsz#)) to gr$Void
+      move (MoveTo(gr$hCurrentDC,y#-dsz#+1,x#+dsz#-1,0)) to gr$Void
+      move (LineTo(gr$hCurrentDC,y#+dsz#,x#-dsz#)) to gr$Void
+    end
+    if type# eq DT_PLUS            begin
+      move (MoveTo(gr$hCurrentDC,y#-dsz#+1,x#,0)) to gr$Void
+      move (LineTo(gr$hCurrentDC,y#+dsz#,x#)) to gr$Void
+      move (MoveTo(gr$hCurrentDC,y#,x#+dsz#-1,0)) to gr$Void
+      move (LineTo(gr$hCurrentDC,y#,x#-dsz#)) to gr$Void
+    end
+    if type# eq DT_HORIZONTAL      begin
+      move (MoveTo(gr$hCurrentDC,y#-dsz#+1,x#,0)) to gr$Void
+      move (LineTo(gr$hCurrentDC,y#+dsz#,x#)) to gr$Void
+    end
+    if type# eq DT_VERTICAL        begin
+      move (MoveTo(gr$hCurrentDC,y#,x#+dsz#-1,0)) to gr$Void
+      move (LineTo(gr$hCurrentDC,y#,x#-dsz#)) to gr$Void
+    end
+    if type# eq DT_CIRCLE          begin
+      move (Ellipse(gr$hCurrentDC,y#-dsz#,x#-dsz#,y#+dsz#,x#+dsz#)) To gr$Void
+    end
+    if type# eq DT_TRIANGLE_UP     begin
+//      zerotype tPOINTS3 to struct#
+//      put (y#+dsz#) to struct# at tPOINTS3.x1
+//      put (x#+dsz#) to struct# at tPOINTS3.y1
+//      put  y#       to struct# at tPOINTS3.x2
+//      put (x#-dsz#) to struct# at tPOINTS3.y2
+//      put (y#-dsz#) to struct# at tPOINTS3.x3
+//      put (x#+dsz#) to struct# at tPOINTS3.y3
+//      getaddress of struct# to address#
+//      move (GrphPolyGon(gr$hCurrentDC,address#,3)) to gr$Void
+      
+      Move (y#+dsz#) to st3Points.x1
+      Move (x#+dsz#) to st3Points.y1
+      Move  y#       to st3Points.x2
+      Move (x#-dsz#) to st3Points.y2
+      Move (y#-dsz#) to st3Points.x3
+      Move (x#+dsz#) to st3Points.y3
+      Move (AddressOf(st3Points)) to address#
+      Move (GrphPolyGon(gr$hCurrentDC,address#,3)) to gr$Void
+    end
+    if type# eq DT_TRIANGLE_DOWN   begin
+      Move (y#-dsz#) to st3Points.x1
+      Move (x#-dsz#) to st3Points.y1
+      Move  y#       to st3Points.x2
+      Move (x#+dsz#) to st3Points.y2
+      Move (y#+dsz#) to st3Points.x3
+      Move (x#-dsz#) to st3Points.y3
+      Move (AddressOf(st3Points)) to address#
+      Move (GrphPolyGon(gr$hCurrentDC,address#,3)) to gr$Void
+
+//      zerotype tPOINTS3 to struct#
+//      put (y#-dsz#) to struct# at tPOINTS3.x1
+//      put (x#-dsz#) to struct# at tPOINTS3.y1
+//      put  y#       to struct# at tPOINTS3.x2
+//      put (x#+dsz#) to struct# at tPOINTS3.y2
+//      put (y#+dsz#) to struct# at tPOINTS3.x3
+//      put (x#-dsz#) to struct# at tPOINTS3.y3
+//      getaddress of struct# to address#
+//      move (GrphPolyGon(gr$hCurrentDC,address#,3)) to gr$Void
+    end
+    if type# eq DT_TRIANGLE_RIGHT  begin
+      Move (y#-dsz#) to st3Points.x1
+      Move (x#-dsz#) to st3Points.y1
+      Move (y#+dsz#) to st3Points.x2
+      Move  x#       to st3Points.y2
+      Move (y#-dsz#) to st3Points.x3
+      Move (x#+dsz#) to st3Points.y3
+      Move (AddressOf(st3Points)) to address#
+      Move (GrphPolyGon(gr$hCurrentDC,address#,3)) to gr$Void
+
+//      zerotype tPOINTS3 to struct#
+//      put (y#-dsz#) to struct# at tPOINTS3.x1
+//      put (x#-dsz#) to struct# at tPOINTS3.y1
+//      put (y#+dsz#) to struct# at tPOINTS3.x2
+//      put  x#       to struct# at tPOINTS3.y2
+//      put (y#-dsz#) to struct# at tPOINTS3.x3
+//      put (x#+dsz#) to struct# at tPOINTS3.y3
+//      getaddress of struct# to address#
+//      Move (GrphPolyGon(gr$hCurrentDC,address#,3)) to gr$Void
+    end
+    if type# eq DT_TRIANGLE_LEFT   begin
+      Move (y#+dsz#) to st3Points.x1
+      Move (x#+dsz#) to st3Points.y1
+      Move (y#-dsz#) to st3Points.x2
+      Move  x#       to st3Points.y2
+      Move (y#+dsz#) to st3Points.x3
+      Move (x#-dsz#) to st3Points.y3
+      Move (AddressOf(st3Points)) to address#
+      Move (GrphPolyGon(gr$hCurrentDC,address#,3)) to gr$Void
+
+//      zerotype tPOINTS3 to struct#
+//      put (y#+dsz#) to struct# at tPOINTS3.x1
+//      put (x#+dsz#) to struct# at tPOINTS3.y1
+//      put (y#-dsz#) to struct# at tPOINTS3.x2
+//      put  x#       to struct# at tPOINTS3.y2
+//      put (y#+dsz#) to struct# at tPOINTS3.x3
+//      put (x#-dsz#) to struct# at tPOINTS3.y3
+//      getaddress of struct# to address#
+//      move (GrphPolyGon(gr$hCurrentDC,address#,3)) to gr$Void
+    end
+    If type# eq DT_SQUARE          Begin
+      move (dsz#/1.2) to dsz#      
+      If dsz# lt 1 Move 1 to dsz#  
+      Move (y#-dsz#) to st4Points.x1
+      Move (x#-dsz#) to st4Points.y1
+      Move (y#-dsz#) to st4Points.x2
+      Move (x#+dsz#) to st4Points.y2
+      Move (y#+dsz#) to st4Points.x3
+      Move (x#+dsz#) to st4Points.y3
+      Move (y#+dsz#) to st4Points.x4
+      Move (x#-dsz#) to st4Points.y4
+      Move (AddressOf(st4Points)) to address#
+      Move (GrphPolyGon(gr$hCurrentDC,address#,4)) to gr$Void
+      
+//      zerotype tPOINTS4 to struct#
+//      move (dsz#/1.2) to dsz#
+//      if dsz# lt 1 move 1 to dsz#
+//      put (y#-dsz#) to struct# at tPOINTS4.x1
+//      put (x#-dsz#) to struct# at tPOINTS4.y1
+//      put (y#-dsz#) to struct# at tPOINTS4.x2
+//      put (x#+dsz#) to struct# at tPOINTS4.y2
+//      put (y#+dsz#) to struct# at tPOINTS4.x3
+//      put (x#+dsz#) to struct# at tPOINTS4.y3
+//      put (y#+dsz#) to struct# at tPOINTS4.x4
+//      put (x#-dsz#) to struct# at tPOINTS4.y4
+//      getaddress of struct# to address#
+//      move (GrphPolyGon(gr$hCurrentDC,address#,4)) to gr$Void
+    end
+    if type# eq DT_DIAMOND         begin
+      Move (y#-dsz#) to st4Points.x1
+      Move  x#       to st4Points.y1
+      Move  y#       to st4Points.x2
+      Move (x#+dsz#) to st4Points.y2
+      Move (y#+dsz#) to st4Points.x3
+      Move  x#       to st4Points.y3
+      Move  y#       to st4Points.x4
+      Move (x#-dsz#) to st4Points.y4
+      Move (AddressOf(st4Points)) to address#
+      Move (GrphPolyGon(gr$hCurrentDC,address#,4)) to gr$Void
+//      zerotype tPOINTS4 to struct#
+//      put (y#-dsz#) to struct# at tPOINTS4.x1
+//      put  x#       to struct# at tPOINTS4.y1
+//      put  y#       to struct# at tPOINTS4.x2
+//      put (x#+dsz#) to struct# at tPOINTS4.y2
+//      put (y#+dsz#) to struct# at tPOINTS4.x3
+//      put  x#       to struct# at tPOINTS4.y3
+//      put  y#       to struct# at tPOINTS4.x4
+//      put (x#-dsz#) to struct# at tPOINTS4.y4
+//      getaddress of struct# to address#
+//      move (GrphPolyGon(gr$hCurrentDC,address#,4)) to gr$Void
+    end
+  end_procedure
+  procedure mthd_SetDotStyle
+    move (value(gr$CPU$RAM,gr$CPU$PC)) to gr$DotType
+    increment gr$CPU$PC
+  end_procedure
+  procedure mthd_SetDotSize
+    move (value(gr$CPU$RAM,gr$CPU$PC)) to gr$DotSize
+    increment gr$CPU$PC
+  end_procedure
+  procedure mthd_SetDotAlign
+    move (value(gr$CPU$RAM,gr$CPU$PC)) to gr$DotAlign
+    increment gr$CPU$PC
+  end_procedure
+  procedure mthd_Rectangle
+    gosub vdfgraph$Prepare2Points
+    move (Rectangle(gr$hCurrentDC,low(gr$CoordXY1#),hi(gr$CoordXY1#),Low(gr$CoordXY2#),Hi(gr$CoordXY2#))) To gr$Void
+  end_procedure
+  procedure mthd_RectangleBackground // The only point about this is that we can kill it in the VPE version
+    gosub vdfgraph$Prepare2Points
+    move (Rectangle(gr$hCurrentDC,low(gr$CoordXY1#),hi(gr$CoordXY1#),Low(gr$CoordXY2#),Hi(gr$CoordXY2#))) To gr$Void
+  end_procedure
+  procedure mthd_Ellipse
+    gosub vdfgraph$Prepare2Points
+    move (Ellipse(gr$hCurrentDC,low(gr$CoordXY1#),hi(gr$CoordXY1#),Low(gr$CoordXY2#),Hi(gr$CoordXY2#))) To gr$Void
+  end_procedure
+  procedure mthd_RoundRect
+    gosub vdfgraph$Prepare2Points
+    move (RoundRect(gr$hCurrentDC,low(gr$CoordXY1#),hi(gr$CoordXY1#),Low(gr$CoordXY2#),Hi(gr$CoordXY2#),Low(gr$RoundRectFactor),Hi(gr$RoundRectFactor))) To gr$Void
+  end_procedure
+  procedure mthd_LineTo
+    gosub vdfgraph$PreparePoint
+    move (LineTo(gr$hCurrentDC,low(gr$CoordXY1#),hi(gr$CoordXY1#))) to gr$Void
+  end_procedure
+  procedure mthd_MoveTo
+    gosub vdfgraph$PreparePoint
+    move (MoveTo(gr$hCurrentDC,low(gr$CoordXY1#),hi(gr$CoordXY1#),0)) to gr$Void
+  end_procedure
+  procedure mthd_TextOut
+    pointer address# pRect#
+    String str# // rect#
+    tWinRect stRect
+
+    get value of gr$CPU$RAM item gr$CPU$PC to str#
+    if (pOemToAnsi_State(self)) move (Grph_OemToChar(str#)) to str#
+//    getaddress of str# to address#
+    Move (AddressOf(str#)) to address#
+    increment gr$CPU$PC
+    gosub vdfgraph$PreparePoint
+    If gr$vCenterActive Begin
+      Move (low(gr$CoordXY1#)) to stRect.left
+      Move (low(gr$CoordXY1#)) to stRect.right
+      Move (hi(gr$CoordXY1#))  to stRect.top
+      Move (hi(gr$CoordXY1#))  to stRect.bottom
+//      zerotype tRECT to rect#
+//      put (low(gr$CoordXY1#)) to rect# at tRECT.left
+//      put (low(gr$CoordXY1#)) to rect# at tRECT.right
+//      put (hi(gr$CoordXY1#))  to rect# at tRECT.top
+//      put (hi(gr$CoordXY1#))  to rect# at tRECT.bottom
+//      getaddress of rect# to pRect#
+      Move (AddressOf(stRect)) to pRect#
+      move (DrawText(gr$hCurrentDC,address#,-1,pRect#,gr$vCenterActive)) to gr$Void
+    end
+    Else Begin 
+      Move (TextOut(gr$hCurrentDC,low(gr$CoordXY1#),hi(gr$CoordXY1#),address#,length(str#))) to gr$Void
+    End
+  end_procedure
+
+  Procedure do_polygonline Integer line#
+    // Creates a string of (x,y) points and returns a pointer to the string
+    // This value can then be used as the array argument to the Polygon WinGDI
+    // function
+    Pointer address#
+    Integer iPointCount iPoint // argument_size# size_needed#
+//    String sPoints // Must be declared here, I think (I don't know)
+    tWinPoint[] aPoints
+    
+    gosub vdfgraph$Update_GDI_Objects
+    
+    Get value of gr$CPU$RAM Item gr$CPU$PC to iPointCount
+    Increment gr$CPU$PC
+    For iPoint from 0 to (iPointCount-1)
+      Get value of gr$CPU$RAM Item gr$CPU$PC to gr$CoordXY1#
+      Increment gr$CPU$PC
+      gosub vdfgraph$ConvertToGUI1
+      
+      Move (low(gr$CoordXY1#)) to aPoints[iPoint].x
+      Move (hi(gr$CoordXY1#)) to aPoints[iPoint].y
+    Loop
+    Move (AddressOf(aPoints)) to address#
+
+    If line# Begin
+        Move (GrphPolyline(gr$hCurrentDC,address#,iPointCount)) to gr$Void
+    End
+    Else Begin
+        Move (GrphPolyGon(gr$hCurrentDC,address#,iPointCount)) to gr$Void
+    End
+//    Set_Argument_Size argument_size#
+  End_Procedure
+  
+//  Procedure do_polygonline Integer line#
+//    // Creates a string of (x,y) points and returns a pointer to the string
+//    // This value can then be used as the array argument to the Polygon WinGDI
+//    // function
+//    Pointer address#
+//    Integer iPointCount iPoint argument_size# size_needed#
+//    String sPoints // Must be declared here, I think (I don't know)
+//    tWinPoint stPoint
+//    tWinPoint[] aPoints
+//    
+//    gosub vdfgraph$Update_GDI_Objects
+//    
+//    Get value of gr$CPU$RAM Item gr$CPU$PC to iPointCount
+//    Move (Points#*8) to size_needed#
+//    Get_Argument_Size to argument_size#
+//    If argument_size# lt size_needed# Set_Argument_Size size_needed#
+//    Increment gr$CPU$PC
+//    ZeroType tPOINT to gr$Point
+//    Move (Repeat(character(0),iPointCount*8)) to sPoints
+//    For iPoint from 0 to (iPointCount-1)
+//      Get value of gr$CPU$RAM Item gr$CPU$PC to gr$CoordXY1#
+//      Increment gr$CPU$PC
+//      gosub vdfgraph$ConvertToGUI1
+//      put (low(gr$CoordXY1#)) to gr$Point at tPOINT.X
+//      put (hi(gr$CoordXY1#)) to gr$Point at tPOINT.Y
+//      Move (overstrike(gr$Point,sPoints,iPoint*8+1)) to sPoints
+//    Loop
+//    Append sPoints (character(0)) // Add a null-terminator character to end of the string/array
+//    GetAddress of sPoints to address#
+//
+//    If line# Begin
+//        Move (GrphPolyline(gr$hCurrentDC,address#,points#)) to gr$Void
+//    End
+//    Else Begin
+//        Move (GrphPolyGon(gr$hCurrentDC,address#,points#)) to gr$Void
+//    End
+//    Set_Argument_Size argument_size#
+//  End_Procedure
+
+  procedure mthd_PolyLine
+    send do_polygonline 1
+  end_procedure
+
+  procedure mthd_PolyGon
+    Move (GrphSetPolyFillMode(gr$hCurrentDC,gr$PolyGonFillMode)) To gr$Void
+    send do_polygonline 0
+  end_procedure
+
+  procedure BeginDraw
+    move (piProgram_RAM(self)) to gr$CPU$RAM
+    move (oTrackableObjects(self)) to gr$TrackArray
+    send delete_data to gr$CPU$RAM
+    send delete_data to gr$TrackArray
+    move 0 to gr$CPU$PC
+  end_procedure
+
+  procedure AddRectangleTrack integer x1# integer y1# integer x2# integer y2# integer cb_val#
+    send AddRectangle x1# y1# x2# y2#
+    send MakeAreaTrackable GR_TRACK_RECTANGLE x1# y1# x2# y2# cb_val#
+  end_procedure
+  procedure MakeAreaTrackable integer type# integer x1# integer y1# integer x2# integer y2# integer trackobjid#
+    integer liTemp
+    set value of gr$CPU$RAM item gr$CPU$PC to msg_mthd_MakeAreaTrackable
+    set value of gr$CPU$RAM item (gr$CPU$PC+1) to type#
+    if (x1#>x2#) begin
+      move x2# to liTemp
+      move x1# to x2#
+      move liTemp to x1#
+    end
+    if (y1#>y2#) begin
+      move y2# to liTemp
+      move y1# to y2#
+      move liTemp to y1#
+    end
+    set value of gr$CPU$RAM item (gr$CPU$PC+2) to (x1#*65536+y1#)
+    set value of gr$CPU$RAM item (gr$CPU$PC+3) to (x2#*65536+y2#)
+    set value of gr$CPU$RAM item (gr$CPU$PC+4) to trackobjid#
+    move (gr$CPU$PC+5) to gr$CPU$PC
+  end_procedure
+
+  vdfgraph$Procedure_OneArg   SetPenColor        msg_mthd_SetPenColor
+  vdfgraph$Procedure_OneArg   SetPenWidth        msg_mthd_SetPenWidth
+  vdfgraph$Procedure_OneArg   SetPenStyle        msg_mthd_SetPenStyle
+  vdfgraph$Procedure_OneArg   SetFillColor       msg_mthd_SetFillColor
+  vdfgraph$Procedure_OneArg   SetHatchStyle      msg_mthd_SetHatchStyle
+  vdfgraph$Procedure_OneArg   SetBackColor       msg_mthd_SetBackColor
+  vdfgraph$Procedure_OneArg   SetTextAlign       msg_mthd_SetTextAlign
+  vdfgraph$Procedure_OneArg   SetTextColor       msg_mthd_SetTextColor
+  vdfgraph$Procedure_OneArg   SetStockFont       msg_mthd_SetStockFont
+
+  procedure SetTTFont string name# integer pitch# integer angle# integer bold# integer italic# integer underline#
+    set value of gr$CPU$RAM item gr$CPU$PC to msg_mthd_SetTTFont
+    set value of gr$CPU$RAM item (gr$CPU$PC+1) to name#
+    set value of gr$CPU$RAM item (gr$CPU$PC+2) to pitch#
+    set value of gr$CPU$RAM item (gr$CPU$PC+3) to angle#
+    set value of gr$CPU$RAM item (gr$CPU$PC+4) to bold#
+    set value of gr$CPU$RAM item (gr$CPU$PC+5) to italic#
+    set value of gr$CPU$RAM item (gr$CPU$PC+6) to underline#
+    move (gr$CPU$PC+7) to gr$CPU$PC
+  end_procedure
+  vdfgraph$Procedure_OneArg   SetRoundRectFactor          msg_mthd_SetRoundRectFactor
+  vdfgraph$Procedure_OneArg   SetPolyGonFillMode          msg_mthd_SetPolyGonFillMode
+  vdfgraph$Procedure_PlaneArg AddRectangle                msg_mthd_Rectangle
+  vdfgraph$Procedure_PlaneArg AddRectangleBackground      msg_mthd_RectangleBackground
+  procedure Add4Angle integer x1# integer y1# integer x2# integer y2# integer x3# integer y3# integer x4# integer y4#
+    send AddPolyPoint x1# y1#
+    send AddPolyPoint x2# y2#
+    send AddPolyPoint x3# y3#
+    send AddPolyPoint x4# y4#
+    send AddPolyGon
+  end_procedure
+  vdfgraph$Procedure_PlaneArg AddEllipse         msg_mthd_Ellipse
+  vdfgraph$Procedure_PlaneArg AddRoundRect       msg_mthd_RoundRect
+  vdfgraph$Procedure_LineArg  AddLineMvTo        msg_mthd_MoveTo
+  vdfgraph$Procedure_LineArg  AddLineGoTo        msg_mthd_LineTo
+
+  procedure AddLine integer x1# integer y1# integer x2# integer y2#
+    send AddLineMvTo x1# y1#
+    send AddLineGoTo x2# y2#
+    graph$showln ("Line: "+string(x1#)+","+string(y1#)+" to "+string(x2#)+","+string(y2#))
+  end_procedure
+
+  procedure AddText string str# integer x1# integer y1#
+    if str# ne "" begin // If an empty string is added the program may GPF
+      set value of gr$CPU$RAM item gr$CPU$PC to msg_mthd_TextOut
+      set value of gr$CPU$RAM item (gr$CPU$PC+1) to str#
+      set value of gr$CPU$RAM item (gr$CPU$PC+2) to (x1#*65536+y1#)
+      move (gr$CPU$PC+3) to gr$CPU$PC
+    end
+  end_procedure
+
+  procedure AddPolyLine // Must be preceded by calls to AddPolyPoint
+    integer iPolyPointsOffS#
+    get pPolyPointsOffS to iPolyPointsOffS#
+    ifnot iPolyPointsOffS# error 666 "No points specified for polyline! (vdfgraph.utl)"
+    set value of gr$CPU$RAM item (iPolyPointsOffS#-1) to msg_mthd_PolyLine
+    set value of gr$CPU$RAM item  iPolyPointsOffS#    to (gr$CPU$PC-iPolyPointsOffS#-1)
+    set pPolyPointsOffS to 0
+  end_procedure
+
+  procedure AddPolyGon // Must be preceded by calls to AddPolyPoint
+    integer iPolyPointsOffS#
+    get pPolyPointsOffS to iPolyPointsOffS#
+    ifnot iPolyPointsOffS# error 666 "No points specified for polygon! (vdfgraph.utl)"
+    set value of gr$CPU$RAM item (iPolyPointsOffS#-1) to msg_mthd_PolyGon
+    set value of gr$CPU$RAM item  iPolyPointsOffS#    to (gr$CPU$PC-iPolyPointsOffS#-1)
+    set pPolyPointsOffS to 0
+  end_procedure
+
+  procedure AddDot integer x# integer y#
+    set value of gr$CPU$RAM item gr$CPU$PC to msg_mthd_AddDot
+    set value of gr$CPU$RAM item (gr$CPU$PC+1) to (x#*65536+y#)
+    move (gr$CPU$PC+2) to gr$CPU$PC
+  end_procedure
+  procedure SetDotStyle integer x#
+    set value of gr$CPU$RAM item gr$CPU$PC to msg_mthd_SetDotStyle
+    set value of gr$CPU$RAM item (gr$CPU$PC+1) to x#
+    move (gr$CPU$PC+2) to gr$CPU$PC
+  end_procedure
+  procedure SetDotSize integer x#
+    set value of gr$CPU$RAM item gr$CPU$PC to msg_mthd_SetDotSize
+    set value of gr$CPU$RAM item (gr$CPU$PC+1) to x#
+    move (gr$CPU$PC+2) to gr$CPU$PC
+  end_procedure
+  procedure SetDotAlign integer x#
+    set value of gr$CPU$RAM item gr$CPU$PC to msg_mthd_SetDotAlign
+    set value of gr$CPU$RAM item (gr$CPU$PC+1) to x#
+    move (gr$CPU$PC+2) to gr$CPU$PC
+  end_procedure
+
+  procedure AddPolyPoint integer x# integer y#
+    ifnot (pPolyPointsOffS(self)) begin
+      set pPolyPointsOffS to (gr$CPU$PC+1)
+      move (gr$CPU$PC+2) to gr$CPU$PC // Reserve space for method and number of points
+    end
+    set value of gr$CPU$RAM item gr$CPU$PC to (x#*65536+y#)
+    increment gr$CPU$PC
+  end_procedure
+
+  procedure onMouseUp   integer x# integer y#
+  end_procedure
+  procedure onMouseDown integer x# integer y#
+  end_procedure
+  procedure onMouse2Up   integer x# integer y#
+  end_procedure
+  procedure onMouse2Down integer x# integer y#
+  end_procedure
+  procedure onMouseDrag integer x# integer y#
+  end_procedure
+  procedure onMouseMove integer x# integer y#
+  end_procedure
+  procedure onMouseDblClick integer x# integer y#
+  end_procedure
+  procedure onMouseUpTrack   integer cb_value# integer level#
+  end_procedure
+  procedure onMouseDownTrack integer cb_value# integer level#
+  end_procedure
+  procedure onMouse2UpTrack  integer cb_value# integer level#
+  end_procedure
+  procedure onMouse2DownTrack integer cb_value# integer level#
+  end_procedure
+  procedure onMouseDragTrack integer cb_value# integer level#
+  end_procedure
+  procedure onMouseMoveTrack integer cb_value# integer level#
+  end_procedure
+  procedure onMouseDblClickTrack integer cb_value# integer level#
+  end_procedure
+
+  procedure translate_to_onEvent integer msg# integer track_msg#
+    get absolute_mouse_location to gr$CoordXY1#
+    // In this place it would make more sense to ask if high and low
+    // 16 bits were gt 0, but that you can't. Instead we ask if they
+    // are less than 5000 (pixels from the edge):
+
+// Three of the lines below were taken out for test purposes on 2/10-2001:
+
+//  if (hi(gr$CoordXY1#)<=5000 and low(gr$CoordXY1#)<5000) begin
+
+      get piX_Offset to gr$GuiOffsetX#
+      get piY_Offset to gr$GuiOffsetY#
+      get piX_Range  to gr$X_Range
+      get piY_Range  to gr$Y_Range
+
+      Get GuiSize to gr$Tmp#
+      move (hi(gr$Tmp#))  to gr$GuiSizeX#
+      move (low(gr$Tmp#)) to gr$GuiSizeY#
+      move (oTrackableObjects(self)) to gr$TrackArray
+      send TestTrackHit to gr$TrackArray track_msg#
+      gosub vdfgraph$ConvertToVirtual
+//    if (hi(gr$CoordXY1#)<=10000 and low(gr$CoordXY1#)<=10000) ;
+         send msg# (hi(gr$CoordXY1#)) (low(gr$CoordXY1#))
+//  end
+  end_procedure
+  // Left mouse button down:
+  procedure WMSG_OnMouseDown Integer wParam Integer lParam
+    send translate_to_onEvent msg_onMouseDown msg_onMouseDownTrack
+  end_procedure
+  // Left mouse button up:
+  procedure WMSG_OnMouseUp   Integer wParam Integer lParam
+    send translate_to_onEvent msg_onMouseUp msg_onMouseUpTrack
+  end_procedure
+  // Right mouse button down:
+  procedure WMSG_OnMouse2Down Integer wParam Integer lParam
+    send translate_to_onEvent msg_onMouse2Down msg_onMouse2DownTrack
+  end_procedure
+  // right mouse button down:
+  procedure WMSG_OnMouse2Up   Integer wParam Integer lParam
+    send translate_to_onEvent msg_onMouse2Up msg_onMouse2UpTrack
+  end_procedure
+  // Mouse move:
+  procedure WMSG_OnMouseMove Integer wParam Integer lParam
+    // If left mouse button is depressed:
+    if (wParam iand MK_LBUTTON) send translate_to_onEvent msg_onMouseDrag msg_onMouseDragTrack
+    else                        send translate_to_onEvent msg_onMouseMove msg_onMouseMoveTrack
+  end_procedure
+  procedure WMSG_OnMouseDblClick Integer wParam Integer lParam
+    send translate_to_onEvent msg_onMouseDblClick msg_onMouseDblClickTrack
+  end_procedure
+
+  procedure Read_From_File integer channel# integer reset_tmp#
+    integer grb# reset#
+    if num_arguments gt 1 move reset_tmp# to reset#
+    else move 0 to reset#
+    if reset# send BeginDraw
+    get Read_Program_RAM of (oGraphOperationMsgTabel(self)) (piProgram_RAM(self)) 1 to grb#
+  end_procedure
+  procedure Write_To_File integer channel#
+    integer grb#
+    get Write_Program_RAM of (oGraphOperationMsgTabel(self)) (piProgram_RAM(self)) channel# to grb#
+  end_procedure
+
+  procedure DoZoom number lnZoomFactorX number lnZoomFactorY
+    send RepaintFull
+  end_procedure
+  procedure DoViewPort integer lhVert integer lhHorz
+  end_procedure
+  procedure ResetZoom
+  end_procedure
+  procedure ResetViewPort
+  end_procedure
+end_class // GraphicArea
+
+//> The purpose of the oGraphOperationMsgTabel object is to facilitate
+//> writing the graphics stored in out useal array to a sequential file.
+//> The reason that we cannot just dump our array to file, is that the array
+//> contains message identifiers that may change each time we compile.
+//> Therefore a mechanism, that will translate message ID's to recognizable
+//> symbols is needed to do this.
+object oGraphOperationMsgTabel is an array
+  item_property_list
+    item_property string  psName.i
+    item_property integer piMsg_Id.i
+    item_property integer piNum_Arguments.i
+  end_item_property_list
+  procedure Define_Graphic_Message integer no# string name# integer msg# integer args#
+    set psName.i          no# to name#
+    set piMsg_Id.i        no# to msg#
+    set piNum_Arguments.i no# to args#
+  end_procedure
+  send Define_Graphic_Message GO_SetPenColor        "Pen color"         msg_mthd_SetPenColor        1
+  send Define_Graphic_Message GO_SetPenWidth        "Pen width"         msg_mthd_SetPenWidth        1
+  send Define_Graphic_Message GO_SetPenStyle        "Pen style"         msg_mthd_SetPenStyle        1
+  send Define_Graphic_Message GO_SetFillColor       "Fill color"        msg_mthd_SetFillColor       1
+  send Define_Graphic_Message GO_SetHatchStyle      "Hatch style"       msg_mthd_SetHatchStyle      1
+  send Define_Graphic_Message GO_SetBackColor       "Back color"        msg_mthd_SetBackColor       1
+  send Define_Graphic_Message GO_SetRoundRectFactor "Round rect factor" msg_mthd_SetRoundRectFactor 1
+  send Define_Graphic_Message GO_SetPolyGonFillMode "Polygon fill mode" msg_mthd_SetPolyGonFillMode 1
+  send Define_Graphic_Message GO_SetTextAlign       "Text alignment"    msg_mthd_SetTextAlign       1
+  send Define_Graphic_Message GO_SetTextColor       "Text color"        msg_mthd_SetTextColor       1
+  send Define_Graphic_Message GO_SetStockFont       "Stock font"        msg_mthd_SetStockFont       1
+  send Define_Graphic_Message GO_SetTTFont          "TT font"           msg_mthd_SetTTFont          6
+  send Define_Graphic_Message GO_AddDot             "Dot"               msg_mthd_AddDot             1
+  send Define_Graphic_Message GO_SetDotStyle        "Dot style"         msg_mthd_SetDotStyle        1
+  send Define_Graphic_Message GO_SetDotSize         "Dot size"          msg_mthd_SetDotSize         1
+  send Define_Graphic_Message GO_SetDotAlign        "Dot alignment"     msg_mthd_SetDotAlign        1
+  send Define_Graphic_Message GO_Rectangle          "Rectangle"         msg_mthd_Rectangle          2
+  send Define_Graphic_Message GO_Ellipse            "Ellipse"           msg_mthd_Ellipse            2
+  send Define_Graphic_Message GO_RoundRect          "Round rectangle"   msg_mthd_RoundRect          2
+  send Define_Graphic_Message GO_LineTo             "Line to"           msg_mthd_LineTo             1
+  send Define_Graphic_Message GO_MoveTo             "Move to"           msg_mthd_MoveTo             1
+  send Define_Graphic_Message GO_TextOut            "Text"              msg_mthd_TextOut            2
+  send Define_Graphic_Message GO_Polygon            "Polygon"           msg_mthd_Polygon            -1
+  send Define_Graphic_Message GO_PolyLine           "Polyline"          msg_mthd_PolyLine           -1
+  function MsgToGO integer msg# returns integer
+    integer row# max#
+    move 0 to row#
+    get row_count to max#
+    while row# lt max#
+      if (piMsg_Id.i(self,row#)) eq msg# function_return row#
+      increment row#
+    loop
+    function_return -1
+  end_function
+  function Write_Program_RAM integer obj# integer ch# returns integer
+    integer itm# max# msg# err# GO# args#
+    string str#
+    get item_count of obj# to max#
+    move 0 to itm#
+    move 0 to err#
+    while itm# lt max#
+      get value of obj# item itm# to msg#
+      increment itm#
+      move (MsgToGO(self,msg#)) to GO#
+      if GO# ne -1 begin
+        writeln channel ch# GO#
+        move (piNum_Arguments.i(self,GO#)) to args#
+        if args# eq -1 begin
+          get value of obj# item itm# to args#
+          increment itm#
+          writeln args#
+        end
+        while args# gt 0
+          get value of obj# item itm# to str#
+          increment itm#
+          writeln str#
+          decrement args#
+        loop
+      end
+      else move 1 to err#
+    loop
+    function_return err#
+  end_function
+  function Read_Program_RAM integer obj# integer ch# returns integer
+    integer msg# err# GO# args# seqeof#
+    string str#
+    move 0 to err#
+    repeat
+      readln channel ch# GO#
+      move (seqeof) to seqeof#
+      ifnot seqeof# begin
+        move (piMsg_Id.i(self,GO#)) to msg#
+        if msg# begin
+          set value of obj# item (item_count(obj#)) to msg#
+          move (piNum_Arguments.i(self,GO#)) to args#
+          if args# eq -1 begin
+            readln args#
+            set value of obj# item (item_count(obj#)) to args#
+          end
+          while args# gt 0
+            readln str#
+            set value of obj# item (item_count(obj#)) to str#
+            decrement args#
+          loop
+        end
+        else move 1 to err#
+      end
+    until seqeof#
+    function_return err#
+  end_function
+end_object
+
+class cAutoScaler is an array
+  procedure construct_object
+    forward send construct_object
+    set delegation_mode to delegate_to_parent
+
+    // Parameter properties:
+    property number  pMinValue    0  // minimum value
+    property number  pMaxValue    0  // maximum value
+    property integer pZeroBased   0  // is the scale zero based?
+    property number  pAirPct      5  // default: 5% air
+    property integer pMinSteps    8  // lowest acceptable number of steps
+    property integer pMaxSteps    11 // highest acceptable number of steps
+
+    // Local properties:
+    property number  pMinValue    private 0  // minimum value
+    property number  pMaxValue    private 0  // maximum value
+    property number  pMinValueTmp private 0  // minimum value
+    property number  pMaxValueTmp private 0  // maximum value
+    property integer pStepsTmp    private 0  // maximum value
+
+    property integer pCorrection  private 0  // 0=no corr,   1=positive corr,
+                                             // 2=neg corr, -1=negative scale.
+    set value item  0 to 0
+    set value item  1 to 0.1
+    set value item  2 to 0.2
+    set value item  3 to 0.25
+    set value item  4 to 0.5
+    set value item  5 to 1
+    set value item  6 to 2
+    set value item  7 to 2.5
+    set value item  8 to 5
+    set value item  9 to 10
+
+    // Result properties
+    property number  pLowValue 0  // lower value
+    property number  pStepSize 0  // step size
+    property integer pSteps    0  // number of steps
+    property integer pDecimals 0  // max number of decimals
+  end_procedure
+
+  function ScaleEfficiency returns number
+    function_return (!$.pMaxValue(self)-!$.pMinValue(self)/(pSteps(self)*pStepSize(self)))
+  end_function
+
+  function AirAmount returns number
+    function_return (!$.pMaxValue(self)-!$.pMinValue(self)*pAirPct(self)/100)
+  end_function
+
+  procedure ApplyAir  // apply air (and zero base, if specified)
+    number AirAmount#
+    if (pZeroBased(self)) begin
+      if (!$.pMinValue(self)>=0 and !$.pMaxValue(self)>=0) begin
+        set !$.pMinValue to 0
+        set !$.pMaxValue to (!$.pMaxValue(self)+AirAmount(self))
+      end
+      else begin
+        if (!$.pMinValue(self)<=0 and !$.pMaxValue(self)<=0) begin
+          set !$.pMaxValue to 0
+          set !$.pMinValue to (!$.pMinValue(self)-AirAmount(self))
+        end
+        else begin
+          get AirAmount to AirAmount#
+          set !$.pMaxValue to (!$.pMaxValue(self)+AirAmount#)
+          set !$.pMinValue to (!$.pMinValue(self)-AirAmount#)
+        end
+      end
+    end
+    else begin
+      get AirAmount to AirAmount#
+      set !$.pMaxValue to (!$.pMaxValue(self)+AirAmount#)
+      set !$.pMinValue to (!$.pMinValue(self)-AirAmount#)
+    end
+  end_procedure
+
+  procedure UndoCorrections // Undo corrections done by SetupScaleParams
+    integer correction#
+    number  tmp#
+    get !$.pCorrection to correction#
+    // Negative scale:
+    if correction# eq -1 set pLowValue to (0-(pLowValue(self)+(pStepSize(self)*pSteps(self))))
+    // Scale based on positive part:
+    if correction# eq  1 set pLowValue to (pLowValue(self)-(pStepSize(self)*(pSteps(self)-!$.pStepsTmp(self))))
+    // Scale based on negative part:
+    if correction# eq  2 begin
+      move (pLowValue(self)-(pStepSize(self)*(pSteps(self)-!$.pStepsTmp(self)))) to tmp#
+      set pLowValue to (0-tmp#-(pSteps(self)*pStepSize(self)))
+    end
+  end_procedure
+
+  procedure SetupScaleParams integer steps#
+    number temp#
+    // This procedure acts only if there is both positive and negativ values
+    // on the scale. Then the number of steps# passed to the procedure is
+    // distributed between the positive and the negative part.
+    //
+    // The effect is that the scaling problem is reduced to one with only
+    // positive values in a way that ensures that the value 0 is included
+
+    set !$.pMinValueTmp to (!$.pMinValue(self))
+    set !$.pMaxValueTmp to (!$.pMaxValue(self))
+    set pSteps to steps#
+    set !$.pStepsTmp to steps#
+    set !$.pCorrection to 0 // no correction
+    if (!$.pMaxValueTmp(self)>0 and !$.pMinValueTmp(self)<0) begin
+      if (!$.pMaxValueTmp(self)>(0-!$.pMinValueTmp(self))) begin // major part on positive side
+        move (!$.pMaxValueTmp(self)/(!$.pMaxValueTmp(self)-!$.pMinValueTmp(self))) to temp# // fraction on positive side
+        set !$.pStepsTmp to (integer(temp#*steps#))
+        set !$.pMinValueTmp to 0
+        set !$.pCorrection to 1 // scale based on positive part
+      end
+      else begin // major part on negative side
+        move (!$.pMinValueTmp(self)/(!$.pMinValueTmp(self)-!$.pMaxValueTmp(self))) to temp# // fraction on negative side
+        set !$.pStepsTmp to (integer(temp#*steps#))
+        set !$.pMaxValueTmp to (0-!$.pMinValueTmp(self))
+        set !$.pMinValueTmp to 0
+        set !$.pCorrection to 2 // scale based on negative part
+      end
+    end
+    if (!$.pMaxValueTmp(self)<0 and !$.pMinValueTmp(self)<0) begin
+      move (-!$.pMaxValueTmp(self)) to temp#
+      set !$.pMaxValueTmp to (-!$.pMinValueTmp(self))
+      set !$.pMinValueTmp to temp#
+      set !$.pCorrection to -1 // scale negation
+    end
+  end_procedure
+
+  function StepSize number StepSize# integer OffSet# returns number
+    integer itm# max#
+    get item_count to max#
+    for itm# from 0 to (max#-1-OffSet#)
+      if (StepSize#>number_value(self,itm#) and ;
+          StepSize#<number_value(self,itm#+1)) ;
+            function_return (number_value(self,itm#+1+OffSet#))
+    loop
+    if OffSet# begin
+      for itm# from 0 to (max#-1-OffSet#)
+        if StepSize# eq (number_value(self,itm#)) ;
+          function_return (number_value(self,itm#+OffSet#))
+      loop
+    end
+    function_return StepSize#
+  end_function
+
+  function RoundOff number temp# returns number
+    function_return (integer((temp#+0.00005)*10000)/10000.0)
+  end_function
+
+  function Exp10 integer base# returns number
+    integer count#
+    number rval#
+    move 1 to rval#
+    if base# ge 0 begin
+      for count# from 1 to base#
+        move (rval#*10) to rval#
+      loop
+    end
+    else begin
+      for count# from 1 to (0-base#)
+        move (rval#/10) to rval#
+      loop
+    end
+    function_return rval#
+  end_function
+
+  // This procedure acts on the values of !$.pMinValueTmp, !$.pMaxValueTmp
+  // and !$.pStepsTmp setting the values of pLowValue and pStepSize.
+  //   The OffSet# variable is used to make the StepSize function return a
+  // larger step size than necessary to cover the range passed to it. This
+  // happens when the correction of the LowValue makes the MaxValue go off
+  // the top.
+  procedure TmpScale
+    number StepSize# Range# LowValue#
+    integer Base# OffSet# Max# MaxOffSet#
+    move 0 to OffSet#
+    move (item_count(self)-2) to MaxOffSet#
+    repeat
+      // Calculate step size:
+      move ((!$.pMaxValueTmp(self)-!$.pMinValueTmp(self))/!$.pStepsTmp(self)) to Range#
+      if range# gt 0 begin
+        move (log(range#)/log(10)) to base#
+        move (range#/(Exp10(self,base#))) to StepSize#
+        //showln (string(range#)) " " (string(base#)) " " (string(StepSize#))
+        move (RoundOff(self,StepSize#)) to StepSize#
+        move (StepSize(self,StepSize#,OffSet#)) to StepSize#
+        move (StepSize#*Exp10(self,base#)) to StepSize#
+        move (StepSize#*(integer(!$.pMinValueTmp(self)/StepSize#))) to LowValue#
+        if (StepSize#*!$.pStepsTmp(self)+LowValue#) ge (!$.pMaxValueTmp(self)) begin
+          set pLowValue to (StepSize#*(integer(!$.pMinValueTmp(self)/StepSize#)))
+          set pStepSize to StepSize#
+          procedure_return
+        end
+      end
+      increment OffSet#
+    until OffSet# gt MaxOffSet#
+  end_procedure
+
+  procedure MaxDecimals
+    // This procedure sets the property maximum number of decimals (pDecimals)
+    integer count# dec# maxdec#
+    number value#
+    move 0 to dec#
+    move -20 to maxdec#
+    for count# from 0 to (pSteps(self))
+      move (pLowValue(self)+(count#*pStepSize(self))) to value#
+      if value# ne 0 begin
+        move (NumberOfDecs(value#)) to dec#
+        if dec# gt maxdec# move dec# to maxdec#
+      end
+    loop
+    set pDecimals to (maxdec# max 0)
+  end_procedure
+
+  procedure AutoScale
+    integer count# best_eff_stps#
+    number best_eff# best_eff_tmp#
+    set !$.pMinValue to (pMinValue(self))
+    set !$.pMaxValue to (pMaxValue(self))
+    send ApplyAir
+    move 0 to best_eff#
+    move 0 to best_eff_stps#
+    for count# from (pMinSteps(self)) to (pMaxSteps(self))
+      send SetupScaleParams count#
+      send TmpScale
+      send UndoCorrections
+      get ScaleEfficiency to best_eff_tmp#
+      if best_eff_tmp# gt best_eff# begin
+        move best_eff_tmp# to best_eff#
+        move count# to best_eff_stps#
+      end
+    loop
+    send SetupScaleParams best_eff_stps#
+    send TmpScale
+    send UndoCorrections
+    send MaxDecimals
+  end_procedure
+end_class // cAutoScaler
+
+#REPLACE GLS_None PS_NULL   // Grid line styles
+#REPLACE GLS_Line PS_SOLID
+#REPLACE GLS_Dot  PS_DOT
+#REPLACE GLS_Dash PS_DASH
+#REPLACE GLS_Mark PS_DASHDOTDOT
+#REPLACE GLS_Base -337
+
+//#REPLACE GLS_None  1
+//#REPLACE GLS_Major 2
+//#REPLACE GLS_Minor 3
+
+integer gr$xCoordMin
+number  gr$xLowValue
+number  gr$xFactor
+number  gr$xConvValue
+integer gr$yCoordMin
+number  gr$yHiValue
+number  gr$yFactor
+number  gr$yConvValue
+number  gr$yConvValueTemp
+
+if dfFalse begin // Do not execution this on program start up.
+  vdfgraph$Convert:
+    move (gr$yHiValue-gr$yConvValue*gr$yFactor+gr$xCoordMin) to gr$yConvValueTemp
+    move (gr$xConvValue-gr$xLowValue*gr$xFactor+gr$yCoordMin) to gr$yConvValue
+    move gr$yConvValueTemp to gr$xConvValue
+  return
+end
+
+object oGridStyles is an array
+  item_property_list
+    item_property string  psName.i
+    item_property integer piColor.i
+    item_property integer pixMajorScale.i
+    item_property integer pixMinorScale.i
+    item_property integer pixMinorDiv.i
+    item_property integer piyMajorScale.i
+    item_property integer piyMinorScale.i
+    item_property integer piyMinorDiv.i
+    item_property integer piMajorScaleColor.i
+    item_property integer piMinorScaleColor.i
+  end_item_property_list
+  function iAddGridStyle string name# integer Col# integer xMajScl# integer xMinScl# integer xMinDiv# integer yMajScl# integer yMinScl# integer yMinDiv# integer MajSclCol# integer MinSclCol# returns integer
+    integer rval#
+    get row_count to rval#
+    set psName.i            item rval# to name#
+    set piColor.i           item rval# to Col#
+    set pixMajorScale.i     item rval# to xMajScl#
+    set pixMinorScale.i     item rval# to xMinScl#
+    set pixMinorDiv.i       item rval# to xMinDiv#
+    set piyMajorScale.i     item rval# to yMajScl#
+    set piyMinorScale.i     item rval# to yMinScl#
+    set piyMinorDiv.i       item rval# to yMinDiv#
+    set piMajorScaleColor.i item rval# to MajSclCol#
+    set piMinorScaleColor.i item rval# to MinSclCol#
+    function_return rval#
+  end_function
+  procedure ApplyGridStyle integer row# integer obj#
+    set pColor           of obj# to (piColor.i(self,row#))           // Backgnd color
+    set pxMajorScale     of obj# to (pixMajorScale.i(self,row#))     //
+    set pxMinorScale     of obj# to (pixMinorScale.i(self,row#))     //
+    set pxMinorDiv       of obj# to (pixMinorDiv.i(self,row#))       // Number of minors per major
+    set pyMajorScale     of obj# to (piyMajorScale.i(self,row#))     //
+    set pyMinorScale     of obj# to (piyMinorScale.i(self,row#))     //
+    set pyMinorDiv       of obj# to (piyMinorDiv.i(self,row#))       // Number of minors per major
+    set pMajorScaleColor of obj# to (piMajorScaleColor.i(self,row#)) // Color (x and y)
+    set pMinorScaleColor of obj# to (piMinorScaleColor.i(self,row#)) // Color (x and y)
+  end_procedure
+  procedure AddDefaults
+    integer grb#
+    DEFINE GS_DEFAULT FOR 0
+    get iAddGridStyle "Default" -1 GLS_Line GLS_Dot 2 GLS_Line GLS_Dot 2 clDkGray clGray to grb#
+    DEFINE GS_BARCHART1 FOR 1
+    get iAddGridStyle "Barchart 1" clWhite GLS_None GLS_None 2 GLS_Line GLS_Dot 1 clBlack clGray to grb#
+    DEFINE GS_BARCHART_YMARKERS_ONLY FOR 2
+    get iAddGridStyle "Y-markers only" clWhite GLS_None GLS_None 2 GLS_Line GLS_None 1 clBlack clGray to grb#
+  end_procedure
+  send AddDefaults
+end_object // oGridStyles
+
+Class cCoordinateSystem is an array
+  procedure construct_object
+    forward send construct_object
+    set delegation_mode to delegate_to_parent
+
+    // Properties regarding the grid:
+    property integer pxAreaLoc  2000          // These values indicates
+    property integer pyAreaLoc  2000          // the area of the graph
+    property integer pxAreaSiz  6000          // inside the graph area.
+    property integer pyAreaSiz  7000          //
+
+    property integer pColor            -1       // Transparent
+    property integer pxMajorScale      GLS_Line //
+    property integer pxMinorScale      GLS_Dot  //
+    property integer pxMinorDiv        2        // number of minors per major
+    property integer pyMajorScale      GLS_Line //
+    property integer pyMinorScale      GLS_Dot  //
+    property integer pyMinorDiv        2        // number of minors per major
+    property integer pMinorScaleColor  clGray   // color (x and y)
+    property integer pMajorScaleColor  clDkGray // color (x and y)
+
+    // ********************************************************************
+    // *** Properties regarding scaling                                 ***
+    // ********************************************************************
+
+    property integer pxAutoScale  0   // automatic auto scale (x)?
+    property number  pxMinValue   0   // minimum value
+    property number  pxMaxValue   100 // maximum value
+    property integer pxZeroBased  0   // is the scale zero based?
+    property number  pxAirPct     0   // default: 0% air
+    property integer pxMinSteps   8   // lowest acceptable number of steps
+    property integer pxMaxSteps   11  // highest acceptable number of steps
+    property number  pxLowValue   0   // lower value
+    property integer pxSteps      10  // number of steps
+    property number  pxStepSize   10  // step size
+    property integer pxDecimals   0   // max number of decimals
+
+    property integer pyAutoScale  1   // automatic auto scale (y)?
+    property number  pyMinValue   0   // minimum value
+    property number  pyMaxValue   100 // maximum value
+    property integer pyZeroBased  1   // is the scale zero based?
+    property number  pyAirPct     5   // default: 5% air
+    property integer pyMinSteps   8   // lowest acceptable number of steps
+    property integer pyMaxSteps   11  // highest acceptable number of steps
+    property number  pyLowValue   0   // lower value
+    property integer pySteps      10  // number of steps
+    property number  pyStepSize   10  // step size
+    property integer pyDecimals   0   // max number of decimals
+
+    object AutoScaler is an cAutoScaler
+    end_object
+
+    property integer pBarChartState   0
+    property integer pxAutoAxisText   AT_AUTO
+    property integer pyAutoAxisText   AT_AUTO
+
+    property string  pTitleX          ""
+    property string  pTitleY          ""
+
+    object xyObjects is an array
+    end_object
+
+    object oAxisTexts is an array
+    end_object
+
+    property integer pxTextStockFont    ANSI_VAR_FONT
+    property string  pxTextTTFontName   private "Arial"
+    property integer pxTextTTFontSize     14
+    property integer pxTextTTFontAngle    0
+    property integer pxTextTTFontBold     0
+    property integer pxTextTTFontItalic   0
+    property integer pxTextColor          clBlack
+    property integer pxTextAlign          0
+    property integer pxTextOffSet         50
+    property integer pyTextStockFont      ANSI_VAR_FONT
+    property string  pyTextTTFontName   private "Arial"
+    property integer pyTextTTFontSize     14
+    property integer pyTextTTFontAngle    0
+    property integer pyTextTTFontBold     0
+    property integer pyTextTTFontItalic   0
+    property integer pyTextColor          clBlack
+    property integer pyTextAlign          0
+    property integer pyTextOffSet         50
+  end_procedure
+
+  procedure set pxTextTTFontName string str#
+    set !$.pxTextTTFontName to str#
+    set pxTextStockFont to 0
+  end_procedure
+  function pxTextTTFontName returns string
+    if (pxTextStockFont(self)) function_return 0
+    function_return (!$.pxTextTTFontName(self))
+  end_function
+  procedure set pyTextTTFontName string str#
+    set !$.pyTextTTFontName to str#
+    set pyTextStockFont to 0
+  end_procedure
+  function pyTextTTFontName returns string
+    if (pyTextStockFont(self)) function_return 0
+    function_return (!$.pyTextTTFontName(self))
+  end_function
+
+  procedure set area_location integer x# integer y#
+    set pxAreaLoc to x#
+    set pyAreaLoc to y#
+  end_procedure
+  procedure set area_size integer x# integer y#
+    set pxAreaSiz to x#
+    set pyAreaSiz to y#
+  end_procedure
+
+  procedure ApplyGridStyle integer no#
+    integer self#
+    move self to self#
+    send ApplyGridStyle to (oGridStyles(self)) no# self#
+  end_procedure
+
+  procedure Set AxisTextX integer column# string str#
+    set pxAutoAxisText to AT_TEXT
+    set value of (oAxisTexts(self)) item (column#*2) to str#
+  end_procedure
+  procedure Set AxisTextY integer column# string str#
+    set pyAutoAxisText to AT_TEXT
+    set value of (oAxisTexts(self)) item (column#*2+1) to str#
+  end_procedure
+  function AxisTextX integer column# returns string
+    function_return (value(oAxisTexts(self),column#*2))
+  end_function
+  function AxisTextY integer column# returns string
+    function_return (value(oAxisTexts(self),column#*2+1))
+  end_function
+  procedure DeleteAxisText
+    send delete_data to (oAxisTexts(self))
+  end_procedure
+
+  procedure register_xy_object integer obj# // cCoordinateSystem
+    integer arr#
+    move (xyObjects(self)) to arr#
+    set value of arr# item (item_count(arr#)) to obj#
+  end_procedure
+
+  procedure end_construct_object
+    integer self#
+    move self to self#
+    forward send end_construct_object
+    delegate send register_xy_object self#
+  end_procedure
+
+  procedure DrawGraphFrame
+    integer x1# y1# x2# y2#
+    move (pxAreaLoc(self)) to x1#
+    move (pyAreaLoc(self)) to y1#
+    move (x1#+pxAreaSiz(self)) to x2#
+    move (y1#+pyAreaSiz(self)) to y2#
+    delegate send AddLineMvTo x1# y1#
+    delegate send AddLineGoTo x1# y2#
+    delegate send AddLineGoTo x2# y2#
+    delegate send AddLineGoTo x2# y1#
+    delegate send AddLineGoTo x1# y1#
+  end_procedure
+
+  #COMMAND delegate_send$Coord1
+    move x1# to gr$xConvValue
+    move y1# to gr$yConvValue
+    gosub vdfgraph$Convert
+    delegate send !1 gr$xConvValue gr$yConvValue
+  #ENDCOMMAND
+  #COMMAND delegate_send$Coord2
+    move x1# to gr$xConvValue
+    move y1# to gr$yConvValue
+    gosub vdfgraph$Convert
+    move gr$xConvValue to x1#
+    move gr$yConvValue to y1#
+    move x2# to gr$xConvValue
+    move y2# to gr$yConvValue
+    gosub vdfgraph$Convert
+    delegate send !1 x1# y1# gr$xConvValue gr$yConvValue
+  #ENDCOMMAND
+
+  procedure MakeAreaTrackable integer type# number x1# number y1# number x2# number y2# integer trackobjid#
+    move x1# to gr$xConvValue
+    move y1# to gr$yConvValue
+    gosub vdfgraph$Convert
+    move gr$xConvValue to x1#
+    move gr$yConvValue to y1#
+    move x2# to gr$xConvValue
+    move y2# to gr$yConvValue
+    gosub vdfgraph$Convert
+    delegate send MakeAreaTrackable type# x1# y1# gr$xConvValue gr$yConvValue trackobjid#
+  end_procedure
+  procedure AddRectangleTrack number x1# number y1# number x2# number y2# integer cb_val#
+    send AddRectangle x1# y1# x2# y2#
+    send MakeAreaTrackable GR_TRACK_RECTANGLE x1# y1# x2# y2# cb_val#
+  end_procedure
+  procedure AddRectangle number x1# number y1# number x2# number y2#
+    delegate_send$Coord2 AddRectangle
+  end_procedure
+  procedure AddEllipse number x1# number y1# number x2# number y2#
+    delegate_send$Coord2 AddEllipse
+  end_procedure
+  procedure AddRoundRect number x1# number y1# number x2# number y2#
+    delegate_send$Coord2 AddRoundRect
+  end_procedure
+  procedure AddLine number x1# number y1# number x2# number y2#
+    graph$showln ("Line: "+string(x1#)+","+string(y1#)+" to "+string(x2#)+","+string(y2#))
+    delegate_send$Coord2 AddLine
+  end_procedure
+  procedure AddLineMvTo number x1# number y1#
+    delegate_send$Coord1 AddLineMvTo
+  end_procedure
+  procedure AddLineGoTo number x1# number y1#
+    delegate_send$Coord1 AddLineGoTo
+  end_procedure
+  procedure AddDot number x1# number y1#
+    delegate_send$Coord1 AddDot
+  end_procedure
+  procedure AddText string str# integer x1# integer y1#
+    move x1# to gr$xConvValue
+    move y1# to gr$yConvValue
+    gosub vdfgraph$Convert
+    delegate send AddText str# gr$xConvValue gr$yConvValue
+  end_procedure
+  procedure AddPolyPoint integer x1# integer y1#
+    delegate_send$Coord1 AddPolyPoint
+  end_procedure
+  function nxHighValue returns number
+    function_return (pxSteps(self)*pxStepSize(self)+pxLowValue(self))
+  end_function
+  function nyHighValue returns number
+    function_return (pySteps(self)*pyStepSize(self)+pyLowValue(self))
+  end_function
+  function nxRange returns number
+    function_return (pxSteps(self)*pxStepSize(self))
+  end_function
+  function nyRange returns number
+    function_return (pySteps(self)*pyStepSize(self))
+  end_function
+
+  procedure InitConversionGlobals // This represents a change of coordinate system
+    move (pxLowValue(self)) to gr$xLowValue
+    move (pyStepSize(self)*pySteps(self)+pyLowValue(self)) to gr$yHiValue
+    move (pyAreaSiz(self)/(pxSteps(self)*pxStepSize(self))) to gr$xFactor
+    move (pxAreaSiz(self)/(pySteps(self)*pyStepSize(self))) to gr$yFactor
+    move (pxAreaLoc(self)) to gr$xCoordMin
+    move (pyAreaLoc(self)) to gr$yCoordMin
+    graph$showln (string(gr$xLowValue))
+    graph$showln (string(gr$yHiValue))
+    graph$showln (string(gr$xFactor))
+    graph$showln (string(gr$yFactor))
+    graph$showln (string(gr$xCoordMin))
+    graph$showln (string(gr$yCoordMin))
+  end_procedure
+
+  procedure BroadcastNotifyAutoScale
+    integer arr# itm# max# obj#
+    move (xyObjects(self)) to arr#
+    get item_count of arr# to max#
+    for itm# from 0 to (max#-1)
+      send NotifyAutoScale to (value(arr#,itm#))
+    loop
+  end_procedure
+
+  procedure AutoScale
+    integer obj#
+    send BroadcastNotifyAutoScale
+    move (AutoScaler(self)) to obj#
+    if (pxAutoScale(self)) begin
+      set pMinValue  of obj# to (pxMinValue(self))
+      set pMaxValue  of obj# to (pxMaxValue(self))
+      set pZeroBased of obj# to (pxZeroBased(self))
+      set pAirPct    of obj# to (pxAirPct(self))
+      set pMinSteps  of obj# to (pxMinSteps(self))
+      set pMaxSteps  of obj# to (pxMaxSteps(self))
+      send AutoScale to obj#
+      set pxLowValue to (pLowValue(obj#))
+      set pxStepSize to (pStepSize(obj#))
+      set pxSteps    to (pSteps(obj#))
+      set pxDecimals to (pDecimals(obj#))
+    end
+    if (pyAutoScale(self)) begin
+      set pMinValue  of obj# to (pyMinValue(self))
+      set pMaxValue  of obj# to (pyMaxValue(self))
+      set pZeroBased of obj# to (pyZeroBased(self))
+      set pAirPct    of obj# to (pyAirPct(self))
+      set pMinSteps  of obj# to (pyMinSteps(self))
+      set pMaxSteps  of obj# to (pyMaxSteps(self))
+      send AutoScale to obj#
+      set pyLowValue to (pLowValue(obj#))
+      set pyStepSize to (pStepSize(obj#))
+      set pySteps    to (pSteps(obj#))
+      set pyDecimals to (pDecimals(obj#))
+    end
+  end_procedure
+  procedure DrawGridLines
+    integer MajorStep#     MinorStep#
+    integer MajorStepMax#  MinorStepMax#
+    integer MajorSteps#    MinorSteps#
+    number  MajorLowValue# MinorLowValue#
+    number  MajorStepSize# MinorStepSize#
+    number  MaxValue#      MinValue#
+
+    send SetPenWidth 1
+
+    if (pColor(self)<>-1) begin
+      send SetFillColor (pColor(self))
+      send SetPenColor  (pColor(self))
+      delegate send AddRectangle (pxAreaLoc(self)) (pyAreaLoc(self)) (pxAreaLoc(self)+pxAreaSiz(self)) (pyAreaLoc(self)+pyAreaSiz(self))
+    end
+
+    send SetPenColor (pMinorScaleColor(self))
+    // If minor grids, they must be drawn first:
+    if (pxMinorScale(self)<>GLS_None) begin
+      send SetPenStyle (pxMinorScale(self))
+      get pxSteps    to MajorStepMax#
+      get pxLowValue to MajorLowValue#
+      get pxStepSize to MajorStepSize#
+      get pxMinorDiv to MinorStepMax#
+      move (MajorStepSize#/MinorStepMax#) to MinorStepSize#
+      get pyLowValue to MinValue#
+      get nyHighValue to MaxValue#
+      for MajorStep# from 0 to (MajorStepMax#-1)
+        move (MajorStep#*MajorStepSize#+MajorLowValue#) to MinorLowValue#
+        for MinorStep# from 1 to (MinorStepMax#-1)
+          send AddLine (MinorStep#*MinorStepSize#+MinorLowValue#) MinValue# (MinorStep#*MinorStepSize#+MinorLowValue#) MaxValue#
+        loop
+      loop
+    end
+    if (pyMinorScale(self)<>GLS_None) begin
+      send SetPenStyle (pyMinorScale(self))
+      get pySteps    to MajorStepMax#
+      get pyLowValue to MajorLowValue#
+      get pyStepSize to MajorStepSize#
+      get pyMinorDiv to MinorStepMax#
+      move (MajorStepSize#/MinorStepMax#) to MinorStepSize#
+      get pxLowValue to MinValue#
+      get nxHighValue to MaxValue#
+      for MajorStep# from 0 to (MajorStepMax#-1)
+        move (MajorStep#*MajorStepSize#+MajorLowValue#) to MinorLowValue#
+        for MinorStep# from 1 to (MinorStepMax#-1)
+          send AddLine MinValue# (MinorStep#*MinorStepSize#+MinorLowValue#) MaxValue# (MinorStep#*MinorStepSize#+MinorLowValue#)
+        loop
+      loop
+    end
+
+    // Then we draw the major grid lines:
+    send SetPenColor (pMajorScaleColor(self))
+    if (pxMajorScale(self)<>GLS_None) begin
+      get pxSteps    to MajorStepMax#
+      get pxLowValue to MajorLowValue#
+      get pxStepSize to MajorStepSize#
+      get pyLowValue to MinValue#
+      get nyHighValue to MaxValue#
+
+      if (pxMajorScale(self)) eq GLS_Base begin
+        send SetPenStyle PS_Solid
+        move 0 to MajorStepMax#
+      end
+      else send SetPenStyle (pxMajorScale(self))
+
+      for MajorStep# from 0 to MajorStepMax#
+        send AddLine (MajorStep#*MajorStepSize#+MajorLowValue#) MinValue# (MajorStep#*MajorStepSize#+MajorLowValue#) MaxValue#
+      loop
+    end
+    if (pyMajorScale(self)<>GLS_None) begin
+      get pySteps    to MajorStepMax#
+      get pyLowValue to MajorLowValue#
+      get pyStepSize to MajorStepSize#
+      get pxLowValue to MinValue#
+      get nxHighValue to MaxValue#
+
+      if (pyMajorScale(self)) eq GLS_Base begin
+        send SetPenStyle PS_Solid
+        move 0 to MajorStepMax#
+      end
+      else send SetPenStyle (pyMajorScale(self))
+
+      for MajorStep# from 0 to MajorStepMax#
+        send AddLine MinValue# (MajorStep#*MajorStepSize#+MajorLowValue#) MaxValue# (MajorStep#*MajorStepSize#+MajorLowValue#)
+      loop
+    end
+  end_procedure
+
+  procedure DrawAxisTextX integer stp# string str#
+    delegate send AddText str# (pxAreaLoc(self)+pxAreaSiz(self)+pxTextOffSet(self)) (stp#+if(pBarChartState(self),0.5,0.0)*pyAreaSiz(self)/pxSteps(self)+pyAreaLoc(self))
+  end_procedure
+  procedure DrawAxisTextY integer stp# string str#
+    delegate send AddText str# (-stp#*pxAreaSiz(self)/pySteps(self)+pxAreaLoc(self)+pxAreaSiz(self)) (pyAreaLoc(self)-pyTextOffSet(self))
+  end_procedure
+
+  procedure DrawAxisTextsSetupX
+    integer angle#
+    send SetTextColor (pxTextColor(self))
+    if (pxTextStockFont(self)) begin
+      send SetStockFont (pxTextStockFont(self))
+      move 0 to angle#
+    end
+    else begin
+      get pxTextTTFontAngle to angle#
+      send SetTTFont (pxTextTTFontName(self)) (pxTextTTFontSize(self)) angle# (pxTextTTFontBold(self)) (pxTextTTFontItalic(self)) 0
+    end
+    if angle# eq 0      send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_TOP)
+    else begin
+      if angle# ge 1800 send SetTextAlign (VDFGR_TA_LEFT  +VDFGR_TA_BOTTOM)
+      else begin
+        if angle# gt 900  send SetTextAlign (VDFGR_TA_RIGHT +VDFGR_TA_BOTTOM)
+        else              send SetTextAlign (VDFGR_TA_RIGHT +VDFGR_TA_TOP)
+      end
+    end
+  end_procedure
+  procedure DrawAxisTextsSetupY
+    integer angle#
+    send SetTextColor (pyTextColor(self))
+    if (pyTextStockFont(self)) begin
+      send SetStockFont (pyTextStockFont(self))
+      move 0 to angle#
+    end
+    else begin
+      get pyTextTTFontAngle to angle#
+      send SetTTFont (pyTextTTFontName(self)) (pyTextTTFontSize(self)) angle# (pyTextTTFontBold(self)) (pyTextTTFontItalic(self)) 0
+    end
+    if angle# eq 0      send SetTextAlign (VDFGR_TA_RIGHT+VDFGR_TA_VCENTER)
+    else begin
+      if angle# ge 1800 send SetTextAlign (VDFGR_TA_LEFT+VDFGR_TA_VCENTER)
+      else              send SetTextAlign (VDFGR_TA_RIGHT +VDFGR_TA_TOP)
+    end
+  end_procedure
+
+  procedure DrawAxisTexts
+    integer decs# stp# self#
+    number ssz# low# max#
+    string title#
+    if (pxAutoAxisText(self)<>AT_NONE) begin
+      send DrawAxisTextsSetupX
+      get pxDecimals to decs#
+      get pxSteps    to max#
+      if (pBarChartState(self)) decrement max#
+      get pxStepSize to ssz#
+      get pxLowValue to low#
+      if (pxAutoAxisText(self)=AT_AUTO) begin
+        for stp# from 0 to max#
+          send DrawAxisTextX stp# (NumToStr(stp#*ssz#+low#,decs#))
+        loop
+      end
+      else begin // AT_TEXT
+        for stp# from 0 to max#
+          send DrawAxisTextX stp# (AxisTextX(self,stp#))
+        loop
+      end
+    end
+    if (pyAutoAxisText(self)<>AT_NONE) begin
+      send DrawAxisTextsSetupY
+      get pyDecimals to decs#
+      get pySteps    to max#
+      get pyStepSize to ssz#
+      get pyLowValue to low#
+      if (pyAutoAxisText(self)=AT_AUTO) begin
+        for stp# from 0 to max#
+          send DrawAxisTextY stp# (NumToStr(stp#*ssz#+low#,decs#))
+        loop
+      end
+      else begin
+        for stp# from 0 to max#
+          send DrawAxisTextY stp# (AxisTextY(self,stp#))
+        loop
+      end
+    end
+    get pTitleX to title#
+    if title# ne "" begin
+      move self to self#
+      send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_TOP)
+      send SetTextColor clBlack
+      send SetStockFont ANSI_VAR_FONT
+//      send AddText title# (nxRange(self#)*0.01+nxHighValue(self#)) (pyLowValue(self#))
+      send AddText title# (nxHighValue(self#)-(nxRange(self#)/2.0)) (pyLowValue(self#)-(nyRange(self#)/10.0))
+    end
+    get pTitleY to title#
+    if title# ne "" begin
+      move self to self#
+      send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_BOTTOM)
+      send SetTextColor clBlack
+      send SetStockFont ANSI_VAR_FONT
+      send AddText title# (pxLowValue(self#)) (nyRange(self#)*0.05+nyHighValue(self#))
+//      send AddText title# (pxLowValue(self#)) (nyRange(self#)*0.12+nyHighValue(self#))
+    end
+  end_procedure
+  procedure DrawGraph
+    integer arr# itm# max# obj#
+    move (xyObjects(self)) to arr#
+    get item_count of arr# to max#
+    for itm# from 0 to (max#-1)
+      send Draw_Data to (value(arr#,itm#))
+    loop
+  end_procedure
+  procedure Draw_Data // cCoordinateSystem
+    send AutoScale
+    send InitConversionGlobals
+    send DrawGridLines
+    send DrawAxisTexts
+    send DrawGraph
+  end_procedure
+end_class // cCoordinateSystem
+
+class cBoxSignatures is a cArray
+  procedure construct_object
+    forward send construct_object
+    property integer pDeltaRow 900
+    property integer pDeltaCol 2000
+    property integer pLocRow   1800
+    property integer pLocCol   500
+    property integer pBoxSizeR 800
+    property integer pBoxSizeC 400
+    property integer pMaxRow   5
+    property integer pFrameCol clWhite
+    property integer pBackCol  -1 // Transparent
+  end_procedure
+  item_property_list
+    item_property string  psLabel.i
+    item_property integer piFrameColor.i
+    item_property integer piBackColor.i
+    item_property integer piHatchStyle.i
+    item_property integer piHatchColor.i
+  end_item_property_list cBoxSignatures
+  procedure add_signature string str# integer color_frame# integer color_back# integer hatch# integer color_hatch#
+    integer row#
+    get row_count to row#
+    set psLabel.i      item row# to str#
+    set piFrameColor.i item row# to color_frame#
+    set piBackColor.i  item row# to color_back#
+    set piHatchStyle.i item row# to hatch#
+    set piHatchColor.i item row# to color_hatch#
+  end_procedure
+  procedure draw_frame
+    integer itm# max# row_offset# col_offset# rows# columns#
+    integer x1# y1# x2# y2#
+    move (row_count(self)) to max#
+
+    move (max#/pMaxRow(self)+1) to columns#
+    move (pMaxRow(self) min max#) to rows#
+    move (pLocRow(self)) to x1#
+    move (pLocCol(self)) to y1#
+    move (rows#*pDeltaRow(self)+x1#) to x2#
+    move (columns#*pDeltaCol(self)+y1#) to y2#
+    if (pBackCol(self)<>-1) begin
+      send SetFillColor (pBackCol(self))
+      send SetPenColor (pFrameCol(self))
+      send AddRectangle x1# y1# x2# y2#
+    end
+  end_procedure
+  procedure Draw_Data // cBoxSignatures
+    integer row# max# row_offset# col_offset#
+    integer x1# y1# x2# y2# base# LocRow# LocCol#
+    integer DeltaRow# DeltaCol# BoxSizeR# BoxSizeC# MaxRow#
+    integer color_frame# color_back# hatch# color_hatch#
+    string str#
+
+    send draw_frame
+
+    get pDeltaRow to DeltaRow#
+    get pDeltaCol to DeltaCol#
+    get pBoxSizeR to BoxSizeR#
+    get pBoxSizeC to BoxSizeC#
+    get pMaxRow   to MaxRow#
+    get pLocRow to LocRow#
+    get pLocCol to LocCol#
+
+    get row_count to max#
+    move 0 to row_offset#
+    move 0 to col_offset#
+    for row# from 0 to (max#-1)
+      if row_offset# ge MaxRow# begin
+        move 0 to row_offset#
+        increment col_offset#
+      end
+      move (row_offset#*DeltaRow#+LocRow#) to x1#
+      move (col_offset#*DeltaCol#+LocCol#) to y1#
+      move (x1#+BoxSizeR#) to x2#
+      move (y1#+BoxSizeC#) to y2#
+
+      get psLabel.i      item row# to str#
+      if (str#<>"") begin
+        get piFrameColor.i item row# to color_frame#
+        get piBackColor.i  item row# to color_back#
+        get piHatchStyle.i item row# to hatch#
+        get piHatchColor.i item row# to color_hatch#
+
+        send SetFillColor color_back#
+        if (color_frame#>-1) begin
+          send SetPenColor color_frame#
+          send AddRectangle x1# y1# x2# y2#
+        end
+        send SetTextAlign (VDFGR_TA_LEFT+VDFGR_TA_TOP)
+        send SetTextColor clBlack
+        send SetStockFont ANSI_VAR_FONT
+        send AddText      str# x1# (y1#+BoxSizeC#+100)
+      end
+
+      increment row_offset#
+    loop
+  end_procedure
+end_class // cBoxSignatures
+
+
+// This class is designed to hold the data for a bar chart. Data may by
+// stored, recalled and summed using these messages:
+//
+//       Procedure Sto_Data
+//       Function  nRcl_Data.iii
+//       Procedure Sum_Data
+//
+class cBarChartData is an array
+  procedure construct_object
+    forward send construct_object
+    set delegation_mode to delegate_to_parent
+    property integer pStacks 1
+    property integer pSeries
+
+    property integer pMinColumnUsed 0
+    property integer pMaxColumnUsed 1
+
+    property number  pMinY 0
+    property number  pMaxY 0
+
+    object oSignatures is an array
+    end_object
+    property integer pSignatures_Object 0
+  end_procedure
+
+  Function iData_Index.iii integer column# integer serie# integer stack# returns integer
+    function_return (column#*pSeries(self)+serie#*pStacks(self)+stack#)
+  End_Function
+
+  Procedure UpdateColumnsUsed integer column#
+    if column# gt (pMaxColumnUsed(self)) set pMaxColumnUsed to column#
+    if column# lt (pMinColumnUsed(self)) set pMinColumnUsed to column#
+  End_Procedure
+
+  Procedure Sto_Data number value# integer column# integer serie# integer stack#
+    set value item (iData_Index.iii(self,column#,serie#,stack#)) to value#
+    send UpdateColumnsUsed column#
+  End_Procedure
+  Function nRcl_Data.iii integer column# integer serie# integer stack# returns number
+    integer idx#
+    get iData_Index.iii column# serie# stack# to idx#
+    function_return (number_value(self,idx#))
+  End_Function
+  Procedure Sum_Data number value# integer column# integer serie# integer stack#
+    integer idx#
+    get iData_Index.iii column# serie# stack# to idx#
+    set value item idx# to (value#+number_value(self,idx#))
+    send UpdateColumnsUsed column#
+  End_Procedure
+
+  Function iColumns returns integer
+    number rval#
+    move (1.0*item_count(self)/(pSeries(self)*pStacks(self))) to rval#
+    if rval# ne (integer(rval#)) move (rval#+1) to rval#
+    function_return rval#
+  End_Function
+
+  Function nColumnSum integer column# integer serie# integer code# returns number
+    integer stack#
+    number rval# tmp#
+    move 0 to rval#
+    for stack# from 0 to (pStacks(self)-1)
+      move (nRcl_Data.iii(self,column#,serie#,stack#)) to tmp#
+      // top:
+      if code# eq 0 if tmp# ge 0 move (rval#+tmp#) to rval#
+      // bottom:
+      if code# eq 1 if tmp# le 0 move (rval#+tmp#) to rval#
+      // top reduced with negative bottom:
+      if code# eq 2              move (rval#+tmp#) to rval#
+    loop
+    function_return rval#
+  End_Function
+
+  Procedure CalculateRange
+    integer column# stack# serie#
+    integer max_column# max_stack# max_serie#
+    number min# max# tmp_neg# tmp_pos# value#
+    get pStacks  to max_stack#
+    get pSeries  to max_serie#
+    get iColumns to max_column#
+    move 0 to min#
+    move 0 to max#
+    for column# from 0 to (max_column#-1)
+      for serie# from 0 to (max_serie#-1)
+        move 0 to tmp_neg#
+        move 0 to tmp_pos#
+        for stack# from 0 to (max_stack#-1)
+          get nRcl_Data.iii column# serie# stack# to value#
+          if value# ge 0 move (tmp_pos#+value#) to tmp_pos#
+          else           move (tmp_neg#+value#) to tmp_neg#
+        loop
+        if tmp_pos# gt max# move tmp_pos# to max#
+        if tmp_neg# lt min# move tmp_neg# to min#
+      loop
+    loop
+    set pMinY to min#
+    set pMaxY to max#
+  End_Procedure
+
+  Procedure Reset_Data
+    send delete_data
+    set pMinColumnUsed to 0
+    set pMaxColumnUsed to -1
+    set pMinY to 0
+    set pMaxY to 0
+  End_Procedure
+
+  procedure Add_Serie_Signature integer serie# string str#
+    set value of (oSignatures(self)) item (serie#*2+0) to str#
+  end_procedure
+  procedure Add_Stack_Signature integer stack# string str#
+    set value of (oSignatures(self)) item (stack#*2+1) to str#
+  end_procedure
+  procedure Reset_Signatures
+    send delete_data to (oSignatures(self))
+  end_procedure
+end_class // cBarChartData
+
+class cGraphData is an array
+  procedure construct_object
+    forward send construct_object
+    set delegation_mode to delegate_to_parent
+    property integer pIndexedData_State 0
+  end_procedure
+end_class
+
+// Coloring strategy for bar charts.
+// ---------------------------------
+// If there are 4 or less stacks and 8 or less series then stacks will be
+// nuance coded. Otherwise ugly hatches are used
+
+// Bar Chart Coloring Strategies
+#REPLACE BC_COLOR_ON_SERIES -1
+#REPLACE BC_COLOR_ON_STACKS -2
+#REPLACE BC_COLOR_ON_COLUMN -3
+#REPLACE BC_HATCH_ON_SERIES -2
+#REPLACE BC_HATCH_ON_STACKS -3
+
+class cBarChart is a cBarChartData
+  procedure construct_object
+    forward send construct_object
+    set delegation_mode to delegate_to_parent
+    property integer pAir                10 // Percent air between columns
+    property integer pBarFrameColor      clBlack // -1 => no frame
+    property integer pxAutoScale         1
+    property integer pyAutoScale         1
+    property integer pHatchState         BC_HATCH_ON_STACKS
+    property integer pColorState         BC_COLOR_ON_SERIES
+    property integer pSmartColor_State   true
+    property integer private.pSmartColor true
+  end_procedure
+
+  procedure end_construct_object
+    integer self#
+    move self to self#
+    forward send end_construct_object
+    delegate send register_xy_object self#
+  end_procedure
+
+  procedure Transfer_Signature
+    integer max_stack# max_serie# stack# serie# obj#
+    get pSignatures_Object to obj#
+    if obj# begin
+      get pStacks to max_stack#
+      get pSeries to max_serie#
+      if max_serie# gt 1 begin
+        for serie# from 0 to (max_serie#-1)
+//          send add_signature to obj# string str# integer color_frame# integer color_back# integer hatch# integer color_hatch#
+        loop
+      end
+      if max_stack# gt 1 begin
+        for stack# from 0 to (max_stack#-1)
+        loop
+      end
+    end
+  end_procedure
+//procedure add_signature string str# integer color_frame# integer color_back# integer hatch# integer color_hatch#
+
+  procedure NotifyAutoScale
+    if (pxAutoScale(self)) begin
+      delegate set pxAutoScale to false
+      set pxLowValue to 0
+      set pxSteps    to (iColumns(self))
+      set pxStepSize to 10
+      set pBarChartState to true
+    end
+    if (pyAutoScale(self)) begin
+      send CalculateRange
+      set pyMinValue to (pMinY(self))
+      set pyMaxValue to (pMaxY(self))
+    end
+  end_procedure
+
+  function iColor.iii integer column# integer serie# integer stack# returns integer
+    integer ColorState#
+    if (private.pSmartColor(self)) function_return (iColorNuance.iii(self,serie#,stack#,pStacks(self)-1))
+    get pColorState to ColorState#
+    if ColorState# ge 0 function_return ColorState# // Constant color
+    if ColorState# eq BC_COLOR_ON_SERIES function_return (iColor(self,serie#))
+    if ColorState# eq BC_COLOR_ON_STACKS function_return (iColor(self,stack#))
+  end_function
+  function iHatch.iii integer column# integer serie# integer stack# returns integer
+    integer HatchState#
+    if (private.pSmartColor(self)) function_return HS_NONE
+    get pHatchState to HatchState#
+    if HatchState# ge -1 function_return HatchState# // Constant hatch
+    if HatchState# eq BC_HATCH_ON_SERIES function_return (iHatch(self,serie#))
+    if HatchState# eq BC_HATCH_ON_STACKS function_return (iHatch(self,stack#))
+  end_function
+
+  function nColumnWidth returns number
+    integer liColumns
+    number lnRange
+    get nxRange to lnRange // This will delegate to an object of class cCoordinateSystem
+    get iColumns to liColumns
+    function_return (lnRange/liColumns)
+  end_function
+  function nBarWidth returns number
+    integer liAir liSeries
+    number lnColumnWidth
+    get pAir to liAir
+    get pSeries to liSeries
+    get nColumnWidth to lnColumnWidth
+    move (lnColumnWidth*(100-liAir)/100) to lnColumnWidth
+    function_return (lnColumnWidth/liSeries)
+  end_function
+  function nColumnOffsetX integer column# returns number
+    number lnColumnWidth
+    get nColumnWidth to lnColumnWidth
+    function_return (lnColumnWidth*column#+pxLowValue(self))
+  end_function
+  function nBarOffsetX integer column# integer serie# returns number
+    number lnColumnOffsetX lnBarWidth
+    get nColumnOffsetX column# to lnColumnOffsetX
+    get nBarWidth to lnBarWidth
+    move (pAir(self)*nColumnWidth(self)/200+lnColumnOffsetX) to lnColumnOffsetX
+    function_return (serie#*lnBarWidth+lnColumnOffsetX)
+  end_function
+
+  // liWhere:  0=left 1=mid 2=right
+  function nBarCoordX integer column# integer serie# integer liWhere returns number
+    number lnX
+    get nBarOffsetX column# serie# to lnX
+    if (liWhere=1) move (nBarWidth(self)/2.0+lnX) to lnX // Mid
+    if (liWhere=2) move (nBarWidth(self)+lnX) to lnX     // Right
+    function_return lnX
+  end_function
+
+  // liWhere: 0=Buttom 1=Mid 2=Top, liStack -1:upper stack -2=lower stack
+  function nBarCoordY integer liColumn integer liSerie integer liStack integer liWhere returns number
+    number lnNegativeSum lnPositiveSum lnValue
+    integer liMaxStack liTestStack
+
+    get pStacks to liMaxStack
+    move 0 to lnNegativeSum
+    move 0 to lnPositiveSum
+    decrement liMaxStack
+    for liTestStack from 0 to liMaxStack
+      get nRcl_Data.iii liColumn liSerie liTestStack to lnValue
+      if lnValue ne 0 begin // Only if there is something to draw#
+        if lnValue ge 0 begin
+          if (liTestStack=liStack) begin
+            if (liWhere=0) function_return lnPositiveSum
+            if (liWhere=1) function_return (lnValue/2+lnPositiveSum)
+            if (liWhere=2) function_return (lnPositiveSum+lnValue)
+          end
+          move (lnPositiveSum+lnValue) to lnPositiveSum
+        end
+        else begin
+          if (liTestStack=liStack) begin
+            if (liWhere=2) function_return lnNegativeSum
+            if (liWhere=1) function_return (lnValue/2+lnNegativeSum)
+            if (liWhere=0) function_return (lnNegativeSum+lnValue)
+          end
+          move (lnNegativeSum+lnValue) to lnNegativeSum
+        end
+      end
+    loop // liStack
+    if (liStack=-1) function_return lnPositiveSum
+    if (liStack=-2) function_return lnNegativeSum
+    function_return 0
+  end_function
+
+  procedure draw_bar integer column# integer serie# integer stack# number from# number to#
+    integer self# hatch# BarFrameColor# color#
+    number width# OffsetX#
+    get nBarWidth to width#
+    get nBarOffsetX column# serie# to OffsetX#
+    move self to self#
+    get iHatch.iii column# serie# stack# to hatch#
+    get iColor.iii column# serie# stack# to color#
+    get pBarFrameColor to BarFrameColor#
+    if BarFrameColor# eq -1 send SetPenColor Color#
+    else                    send SetPenColor BarFrameColor#
+    if hatch# ne HS_NONE begin
+      send SetHatchStyle HS_NONE
+      send SetFillColor  clWhite
+      send AddRectangle OffsetX# from# (OffsetX#+width#) to#
+    end
+    send SetHatchStyle hatch#
+    send SetFillColor color#
+    send AddRectangle OffsetX# from# (OffsetX#+width#) to#
+  end_procedure
+
+  procedure SetupColorScheme
+    if (pSmartColor_State(self) and pStacks(self)<5 and pSeries(self)<9) set private.pSmartColor to true
+    else set private.pSmartColor to false
+  end_procedure
+
+  procedure Draw_Data // cBarChart
+    integer column# stack# serie#
+    integer max_column# max_stack# max_serie#
+    number min# max# tmp_neg# tmp_pos# value#
+
+    send SetupColorScheme
+
+    get pStacks  to max_stack#
+    get pSeries  to max_serie#
+    get iColumns to max_column#
+    for column# from 0 to (max_column#-1)
+      for serie# from 0 to (max_serie#-1)
+        move 0 to tmp_neg#
+        move 0 to tmp_pos#
+        for stack# from 0 to (max_stack#-1)
+          get nRcl_Data.iii column# serie# stack# to value#
+          if value# ne 0 begin // Only if there is something to draw#
+            if value# ge 0 begin
+              send draw_bar column# serie# stack# tmp_pos# (tmp_pos#+value#)
+              move (tmp_pos#+value#) to tmp_pos#
+            end
+            else begin
+              send draw_bar column# serie# stack# tmp_neg# (tmp_neg#+value#)
+              move (tmp_neg#+value#) to tmp_neg#
+            end
+          end
+        loop // stack
+        // send end_draw_serie
+      loop
+      // send end_draw_column
+    loop
+  end_procedure
+
+//function private.Replace_Column_Del string str# string del# returns string
+//  function_return (replaces(del#,str#,""))
+//end_function
+//
+//procedure Export_To_SpreadSheet string Column_Del# string DecPoint#
+//  integer column# serie# stack# max_stack# max_serie# max_column#
+//  number temp_value#
+//  string tmp_str#
+//  get pStacks  to max_stack#
+//  get pSeries  to max_serie#
+//  get iColumns to max_column#
+//
+//  writeln '"' (private.Replace_Column_Del(self,pTitle(self),Column_Del#)) '"'
+//
+//  writeln
+//  writeln '"' (private.Replace_Column_Del(self,"X: "+pTitleX(self),Column_Del#)) '"'
+//  writeln '"' (private.Replace_Column_Del(self,"Y: "+pTitleY(self),Column_Del#)) '"'
+//  writeln
+//
+//  for stack# from 0 to (max_stack#-1)
+//    writeln '"' (trim(private.Replace_Column_Del(self,(Rcl_Hst_Sign_Stack(self,stack#)),Column_Del#))) '"'
+//
+//    write Column_Del# // an empty field
+//    // For every series, write name of series:
+//    if (sgn_ser#(self)) begin
+//      for serie# from 0 to (max_serie#-1)
+//        write '"' (trim(Replace_Column_Del(self,(Rcl_Hst_Sign_Serie(self,serie#)),Column_Del#))) '"'
+//        if serie# ne (max_serie#-1) write Column_Del#
+//      loop
+//    end
+//    writeln // new line
+//
+//    for column# from 0 to (pxSteps(self)-1)
+//
+//      //write column name:
+//      move (AxisTextX(self,column#)) to tmp_str#
+//      move (trim(string_value(self,(column#*4+1)))) to tmp_str#
+//      write '"' (trim(private.Replace_Column_Del(self,tmp_str#,Column_Del#))) '"' Column_Del#
+//
+//      //write data:
+//      for serie# from 0 to (max_serie#-1)
+//        move (Rcl_Hst_Data(self,column#,serie#,stack#)) to temp_value#
+//        move (NumToStr(temp_value#,(y_val_dec(self)+1))) to tmp_str#
+//        replace "." in tmp_str# with decpoint#
+//        replace "," in tmp_str# with decpoint#
+//        write (Replace_Column_Del(self,tmp_str#,Column_Del#))
+//        ifnot serie# eq (max_serie#-1) write Column_Del#
+//      loop
+//      writeln ""
+//    loop
+//  loop
+//end_procedure
+end_class // cBarChart
+
+
+
+
+number gr$viewer.x gr$viewer.y gr$viewer.z         // location of viewer's eye
+number gr$plane.a gr$plane.b gr$plane.c gr$plane.d // plane = {(x,y,z) | ax+by+cz+d=0}
+number gr$return.x gr$return.y                     // return values
+number gr$origo_2d.x gr$origo_2d.y gr$origo_2d.z   // 2d origo in the 3d system
+number gr$xaxis_2d.x gr$xaxis_2d.y gr$xaxis_2d.z   // vector embedded in 2d x-axis of length 1
+number gr$yaxis_2d.x gr$yaxis_2d.y gr$yaxis_2d.z   // vector embedded in 2d y-axis of length 1
+
+class GraphicArea3D is a GraphicArea
+  procedure construct_object
+    forward send construct_object
+    property number pViewer.x   30000
+    property number pViewer.y   30000
+    property number pViewer.z   30000
+    property number pPlane.a    1
+    property number pPlane.b    1
+    property number pPlane.c    1
+    property number pPlane.d    -20000
+    property number pOrigo_2d.x 2000
+    property number pOrigo_2d.y 2000
+    property number pOrigo_2d.z 16000
+    property number pXaxis_2d.x  0.707106781
+    property number pXaxis_2d.y  0
+    property number pXaxis_2d.z -0.707106781
+    property number pYaxis_2d.x -0.408248291
+    property number pYaxis_2d.y  0.816496581
+    property number pYaxis_2d.z -0.408248291
+  end_procedure
+  procedure BeginDraw
+    get   pViewer.x to gr$Viewer.x
+    get   pViewer.y to gr$Viewer.y
+    get   pViewer.z to gr$Viewer.z
+    get    pPlane.a to gr$Plane.a
+    get    pPlane.b to gr$Plane.b
+    get    pPlane.c to gr$Plane.c
+    get    pPlane.d to gr$Plane.d
+    get pOrigo_2d.x to gr$Origo_2d.x
+    get pOrigo_2d.y to gr$Origo_2d.y
+    get pOrigo_2d.z to gr$Origo_2d.z
+    get pXaxis_2d.x to gr$Xaxis_2d.x
+    get pXaxis_2d.y to gr$Xaxis_2d.y
+    get pXaxis_2d.z to gr$Xaxis_2d.z
+    get pYaxis_2d.x to gr$Yaxis_2d.x
+    get pYaxis_2d.y to gr$Yaxis_2d.y
+    get pYaxis_2d.z to gr$Yaxis_2d.z
+    forward send BeginDraw
+  end_procedure
+  procedure Convert3d_XYZ number px number py number pz
+    number line.p line.q line.r line.t
+    number intersec.x intersec.y intersec.z
+    number q_minus_r0.x q_minus_r0.y q_minus_r0.z q_minus_r0.len
+    number helpvar
+
+    // line between point and eye: (x,y,z) = (px,py,pz) + t(p,q,r)
+
+    move (gr$viewer.x-px) to line.p
+    move (gr$viewer.y-py) to line.q
+    move (gr$viewer.z-pz) to line.r
+
+    move (-((gr$plane.a*px) + (gr$plane.b*py) + (gr$plane.c*pz) + gr$plane.d)) to line.t
+    move (line.t/((gr$plane.a*line.p) + (gr$plane.b*line.q) + (gr$plane.c*line.r))) to line.t
+
+    // Intersection:
+
+    move (line.t*line.p+px) to intersec.x
+    move (line.t*line.q+py) to intersec.y
+    move (line.t*line.r+pz) to intersec.z
+
+    // calculate distance gr$return.x to x-akse in the plane
+
+    // As vector we use xaxis_2d
+    // Vector q is (intersec.x,intersec.y,intersec.z)
+    // As vector r0 (point on the line) we use origo_2d
+
+    move (intersec.x-gr$origo_2d.x) to q_minus_r0.x
+    move (intersec.y-gr$origo_2d.y) to q_minus_r0.y
+    move (intersec.z-gr$origo_2d.z) to q_minus_r0.z
+    move ((q_minus_r0.x*q_minus_r0.x)+(q_minus_r0.y*q_minus_r0.y)+(q_minus_r0.z*q_minus_r0.z)) to q_minus_r0.len
+    //  Note: It is in fact the squared length we have calculated!
+    move ((q_minus_r0.x*gr$xaxis_2d.x)+(q_minus_r0.y*gr$xaxis_2d.y)+(q_minus_r0.z*gr$xaxis_2d.z)) to helpvar
+    move (((sqrt(q_minus_r0.len-(helpvar*helpvar)))/2.0)+0.5) to gr$return.x
+    move ((q_minus_r0.x*gr$yaxis_2d.x)+(q_minus_r0.y*gr$yaxis_2d.y)+(q_minus_r0.z*gr$yaxis_2d.z)) to helpvar
+    move (((sqrt(q_minus_r0.len-(helpvar*helpvar)))/2.0)+0.5) to gr$return.y
+  end_procedure
+
+  procedure Add3dLine ;
+            integer x1# integer x2# integer x3# ;
+            integer y1# integer y2# integer y3#
+    send Convert3d_XYZ x1# x2# x3#
+    send AddLineMvTo gr$return.x gr$return.y
+    send Convert3d_XYZ y1# y2# y3#
+    send AddLineGoTo gr$return.x gr$return.y
+  end_procedure
+
+  procedure Add3dPlane ;
+            integer x1# integer y1# integer z1# ;
+            integer x2# integer y2# integer z2# ;
+            integer x3# integer y3# integer z3# ;
+            integer x4# integer y4# integer z4#
+    send Convert3d_XYZ x1# y1# z1#
+    move gr$return.x to x1#
+    move gr$return.y to y1#
+    send Convert3d_XYZ x2# y2# z2#
+    move gr$return.x to x2#
+    move gr$return.y to y2#
+    send Convert3d_XYZ x3# y3# z3#
+    move gr$return.x to x3#
+    move gr$return.y to y3#
+    send Convert3d_XYZ x4# y4# z4#
+    move gr$return.x to x4#
+    move gr$return.y to y4#
+    send Add4Angle x1# y1# x2# y2# x3# y3# x4# y4#
+//  showln x1# "," y1# " " x2# "," y2# " " x3# "," y3# " " x4# "," y4#
+  end_procedure
+
+  procedure Add3dBox ;
+    integer x1# integer y1# integer z1# ;
+    integer x2# integer y2# integer z2#
+    send Add3dPlane x1# y1# z2# x1# y2# z2# x2# y2# z2# x2# y1# z2#
+    send Add3dPlane x2# y1# z2# x2# y2# z2# x2# y2# z1# x2# y1# z1#
+    send Add3dPlane x1# y2# z1# x2# y2# z1# x2# y2# z2# x1# y2# z2#
+  end_procedure
+end_class // GraphicArea3D
+

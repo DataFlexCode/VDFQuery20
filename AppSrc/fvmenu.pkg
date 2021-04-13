@@ -1,0 +1,178 @@
+// Use FvMenu.pkg // FastView menu system
+Use APS.pkg      // Auto Positioning and Sizing classes for VDF
+Use Files.nui    // Utilities for handling file related stuff (No User Interface)
+Use WildCard.nui // vdfq_WildCardMatch function
+Use VdfQuery.utl // DFQUERY for Visual DataFlex
+
+class cFastMenuData is a cArray
+  procedure construct_object
+    forward send construct_object
+    property string psExtraItem ""
+    property integer piExtraItemMenuItem private -1
+  end_procedure
+  item_property_list
+    item_property integer piItemType.i
+    item_property string  psFile.i
+    item_property string  psTitle.i
+    item_property integer piMenuItemNumber.i
+  end_item_property_list cFastMenuData
+  procedure add_menu_item integer liType string lsFile string lsTitle
+    integer liRow
+    get row_count to liRow
+    set piItemType.i liRow to liType
+    set psFile.i     liRow to lsFile
+    set psTitle.i    liRow to lsTitle
+  end_procedure
+  procedure fill_menu integer lhMenu
+    integer liMax liRow liItem
+    string lsExtraItem
+    get row_count to liMax
+    set !$.piExtraItemMenuItem to -1
+    decrement liMax
+    for liRow from 0 to liMax
+      send add_item of lhMenu MSG_NONE (psTitle.i(self,liRow))
+      get item_count of lhMenu to liItem
+      set piMenuItemNumber.i liRow to (liItem-1)
+    loop
+    get psExtraItem to lsExtraItem
+    if (liMax=-1 and lsExtraItem="") begin
+      send add_item of lhMenu MSG_NONE "No items"
+      set shadow_state of lhMenu item 0 to true
+    end
+    else begin
+      if (liMax<>-1) send add_item of lhMenu MSG_NONE ""
+      send add_item of lhMenu MSG_NONE lsExtraItem
+      get item_count of lhMenu to liItem
+      set !$.piExtraItemMenuItem to (liItem-1)
+    end
+  end_procedure
+
+            function FindItemRow integer liMenuItem returns integer
+              integer liMax liRow
+              if (liMenuItem=!$.piExtraItemMenuItem(self)) function_return -2 // -2 means "ExtraItem" was selected
+              get row_count to liMax
+              decrement liMax
+              for liRow from 0 to liMax
+                if (piMenuItemNumber.i(self,liRow)=liMenuItem) function_return liRow
+              loop
+              function_return -1
+            end_function
+
+            procedure onRowAction integer liRow
+            end_procedure
+  procedure item_action integer liMenuItem
+    integer liRow
+    get FindItemRow liMenuItem to liRow
+    if (liRow<>-1) begin
+      send onRowAction liRow
+    end
+    else error 637 "Missing menu action"
+  end_procedure
+
+            procedure onFileFound string lsFile string lsFolder
+            end_procedure
+            procedure HandleFile string lsFile string lsFolder
+              if (vdfq_WildCardMatch(lsFile)) begin
+                send onFileFound lsFile lsFolder
+              end
+            end_procedure
+  procedure read_data string lsFolder integer lbReload string lsMask
+    send delete_data
+    if (lsFolder<>"") begin
+      if lbReload send SEQ_Load_ItemsInDir lsFolder
+      send WildCardMatchPrepare lsMask
+      send SEQ_CallBack_ItemsInDir SEQCB_FILES_ONLY MSG_HandleFile self
+    end
+  end_procedure
+end_class // cFastMenuData
+
+
+object oSharedViewMenuData is a cFastMenuData
+end_object
+object oViewMenuData is a cFastMenuData
+  set psExtraItem to "Create a view"
+  procedure onRowAction integer liRow
+    integer lhDef
+    string lsFile
+    if (liRow=-2) begin // -2: ExtraItem was selected
+      send FastView_CreateNew
+    end
+    else begin
+      get psFile.i liRow to lsFile
+      get FastView_CreateViewDefinition to lhDef
+      send SEQ_Read_FileName of lhDef lsFile
+      send PopupPanel to lhDef
+    end
+  end_procedure
+  procedure read_data
+    integer lhFastViewsOnDisk liRow liMax
+    string lsFolder lsFile
+    send delete_data
+    get FastView_HomeDirectory to lsFolder
+    if (lsFolder<>"") begin
+      move (oFastViewsOnDisk(self)) to lhFastViewsOnDisk
+      send ReadDirectory to lhFastViewsOnDisk lsFolder "*.fvw"
+      get row_count of lhFastViewsOnDisk to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        get Files_AppendPath lsFolder (psFileName.i(lhFastViewsOnDisk,liRow)) to lsFile
+        send add_menu_item 0 lsFile (psViewTitle.i(lhFastViewsOnDisk,liRow))
+      loop
+      send sort_rows 2 // By title
+    end
+  end_procedure
+  procedure delete_fieldinfo_data // Sent by FastView when a WS is selected
+    send read_data
+  end_procedure
+end_object
+object oQueryMenuData is a cFastMenuData
+  set psExtraItem to "Create a query"
+  procedure onRowAction integer liRow
+    integer lhDef
+    string lsFile
+    if (liRow=-2) begin // -2: ExtraItem was selected
+//      send FastView_CreateNewQ
+      send Activate_Query_Vw
+    end
+    else begin
+      get psFile.i liRow to lsFile
+      send Activate_Query_Vw lsFile
+    end
+  end_procedure
+  procedure read_data
+    integer lhQry_DefArray liRow liMax liFile
+    string  lsFile lsTitle
+    send delete_data
+    move (oQry_DefArray(self)) to lhQry_DefArray
+    send fill_array of lhQry_DefArray
+    get row_count of lhQry_DefArray to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get psFile.i     of lhQry_DefArray liRow to lsFile
+      get psTitle.i    of lhQry_DefArray liRow to lsTitle
+      get piMainFile.i of lhQry_DefArray liRow to liFile
+      if (lsTitle="") get FDX_AttrValue_FILELIST ghFDX DF_FILE_DISPLAY_NAME liFile to lsTitle
+      send add_menu_item 0 lsFile (rtrim(lsTitle))
+    loop
+    send sort_rows 2 // By title
+  end_procedure
+  procedure delete_fieldinfo_data // Sent by FastView when a WS is selected
+    send read_data
+  end_procedure
+end_object
+object oCollectionMenuData is a cFastMenuData
+end_object
+
+procedure FastView_RefreshMenuData
+  send read_data of oViewMenuData
+  send read_data of oQueryMenuData
+end_procedure
+
+object oFV_BroadcastReceiver is a cArray
+  procedure VDFQ_DefinitionsOnDiskChanged
+    send read_data of oQueryMenuData
+  end_procedure
+  procedure FastView_DefinitionsOnDiskChanged
+    send read_data of oViewMenuData
+  end_procedure
+end_object

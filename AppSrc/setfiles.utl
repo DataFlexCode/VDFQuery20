@@ -1,0 +1,314 @@
+// Use SetFiles.utl // SetOfFiles class (for disk files)
+
+//> The cSetOfFiles is used to sort a set of files possibly spanning more
+//> directories.
+//> Files may be added one at a time to this set or by the directory. There
+//> even is a message that will add all files in a directory and in all
+//> child directories thereof.
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Strings.nui  // String manipulation for VDF
+Use Files.utl    // Utilities for handling file related stuff
+Use WildCard.nui // vdfq_WildCardMatch function
+
+enumeration_list
+  define LF_ORDERING_NAME
+  define LF_ORDERING_TYPE
+  define LF_ORDERING_PATH
+  define LF_ORDERING_SIZE
+  define LF_ORDERING_TIME
+end_enumeration_list
+
+class cSetOfFiles is a cArray
+  item_property_list
+    item_property string  psFileName.i // File name
+    item_property string  psFileType.i // File extention
+    item_property string  psFilePath.i // Path to file
+    item_property integer piFileSize.i // File size
+    item_property number  pnFileTime.i // Time stamp
+  end_item_property_list cSetOfFiles
+  procedure construct_object integer img#
+    forward send construct_object img#
+    object oPaths is a cSet 
+    end_object
+    object oIndex is a cArray
+    end_object
+    property integer private.piOrdering 0
+    //> piBuildFromPaths is true if the contents of the array
+    //> was build with the SnapShot_Build message. It is meant
+    //> as a signal to a displaying object that it should or
+    //> should not also display which directories the content
+    //> was build from.
+    property integer piBuildFromPaths   DFFalse
+    property string  psTitle            ""
+
+    object oDirStack is a cStack 
+      // This object is used by the AddSubDirectories procedure
+    end_object
+  end_procedure
+  //> Returns the total size of all the files currently added to the array
+  function iTotalSize returns integer
+    integer rval# max# row#
+    move 0 to rval#
+    get row_count to rval#
+    for row# from 0 to (max#-1)
+      move (rval#+piFileSize.i(self,row#)) to rval#
+    loop
+    function_return rval#
+  end_function
+  function sFileName.i integer iItm returns string
+    string sName sExt
+    get psFileName.i iItm to sName
+    get psFileType.i iItm to sExt
+    if sExt eq "" function_return sName
+    function_return (sName+"."+sExt)
+  end_function
+  function sFileNameIncPath.i integer iItm returns string
+    string sFile sDir
+    get sFileName.i iItm to sFile
+    get psFilePath.i iItm to sDir
+    function_return (SEQ_ComposeAbsoluteFileName(sDir,sFile))
+  end_function
+  function iPath_Count returns integer
+    function_return (item_count(oPaths(self)))
+  end_function
+  function sPath.i integer itm# returns string
+    function_return (value(oPaths(self),itm#))
+  end_function
+  function iFile_Count returns integer
+    function_return (item_count(oIndex(self)))
+  end_function
+  function iFile_Row.i integer itm# returns integer
+    function_return (right(value(oIndex(self),itm#),6))
+  end_function
+  procedure Wait_SetText string str#
+  end_procedure
+  procedure Wait_SetText2 string str#
+  end_procedure
+  function piOrdering returns integer
+    function_return (private.piOrdering(self))
+  end_function
+  procedure set piOrdering integer idx#
+    integer obj# max#
+    integer row#
+    string str#
+    if idx# ne (piOrdering(self)) begin
+      set private.piOrdering to idx#
+      move (oIndex(self)) to obj#
+      send delete_data to obj#
+      get row_count to max#
+      if idx# eq LF_ORDERING_NAME begin // psFileName.i
+        for row# from 0 to (max#-1)
+          set value of obj# item row# to (uppercase(sFileName.i(self,row#))+pad(row#,6))
+        loop
+      end
+      if idx# eq LF_ORDERING_TYPE begin // psFileType.i
+        for row# from 0 to (max#-1)
+          set value of obj# item row# to (psFileType.i(self,row#)+pad(row#,6))
+        loop
+      end
+      if idx# eq LF_ORDERING_PATH begin // psFilePath.i
+        for row# from 0 to (max#-1)
+          set value of obj# item row# to (psFilePath.i(self,row#)+pad(row#,6))
+        loop
+      end
+      if idx# eq LF_ORDERING_SIZE begin // piFileSize.i
+        for row# from 0 to (max#-1)
+          set value of obj# item row# to (RightShift(piFileSize.i(self,row#),12)+pad(row#,6))
+        loop
+      end
+      if idx# eq LF_ORDERING_TIME begin // pnFileTime.i
+        for row# from 0 to (max#-1)
+          set value of obj# item row# to (RightShift(pnFileTime.i(self,row#),15)+pad(row#,6))
+        loop
+      end
+      send sort_items to obj#
+    end
+  end_procedure
+  procedure AddDir string dir#
+    string tmp#
+    move (lowercase(SEQ_TranslatePathToAbsolute(dir#))) to dir#
+    send element_add to (oPaths(self)) dir#
+  end_procedure
+  procedure AddSearchPath_Help string dir#
+    send AddDir dir#
+  end_procedure
+  procedure AddSearchPath string path#
+    send SEQ_CallBack_DirsInPath path# msg_AddSearchPath_Help self
+  end_procedure
+  procedure AddDFPath
+    send AddSearchPath (SEQ_DfPath())
+  end_procedure
+
+  procedure AddSubDirectories_Help string fn# string path#
+    if (fn#<>"[.]" and fn#<>"[..]") begin
+      replace "[" in fn# with ""
+      replace "]" in fn# with ""
+      move (SEQ_ComposeAbsoluteFileName(path#,fn#)) to path#
+      send push.s to (oDirStack(self)) path#
+      send AddDir path#
+    end
+  end_procedure
+
+  procedure AddSubDirectories string path#
+    integer oDirStack# itm_start# itm_stop# itm#
+    move (oDirStack(self)) to oDirStack#
+    get item_count of oDirStack# to itm_start#
+    send SEQ_Load_ItemsInDir path#
+    send SEQ_CallBack_ItemsInDir SEQCB_DIRS_ONLY msg_AddSubDirectories_Help self
+    get item_count of oDirStack# to itm_stop#
+    for itm# from itm_start# to (itm_stop#-1)
+      send AddSubDirectories (sPop(oDirStack#))
+    loop
+  end_procedure
+
+  procedure add_file string fn# string path#
+    integer row#
+    string file_first_name#
+    get row_count to row#
+    if "." in fn# move (StripFromLastOccurance(fn#,".")) to file_first_name#
+    else move fn# to file_first_name#
+    set psFileName.i row# to file_first_name#
+    set psFilePath.i row# to path#
+    set psFileType.i row# to (replace(".",replace(file_first_name#,fn#,""),""))
+    move (SEQ_ComposeAbsoluteFileName(path#,fn#)) to fn#
+    set piFileSize.i row# to (SEQ_FileSize(fn#))
+    set pnFileTime.i row# to (SEQ_FileModTime(fn#))
+  end_procedure
+
+  //> This procedure adds all files present in the directories previously
+  //> specified using the AddDir, AddSearchPath and AddDFPath messages.
+  procedure SnapShot_Build
+    integer oPaths# max# itm#
+    string str# path#
+    send Wait_SetText "Reading directory contents"
+    send SnapShot_Reset 0
+    move (oPaths(self)) to oPaths#
+    get item_count of oPaths# to max#
+    for itm# from 0 to (max#-1)
+      get value of oPaths# item itm# to path#
+      send Wait_SetText2 path#
+      send SEQ_Load_ItemsInDir path#
+      send SEQ_CallBack_ItemsInDir SEQCB_FILES_ONLY msg_add_file self
+    loop
+    set piOrdering to LF_ORDERING_NAME
+    set piBuildFromPaths to DFTrue
+  end_procedure
+  procedure SnapShot_Reset integer reset_all#
+    send delete_data
+    if reset_all# send delete_data to (oPaths(self))
+    send delete_data to (oIndex(self))
+    set piOrdering to -1
+  end_procedure
+  procedure Reset
+    send SnapShot_Reset 1
+  end_procedure
+  procedure SnapShot_Write integer ch#
+    send Wait_SetText "Writing directory contents"
+    send Wait_SetText2 ""
+    send SEQ_WriteArrayItems ch# self
+    send SEQ_WriteArrayItems ch# (oPaths(self))
+  end_procedure
+  procedure SnapShot_Read integer ch#
+    send Wait_SetText "Importing directory contents"
+    send Wait_SetText2 ""
+    send SEQ_ReadArrayItems ch# self
+    send SEQ_ReadArrayItems ch# (oPaths(self))
+  end_procedure
+  procedure Seq_Write integer ch#
+    writeln channel ch# "DIRCONT1.0"
+    send SnapShot_Write ch#
+  end_procedure
+  procedure Seq_Read integer ch#
+    string str#
+    readln channel ch# str#
+    send Reset
+    send SnapShot_Read ch#
+    set piOrdering to LF_ORDERING_NAME
+  end_procedure
+  procedure SnapShot_Save string fn#
+    integer ch#
+    move (SEQ_DirectOutput(fn#)) to ch#
+    if ch# ge 0 begin
+      send Seq_Write ch#
+      send SEQ_CloseOutput ch#
+    end
+  end_procedure
+  procedure SnapShot_Load string fn#
+    integer ch#
+    move (SEQ_DirectInput(fn#)) to ch#
+    if ch# ge 0 begin
+      send Seq_Read ch#
+      send SEQ_CloseInput ch#
+    end
+  end_procedure
+  procedure CopyFilesFromObject string sMask integer iSourceObject
+    integer iRow iMax
+    string sFile
+    move (uppercase(sMask)) to sMask
+    send WildCardMatchPrepare sMask
+    get row_count of iSourceObject to iMax
+    decrement iMax
+    for iRow from 0 to iMax
+      get sFileName.i of iSourceObject iRow to sFile
+      if (vdfq_WildCardMatch(uppercase(sFile))) send add_file sFile (psFilePath.i(iSourceObject,iRow))
+    loop
+  end_procedure
+  // Procedure AddFirstOccuranceOfFile looks for the filename passed
+  // in the paths of the oPaths (embedded) object and adds the first
+  // occurance to the set (if any)
+  procedure AddFirstOccuranceOfFile string lsFileNameNoPath
+    integer liMax liItem
+    string lsPath lsFileName
+    get iPath_Count to liMax
+    decrement liMax
+    for liItem from 0 to liMax
+      get sPath.i liItem to lsPath
+      move (SEQ_ComposeAbsoluteFileName(lsPath,lsFileNameNoPath)) to lsFileName
+      if (SEQ_FileExists(lsFileName)=SEQIT_FILE) begin
+        send add_file lsFileNameNoPath lsPath
+        procedure_return
+      end
+    loop
+  end_procedure
+  // Procedure DoScanCompilerListingFile goes through a PRN file and
+  // adds all files included in that file to the set.
+  procedure DoScanCompilerListingFile string lsPrnFile
+    integer liChannel liSeqEof
+    string lsLine
+    get SEQ_DirectInput lsPrnFile to liChannel
+    if liChannel ge 0 begin
+      repeat
+        readln channel liChannel lsLine
+        move (SeqEof) to liSeqEof
+        ifnot liSeqEof begin
+          if (StringBeginsWith(lsLine,"INCLUDING FILE: ")) begin
+            replace "INCLUDING FILE: " in lsLine with ""
+            ifnot ".PKI" in lsLine send AddFirstOccuranceOfFile lsLine
+          end
+        end
+      until liSeqEof
+      send SEQ_CloseInput liChannel
+    end
+  end_procedure
+  procedure DoCopyFiles string lsDestinationDir
+    integer liMax liRow liOk
+    string lsFileName lsTargetFile lsSourceFile
+    if (SEQ_FileExists(lsDestinationDir)=SEQIT_DIRECTORY) begin
+      get row_count to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        get sFileName.i liRow to lsFileName
+        get sFileNameIncPath.i liRow to lsSourceFile
+        get SEQ_ComposeAbsoluteFileName lsDestinationDir lsFileName to lsTargetFile
+        get SEQ_CopyFile lsSourceFile lsTargetFile to liOk
+      loop
+    end
+  end_procedure
+end_class // cSetOfFiles
+
+//object oSetOfFiles is a cSetOfFiles
+//  send AddDFPath
+//  send SnapShot_Build
+//  send SnapShot_Save "c:\x.x"
+//end_object

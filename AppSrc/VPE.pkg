@@ -1,0 +1,48 @@
+//*************************************************************************************
+//
+// Confidential Trade Secret
+// Visual DataFlex (c) 1987-2008 Data Access Corporation, Miami FL, USA
+// Program and Sources (c) 2009 Data Access Europe BV, Hengelo, NL
+// All Rights Reserved. DataFlex is a registered trademark of Data Access Corporation
+//
+//*************************************************************************************
+//
+// $File name  : Vpe.pkg
+// $Author(s)  : Arnold Franken (AF)
+// $Version    : 15.0 (2009)
+//
+// $Rev History
+//
+//
+//*************************************************************************************
+
+// [General description/ discussion of file and its purpose]
+//
+
+//  ---------------------------------------
+//  Version 4.0
+//  ---------------------------------------
+//  VPEC3240.DLL -> Community edition
+//  VPES3240.DLL -> Standard edition
+//  VPEX3240.DLL -> Enhanced edition
+//  VPEP3240.DLL -> Professional edition
+//  ---------------------------------------
+//  Version 5.0
+//  ---------------------------------------
+//  VPEC3250.DLL -> Community edition
+//  VPES3250.DLL -> Standard edition
+//  VPEX3250.DLL -> Enhanced edition
+//  VPEP3250.DLL -> Professional edition
+
+// we set vpe to version 6 but we point the dll to version 7.2. That's intented.
+Define VPE_VERSION  for 6  
+
+Define VPE_DLL      for VPEC3272.DLL      //  VPE DLL
+
+Define VPE_LICENSE1 for "DEMO"            //  License key 1
+Define VPE_LICENSE2 for "DEMO"            //  License key 2
+
+#IF (VPE_VERSION = 6)
+Use Vpe6.pkg
+#ENDIF
+

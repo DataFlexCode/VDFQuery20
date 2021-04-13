@@ -1,0 +1,4766 @@
+//**********************************************************************
+// Use VdfQuery.utl // DFQUERY for Visual DataFlex
+//
+// Version: 2.5 beta
+//
+//
+//**********************************************************************
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+Use Version.nui
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+Use ObjGroup.utl // Defining groups of objects
+Use FdxField.utl // FDX Field things
+Use FdxIndex.utl // Index analysing functions
+Use DataScan.utl // Data scan classes
+Use Files.utl    // Utilities for handling file related stuff
+Use Strings.utl  // String manipulation for VDF
+Use Dates.utl    // Date manipulation for VDF
+Use Wait.utl     //
+Use MsgBox.utl   // obs procedure
+Use HTML.utl     // HTML functions
+Use Macros.utl   // Various macros (Desktop_Section)
+Use RGB.utl      // Some color functions
+Use Array.nui    // Item_Property command
+Use FdxSelct.utl // Functions iFdxSelectOneFile and iFdxSelectOneField
+Use AutoPrmt.utl // Automatic prompt lists for VDF, (DefaultPromptList(self))
+Use API_Attr.nui // Functions for querying API attributes (No User Interface)
+Use Flexml.Pkg   // FlexML classes
+Use Spec0011.utl // Floating menues on the fly
+Use GridUtil.utl // Grid and List utilities (not for dbGrid's or Table's)
+Use QryOrder.utl // cQueryOrderExpression class
+Use MouseMov.utl // Procedure Mouse_MoveToObject
+Use Fdx2.utl     // FDX aware object for displaying a table definition
+Use QryFolde.pkg // Directory setup for VDFQuery and DbQuery (defs and out)
+Use Focus.utl    // Retrieve basic information about object
+
+Define hlpid.VdfQuery for 5000
+
+#IFDEF USE$VPE
+ Use VpeBase6.pkg // SBA: now uses vpe6
+ Define VPE.USED for 1
+ Move Self to glMainClientId# 
+#ELSE
+ Use DFWinRpt
+ Use cWinreport2.pkg
+ integer oWinPrintReport#
+ Move ghoWinprint2 to WinprintId
+ Define VPE.USED for 0
+ Define ALIGN_LEFT  for 0
+ DEFINE ALIGN_RIGHT for 1
+#ENDIF
+
+// *** A few functions ****************************************************
+
+desktop_section
+  register_procedure DoAppendItem
+  register_procedure DoClear
+  register_procedure DoDeleteItem
+  register_procedure DoUppercase
+  register_procedure DoLowercase
+  register_procedure DoCopy
+  register_procedure DoPaste
+  register_procedure DoSort
+  object oVdfQuery_OrList_FM is a FloatingPopupMenu
+    send add_item msg_DoClear      "Clear all\aF5"
+    send add_item msg_DoDeleteItem "Delete item\aShift+F2"
+    send add_item msg_DoUppercase  "Uppercase all"
+    send add_item msg_DoLowercase  "Lowercase all"
+    send add_item msg_DoSort       "Sort items"
+    send add_item msg_DoAppendItem "Append item\aCtrl+A"
+    send add_item msg_NONE         ""
+    send add_item msg_DoCopy       "Copy\aCtrl+C"
+    send add_item msg_DoPaste      "Paste\aCtrl+V"
+  end_object
+end_desktop_section
+
+class vdq.orlist_grid is a aps.Grid // or-list
+  procedure construct_object
+    forward send construct_object
+
+    set line_width to 2 0
+    set form_margin item 0 to 30
+    set form_margin item 1 to 0
+
+    set CurrentCellColor     to clHighlight
+    set CurrentCellTextColor to clHighlightText
+    set CurrentRowColor      to clHighlight
+    set CurrentRowTextColor  to clHighlightText
+
+    set select_mode to multi_select
+    set auto_top_item_state to false
+
+    set gridline_mode to GRID_VISIBLE_NONE
+    set Header_Visible_State to DFFALSE
+
+    set size to 47 90
+    set p_auto_size_control_state to false
+    set Horz_Scroll_Bar_Visible_State to false
+    on_key KENTER send DoAppendOrEnter
+    on_key KDELETE_RECORD send DoDeleteItem
+    on_key KCLEAR send DoClear
+    on_key KEY_CTRL+KEY_A send DoAppendItem
+    on_key KEY_CTRL+KEY_C send DoCopy
+    on_key KEY_CTRL+KEY_V send DoPaste
+    set aps_fixed_column_width item 1 to 2
+  end_procedure
+
+  procedure DoSetup integer liFile integer liField
+    integer liType
+    get gl_generic_form_datatype liFile liField to liType
+    set form_datatype item 0 to liType
+  end_procedure
+
+  procedure entering // Make sure that there is at least one item on entering
+    ifnot (item_count(self)) begin
+      send add_item MSG_NONE ""
+      send add_item MSG_NONE ""
+      set item_shadow_state item (item_count(self)-1) to true
+    end
+    forward send entering
+  end_procedure
+
+  procedure next
+    if (current_item(self)>=item_count(self)-2) send switch
+    else forward send next
+  end_procedure
+
+  procedure DoAppendOrEnter
+    integer liItem liMax
+    string lsValue
+    get item_count to liMax
+    if liMax begin
+      decrement liMax
+      get current_item to liItem
+      get value item liItem to lsValue
+      if (liItem=liMax-1) begin
+        if (lsValue="") send next
+        else send DoAppendItem
+      end
+      else send next
+    end
+    else send next
+  end_procedure
+
+  procedure item_change integer liItm1 integer liItm2 returns integer
+    integer liTarget liMaxItem
+    forward get msg_item_change liItm1 liItm2 to liTarget
+    if (mod(liTarget,2)) begin
+      if (abs(liItm1-liItm2)=1) begin
+        if (liItm1<liItm2) increment liTarget
+        else decrement liTarget
+      end
+      else decrement liTarget
+    end
+    get item_count to liMaxItem
+    decrement liMaxItem
+    decrement liMaxItem
+    if (liTarget>liMaxItem) move liMaxItem to liTarget
+    if (liTarget<0) move 0 to liTarget
+    procedure_return liTarget
+  end_procedure
+
+  procedure set select_value string lsValue
+    integer liItm liMax
+    string lsItem
+    get HowManyWords lsValue "|" to liMax
+    for liItm from 1 to liMax
+      get ExtractWord lsValue "|" liItm to lsItem
+      send add_item MSG_NONE lsItem
+      send add_item MSG_NONE ""
+      set item_shadow_state item (item_count(self)-1) to true
+    loop
+  end_procedure
+
+  function select_value returns string
+    integer liRow liMax liBase
+    string lsValue lsItem
+    get Grid_RowCount self to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get Grid_RowBaseItem self liRow to liBase
+      get value item liBase to lsItem
+      if (length(lsItem)<>0) begin
+        if (lsValue<>"") move (lsValue+"|") to lsValue
+        move (lsValue+lsItem) to lsValue
+      end
+//    if liRow move (lsValue+"|") to lsValue
+//    move (lsValue+lsItem) to lsValue
+    loop
+    function_return lsValue
+  end_function
+
+  procedure mouse_down2 integer liWin integer liCharPos
+    send mouse_down liWin liCharPos // Take focus
+    send popup to (oVdfQuery_OrList_FM(self))
+  end_procedure
+
+  procedure DoAppendItem
+    send add_item MSG_NONE ""
+    send add_item MSG_NONE ""
+    set item_shadow_state item (item_count(self)-1) to true
+    set current_item to (item_count(self)-2)
+  end_procedure
+  procedure DoClear
+    send delete_data
+    send DoAppendItem
+  end_procedure
+  procedure DoDeleteItem
+    integer liItem
+    if (item_count(self)) begin
+      send Grid_DeleteCurrentRow self
+    end
+    ifnot (item_count(self)) send DoAppendItem
+  end_procedure
+  procedure DoUppercase
+    integer liMax liItem
+    set dynamic_update_state to FALSE
+    get item_count to liMax
+    decrement liMax
+    for liItem from 0 to liMax
+      set value item liItem to (uppercase(value(self,liItem)))
+    loop
+    set dynamic_update_state to TRUE
+  end_procedure
+  procedure DoLowercase
+    integer liMax liItem
+    set dynamic_update_state to FALSE
+    get item_count to liMax
+    decrement liMax
+    for liItem from 0 to liMax
+      set value item liItem to (lowercase(value(self,liItem)))
+    loop
+    set dynamic_update_state to TRUE
+  end_procedure
+  procedure DoCopy
+    integer liMax liRow liBase
+    direct_output channel 1 "CLIPBOARD:"
+    get Grid_RowCount self to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get Grid_RowBaseItem self liRow to liBase
+      writeln channel 1 (value(self,liBase))
+    loop
+    close_output channel 1
+  end_procedure
+  procedure DoPaste
+    string lsValue
+    send DoClear
+    direct_input channel 0 "CLIPBOARD:"
+    while (not(seqeof))
+      readln channel 0 lsValue
+      ifnot (seqeof) begin
+        send add_item MSG_NONE lsValue
+        send add_item MSG_NONE ""
+        set item_shadow_state item (item_count(self)-1) to true
+      end
+    end
+    close_input channel 0
+  end_procedure
+  procedure DoSort
+    send Grid_SortByColumn self 0
+  end_procedure
+end_class // vdq.orlist_grid
+
+Use Query.nui    // Basic things needed for a query tool
+// *** Dynamic object components *****************************************
+//                                                 0      1    2     3     4     5     6     7
+DEFINE_OBJECT_GROUP OG_QuerySelectDialogElement // label# mrg# type# comp# val1# val2# file# field#
+  if (og_param(3)=SC_COMP_OR_LIST) begin // or-list
+    set p_auto_column to 0
+    send aps_goto_max_row
+    send aps_make_row_space 5
+    object oLabel is a aps.TextBox
+      procedure do_label
+        string label#
+        move (og_param(0)) to label#
+        // Remove ":"
+        if (right(label#,1)) eq ":" move (StringLeftBut(label#,1)) to label#
+        move (label#+" ("+DfQuery_CompModeTxt_Short(SC_COMP_OR_LIST)+"):") to label#
+        set label to label#
+      end_procedure
+      send do_label
+    end_object
+    object oList is a vdq.orlist_grid snap 1
+      move self to OG_Current_Object#
+      send DoSetup (og_param(6)) (og_param(7))
+      set select_value to (og_param(4))
+    end_object
+    send add_object_id (0-OG_Current_Object#)
+    send add_object_id 0
+
+    set p_auto_column to 1
+    send aps_goto_max_row
+  end
+  else begin
+    object oVal1 is a aps.form
+      property integer piPopupFile   0
+      property integer piPopupField  0
+      procedure do_label
+        integer comp#
+        string label#
+        move (og_param(0)) to label#
+        move (og_param(3)) to comp#
+        // Remove ":"
+        if (right(label#,1)) eq ":" move (StringLeftBut(label#,1)) to label#
+        move (label#+" ("+DfQuery_CompModeTxt_Short(comp#)+"):") to label#
+        set label to label#
+      end_procedure
+      send do_label
+      set form_datatype item 0 to (og_param(2))
+      set form_margin item 0 to (og_param(1) min 40)
+      set value item 0 to (og_param(4))
+      set status_help item 0 to (DfQuery_CompModeTxt_Long(og_param(3)))
+      procedure OnSetFocus
+        forward send OnSetFocus
+        send request_status_help 1
+      end_procedure
+      move self to OG_Current_Object#
+      if (integer(og_param(7))<256) begin
+        set piPopupFile  to (integer(API_AttrValue_FIELD(DF_FIELD_RELATED_FILE,og_param(6),og_param(7))))
+        set piPopupField to (integer(API_AttrValue_FIELD(DF_FIELD_RELATED_FIELD,og_param(6),og_param(7))))
+      end
+      else begin
+        set piPopupFile  to 0
+        set piPopupField to 0
+      end
+      if (piPopupFile(self)) begin
+        set form_button item 0 to 1 // Manually add a prompt button
+        set form_button_value item 0 to "..."
+        on_key kprompt send form_button_notification
+        procedure form_button_notification integer itm#
+          integer rec# file# field# rfile# rfield#
+          string str#
+          get piPopupFile  to rfile#
+          get PromptListSelectRecord rfile# "" to rec#
+          if rec# begin
+            get piPopupField to rfield#
+            get_field_value rfile# rfield# to str#
+            set value item 0 to str#
+          end
+          send activate
+        end_procedure
+      end
+      send add_object_id OG_Current_Object#
+      if (og_param(3)) eq SC_COMP_NOT_BLANK set object_shadow_state to true
+      if (og_param(3)) eq SC_COMP_BLANK     set object_shadow_state to true
+    end_object
+    if (og_param(3)=SC_COMP_BETWEEN or og_param(3)=SC_COMP_CBETWEEN) begin
+      #PUSH !Zb   // Compiler trick (non static number of objects)  <-- This is probably not needed anymore
+      #SET ZB$ -1                                                // <-- This is probably not needed anymore
+      object oVal2 is a aps.form label "-" snap (if(integer(og_param(1))>15,0,sl_right))
+        property integer piPopupFile   0
+        property integer piPopupField  0
+        set form_datatype item 0 to (og_param(2))
+        set form_margin item 0 to (og_param(1) min 40)
+        set value item 0 to (og_param(5))
+        set status_help item 0 to (DfQuery_CompModeTxt_Long(og_param(3)))
+        procedure OnSetFocus
+          forward send OnSetFocus
+          send request_status_help 1
+        end_procedure
+        move self to OG_Current_Object#
+        if (integer(og_param(7))<256) begin
+          set piPopupFile  to (integer(API_AttrValue_FIELD(DF_FIELD_RELATED_FILE,og_param(6),og_param(7))))
+          set piPopupField to (integer(API_AttrValue_FIELD(DF_FIELD_RELATED_FIELD,og_param(6),og_param(7))))
+        end
+        else begin
+          set piPopupFile  to 0
+          set piPopupField to 0
+        end
+        if (piPopupFile(self)) begin
+          set form_button item 0 to 1 // Manually add a prompt button
+          set form_button_value item 0 to "..."
+          on_key kprompt send form_button_notification
+          procedure form_button_notification integer itm#
+            integer rec# file# field# rfile# rfield#
+            string str#
+            get piPopupFile  to rfile#
+            get PromptListSelectRecord rfile# "" to rec#
+            if rec# begin
+              get piPopupField to rfield#
+              get_field_value rfile# rfield# to str#
+              set value item 0 to str#
+            end
+            send activate
+          end_procedure
+        end
+        send add_object_id OG_Current_Object#
+      end_object
+      #POP ZB$    // End trick
+    end
+    else send add_object_id 0
+  end
+END_DEFINE_OBJECT_GROUP // OG_QuerySelectDialogElement
+
+DEFINE_OBJECT_GROUP OG_QuerySelectDialog // caption array_id
+  object QueryMultiCrit is a aps.ModalPanel label (t.DfQuery.LblTab2+", "+og_param(0))
+    on_key key_ctrl+key_P send MSG_NONE
+    on_key kcancel send close_panel_cancel
+//    on_key key_ctrl+key_d send Request_Popup_Calendar
+    set locate_mode to CENTER_ON_SCREEN
+    property integer pReturnValue 0
+    property integer pArrayID 0
+    set pArrayID to (og_param(1))
+    object object_ids_array is an array
+    end_object
+    procedure add_object_id integer obj#
+      integer arr#
+      move (object_ids_array(self)) to arr#
+      set value of arr# item (item_count(arr#)) to obj#
+    end_procedure
+    object oCont is a aps.Group
+      on_key ksave_record send close_panel_ok
+      on_key kenter send next
+      set p_max_column to 200 // Minimum width
+      send aps_tab_column_define 1 70 65 JMODE_RIGHT
+      procedure add_objects integer obj#
+        integer mrg# type# comp# crit# max# file# field#
+        string label# val1# val2#
+        get row_count of obj# to max#
+        for crit# from 0 to (max#-1)
+          get psLabel.i  of obj# item crit# to label#
+          get piMargin.i of obj# item crit# to mrg#
+          get piType.i   of obj# item crit# to type#
+          get piComp.i   of obj# item crit# to comp#
+          get psVal1.i   of obj# item crit# to val1#
+          get psVal2.i   of obj# item crit# to val2#
+          get piFile.i   of obj# item crit# to file#
+          get piField.i  of obj# item crit# to field#
+          CREATE_OBJECT_GROUP OG_QuerySelectDialogElement label# mrg# type# comp# val1# val2# file# field#
+        loop
+      end_procedure
+      send add_objects (og_param(1))
+    end_object
+    procedure close_panel_ok
+      integer object_ids_array# pArrayID# crit# max# obj# oFrm#
+      // Now we move the current values back to the array:
+      get pArrayID to pArrayID#
+      move (object_ids_array(self)) to object_ids_array#
+      get row_count of pArrayID# to max#
+      for crit# from 0 to (max#-1)
+        move (value(object_ids_array#,crit#*2+0)) to oFrm#
+        if (oFrm#>0) begin
+          set psVal1.i of pArrayID# item crit# to (value(oFrm#,0))
+        end
+        else if (oFrm#<0) begin // Oh! It's an or-list!!!
+          move (0-oFrm#) to oFrm#
+          set psVal1.i of pArrayID# item crit# to (select_value(oFrm#))
+        end
+        move (value(object_ids_array#,crit#*2+1)) to oFrm#
+        if oFrm# set psVal2.i of pArrayID# item crit# to (value(oFrm#,0))
+      loop
+      set pReturnValue to 1
+      send close_panel
+    end_procedure
+    procedure close_panel_cancel
+      set pReturnValue to 0
+      send close_panel
+    end_procedure
+    object oBtn1 is a aps.Multi_Button
+      on_item t.btn.ok send close_panel_ok
+    end_object
+    object oBtn2 is a aps.Multi_Button
+      on_item t.btn.cancel send close_panel_cancel
+    end_object
+    send aps_locate_multi_buttons
+  //procedure request_clear // not used?
+  //  set value of (oVal1(oCont(self))) item 0 to ""
+  //  set value of (oVal2(oCont(self))) item 0 to ""
+  //  send activate to (oVal1(oCont(self)))
+  //end_procedure
+  //function string_value integer item# returns string // Not used?
+  //  function_return (value(value(object_ids_array(self),item#),0))
+  //end_function
+    move self to OG_Current_Object#
+  end_object
+END_DEFINE_OBJECT_GROUP // OG_QuerySelectDialog
+
+DEFINE_OBJECT_GROUP OG_QuerySingleCrit // label# mrg# type# comp# val1# val2# liFile liFIeld
+  object QuerySingleCrit is a aps.ModalPanel label (t.DfQuery.SetDefaultValue+", "+DfQuery_CompModeTxt_Long(og_param(3)))
+    on_key key_ctrl+key_P send msg_none
+    on_key kcancel send close_panel_cancel
+    on_key kclear send request_clear
+    on_key kclear_all send close_panel_reset
+//    on_key key_ctrl+key_d send Request_Popup_Calendar
+    set locate_mode to center_on_screen
+    property integer pReturnValue 0
+    property integer piComp      -1
+
+    object oCont is a aps.Group
+      on_key ksave_record send close_panel_ok
+      on_key kenter send next
+      set p_max_column to 200 // Minimum width
+      set piComp to (og_param(3)) // or-list ()
+
+      if (og_param(3)=SC_COMP_OR_LIST) begin // or-list
+        set p_auto_column to 0
+        send aps_goto_max_row
+        send aps_make_row_space 5
+        object oLabel is a aps.TextBox
+          procedure do_label
+            string label#
+            move (og_param(0)) to label#
+            if (right(label#,1)) eq ":" move (StringLeftBut(label#,1)) to label#
+            move (label#+" ("+DfQuery_CompModeTxt_Short(SC_COMP_OR_LIST)+"):") to label#
+            set label to label#
+          end_procedure
+          send do_label
+        end_object
+        object oList is a vdq.orlist_grid snap 1
+          send DoSetup (og_param(6)) (og_param(7))
+          set select_value to (og_param(4))
+        end_object
+
+        set p_auto_column to 1
+        send aps_goto_max_row
+      end
+      else begin
+        object oVal1 is a aps.form label (og_param(0))
+          set form_datatype item 0 to (og_param(2))
+          set form_margin item 0 to (og_param(1) min 40)
+          set value item 0 to (og_param(4))
+          if (og_param(3)) eq SC_COMP_NOT_BLANK set object_shadow_state to true
+          if (og_param(3)) eq SC_COMP_BLANK     set object_shadow_state to true
+        end_object
+        if (og_param(3)=SC_COMP_BETWEEN or og_param(3)=SC_COMP_CBETWEEN) begin
+          object oVal2 is a aps.form label "-" snap (if(integer(og_param(1))>15,0,sl_right))
+            set form_datatype item 0 to (og_param(2))
+            set form_margin item 0 to (og_param(1) min 40)
+            set value item 0 to (og_param(5))
+          end_object
+        end
+      end
+    end_object // oCont
+    procedure close_panel_ok
+      set pReturnValue to 1
+      send close_panel
+    end_procedure
+    procedure close_panel_reset
+      set pReturnValue to -1
+      send close_panel
+    end_procedure
+    procedure close_panel_cancel
+      set pReturnValue to 0
+      send close_panel
+    end_procedure
+    object oBtn1 is a aps.Multi_Button
+      on_item t.btn.ok send close_panel_ok
+    end_object
+    object oBtn2 is a aps.Multi_Button
+      on_item t.btn.reset send close_panel_reset
+    end_object
+    object oBtn3 is a aps.Multi_Button
+      on_item t.btn.cancel send close_panel_cancel
+    end_object
+    send aps_locate_multi_buttons
+    if (og_param(3)=SC_COMP_BETWEEN or og_param(3)=SC_COMP_CBETWEEN) begin
+      procedure request_clear
+        set value of (oVal1(oCont(self))) item 0 to ""
+        set value of (oVal2(oCont(self))) item 0 to ""
+        send activate to (oVal1(oCont(self)))
+      end_procedure
+    end
+    else if (og_param(3)=SC_COMP_OR_LIST) begin // or-list
+      procedure request_clear
+        send DoClear to (oList(self))
+        send activate to (oList(self))
+      end_procedure
+    end
+    else begin
+      procedure request_clear
+        set value of (oVal1(oCont(self))) item 0 to ""
+        send activate to (oVal1(oCont(self)))
+      end_procedure
+    end
+
+    function value_from returns string
+      string rval#
+      if (piComp(self)=SC_COMP_OR_LIST) get select_value of (oList(oCont(self))) to rval# // or-list
+      else get value of (oVal1(oCont(self))) item 0 to rval#
+      function_return rval#
+    end_function
+    if (og_param(3)=SC_COMP_BETWEEN or og_param(3)=SC_COMP_CBETWEEN) begin
+      function value_to returns string
+        string rval#
+        get value of (oVal2(oCont(self))) item 0 to rval#
+        function_return rval#
+      end_function
+    end
+    else begin
+      function value_to returns string
+        function_return ""
+      end_function
+    end
+    move self to OG_Current_Object#
+  end_object
+END_DEFINE_OBJECT_GROUP // OG_QuerySingleCrit
+
+// *** A few more functions ***********************************************
+
+register_procedure close_panel_ok
+
+desktop_section // Place object on desktop no matter where declared
+  object QueryCompMode_SL is a aps.ModalPanel label t.DfQuery.Operators
+    on_key key_ctrl+key_P send msg_none
+    property integer pReturnValue 0
+    on_key kcancel send close_panel
+    object oLst is a aps.list
+      set size to 120 150
+      procedure Mouse_click integer i1 integer i2
+         send close_panel_ok
+      end_procedure
+      procedure add_item.ii integer current# integer aux#
+        send add_item msg_close_panel_ok (DfQuery_CompModeTxt_Long(aux#)+" ("+DfQuery_CompModeTxt_Short(aux#)+")") aux#
+        set aux_value item (item_count(self)-1) to aux#
+        if current# eq aux# set current_item to (item_count(self)-1)
+      end_procedure
+      procedure fill_list integer current# integer type#
+        send delete_data
+        if type# ne DF_TEXT begin
+          send add_item.ii current# SC_COMP_EQ
+          send add_item.ii current# SC_COMP_LT
+          send add_item.ii current# SC_COMP_LE
+          send add_item.ii current# SC_COMP_GE
+          send add_item.ii current# SC_COMP_GT
+          send add_item.ii current# SC_COMP_NE
+        end
+        send add_item.ii current# SC_COMP_IN
+        send add_item.ii current# SC_COMP_CIN
+        if type# ne DF_TEXT begin
+          send add_item.ii current# SC_COMP_BETWEEN
+          send add_item.ii current# SC_COMP_CBETWEEN
+        end
+        else begin
+          send add_item.ii current# SC_COMP_NOT_BLANK
+          send add_item.ii current# SC_COMP_BLANK
+        end
+        if type# ne DF_TEXT begin // or-list
+          send add_item.ii current# SC_COMP_OR_LIST
+        end
+      end_procedure
+    end_object
+    procedure close_panel_ok
+      integer obj#
+      move (oLst(self)) to obj#
+      set pReturnValue to (aux_value(obj#,current_item(obj#)))
+      send close_panel
+    end_procedure
+    object oBtn1 is a aps.Multi_Button
+      set default_state to True
+      on_item t.btn.ok send close_panel_ok
+    end_object
+    object oBtn2 is a aps.Multi_Button
+      on_item t.btn.cancel send close_panel
+    end_object
+    send aps_locate_multi_buttons
+  end_object
+end_desktop_section
+
+function VdfQuery_SelectCompMode global integer type# integer current# returns integer
+  integer obj#
+  move (QueryCompMode_SL(self)) to obj#
+  set pReturnValue of obj# to current#
+  send fill_list to (oLst(obj#)) current# type#
+  send popup_modal to obj#
+  function_return (pReturnValue(obj#))
+end_function
+
+function VdfQuery_field_width_cm global integer typ# integer mrg# integer caps# string font# integer fontsize# returns number
+  number rval# factor#
+  move (120/fontsize#/2.56) to factor#
+  move (1.0/factor#) to factor#
+  //move (factor#*0.8) to factor# // Un-explainable factor (0.8)
+  if typ# eq DF_ASCII begin
+    if caps# move (mrg#*factor#*1.5) to rval#
+    else     move (mrg#*factor#) to rval#
+  end
+  if typ# eq DF_DATE move (10*factor#) to rval#
+  if typ# eq DF_BCD  move (mrg#*factor#) to rval#
+  function_return rval#
+end_function
+
+function VdfQuery_value_width_cm global string str# string font# integer fontsize# returns number
+  number rval#
+  get VdfQuery_field_width_cm DF_ASCII (length(str#)) 0 font# fontsize# to rval#
+  function_return rval#
+end_function
+
+function VdfQuery_field_margin global integer file# integer field# returns integer
+  integer fieldtype# len# dec# obj#
+  if field# lt 256 begin
+    get_attribute DF_FIELD_TYPE of file# field# to fieldtype#
+    get_attribute DF_FIELD_LENGTH of file# field# to len#
+    if fieldtype# eq DF_DATE move 10 to len#
+    if fieldtype# eq DF_BCD begin
+      get gl_effective_form_datatype file# field# to dec#
+      if dec# move (len#+1) to len#
+    end
+  end
+  else begin
+    get FieldInf_VirtualFields_Object file# to obj#
+    move (field#-256) to field#
+    get piFieldType.i of obj# field# to fieldtype#
+    get piFieldLength.i of obj# field# to len#
+    if fieldtype# eq DF_DATE move 10 to len#
+  end
+  function_return len#
+end_function
+
+function VdfQuery_file_status_help global integer file# returns string
+  integer fieldtype#
+  string rval# str#
+  move "DF-name: #, Root: #" to rval#
+  get_attribute DF_FILE_LOGICAL_NAME of file# to str#
+  replace "#" in rval# with str#
+  get_attribute DF_FILE_ROOT_NAME of file# to str#
+  replace "#" in rval# with str#
+  function_return rval#
+end_function
+
+function VdfQuery_field_status_help global integer file# integer field# returns string
+  integer fieldtype# obj#
+  string rval# str#
+  move "# (#)" to rval#
+  move (FieldInf_FieldType(file#,field#)) to fieldtype#
+  if fieldtype# eq DF_ASCII  move "Ascii" to str#
+  if fieldtype# eq DF_DATE   move "Date" to str#
+  if fieldtype# eq DF_TEXT   move "Text" to str#
+  if fieldtype# eq DF_BCD    move "Number" to str#
+  if fieldtype# eq DF_BINARY move "Binary" to str#
+  if str# eq "" move "Unknown" to str#
+  replace "#" in rval# with str#
+  replace "#" in rval# with (FieldInf_field_length_string(file#,field#))
+  function_return rval#
+end_function
+
+#IFDEF gsVdfQuery_Icon#
+#ELSE
+ string gsVdfQuery_Icon#
+ move "" to gsVdfQuery_Icon#
+#ENDIF
+
+procedure set VdfQuery_Icon global string icon_filename#
+  move icon_filename# to gsVdfQuery_Icon#
+end_procedure
+
+integer giVdfQuery_Expressions_State
+move DFTRUE to giVdfQuery_Expressions_State
+procedure set VdfQuery_Expressions_State global integer liValue
+  move liValue to giVdfQuery_Expressions_State
+end_procedure
+
+integer giVdfQuery_OldFolders_State
+move DFFALSE to giVdfQuery_OldFolders_State
+procedure set VdfQuery_OldFolders_State global integer liValue
+  move liValue to giVdfQuery_OldFolders_State
+end_procedure
+
+desktop_section // Place object on desktop no matter where declared
+  object oVdfQuery_SaveAs is a SaveAsDialog
+    set Filter_String to t.DfQuery.Filter1
+    set Dialog_Caption to t.DfQuery.Caption1
+    set OverwritePrompt_State to false
+    set NoChangeDir_State to true
+    set HideReadOnly_State To True
+  end_object
+end_desktop_section
+
+// *** Report generating **************************************************
+
+integer oReport_info#
+object oReport_info is an cReport_info
+  set pOnlyMostSignificantBreakLevel to true
+  property integer current_row           0
+  property integer next_current_row      0
+  property string  pDeferredHeader       t.DfQuery.RightHeader
+  property string  pCurDeferredHeader    ""
+  property integer pLeftMargin           200
+  property integer pRightMargin          2000
+  property integer pTopMargin            150
+  property integer pBottomMargin         2750
+  property integer pColumnHeaderRowStart 0
+  property integer pTotalsOnly           0
+  property integer pLandscape            0
+  property integer pPrintCriteria        0
+  property integer pDestination          0 // 0:Printer 1:Preview 2:File
+  property integer pFileFormat           0 // 0:Comma 1:Line 2:Formatted 3:HTML
+  property integer pPageLength           60
+  property integer pLineCount            0
+  property string  pOutFileName          ""
+  property string  pCurrentFileLine      ""
+  property string  pHTML_TabelHdrColor   clYellow // (RGB_Compose(192,192,64))
+  property integer pIncludeLabels        0
+  property integer pSemiColon            0
+  property integer pUseAnsiCharacters    0
+  property string  psTextTop             ""
+  property string  psTextBottom          ""
+  property integer phXMLDocumentRoot     0
+  property string  psFieldsInIndex       ""
+  Property string  psFontName ''
+  Property integer piFontSize 0
+
+  property integer pbQuiet 0
+
+  move self to oReport_info#
+  object oValues is an array
+  end_object
+  object oTotals is an cReportTotals
+  end_object
+  object oBatchCompanion is a cBatchCompanion
+  end_object
+  object oCriteriaTexts is an array
+  end_object
+  object oBreakInfo is an array
+    set delegation_mode to delegate_to_parent
+    property integer pMaxLogicalLevel 0
+    item_property_list
+      item_property integer piFile.i
+      item_property integer piField.i
+      item_property integer piExprRow.i
+      item_property integer phExprArr.i
+      item_property integer piSelect.i
+      item_property string  psLabel.i
+      // If this break level is not selected this property will point to a
+      // level that is selected (in less significant direction):
+      item_property integer piTranslateLevel.i
+      // This property translates break level to a logical break level (since
+      // some physical levels may not be selected):
+      item_property integer piLogicalLevel.i
+    end_item_property_list
+  end_object
+  procedure initialize_breaks
+    integer current_level# level# max# oBreakInfo#
+    move (oBreakInfo(self)) to oBreakInfo#
+    set piNumberOfColumns of (oTotals(self)) to (rpt_field_count(self))
+    get row_count of oBreakInfo# to max#
+    move 0 to current_level#
+    for_ex level# from (max#-1) down_to 0
+      if (piSelect.i(oBreakInfo#,level#)) move level# to current_level#
+      set piTranslateLevel.i of oBreakInfo# item level# to current_level#
+    loop
+    move 0 to current_level#
+    for level# from 0 to (max#-1)
+      if (piSelect.i(oBreakInfo#,level#)) increment current_level#
+      set piLogicalLevel.i of oBreakInfo# item level# to current_level#
+    loop
+    set pMaxLogicalLevel of oBreakInfo# to current_level#
+  end_procedure
+  procedure define_break_level integer file# integer fld# integer liExprRow integer lhExprArr integer select# string label#
+    integer row# oBreakInfo#
+    move (oBreakInfo(self)) to oBreakInfo#
+    get row_count of oBreakInfo# to row#
+    set piFile.i    of oBreakInfo# item row# to file#
+    set piField.i   of oBreakInfo# item row# to fld#
+    set piExprRow.i of oBreakInfo# item row# to liExprRow
+    set phExprArr.i of oBreakInfo# item row# to lhExprArr
+    set piSelect.i  of oBreakInfo# item row# to select#
+    set psLabel.i   of oBreakInfo# item row# to label#
+    send add_break_field file# fld# liExprRow lhExprArr
+  end_procedure
+  function sBreakField_Value.i integer level# returns string
+    integer file# fld# oBreakInfo# liExprRow lhExprArr
+    string rval# label#
+    move (oBreakInfo(self)) to oBreakInfo#
+    get piFile.i of oBreakInfo# level# to file#
+    if file# begin
+      get piField.i of oBreakInfo# level# to fld#
+      get FieldInf_FieldValue file# fld# to rval#
+    end
+    else begin
+      get phExprArr.i of oBreakInfo# level# to lhExprArr
+      get piExprRow.i of oBreakInfo# level# to liExprRow
+      get sEvalExpression of (Query_ExprEvaluator(self)) (piExprId.i(lhExprArr,liExprRow)) to rval#
+    end
+    if rval# eq "" move "    " to rval# // Make evident that field is empty!
+    else move (trim(rval#)) to rval#
+    move (psLabel.i(oBreakInfo#,level#)) to label#
+    function_return (label#+rval#)
+  end_function
+
+  procedure print_subheader string str# integer level#
+    integer vbottom#
+    if (pDestination(self)<>DFQ.DEST.FILE) begin // If not file
+      #IFDEF USE$VPE
+       send vpe_SetAlign to oVPE# ALIGN_CENTER
+       send vpe_SelectFont to oVPE# "Arial" ((4-level#*2+10) max 10)
+       send vpe_Write to oVPE# (pLeftMargin(self)) VBOTTOM (pRightMargin(self)) VFREE ("[IO ]"+str#)
+       get vpe_Get of oVPE# VBOTTOM to vbottom#
+     //set current_row to (vbottom#+50)
+       set next_current_row to (vbottom#+00)
+     //set pColumnHeaderRowStart to (vbottom#+50)
+     //get pLeftMargin to pLeftMargin#
+      #ELSE
+       send print_subheader to oWinPrintReport# str# level#
+      #ENDIF
+    end
+    else begin // File:
+      if (pFileFormat(self)=DFQ.FORMAT.HTML) begin
+        writeln channel 1 "  <tr>"
+        increment level#
+        writeln ('    <td align="center" bgcolor=#FFFF20 colspan="'+string(rpt_field_count(self))+'"> <h'+string(level#)+'>'+html_DfToHtmlTable(str#)+'</h'+string(level#)+'> </td>')
+        writeln "  </tr>"
+      end
+      if (pFileFormat(self)=DFQ.FORMAT.PRINT) begin
+        if level# eq 1 writeln channel 1 ""
+        writeln channel 1 (pad("",level#*2)+str#)
+      end
+    end
+  end_procedure
+  procedure print_subtotal string str# integer level#
+    if (pDestination(self)<>DFQ.DEST.FILE) begin // If not file
+    #IFDEF USE$VPE
+     send print_totals 0 // Print totals but do not end it all!
+    #ELSE
+     send print_subtotal to oWinPrintReport# str# level#
+    #ENDIF
+    end
+    else send print_totals 0 // Print totals but do not end it all!
+  end_procedure
+
+  procedure Handle_SubHeader integer level#
+    integer oBreakInfo# fin# logical_level#
+    string str#
+    move (oBreakInfo(self)) to oBreakInfo#
+    move (piLogicalLevel.i(oBreakInfo#,level#)) to logical_level#
+    move 0 to fin#
+    move (sBreakField_Value.i(self,level#)) to str#
+    repeat
+      decrement level#
+      move (level#<0 or piSelect.i(oBreakInfo#,level#)) to fin#
+      ifnot fin# ;
+        move (sBreakField_Value.i(self,level#)+", "+str#) to str#
+    until fin#
+    send print_subheader str# logical_level#
+  end_procedure
+  procedure Handle_SubTotal integer level#
+    integer oBreakInfo# logical_level#
+    move (oBreakInfo(self)) to oBreakInfo#
+    move (piLogicalLevel.i(oBreakInfo#,level#)) to logical_level#
+    send print_subtotal "Test" logical_level#
+  end_procedure
+  procedure SubHeader integer break_level#
+    integer oBreakInfo# level# max_level#
+    move (oBreakInfo(self)) to oBreakInfo#
+    get piTranslateLevel.i of oBreakInfo# item (break_level#-1) to break_level#
+    get row_count of oBreakInfo# to max_level#
+    for level# from break_level# to (max_level#-1)
+      if (piSelect.i(oBreakInfo#,level#)) begin
+        send handle_subheader level#
+        send New_Level to (oTotals(self))
+      end
+    loop
+  end_procedure
+  procedure SubTotal integer level#
+    integer oBreakInfo# break_level# max_level#
+    move (oBreakInfo(self)) to oBreakInfo#
+    get piTranslateLevel.i of oBreakInfo# item (level#-1) to break_level#
+    get row_count of oBreakInfo# to max_level#
+    for_ex level# from (max_level#-1) down_to break_level#
+      if (piSelect.i(oBreakInfo#,level#)) begin
+        send handle_subtotal level#
+        send Drop_Level to (oTotals(self))
+      end
+    loop
+  end_procedure
+  #IFDEF USE$VPE
+  #ELSE
+  // wp2 - major changes through out the entire object...
+//   object oWinPrintReport is a WinReport
+   object oWinPrintReport is a cWinReport2
+     move self to oWinPrintReport#
+     set no_finding_state to true
+     set status_panel_state to false // Handled outside
+
+//     function start_report returns integer
+//       integer rval#
+//       forward get start_report to rval#
+//       if rval# eq RPT_OK begin
+//         DFFont "Arial"
+//         DFFontSize 10
+//         DFWriteln (psTextTop(self)) FONT_ITALIC
+//       end
+//     end_function
+
+     Procedure_Section Page_Top
+       integer max# fld# FieldType# file# field# fontsize#
+       integer style# cr# FontRight# base#
+       integer idx# sum#
+       number start# width# RightStart#
+       string name# font#
+       string sFont
+       Integer iFontSize
+       Get psFontName to sFont
+       Move 8 to iFontSize
+
+       DFFont sFont
+       DFFontSize iFontSize
+       DFBeginHeader DFPageTop
+         DFHeaderPos   HDR_Left
+         DFHeaderFrame HDR_NOFRAME
+         DFWriteLn (t.DfQuery.Page + "#pagecount#") (font_right)
+
+       DFEndHeader
+     end_procedure
+
+     Procedure_Section Report_Header
+       string sFont
+       Integer iFontSize
+       Get psFontName to sFont
+       Get piFontSize to iFontSize
+
+       DFFont sFont
+       DFFontSize iFontSize
+       If (trim(psTextTop(self))<>"") Begin
+           DFBeginHeader DFReportHeader
+             DFHeaderFrame HDR_NOFRAME
+             DFHeaderPos HDR_Left
+             DFWriteln
+             DFWriteln (psTextTop(self)) FONT_ITALIC
+             DFWriteln
+           DFEndHeader
+       end
+     end_Procedure
+
+
+     Procedure_Section Page_Header
+       integer max# fld# FieldType# file# field# fontsize#
+       integer style# cr# FontRight# base#
+       integer idx# sum#
+       number start# width# RightStart#
+       string name# font#
+       string sFont
+       Integer iFontSize
+       Get psFontName to sFont
+       Get piFontSize to iFontSize
+
+       DFFont sFont
+       DFFontSize 16
+
+       DFBeginHeader DFPageHeader
+         DFHeaderPos   HDR_LEFT
+         DFHeaderFrame HDR_MARGINS 0 rgb_dGrey rgb_dGrey
+         DFWritelnPos (pReportTitle(oReport_info#)) 0.10 (FONT_BOLD+rgb_white)
+         DFHeaderMargin HM_BottomOuter 0.08
+       DFEndHeader
+      end_procedure
+
+
+     Procedure_Section Page_Title
+       integer max# fld# FieldType# file# field# fontsize#
+       integer style# cr# FontRight# base#
+       integer idx# sum#
+       number start# width# RightStart#
+       string name# font#
+
+//       DFFont "Arial"
+
+       DFBeginHeader DFPageTitle
+         DFHeaderPos   HDR_LEFT
+         DFHeaderFrame HDR_Margins 0 rgb_Grey rgb_grey
+         DFHeaderMargin HM_BottomOuter 0.08
+
+//         DFFontSize 10
+
+         send delete_data to (oValues(self))
+         get rpt_field_count of oReport_info# to max#
+
+         for fld# from 0 to (max#-1)
+           get rpt_field_file     item fld# to file#
+           get rpt_field_field    item fld# to field#
+           get rpt_field_name     item fld# to name#
+           get rpt_field_width    item fld# to width#
+           get rpt_field_start    item fld# to start#
+           get rpt_field_cr       item fld# to cr#
+           get rpt_field_sum      item fld# to sum#
+           get rpt_field_font     item fld# to font#
+           get rpt_field_fontsize item fld# to fontsize#
+           get rpt_field_type     item fld# to fieldtype#
+
+           Move (start#+.10)  to start#
+
+//EXPR           move (FieldInf_FieldType(file#,field#)) to fieldtype#
+           if fieldtype# eq DF_BCD move 1 to FontRight#
+           else move 0 to FontRight#
+
+           if FieldType# eq DF_TEXT begin
+             get item_count of (oValues(self)) to base#
+             set value of (oValues(self)) item base# to fld#
+           end
+           else begin
+             if cr# DFWriteLn ""
+             DFFont Font#
+             DFFontSize FontSize#
+             move (start#+width#) to RightStart#
+             if FontRight# DFWritePos name# RightStart# (FONT_BOLD+FONT_RIGHT+Rgb_dBlue) -1 width#
+             else DFWritePos name# start# (FONT_BOLD+Rgb_dBlue) -1 width#
+           end
+         loop
+
+         move (item_count(oValues(self))) to max#
+         for fld# from 0 to (max#-1)
+           move (value(oValues(self),fld#)) to idx#
+           get rpt_field_name     item idx# to name#
+           get rpt_field_start    item idx# to start#
+           get rpt_field_font     item idx# to font#
+           get rpt_field_fontsize item idx# to fontsize#
+           Move (start#+.10)  to start#
+           DFWriteLn ""
+           DFFont Font#
+           DFFontSize FontSize#
+           DFWritePos name# start# (FONT_BOLD+Rgb_dBlue)
+         loop
+         DFWriteLn ""
+//         DFWriteLine DFGR_CURRLINE 0 DFGR_RB_MARGIN DFGR_HORI
+       DFEndHeader
+      end_procedure
+
+
+     Procedure_Section Body
+       integer font_size# font_style# max# fld#
+       integer FieldType# file# field# style# cr#
+       integer FontRight# base# idx#
+       integer precision# sum# TotalsOnly# lhExprArr liExprRow
+       number start# width# RightStart#
+       string name# field_value# font#
+       // update WP status
+       send Update_Status (replace("#",replace("#",t.DfQuery.ReadingRecords,pScanCount(self)),pRecordCount(self)))
+
+       send delete_data to (oValues(self))
+       get pTotalsOnly to TotalsOnly#
+       get rpt_field_count to max#
+
+       for fld# from 0 to (max#-1)
+         get rpt_field_file       item fld# to file#
+         get rpt_field_field      item fld# to field#
+         get rpt_field_name       item fld# to name#
+         get rpt_field_cr         item fld# to cr#
+         get rpt_field_start      item fld# to start#
+         get rpt_field_width      item fld# to width#
+         get rpt_field_font       item fld# to font#
+         get rpt_field_sum        item fld# to sum#
+         get rpt_field_fontsize   item fld# to font_size#
+         get rpt_field_fontstyle  item fld# to font_style#
+//EXPR         move (FieldInf_FieldType(file#,field#)) to fieldtype#
+         get rpt_field_expr_array item fld# to lhExprArr
+         get rpt_field_expr_row   item fld# to liExprRow
+         get rpt_field_type       item fld# to fieldtype#
+
+           Move (start#+.10)  to start#
+
+         if file# move (FieldInf_FieldValue(file#,field#)) to field_value#
+         else begin
+           get sEvalExpression of (Query_ExprEvaluator(self)) (piExprId.i(lhExprArr,liExprRow)) to field_value#
+         end
+         move (rtrim(field_value#)) to field_value#
+
+         DFFont font#  //Font and size
+         DFFontSize font_size#
+
+
+         if fieldtype# eq DF_BCD move 1 to FontRight#
+         else move 0 to FontRight#
+
+         if sum# send Sum_Data.in to (oTotals(self)) fld# field_value#
+
+         ifnot TotalsOnly# begin
+           if FieldType# eq DF_TEXT ;
+             set value of (oValues(self)) item (item_count(oValues(self))) to (Text_RemoveTrailingCr(field_value#))
+           else begin
+             if cr# DFWriteLn ""
+             move (start#+width#) to RightStart#
+             if FontRight# begin
+               if file# get FieldInf_DecPoints file# field# to precision#
+               else get piDecimals.i of lhExprArr liExprRow to precision#
+               DFWritePos field_value# RightStart# (font_style#+FONT_RIGHT) precision# width#
+             end
+             else DFWritePos field_value# start# font_style# -1 width#
+           end
+         end
+       loop
+       ifnot TotalsOnly# begin
+         If Max# DFWriteLn "" // Only if any fields have been printed
+         move (item_count(oValues(self))) to max#
+         for fld# from 0 to (max#-1)
+           move (value(oValues(self),fld#)) to field_value#
+           get rpt_field_font     item idx# to font#
+           get rpt_field_fontsize item idx# to font_size#
+           Move (start#+.10)  to start#
+           DFFont font#
+           DFFontSize font_size#
+
+           DFWritePos field_value# 0 FONT_ITALIC -1 0
+           DFWriteLn ""
+         loop
+       end
+     end_procedure
+
+     procedure Print_Subheader string str# integer level#
+       string sFont
+       Integer iFontSize
+       Get psFontName to sFont 
+       Get piFontSize to iFontSize
+       Move ( (iFontSize+2) min 16) to iFontSize
+       DFFont "Arial"
+       DFFontSize iFontSize
+
+       if level# eq 1 DFWriteLn ""
+       
+//       Send DFSetFontSize To WinPrintID ((4-level#*2+10) max 10) 0
+
+       DFBeginHeader DFSubHeader level#
+         DFHeaderWrap  HDR_WRAP
+         DFHeaderPos   HDR_LEFT
+         DFHeaderFrame HDR_NOFRAME
+         DfHeaderLineCheck 3
+         DFWritePos str# 0.10 (font_bold)
+       DFEndHeader
+     end_procedure
+
+     procedure print_totals integer end_it_all#
+       number nTotal#
+       integer max# idx# fld# sum# itm#
+       integer precision# field# file# lhExprArr liExprRow
+       integer font_size#
+       string  font#
+       number start# width# RightStart# oCriteriaTexts#
+
+       DFWriteLn ""
+       ifnot end_it_all# DFWriteLine DFGR_CURRLINE DFGR_CURRLINE DFGR_RB_MARGIN DFGR_HORI
+
+       DFBeginHeader DFTotal
+         DFHeaderPos  HDR_LEFT
+         DFHeaderWrap HDR_NOWRAP
+         if end_it_all# DFHeaderFrame HDR_MARGINS 0 rgb_dgrey rgb_grey
+         else           DFHeaderFrame HDR_NOFRAME
+
+         get rpt_field_count to max#
+
+         for fld# from 0 to (max#-1)
+           get rpt_field_sum item fld# to sum#
+           if sum# begin
+             get rpt_field_file  item fld# to file#
+             get rpt_field_field item fld# to field#
+             get rpt_field_start item fld# to start#
+             get rpt_field_width item fld# to width#
+             get rpt_field_font  item fld#  to font#
+             get rpt_field_fontsize item fld# to font_size#
+             get rpt_field_expr_array item fld# to lhExprArr
+             get rpt_field_expr_row item fld# to liExprRow
+
+             Move (start#+.10)  to start#
+
+             if file# get FieldInf_DecPoints file# field# to precision#
+             else get piDecimals.i of lhExprArr liExprRow to precision#
+
+             move (start#+width#) to RightStart#
+             get nRcl_Data.i of (oTotals(self)) item fld# to nTotal#
+
+             DFFont font#
+             DFFontSize font_size#
+
+             DFWritePos nTotal# RightStart# (FONT_BOLD+FONT_RIGHT) precision#
+           end
+         loop
+       DFEndHeader
+//       if end_it_all# begin
+//         if (pPrintCriteria(self)) begin
+//           move (oCriteriaTexts(self)) to oCriteriaTexts#
+//           DFWriteLn ""
+//           ifnot (item_count(oCriteriaTexts#)) DFWriteLn t.DfQuery.NoSelectionCrit
+//           else begin
+//             DFWriteLn t.DfQuery.SelectionCrit
+//             for itm# from 0 to (item_count(oCriteriaTexts#)-1)
+//               DFWriteLn (value(oCriteriaTexts#,itm#))
+//             loop
+//           end
+//         end
+
+//         DFWriteLn (t.DfQuery.LblRecords+" "+string(pRecordCount(self)))
+//         if (pInterrupted(self)) DFWriteLn t.DfQuery.ReportCancelled
+//         if (psTextBottom(self)) ne "" begin
+//           DFFont "Arial"
+//           DFFontSize 10
+//           DFWriteLn ""
+//           DFWriteln (psTextBottom(self)) FONT_ITALIC
+//         end
+//       end
+     end_procedure
+     
+     Procedure report_Footer
+       number start# width# RightStart# oCriteriaTexts#
+       integer itm#
+       string sFont
+       Integer iFontSize
+       Get psFontName to sFont
+       Get piFontSize to iFontSize
+
+       DFBeginHeader DFreportFooter
+         DFHeaderFrame HDR_NOFRAME
+         DFHeaderPos HDR_LEFT
+         if (pPrintCriteria(self)) begin
+           move (oCriteriaTexts(self)) to oCriteriaTexts#
+           DFWriteLn ""
+           ifnot (item_count(oCriteriaTexts#)) DFWriteLn t.DfQuery.NoSelectionCrit
+           else begin
+             DFWriteLn t.DfQuery.SelectionCrit
+             for itm# from 0 to (item_count(oCriteriaTexts#)-1)
+               DFWriteLn (value(oCriteriaTexts#,itm#))
+             loop
+           end
+         end
+         DFWriteLn (t.DfQuery.LblRecords+" "+string(pRecordCount(self)))
+         if (pInterrupted(self)) DFWriteLn t.DfQuery.ReportCancelled
+         if (psTextBottom(self)) ne "" begin
+//           DFFont "Arial"
+//           DFFontSize 10
+           DFWriteLn ""
+           DFWriteln (psTextBottom(self)) FONT_ITALIC
+         end
+       DFEndHeader
+    End_procedure
+
+     procedure Print_SubTotal string str# integer level#
+       send print_totals 0 // Print totals but do not end it all!
+     end_procedure
+
+     procedure_section Total
+       send print_totals 1 // That's it! Finish
+     end_procedure
+
+     procedure_section Page_Bottom
+       string sFont
+       Integer iFontSize
+       Get psFontName to sFont 
+       Move 8 to iFontSize
+       DFFont sFont
+       DFFontSize iFontSize
+       DFBeginHeader DFPageBottom
+         DFHeaderFrame hdr_Margins 0.01 rgb_dGrey
+         DfHeaderPos hdr_left
+         DFWriteln (t.DfQuery.GenerationTime+" "+string(dSysDate())+", "+sSysTime()) (rgb_dBlue+font_center)
+       DFEndHeader
+     end_procedure
+
+     // Handle a canceled report like a normal one, print totals, etc
+     procedure Handle_Cancelled_Report
+       Send Handle_end_report
+     end_procedure
+   end_object // oWinPrintReport
+  #ENDIF
+
+  procedure reset
+    Send reset_crit
+    Send reset_breaks
+    send delete_data to (oCriteriaTexts(self))
+    send delete_data to (oBreakInfo(self))
+    set pMaxLogicalLevel of (oBreakInfo(self)) to 0
+  end_procedure
+
+  procedure add_criteria_text string field_name# integer comp# string value#
+    integer oCriteriaTexts# liRow liMax
+    move (oCriteriaTexts(self)) to oCriteriaTexts#
+    if (field_name#<>"") begin
+      move (trim(field_name#)+", "+lowercase(DfQuery_CompModeTxt_Long(comp#))+": "+value#) to value#
+      if (pUseAnsiCharacters(self)) begin
+        if (pFileFormat(self)<>DFQ.FORMAT.HTML) move (StringOemToAnsi(value#)) to value#
+      end
+      set value of oCriteriaTexts# item (item_count(oCriteriaTexts#)) to value#
+    end
+    else begin
+      get Text_Format.sii value# 50 DFTRUE to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        if (liRow=0) set value of oCriteriaTexts# item (item_count(oCriteriaTexts#)) to (t.DfQuery.Expression+": "+Text_FormattedLine.i(liRow))
+        else         set value of oCriteriaTexts# item (item_count(oCriteriaTexts#)) to ("            "+Text_FormattedLine.i(liRow))
+      loop
+    end
+  end_procedure
+
+  procedure initialize
+    integer liDestination grb# liFileFormat hoXML hoXMLDocumentRoot
+    string lsFields lsFileName lsPrinter
+    Boolean bOk
+    get pDestination to liDestination
+    get pFileFormat to liFileFormat
+    forward send initialize
+    // wp2 --- only use with with VPE or a non-viewer report,
+    #IFDEF USE$VPE
+    send batch_on to (oBatchCompanion(self)) (pReportTitle(self))
+    #ELSE
+    //if liDestination eq DFQ.DEST.FILE begin // File
+    if liDestination ne DFQ.DEST.SCREEN begin // File
+       send batch_on to (oBatchCompanion(self)) (pReportTitle(self))
+    end   
+    #ENDIF
+    get FDX_IndexAsFields 0 (pMainFile(self)) (pOrdering(self)) to lsFields
+    get FDX_FieldsTranslateOverlaps 0 (pMainFile(self)) lsFields to lsFields
+    set psFieldsInIndex to lsFields
+    #IFDEF USE$VPE
+     set pCurDeferredHeader to (pDeferredHeader(self))
+    #ENDIF
+    if liDestination eq DFQ.DEST.FILE begin // File
+      get pOutFileName to lsFileName
+      direct_output channel 1 (StringOemToAnsi(lsFileName))
+      set pLineCount to 0
+      set pCurrentFileLine to ""
+      if (liFileFormat=DFQ.FORMAT.HTML) begin
+        send html_WriteHeader 1 (pReportTitle(self))
+        writeln '<body>'
+        writeln ('<center><h1>'+html_DfToHtmlTable(pReportTitle(self))+'</h1></center>')
+        writeln '<br>'
+        writeln '<center>'
+      end
+    end
+    else begin
+      #IFDEF USE$VPE
+       set ptitle of oVPE# to (pReportTitle(self))
+       send OpenDoc to oVPE#
+       #IFDEF msg_Vpe_SetPageOrientation // VPE 3
+        If (pLandScape(Self)) Send Vpe_SetPageOrientation to oVPE# VORIENT_LANDSCAPE
+       #ENDIF
+       #ELSE
+       // wp2 - chnages for wp2 
+       set report_title    of oWinPrintReport# to (pReportTitle(self))
+       set report_message  of oWinPrintReport# to "" // TL
+
+       // Was:
+//     set output_device_mode of oWinPrintReport# to (if(liDestination=1,PRINT_TO_WINDOW,PRINT_TO_PRINTER_NO_DIALOG))
+//     send DFSetLandscape of oWinPrintReport# (pLandscape(self))
+//     send DFSetMargins   of oWinPrintReport# 2.5 2 2 2.5
+
+       // Then briefly was:
+//     Get DFGetCurrentDevice of oWinPrintReport# to lsPrinter
+//     Set output_device_mode of oWinPrintReport# to (If(liDestination=1,PRINT_TO_WINDOW,PRINT_TO_PRINTER_NO_DIALOG))
+//     Send DFSetDevice of oWinPrintReport# lsPrinter
+//     If (liDestination<>1) Begin
+//        Send DFSetLandscape of oWinPrintReport# (pLandscape(Self))
+//     End
+//     Else Send DFSetLandscape of oWinPrintReport# False
+//     Send DFSetMargins   of oWinPrintReport# 2.5 2 2 2.5
+
+       // Now is:
+       Get DFGetCurrentDevice of oWinPrintReport# to lsPrinter
+       Set output_device_mode of oWinPrintReport# to (If(liDestination=1,PRINT_TO_WINDOW,PRINT_TO_PRINTER_NO_DIALOG))
+       Send DFSetDevice       of oWinPrintReport# lsPrinter
+       Send DFSetLandscape    of oWinPrintReport# (pLandscape(Self))
+       Send DFSetMargins      of oWinPrintReport# 2.5 2 2 2.5
+
+       get start_report    of oWinPrintReport# to Grb#
+      #ENDIF
+    end
+
+    send reset to (oTotals(self))
+    set current_row to 0
+    set next_current_row to 0
+    send print_header_first_time
+  end_procedure
+
+  procedure print_column string value# integer align# integer start# integer width#
+    integer vbottom# current_row# vtop#
+    string CurrentFileLine#
+    if (pDestination(self)<>DFQ.DEST.FILE) begin // Not file
+      #IFDEF USE$VPE
+       get current_row to current_row#
+       if current_row# eq 0 begin
+         get vpe_Get of oVPE# VTOPMARGIN to current_row#
+         set current_row to current_row#
+       end
+       send vpe_SetAlign to oVPE# align#
+       send vpe_Write to oVPE# start# current_row# (start#+width#) VFREE (trim(value#))
+       get vpe_Get of oVPE# VBOTTOM to vbottom#
+       if vbottom# ge (next_current_row(self)) set next_current_row to vbottom#
+       if vbottom# lt current_row# begin
+         get vpe_Get of oVPE# VTOP to vtop#
+         set current_row to vtop#
+         set next_current_row to vbottom#
+       end
+      #ENDIF
+    end
+    else begin
+      get pCurrentFileLine to CurrentFileLine#
+      if align# eq ALIGN_RIGHT move (overstrike(RightShift(value#,width#),CurrentFileLine#,start#)) to CurrentFileLine#
+      else move (overstrike(Pad(value#,width#),CurrentFileLine#,start#)) to CurrentFileLine#
+      set pCurrentFileLine to CurrentFileLine#
+    end
+  end_procedure
+
+  procedure print_header // This is not called when file
+    #IFDEF USE$VPE
+     integer vbottom# max# itm# type# file# fld# cr# pLeftMargin#
+     number start# width#
+     string str#
+
+     send vpe_SetAlign to oVPE# ALIGN_LEFT
+     send vpe_SelectFont to oVPE# "Arial" 16
+     send vpe_Write to oVPE# (pLeftMargin(self)) (pTopMargin(self)) 1500 VFREE ("[IO ]"+pReportTitle(self))
+     send vpe_SelectFont to oVPE# "Arial" 10
+
+     get pCurDeferredHeader to str#
+     send delete_data to (oValues(self))
+     move (replace("<P>",str#,vpe_GetCurrentPage(oVPE#))) to str#
+     send vpe_SetAlign to oVPE# ALIGN_RIGHT
+     send vpe_Write to oVPE# VFREE (pTopMargin(self)) (pRightMargin(self)) VFREE str#
+
+     get pColumnHeaderRowStart to vbottom#
+     set current_row to vbottom#
+     set next_current_row to vbottom#
+     get pLeftMargin to pLeftMargin#
+
+     get rpt_field_count to max#
+     for itm# from 0 to (max#-1)
+       get rpt_field_file  item itm# to file#
+       get rpt_field_field item itm# to fld#
+       get rpt_field_name  item itm# to str#
+       get rpt_field_cr    item itm# to cr#
+       get rpt_field_start item itm# to start#
+       get rpt_field_width item itm# to width#
+       get rpt_field_type  item itm# to type#
+// EXPR       move (FieldInf_FieldType(file#,fld#)) to type#
+       if cr# send new_line
+       if (type#<>DF_TEXT and type#<>DF_BINARY) ;
+         send print_column ("[IO ]"+str#) (if(type#=DF_BCD,ALIGN_RIGHT,ALIGN_LEFT)) (start#*100+pLeftMargin#) (width#*100)
+       else ;
+         set value of (oValues(self)) item (item_count(oValues(self))) to str#
+     loop
+
+     for itm# from 0 to (item_count(oValues(self))-1)
+       get value of (oValues(self)) item itm# to str#
+       if str# ne "" begin
+         send new_line
+         send print_column str# ALIGN_LEFT (pLeftMargin(self)) 512
+       end
+     loop
+     send vpe_line to oVPE# (pLeftMargin(self)) VBOTTOM (pRightMargin(self)) VBOTTOM
+    #ENDIF
+  end_procedure
+
+  procedure print_deferred_headers // Not called when file
+    #IFDEF USE$VPE
+     integer max# page#
+     get vpe_GetCurrentPage of oVPE# to max#
+     set pCurDeferredHeader to (replace("<MP>",pCurDeferredHeader(self),string(max#)))
+     for page# from 1 to max#
+       send vpe_GotoPage to oVPE# page#
+       send print_header
+     loop
+    #ENDIF
+  end_procedure
+
+  function sSeqFile.sii string str# integer format# integer ansi# returns string
+    if format# eq DFQ.FORMAT.CD move ('"'+replaces('"',str#,"'")+'"') to str#
+    if ansi# move (StringOemToAnsi(str#)) to str#
+    function_return str#
+  end_function
+
+  procedure print_header_first_time
+    integer vbottom# max# itm# type# file# fld# cr# pLeftMargin#
+    integer format# oValues# IncludeLabels# UseAnsiCharacters#
+    number start# width#
+    string str# field_sep#
+
+    get pCurDeferredHeader to str#
+    move (oValues(self)) to oValues#
+    send delete_data to oValues#
+    move (replace("<D>",str#,string(dSysDate()))) to str#
+    move (replace("<T>",str#,sSysTime())) to str#
+    set pCurDeferredHeader to str#
+
+    if (pDestination(self)<>DFQ.DEST.FILE) begin // If not file
+      #IFDEF USE$VPE
+       send vpe_SetAlign to oVPE# ALIGN_LEFT
+       send vpe_SelectFont to oVPE# "Arial" 16
+       send vpe_Write to oVPE# (pLeftMargin(self)) (pTopMargin(self)) 1500 VFREE ("[IO ]"+pReportTitle(self))
+
+       get vpe_Get of oVPE# VBOTTOM to vbottom#
+       set current_row to (vbottom#+50)
+       set next_current_row to (vbottom#+50)
+       set pColumnHeaderRowStart to (vbottom#+50)
+       get pLeftMargin to pLeftMargin#
+
+       send vpe_SelectFont to oVPE# "Arial" 10
+       get rpt_field_count to max#
+       for itm# from 0 to (max#-1)
+         get rpt_field_file  item itm# to file#
+         get rpt_field_field item itm# to fld#
+         get rpt_field_name  item itm# to str#
+         get rpt_field_cr    item itm# to cr#
+         get rpt_field_start item itm# to start#
+         get rpt_field_width item itm# to width#
+         get rpt_field_type  item itm# to type#
+// EXPR         move (FieldInf_FieldType(file#,fld#)) to type#
+         if cr# send new_line
+         if (type#<>DF_TEXT and type#<>DF_BINARY) ;
+           send print_column ("[IO ]"+str#) (if(type#=DF_BCD,ALIGN_RIGHT,ALIGN_LEFT)) (start#*100+pLeftMargin#) (width#*100)
+         else ;
+           set value of oValues# item (item_count(oValues#)) to str#
+       loop
+
+       for itm# from 0 to (item_count(oValues#)-1)
+         get value of oValues# item itm# to str#
+         if str# ne "" begin
+           send new_line
+           send print_column str# ALIGN_LEFT (pLeftMargin(self)) 512
+         end
+       loop
+
+       send vpe_line to oVPE# (pLeftMargin(self)) VBOTTOM (pRightMargin(self)) VBOTTOM
+
+       get vpe_Get of oVPE# VBOTTOM to vbottom#
+       set current_row to (vbottom#+50)
+       set next_current_row to (vbottom#+50)
+
+//       send vpe_SetDefOutRectSP to oVPE# (pLeftMargin(self)) (vbottom#+50) (pRightMargin(self)) (pBottomMargin(self))
+       send vpe_SetDefOutRect to oVPE# (pLeftMargin(self)) (vbottom#+50) (pRightMargin(self)) (pBottomMargin(self))
+       send vpe_Set to oVPE# VLEFTMARGIN   (pLeftMargin(self))
+       send vpe_Set to oVPE# VRIGHTMARGIN  (pRightMargin(self))
+       send vpe_Set to oVPE# VTOPMARGIN    (vbottom#+50)
+       send vpe_Set to oVPE# VBOTTOMMARGIN (pBottomMargin(self))
+       send print_text (psTextTop(self))
+       get vpe_Get of oVPE# VBOTTOM to vbottom#
+       set current_row to (vbottom#+50)
+       set next_current_row to (vbottom#+50)
+      #ENDIF
+    end // if not file
+    else begin
+      get pFileFormat to format#
+      if (format#=DFQ.FORMAT.PRINT) begin
+        move (pReportTitle(self)+" ("+string(dSysDate())+", "+sSysTime()+")") to str#
+        if (pUseAnsiCharacters(self)) move (StringOemToAnsi(str#)) to str#
+        writeln channel 1 str#
+        writeln ""
+        get psTextTop to str#
+        if (pUseAnsiCharacters(self)) move (StringOemToAnsi(str#)) to str#
+        send print_text str#
+        writeln ""
+        get rpt_field_count to max#
+        get pLeftMargin to pLeftMargin#
+        for itm# from 0 to (max#-1)
+          get rpt_field_file  item itm# to file#
+          get rpt_field_field item itm# to fld#
+          get rpt_field_name  item itm# to str#
+          get rpt_field_cr    item itm# to cr#
+          get rpt_field_start item itm# to start#
+          get rpt_field_width item itm# to width#
+          get rpt_field_type  item itm# to type#
+// EXPR          move (FieldInf_FieldType(file#,fld#)) to type#
+          if cr# send new_line
+          if (type#<>DF_TEXT and type#<>DF_BINARY) ;
+            send print_column str# (if(type#=DF_BCD,ALIGN_RIGHT,ALIGN_LEFT)) (start#*100+pLeftMargin#) (width#*100)
+          else ;
+            set value of oValues# item (item_count(oValues#)) to str#
+        loop
+
+        for itm# from 0 to (item_count(oValues#)-1)
+          get value of oValues# item itm# to str#
+          if str# ne "" begin
+            send new_line
+            send print_column str# ALIGN_LEFT (pLeftMargin(self)) 512
+          end
+        loop
+        send new_line
+        writeln channel 1 "--------------------------------------------------------------------------"
+      end // if formatted
+      if (format#=DFQ.FORMAT.HTML) begin
+        writeln channel 1 (t.DfQuery.GenerationTime+" "+string(dSysDate())+", "+sSysTime())
+        writeln '<br>'
+        writeln '<br>'
+        get psTextTop to str#
+        if (str#<>"") begin
+          if (pUseAnsiCharacters(self)) move (StringOemToAnsi(str#)) to str#
+          write str#
+          writeln '<br>'
+          writeln '<br>'
+        end
+        writeln "<table border=1 cellpadding=2 cellspacing=2>"
+        writeln '  <tr valign=top>'
+        get rpt_field_count to max#
+        for itm# from 0 to (max#-1)
+          get rpt_field_file  item itm# to file#
+          get rpt_field_field item itm# to fld#
+          get rpt_field_name  item itm# to str#
+          get rpt_field_type  item itm# to type#
+// EXPR          move (FieldInf_FieldType(file#,fld#)) to type#
+          if (type#<>DF_TEXT and type#<>DF_BINARY) begin
+            write ('    <td bgcolor='+RGB_ToHTML(pHTML_TabelHdrColor(self))+if(type#=DF_BCD,' align=right','')+'><strong>')
+            write (html_DfToHtmlTable(str#))
+            writeln '</strong></td>'
+          end
+          else set value of oValues# item (item_count(oValues#)) to str#
+        loop
+        for itm# from 0 to (item_count(oValues#)-1)
+          get value of oValues# item itm# to str#
+          if str# ne "" begin
+            writeln ('    <td bgcolor='+RGB_ToHTML(pHTML_TabelHdrColor(self))+'><strong>'+html_DfToHtmlTable(str#)+'</strong></td>')
+          end
+        loop
+        writeln '  </tr>'
+      end // HTML
+      if (format#=DFQ.FORMAT.CD or format#=DFQ.FORMAT.LD) begin
+        get pIncludeLabels     to IncludeLabels#
+        if IncludeLabels# begin
+          if (pSemiColon(self)) move ";" to field_sep#
+          else move "," to field_sep#
+          get pUseAnsiCharacters to UseAnsiCharacters#
+          get rpt_field_count to max#
+          for itm# from 0 to (max#-1)
+            get rpt_field_file  item itm# to file#
+            get rpt_field_field item itm# to fld#
+            get rpt_field_name  item itm# to str#
+            get rpt_field_type  item itm# to type#
+
+// Three lines below commented in an attempt to fix problem reported by Bernd Ullenboom. 
+//            if (type#<>DF_TEXT and type#<>DF_BINARY) begin
+              if format# eq DFQ.FORMAT.LD writeln channel 1 (sSeqFile.sii(self,str#,format#,UseAnsiCharacters#))
+              else begin
+                write channel 1 (sSeqFile.sii(self,str#,format#,UseAnsiCharacters#))
+                if (itm#<>(max#-1) or item_count(oValues#)) write field_sep#
+              end
+//            end
+//            else set value of oValues# item (item_count(oValues#)) to (sSeqFile.sii(self,str#,format#,UseAnsiCharacters#))
+          Loop
+          get item_count of oValues# to max#
+          for itm# from 0 to (max#-1)
+            get value of oValues# item itm# to str#
+            if format# eq DFQ.FORMAT.LD writeln channel 1 str#
+            else begin
+              write channel 1 str#
+              if itm# ne (max#-1) write field_sep#
+            end
+          loop
+          if format# eq DFQ.FORMAT.CD writeln channel 1 ""
+        end
+      end //
+    end // if file
+  end_procedure // print_header_first_time
+
+  function any_totals_at_all returns integer
+    integer itm# max# sum#
+    get rpt_field_count to max#
+    for itm# from 0 to (max#-1)
+      get rpt_field_sum item itm# to sum#
+      if sum# function_return 1
+    loop
+    function_return 0
+  end_function
+
+  procedure print_totals integer end_it_all#
+    integer vbottom# max# itm# type# file# fld# cr# pLeftMargin# sum# oCriteriaTexts#
+    integer precision# lhExprArr liExprRow
+    integer FileFormat# any_totals_at_all#
+    number start# width#
+    string str# value#
+    get pFileFormat to FileFormat#
+    move (oCriteriaTexts(self)) to oCriteriaTexts#
+    get any_totals_at_all to any_totals_at_all#
+
+    if (pDestination(self)<>DFQ.DEST.FILE) begin // If not file
+      #IFDEF USE$VPE
+       if (any_totals_at_all# or end_it_all#) send vpe_line to oVPE# (pLeftMargin(self)) (next_current_row(self)) (pRightMargin(self)) (next_current_row(self))
+
+       get vpe_Get of oVPE# VBOTTOM to vbottom#
+       set current_row to (vbottom#+15)
+       set next_current_row to (vbottom#+15)
+
+       get pLeftMargin to pLeftMargin#
+       send vpe_SelectFont to oVPE# "Arial" 10
+
+       get rpt_field_count to max#
+       for itm# from 0 to (max#-1)
+         get rpt_field_file  item itm# to file#
+         get rpt_field_field item itm# to fld#
+         get rpt_field_name  item itm# to str#
+         get rpt_field_cr    item itm# to cr#
+         get rpt_field_start item itm# to start#
+         get rpt_field_width item itm# to width#
+         get rpt_field_sum   item itm# to sum#
+         get rpt_field_type  item itm# to type#
+         get rpt_field_expr_array item itm# to lhExprArr
+         get rpt_field_expr_row item itm# to liExprRow
+// EXPR         move (FieldInf_FieldType(file#,fld#)) to type#
+         if cr# send new_line
+         if sum# begin
+           move (nRcl_Data.i(oTotals(self),itm#)) to value#
+
+           if file# get FieldInf_DecPoints file# fld# to precision#
+           else get piDecimals.i of lhExprArr liExprRow to precision#
+
+           move (NumToStr(value#,precision#)) to value#
+           send print_column ("[IO ]"+value#) ALIGN_RIGHT (start#*100+pLeftMargin#) (width#*100)
+         end
+       loop
+
+       send vpe_SetAlign to oVPE# ALIGN_LEFT
+
+       if end_it_all# begin
+         if (pPrintCriteria(self)) begin
+           get vpe_Get of oVPE# VBOTTOM to vbottom#
+           move (vbottom#+25) to vbottom#
+           ifnot (item_count(oCriteriaTexts#)) send vpe_Write to oVPE# (pLeftMargin(self)) vbottom# (pRightMargin(self)) VFREE t.DfQuery.NoSelectionCrit
+           else begin
+             send vpe_Write to oVPE# (pLeftMargin(self)) vbottom# (pRightMargin(self)) VFREE t.DfQuery.SelectionCrit
+             for itm# from 0 to (item_count(oCriteriaTexts#)-1)
+               send vpe_Write to oVPE# (pLeftMargin(self)) VBOTTOM (pRightMargin(self))  VFREE (value(oCriteriaTexts#,itm#))
+             loop
+           end
+         end
+
+         get vpe_Get of oVPE# VBOTTOM to vbottom#
+         send vpe_Write to oVPE# (pLeftMargin(self)) (vbottom#+15) (pRightMargin(self)) VFREE (t.DfQuery.LblRecords+" "+string(pRecordCount(self)))
+         if (pInterrupted(self)) begin
+           get vpe_Get of oVPE# VBOTTOM to vbottom#
+           send vpe_Write to oVPE# (pLeftMargin(self)) (vbottom#+15) (pRightMargin(self)) VFREE t.DfQuery.ReportCancelled
+         end
+         if (psTextBottom(self)) ne "" begin
+           get vpe_Get of oVPE# VBOTTOM to vbottom#
+           set current_row to (vbottom#+50)
+           set next_current_row to (vbottom#+50)
+           send print_text (psTextBottom(self))
+         end
+       end
+      #ENDIF
+    end
+    else if (FileFormat#=DFQ.FORMAT.PRINT or FileFormat#=DFQ.FORMAT.HTML) begin
+      if FileFormat# eq DFQ.FORMAT.PRINT begin
+        send new_line
+        if (any_totals_at_all# or end_it_all#) writeln channel 1 "--------------------------------------------------------------------------"
+      end
+      if FileFormat# eq DFQ.FORMAT.HTML begin
+        if any_totals_at_all# writeln channel 1 "  <tr>"
+      end
+      get pLeftMargin to pLeftMargin#
+      get rpt_field_count to max#
+      for itm# from 0 to (max#-1)
+        get rpt_field_file  item itm# to file#
+        get rpt_field_field item itm# to fld#
+        get rpt_field_name  item itm# to str#
+        get rpt_field_cr    item itm# to cr#
+        get rpt_field_start item itm# to start#
+        get rpt_field_width item itm# to width#
+        get rpt_field_sum   item itm# to sum#
+        get rpt_field_type  item itm# to type#
+        get rpt_field_expr_array item itm# to lhExprArr
+        get rpt_field_expr_row item itm# to liExprRow
+// EXPR       move (FieldInf_FieldType(file#,fld#)) to type#
+        if cr# send new_line
+        if sum# begin
+          move (nRcl_Data.i(oTotals(self),itm#)) to value#
+
+          if file# get FieldInf_DecPoints file# fld# to precision#
+          else get piDecimals.i of lhExprArr liExprRow to precision#
+          move (NumToStr(value#,precision#)) to value#
+
+          if FileFormat# eq DFQ.FORMAT.PRINT ;
+            send print_column value# ALIGN_RIGHT (start#*100+pLeftMargin#) (width#*100)
+          else ;
+            writeln ('    <td bgcolor='+RGB_ToHTML(RGB_Brighten(pHTML_TabelHdrColor(self),50))+if(type#=DF_BCD,' align=right','')+'>'+html_DfToHtmlTable(value#)+'</td>')
+        end
+        else begin
+          if FileFormat# eq DFQ.FORMAT.HTML begin
+            if any_totals_at_all# if type# ne DF_TEXT writeln '    <td></td>'
+          end
+        end
+      loop
+      if FileFormat# eq DFQ.FORMAT.HTML begin
+        if any_totals_at_all# writeln channel 1 "  </tr>"
+      end
+      if end_it_all# begin
+        if FileFormat# eq DFQ.FORMAT.PRINT begin
+          send new_line
+          writeln (t.DfQuery.LblRecords+" "+string(pRecordCount(self)))
+        end
+        else begin
+          writeln channel 1 '</table></center>'
+          writeln '<br>'
+          writeln (html_DfToHtmlTable(t.DfQuery.LblRecords+" "+string(pRecordCount(self)))+"<br>")
+        end
+        if (pPrintCriteria(self)) begin
+          if FileFormat# eq DFQ.FORMAT.PRINT begin
+            writeln ""
+            ifnot (item_count(oCriteriaTexts#)) writeln t.DfQuery.NoSelectionCrit
+            else begin
+              writeln t.DfQuery.SelectionCrit
+              for itm# from 0 to (item_count(oCriteriaTexts#)-1)
+                writeln (value(oCriteriaTexts#,itm#))
+              loop
+            end
+            writeln ""
+          end
+          else begin
+            writeln "<br>"
+            ifnot (item_count(oCriteriaTexts#)) writeln (html_DfToHtmlTable(t.DfQuery.NoSelectionCrit)+'<br>')
+            else begin
+              writeln (html_DfToHtmlTable(t.DfQuery.SelectionCrit)+'<br>')
+              for itm# from 0 to (item_count(oCriteriaTexts#)-1)
+                writeln (html_DfToHtmlTable(value(oCriteriaTexts#,itm#))+"<br>")
+              loop
+            end
+            writeln "<br>"
+          end
+        end
+        if (pInterrupted(self)) begin
+          if FileFormat# eq DFQ.FORMAT.PRINT writeln t.DfQuery.ReportCancelled
+          else writeln (html_DfToHtmlTable(t.DfQuery.ReportCancelled)+"<br>")
+        end
+        if (psTextBottom(self)) ne "" begin
+          if FileFormat# eq DFQ.FORMAT.PRINT writeln ""
+          else write "<br>"
+          get psTextBottom to str#
+          if (pUseAnsiCharacters(self)) move (StringOemToAnsi(str#)) to str#
+          send print_text str#
+        end
+      end
+    end
+  end_procedure
+
+  procedure New_Page
+   #IFDEF USE$VPE
+    integer current_row#
+    if (pDestination(self)<>DFQ.DEST.FILE) begin // If not file
+      send vpe_PageBreak to oVPE#
+      get vpe_Get of oVPE# VTOPMARGIN to current_row#
+      set current_row to current_row#
+      set next_current_row to current_row#
+    end
+   #ENDIF
+  end_procedure
+
+  procedure print_text string value#
+    integer lines# line#
+    #IFDEF USE$VPE
+     integer vbottom# current_row#
+     if (pDestination(self)<>DFQ.DEST.FILE) begin // If not file
+       send new_line
+       send vpe_SetAlign to oVPE# ALIGN_LEFT
+       send vpe_Write to oVPE# (pLeftMargin(self)) (current_row(self)) (pRightMargin(self)) VFREE ("[I ]"+value#)
+       get vpe_Get of oVPE# VBOTTOM to vbottom#
+       set current_row to vbottom#
+       set next_current_row to vbottom#
+     end
+     else begin
+       move (Text_Format.sii(value#,74,1)) to lines#
+       for line# from 0 to (lines#-1)
+         writeln channel 1 (Text_FormattedLine.i(line#))
+       loop
+     end
+    #ELSE
+     if (pDestination(self)=DFQ.DEST.FILE) begin // If file
+       move (Text_Format.sii(value#,74,1)) to lines#
+       for line# from 0 to (lines#-1)
+         writeln channel 1 (Text_FormattedLine.i(line#))
+       loop
+     end
+    #ENDIF
+  end_procedure
+
+  procedure new_line
+    integer delta#
+    if (pDestination(self)<>DFQ.DEST.FILE) begin // If not file
+      #IFDEF USE$VPE
+       move (next_current_row(self)-current_row(self)) to delta#
+       if delta# lt 0 move 0 to delta#
+       set current_row to (next_current_row(self))
+       if (current_row(self)+delta#) gt (pBottomMargin(self)) ;
+         send New_Page
+      #ENDIF
+    end
+    else begin
+      writeln channel 1 (pCurrentFileLine(self))
+      set pCurrentFileLine to ""
+    end
+  end_procedure
+
+  procedure record_selected
+    integer itm# max# file# fld# size# style# sum# len#
+    integer cr# type# row# next_row# pLeftMargin# grb# dec#
+    integer related# mainfile# TotalsOnly# liDestination FileFormat#
+    integer UseAnsiCharacters#
+    integer hoRow hoXMLDocumentRoot hoField
+    integer lhExprArr liExprRow
+    number start# width#
+    string font# value# field_sep# name#
+    forward send Record_Selected
+    get pDestination to liDestination
+    get pFileFormat  to FileFormat#
+    get pTotalsOnly to TotalsOnly#
+    get rpt_field_count to max#
+    get pLeftMargin to pLeftMargin#
+    get pUseAnsiCharacters to UseAnsiCharacters#
+    if (pSemiColon(self)) move ";" to field_sep#
+    else move "," to field_sep#
+    if (not(TotalsOnly#) and (liDestination<>DFQ.DEST.FILE or FileFormat#=DFQ.FORMAT.PRINT)) send new_line
+    send delete_data to (oValues(self))
+    get pMainFile to mainfile#
+    move 0 to related#
+    if (liDestination=DFQ.DEST.FILE and FileFormat#=DFQ.FORMAT.HTML and not(TotalsOnly#)) writeln channel 1 "  <tr valign=top>"
+    if (liDestination=DFQ.DEST.FILE and FileFormat#=DFQ.FORMAT.XML) begin
+      get phXMLDocumentRoot to hoXMLDocumentRoot
+      Get AddElement Of hoXMLDocumentRoot (API_AttrValue_FILELIST(DF_FILE_LOGICAL_NAME,mainfile#)) '' To hoRow
+      move DFFALSE to TotalsOnly#
+    end
+    if (VPE.USED or liDestination=DFQ.DEST.FILE) begin // If file# or VPE
+      for itm# from 0 to (max#-1) // Go through the selected columns
+        if (file#<>mainfile# and not(related#)) begin
+          relate mainfile#
+          move 1 to related#
+        end
+        get rpt_field_file       item itm# to file#
+        get rpt_field_field      item itm# to fld#
+        get rpt_field_start      item itm# to start#
+        get rpt_field_width      item itm# to width#
+        get rpt_field_font       item itm# to font#
+        get rpt_field_fontsize   item itm# to size#
+        get rpt_field_fontstyle  item itm# to style#
+        get rpt_field_cr         item itm# to cr#
+        get rpt_field_sum        item itm# to sum#
+        get rpt_field_expr_array item itm# to lhExprArr
+        get rpt_field_expr_row   item itm# to liExprRow
+        get rpt_field_type       item itm# to type#
+        #IFDEF USE$VPE
+         if liDestination ne DFQ.DEST.FILE send vpe_SelectFont to oVPE# font# size# // Only if not file
+        #ENDIF
+        if file# move (FieldInf_FieldValue(file#,fld#)) to value#
+        else begin
+          get sEvalExpression of (Query_ExprEvaluator(self)) (piExprId.i(lhExprArr,liExprRow)) to value#
+        end
+        move (rtrim(value#)) to value#
+
+        if sum# send Sum_Data.in to (oTotals(self)) itm# value#
+        if (not(TotalsOnly#) or (liDestination=DFQ.DEST.FILE and (FileFormat#<>DFQ.FORMAT.PRINT and FileFormat#<>DFQ.FORMAT.HTML))) begin
+          //move (FieldInf_FieldType(file#,fld#)) to type#
+          if cr# send new_line
+          if liDestination ne DFQ.DEST.FILE begin // If not file
+            #IFDEF USE$VPE
+             if (type#<>DF_TEXT and type#<>DF_BINARY) begin
+               if type# eq DF_BCD begin
+                 //send obs value#
+
+                 if file# get FieldInf_DecPoints file# fld# to dec#
+                 else get piDecimals.i of lhExprArr liExprRow to dec#
+//!!!!!            showln "Value: " value#
+                 move (NumToStr(value#,dec#)) to value#
+                 //send obs value# dec#
+               end
+               else move (replaces(" ",value#,"ÿ")) to value#
+               send print_column ("[IO ]"+value#) (if(type#=DF_BCD,ALIGN_RIGHT,ALIGN_LEFT)) (start#*100+pLeftMargin#) (width#*100)
+             end
+             else set value of (oValues(self)) item (item_count(oValues(self))) to value#
+            #ENDIF
+          end
+          else begin // If file:
+            if (FileFormat#=DFQ.FORMAT.PRINT or FileFormat#=DFQ.FORMAT.HTML) begin
+
+              if UseAnsiCharacters# begin
+                if (FileFormat#<>DFQ.FORMAT.HTML) move (StringOemToAnsi(value#)) to value#
+              end
+              if (type#<>DF_TEXT and type#<>DF_BINARY) begin
+                if type# eq DF_BCD begin
+                  if file# get FieldInf_DecPoints file# fld# to dec#
+                  else get piDecimals.i of lhExprArr liExprRow to dec#
+
+                  move (NumToStr(value#,dec#)) to value#
+                end
+                if FileFormat# eq DFQ.FORMAT.HTML writeln channel 1 ('    <td'+if(type#=DF_BCD,' align=right','')+'>'+html_DfToHtmlTable(value#)+'</td>')
+                else send print_column value# (if(type#=DF_BCD,ALIGN_RIGHT,ALIGN_LEFT)) (start#*100+pLeftMargin#) (width#*100)
+              end
+              Else Begin
+                Set value of (oValues(Self)) item (item_count(oValues(Self))) to value#
+              End
+            end
+            else begin // DFQ.FORMAT.CD, DFQ.FORMAT.LD or DFQ.FORMAT.XML
+              if UseAnsiCharacters# move (StringOemToAnsi(value#)) to value#
+              if (FileFormat#=DFQ.FORMAT.XML) begin
+                get rpt_field_name item itm# to name#
+                move (replaces(" ",name#,"_")) to name#
+                Get AddElement Of hoRow name# '' To hoField
+                if (type#=DF_TEXT or type#=DF_BINARY) ;
+                   Send AddCDataSection To hoField (rtrim(value#))
+                else Set psText Of hoField To (rtrim(value#))
+                Send Destroy To hoField
+              end
+              else begin // DFQ.FORMAT.CD or DFQ.FORMAT.LD
+                if (type#=DF_TEXT or type#=DF_BINARY) begin // Text or binary
+                  move (length(value#)) to len#
+                  if FileFormat# eq DFQ.FORMAT.CD begin // Comma delimited
+                    move (replaces('"',value#,"'")) to value#
+                    move ('"'+Text_CompressSubstCr(value#," ")+'"') to value#
+                    if itm# ne (max#-1) write (value#+field_sep#)
+                    else writeln value#
+                  end
+                  else begin // Line delimited
+                    writeln len#
+                    write value#
+                  end
+                end
+                else begin // Everything but text or binary
+                  move (rtrim(value#)) to value#
+                  if FileFormat# eq DFQ.FORMAT.CD begin
+                    if type# eq DF_ASCII move (replaces('"',value#,"'")) to value#
+                    if type# ne DF_DATE move ('"'+value#+'"') to value#
+                    if itm# ne (max#-1) write (value#+field_sep#)
+                    else writeln value#
+                  end
+                  else begin // DFQ.FORMAT.LD
+                    writeln value#
+                  end
+                end
+              end
+            end
+          end // If file
+        end // IfNot TotalsOnly#
+      loop
+      ifnot TotalsOnly# begin
+        for itm# from 0 to (item_count(oValues(self))-1)
+          get value of (oValues(self)) item itm# to value#
+          move (Text_RemoveTrailingCr(value#)) to value#
+          if (liDestination=DFQ.DEST.FILE and FileFormat#=DFQ.FORMAT.HTML) writeln channel 1 ('    <td>'+html_DfToHtmlTable(value#)+'</td>')
+          else begin
+            if value# ne "" begin
+              send new_line
+              send print_text value#
+            end
+          end
+        loop
+      end
+    end
+    if (liDestination=DFQ.DEST.FILE and FileFormat#=DFQ.FORMAT.HTML and not(TotalsOnly#)) writeln channel 1 "  </tr>"
+//    if (liDestination=DFQ.DEST.FILE and FileFormat#=DFQ.FORMAT.XML) begin
+    if (liDestination=DFQ.DEST.FILE) begin
+
+    end
+    #IFDEF USE$VPE
+     if liDestination ne DFQ.DEST.FILE ;
+        send batch_update3 to (oBatchCompanion(self)) (t.DfQuery.Page+" "+string(vpe_GetCurrentPage(oVPE#)))
+    #ELSE
+     else begin
+        get handle_report_line of oWinPrintReport# to Grb#
+        If (grb#=RPT_CANCEL) Begin    // wp2 - added for Wp2. Rpt gets cancelled
+            set pInterrupted to True  //       within the viewer
+        end
+     end
+    #ENDIF
+  end_procedure // record_selected
+
+  procedure record_found
+    integer oSent#
+    move (oBatchCompanion(self)) to oSent#
+    send batch_update  to oSent# (replace("#",replace("#",t.DfQuery.ReadingRecords,pScanCount(self)),pRecordCount(self)))
+    send batch_update2 to oSent# (FDX_FieldValues(0,pMainFile(self),psFieldsInIndex(self)))
+    //    (idx_field_value(oIndexAnalyzer#,pOrdering(self),1,1))
+    set pInterrupted to (batch_interrupt(oSent#))
+    #IFNDEF USE$VPE
+      integer liInterrupt liDestination
+      get pDestination to liDestination
+      //if (liDestination<>DFQ.DEST.FILE) begin
+      if (liDestination=DFQ.DEST.SCREEN) begin
+        send Update_Status of oWinPrintReport# (replace("#",replace("#",t.DfQuery.ReadingRecords,pScanCount(self)),pRecordCount(self)))
+        get Test_KeyPressed of oWinPrintReport# to liInterrupt
+        set pInterrupted to (liInterrupt<>0)
+      end
+    #ENDIF
+  end_procedure
+
+  procedure scan_ended
+    integer liDestination st#
+    get pDestination to liDestination
+    forward send scan_ended
+    send print_totals 1 // Parameter 1 makes it print number of records etc...
+    if liDestination ne DFQ.DEST.FILE send print_deferred_headers
+    send batch_off to (oBatchCompanion(self))
+
+    #IFDEF USE$VPE
+     if liDestination eq DFQ.DEST.PRINTER send PrintDoc to oVPE#
+     if liDestination eq DFQ.DEST.SCREEN send PreviewDoc to oVPE#
+    #ELSE
+     if liDestination ne DFQ.DEST.FILE begin
+       Get End_Report of oWinPrintReport# (if(pInterrupted(self),RPT_CANCEL,RPT_OK)) to st#
+       send dfClearPrinter of oWinPrintReport#
+     end
+    #ENDIF
+    if liDestination eq DFQ.DEST.FILE begin
+      if (pFileFormat(self)=DFQ.FORMAT.HTML) writeln '</body></html>'
+      close_output channel 1
+      ifnot (pbQuiet(self)) begin
+        if (pFileFormat(self)=DFQ.FORMAT.HTML or pFileFormat(self)=DFQ.FORMAT.XML) send html_StartDoc (pOutFileName(self))
+        else send info_box t.DfQuery.FileCompleted t.MsgBox.Message
+      end
+    end
+//    send CloseDoc to oVPE#
+  end_procedure
+
+  function sXmlRootElementName string lsValue returns string
+    integer liPos liLen
+    string lsIllegal lsChar
+    move (" .,;:/()&%Ï#[]{}=?+^@$\'"+'"') to lsIllegal
+    move (length(lsIllegal)) to liLen
+    for liPos from 1 to liLen
+      move (mid(lsIllegal,1,liPos)) to lsChar
+      move (replaces(lsChar,lsValue,"")) to lsValue
+    loop
+    function_return lsValue
+  end_function
+
+  procedure run
+    integer pLeftMargin# liDestination liFileFormat lbSaveOk
+    integer tmp# max# itm# pOpenOptions# vpetmp# argument_size#
+    integer hoXML hoXMLDocumentRoot
+    string metrics# lsFileName lsCurDir
+    string lsRootName
+
+    send initialize_breaks
+    get pDestination to liDestination
+    get pFileFormat to liFileFormat
+    if liDestination eq DFQ.DEST.FILE begin // File#
+      get pOutFileName to lsFileName
+      if lsFileName eq "" begin
+        send obs t.DfQuery.FileNameNotSpec
+        procedure_return // Goodbye!
+      end
+      if (SEQ_ExtractPathFromFileName(lsFileName)="") begin
+        get_current_directory to lsCurDir
+        get SEQ_ComposeAbsoluteFileName lsCurDir lsFileName to lsFileName
+      end
+      set pOutFileName to lsFileName
+
+      get pLeftMargin to pLeftMargin#
+      set pLeftMargin to 1 // First position is 1
+      get rpt_field_count to max#
+      for itm# from 0 to (max#-1)
+        // Shift unit from 1/10mm to characters:
+        set rpt_field_start item itm# to (rpt_field_start(self,itm#)/100)
+        set rpt_field_width item itm# to (rpt_field_width(self,itm#)/100)
+      loop
+      if (liFileFormat=DFQ.FORMAT.XML) begin
+        Object oXML Is A cXMLDOMDocument
+          Move Self To hoXML
+          Set psDocumentName To lsFileName
+          Get pReportTitle to lsRootName
+          get sXmlRootElementName lsRootName to lsRootName
+          if (lsRootName<>"") begin
+            Get CreateDocumentElement lsRootName To hoXMLDocumentRoot
+            Set pbPreserveWhitespace To DFFALSE
+            Set pbValidateOnParse To DFFALSE
+          end
+        End_Object // oXML
+        If (hoXMLDocumentRoot = 0) Begin
+          Send Stop_Box "The XML document root could not be created.\nIt might be caused by not having the XML parser available or by an illegal 'Query title'.\nThe export routine will now be exited." "VDFQuery XML export"
+          Send Destroy To hoXML
+          Procedure_Return
+        End
+        set phXMLDocumentRoot to hoXMLDocumentRoot
+      end
+    end
+#IFDEF USE$VPE
+    move oVPE# to tmp#
+    move (oVPE(self)) to oVPE#
+    get pOpenOptions of oVPE# to pOpenOptions#
+    if (pLandScape(self)) begin
+      get pLeftMargin to vpetmp#
+      set pLeftMargin to (pTopMargin(self))
+      set pTopMargin to vpetmp#
+      get pRightMargin to vpetmp#
+      set pRightMargin to (pBottomMargin(self))
+      set pBottomMargin to vpetmp#
+  #IFDEF msg_Vpe_SetPageOrientation // VPE 3
+  #ELSE
+      set pOpenOptions of oVPE# to (pOpenOptions# iOr VPE_LANDSCAPE)
+  #ENDIF
+    end
+    get_argument_size to argument_size#
+    // This we do to avoid having the RT crash because of default 2048:
+    if argument_size# lt 32767 set_argument_size 32767 // 32K-1
+    forward send run
+    set_argument_size argument_size#
+    set pOpenOptions of oVPE# to pOpenOptions#
+    if (pLandScape(self)) begin
+      get pLeftMargin to vpetmp#
+      set pLeftMargin to (pTopMargin(self))
+      set pTopMargin to vpetmp#
+      get pRightMargin to vpetmp#
+      set pRightMargin to (pBottomMargin(self))
+      set pBottomMargin to vpetmp#
+    end
+    move tmp# to oVPE#
+    #ELSE
+    // wp2.... add a printer select dialog with cancel
+    if liDestination ne DFQ.DEST.FILE begin // File#
+       send DfClosePreview of oWinPrintReport# //<-inserted Feb 22nd 2005
+       send DFClearDoc of oWinPrintReport#
+    end
+    Get DFGetMetrics of oWinPrintReport# to metrics#
+    Send DFSetMetrics of oWinPrintReport# wpm_cm
+    get_argument_size to argument_size#
+    // This we do to avoid having the RT crash because of default 2048:
+    if argument_size# lt 32767 set_argument_size 32767 // 32K-1
+    forward send run
+    set_argument_size argument_size#
+    Send DFSetMetrics of oWinPrintReport# metrics#
+    #ENDIF
+    if liDestination eq DFQ.DEST.FILE begin // File#
+      set pLeftMargin to pLeftMargin#
+      for itm# from 0 to (max#-1)
+        set rpt_field_start item itm# to (rpt_field_start(self,itm#)*100)
+        set rpt_field_width item itm# to (rpt_field_width(self,itm#)*100)
+      loop
+      if (liFileFormat=DFQ.FORMAT.XML) begin
+        Get SaveXMLDocument Of hoXML To lbSaveOk
+        Send Destroy To hoXML
+      end
+    end
+  end_procedure
+end_object // oReport_info
+
+// *** Main user interface section ****************************************
+
+class vdq.ComboFormAux is a aps.ComboFormAux
+  procedure construct_object
+    forward send construct_object
+    set combo_sort_state to false
+    on_key key_ctrl+key_r send request_run_report
+    on_key key_ctrl+key_o send Read_Report_Definition
+    on_key key_ctrl+key_s send Write_Report_Definition
+  end_procedure
+end_class
+
+register_procedure do_add_field
+register_object oTabs
+register_object oRun_Button
+
+desktop_section // Place object on desktop no matter where declared
+  object oVdfQuery_IndexAnalyzer is a cIndexAnalyzer
+  end_object
+end_desktop_section
+
+register_procedure DoFileNamesLogical
+register_procedure DoFileNamesUser
+register_procedure DoFieldNamesLogical
+register_procedure DoFieldNamesUser
+register_procedure DoAddAllFields
+register_procedure DoAddIndexFields
+register_procedure DoDisplayTableDefinition
+
+desktop_section // Place objects on desktop no matter where declared
+  object oVdfQuery_FileSelectTab1_FM is a FloatingPopupMenu
+    send add_item msg_DoFileNamesLogical       t.DfQuery.LogicalNames
+    send add_item msg_DoFileNamesUser          t.DfQuery.UserNames
+    send add_item msg_NONE                     ""
+    send add_item msg_DoDisplayTableDefinition (t.DfQuery.DisplayTblDef*"\aCtrl+D")
+  end_object
+  object oVdfQuery_FieldSelectTab1_FM is a FloatingPopupMenu
+    send add_item msg_DoFieldNamesLogical t.DfQuery.LogicalNames
+    send add_item msg_DoFieldNamesUser    t.DfQuery.UserNames
+    send add_item msg_NONE                ""
+    send add_item msg_DoAddAllFields      (t.DfQuery.AddAllFields*"\aCtrl+A")
+    send add_item msg_DoAddIndexFields    (t.DfQuery.AddIndexFields*"\aCtrl+I")
+  end_object
+
+  object oVdfQuery_FileSelect_FM is a FloatingPopupMenu
+    send add_item msg_DoFileNamesLogical  t.DfQuery.LogicalNames
+    send add_item msg_DoFileNamesUser     t.DfQuery.UserNames
+  end_object
+  object oVdfQuery_FieldSelect_FM is a FloatingPopupMenu
+    send add_item msg_DoFieldNamesLogical t.DfQuery.LogicalNames
+    send add_item msg_DoFieldNamesUser    t.DfQuery.UserNames
+  end_object
+end_desktop_section
+
+// The creating of OG_QueryView must be guarded by the opening of
+// file (og_param(0)) if not 0.
+DEFINE_OBJECT_GROUP OG_QueryView // file# index# subreport?
+
+  object oVDFQuery_View is a aps.View
+    register_procedure write_report_definition
+    register_procedure read_report_definition
+    register_procedure NewQuery
+    property integer pMainFile    (og_param(0))
+    property integer pOrdering    0
+    property number  pColumnSpace 0.2
+    property string  pFont        ""
+    property integer pFontSize    0
+    property integer phForcedDD   0
+    if gsVdfQuery_Icon# ne "" set icon to gsVdfQuery_Icon#
+    set help_id to hlpid.VdfQuery
+    set Window_Style to WS_MAXIMIZEBOX 1
+    property integer pDestroyOnClose (not(og_param(2)))
+
+    object oQuery_ExprArray is a Query_cExprArray
+    end_object
+    object oQueryOrderExpression is a cQueryOrderExpression
+      set phExprArr to (oQuery_ExprArray(self))
+    end_object
+
+    set p_auto_column to 1
+    on_key kcancel      send close_panel
+    on_key key_F3       send close_panel
+    on_key ksave_record send request_run_report
+    on_key key_ctrl+key_r send request_run_report
+    on_key key_ctrl+key_o send Read_Report_Definition
+    on_key key_ctrl+key_s send Write_Report_Definition
+    //on_key kuser2 send debug_display_string
+    send aps_tab_column_define 1 80 55 jmode_right
+
+    procedure DoFieldNamesLogical
+      broadcast recursive send FieldNamesLogical
+    end_procedure
+    procedure DoFieldNamesUser
+      broadcast recursive send FieldNamesUser
+    end_procedure
+    procedure DoFileNamesLogical
+      broadcast recursive send FileNamesLogical
+    end_procedure
+    procedure DoFileNamesUser
+      broadcast recursive send FileNamesUser
+    end_procedure
+
+    procedure Print_Report
+      // Cancel toolbar message
+    end_procedure
+
+    object oDefault_Selection_Values is an array
+      procedure qry_change_criteria integer crit# string val1# string val2#
+        set value item (crit#*2) to val1#
+        set value item (crit#*2+1) to val2#
+      end_procedure
+      function qry_new_criteria returns integer
+        integer crit#
+        get item_count to crit#
+        function_return (crit#/2 max 1)
+      end_function
+      function qry_crit_val1 integer crit# returns string
+        function_return (value(self,crit#*2))
+      end_function
+      function qry_crit_val2 integer crit# returns string
+        function_return (value(self,crit#*2+1))
+      end_function
+    end_object // oDefault_Selection_Values
+
+    Object oMainFile is a vdq.ComboFormAux abstract aft_ascii50
+      Set label to t.DfQuery.MainFile 
+      Set entry_state item 0 to False
+      set allow_blank_state to true
+      On_Key kuser Send select_table
+
+      set peAnchors to (anTop+anLeft+anRight)
+      procedure init
+        integer file#
+        string str#
+        get pMainFile to file#
+        if file# begin
+          get_attribute DF_FILE_DISPLAY_NAME of file# to str#
+          move (rtrim(str#)) to str#
+        end
+        else send combo_add_item str# 0
+        set value item 0 to str#
+        send delete_data
+        move 0 to file#
+        repeat
+          get_attribute df_file_next_used of file# to file#
+          if file# begin
+            if (DfQuery_ExcludeFile(file#)=DFQ_FALSE) begin
+              get_attribute DF_FILE_DISPLAY_NAME of file# to str#
+              move (rtrim(str#)) to str#
+              ifnot (StringBeginsWith(str#,"@")) send combo_add_item str# file#
+            end
+          end
+        until file# eq 0
+      end_procedure
+      send init
+
+      property integer pbNoRecursion 0
+      procedure DoSetFile integer file# integer set_main_window#
+        integer callfile#
+        string str#
+        ifnot (pbNoRecursion(self)) begin
+          set pbNoRecursion to DFTRUE
+          move file# to callfile#
+          if (DBMS_OpenFile(file#,DF_SHARE,0)) begin
+            set pMainFile to file#
+            send new_main_file to (oTabs(self))
+          end
+          else begin
+            if file# error 200 "File could not be opened"
+            get pMainFile to file#
+          end
+          if file# eq 0 move "" to str#
+          else begin
+            get_attribute DF_FILE_DISPLAY_NAME of file# to str#
+            move (rtrim(str#)) to str#
+          end
+          if (set_main_window# or not(callfile#)) set value item 0 to str#
+          set pbNoRecursion to DFFALSE
+        end
+      end_procedure
+
+      procedure OnChange
+        integer file#
+        get Combo_Current_Aux_Value to file#
+        send DoSetFile file# 0
+      end_procedure
+      set object_shadow_state to (og_param(2)) // Shadow if sub-report
+
+      function select_table_validate integer file# returns integer
+        string str#
+        get_attribute DF_FILE_DISPLAY_NAME of file# to str#
+        move (rtrim(str#)) to str#
+        if (StringBeginsWith(str#,"@")) function_return 0
+        function_return (DfQuery_ExcludeFile(file#)=0)
+      end_function
+
+      procedure select_table
+        integer file# obj#
+        move self to obj#
+        get pMainFile to file#
+        move (iFdxSelectOneFileValidate(0,file#,get_select_table_validate,obj#)) to file#
+        if file# send DoSetFile file# 1
+      end_procedure
+    end_object // oMainFile
+    
+    procedure AdvancedTableOpen
+      send select_table to (oMainFile(self))
+    end_procedure
+
+    object oToolButton is a aps.ToolButton snap sl_right
+      set peAnchors to (anTop+anRight)
+      set p_extra_external_width to 10
+      send Add_Button ICO_STD_FIND msg_AdvancedTableOpen
+      send Add_ToolTip t.DfQuery.tt.AdvTableOpen
+      send Add_Button ICO_STD_FILEOPEN msg_Read_Report_Definition
+      send Add_ToolTip t.DfQuery.tt.Open
+      ifnot (integer(og_param(2))) begin // If not a sub-report
+        send Add_Button ICO_STD_FILESAVE msg_Write_Report_Definition
+        send Add_ToolTip t.DfQuery.tt.Save
+        send Add_Button ICO_STD_FILENEW msg_NewQuery
+        send Add_ToolTip t.DfQuery.tt.New
+      end
+    end_object
+
+    object oTitle is a aps.Form label t.DfQuery.QueryTitle abstract aft_ascii50
+      set peAnchors to (anTop+anLeft+anRight)
+      procedure OnChange
+        send OnChangeMainFile
+      end_procedure
+    end_object
+
+    function report_title returns string
+      integer file#
+      string str#
+      get pMainFile to file#
+      get value of (oTitle(self)) item 0 to str#
+      if str# eq "" if file# get_attribute DF_FILE_DISPLAY_NAME of file# to str#
+      function_return (trim(str#))
+    end_function
+
+    procedure OnChangeMainFile
+      string str# caption# title#
+      get report_title to title#
+      if title# ne "" begin
+        move (t.DfQuery.QueryDefinition+" (#)") to caption#
+        replace "#" in caption# with (report_title(self))
+      end
+      else move t.DfQuery.QueryDefinition to caption#
+      set label to caption#
+    end_procedure
+
+    set p_auto_column to 0
+    send aps_goto_max_row
+    send aps_make_row_space 4 // Insert 4 MDU
+    object oTabs is a aps.TabDialog
+      set peAnchors to (anTop+anLeft+anRight+anBottom)
+      object oTab1 is a aps.TabPage label t.DfQuery.LblTab1
+        set p_auto_column to 0
+
+        DEFINE_OBJECT_GROUP OG_QueryViewComponent // int: allow DoAddAllFields
+          object oDBMS_Files is a aps.list label t.DfQuery.DBMSfiles
+            property integer pDisplayFileNamesUser 1
+            set size to 60 150
+            set label_justification_mode to JMODE_TOP
+
+            set Label_Shadow_Display_Mode to TBSHADOW_ON_NONE // Nicholas Herlick
+            set label to t.DfQuery.DBMSfiles
+
+            on_key kenter send next
+            on_key kswitch_back send activate to (oTitle(self))
+            on_key key_ctrl+key_p send OpenQueryOnParentFile
+            on_key kuser send toggle_display
+            on_key KEY_CTRL+KEY_D send DoDisplayTableDefinition
+            set peAnchors to (anTop+anLeft)
+            procedure toggle_display
+              set pDisplayFileNamesUser to (not(pDisplayFileNamesUser(self)))
+              send InsertFileNames
+            end_procedure
+
+            procedure OpenQueryOnParentFile
+              integer file# itm#
+              if (item_count(self)) begin
+                get current_item to itm#
+                get aux_value item itm# to file#
+                send CreateNewQuery file#
+              end
+            end_procedure
+
+            procedure DoInformExpressionThingAboutAllowedTables
+              integer liMax liItem liFile lhQuery_ExprParser
+              move (Query_ExprParser(self)) to lhQuery_ExprParser
+              send AllowedTables_Reset to lhQuery_ExprParser
+              get item_count to liMax
+              decrement liMax
+              for liItem from 0 to liMax
+                get aux_value item liItem to liFile
+                send AllowedTables_Add to lhQuery_ExprParser liFile
+              loop
+            end_procedure
+
+            procedure DoDisplayTableDefinition
+              integer liFile
+              get aux_value item CURRENT to liFile
+              send FDX_ModalDisplayFileAttributes 0 liFile
+            end_procedure
+
+            object oSet is a set
+            end_object
+
+            procedure InsertFileNames
+              integer type#
+              integer itm# max# file#
+              string str#
+              get pDisplayFileNamesUser to type#
+              get item_count to max#
+              for itm# from 0 to (max#-1)
+                get aux_value item itm# to file#
+                if type# get File_Display_Name file# to str#
+                else get_attribute DF_FILE_LOGICAL_NAME of file# to str#
+                set value item itm# to str#
+              loop
+              set dynamic_update_state to true
+            end_procedure
+            procedure FileNamesLogical
+              set pDisplayFileNamesUser to false
+              send InsertFileNames
+            end_procedure
+            procedure FileNamesUser
+              set pDisplayFileNamesUser to true
+              send InsertFileNames
+            end_procedure
+
+            property integer piOgParam0 0
+            set piOgParam0 to (og_param(0))
+            procedure mouse_down2 integer liWin integer liCharPos
+              send mouse_down liWin liCharPos // Take focus
+              if (piOgParam0(self)) send popup to (oVdfQuery_FileSelectTab1_FM(self))
+              else send popup to (oVdfQuery_FileSelect_FM(self))
+            end_procedure
+
+            procedure add_file integer file#
+              integer field# max_field# rel_file#
+
+              if (DBMS_OpenFile(file#,DF_SHARE,0)) begin
+                get_attribute DF_FILE_NUMBER_FIELDS of file# to max_field#
+                move (max_field# min 255) to max_field#
+
+                if (find_element(oSet(self),file#)) eq -1 begin
+                  send add_element to (oSet(self)) file#
+                  send add_item msg_none ""
+                  set aux_value item (item_count(self) - 1) to file#
+
+                  for field# from 1 to max_field#
+                    get_attribute DF_FIELD_RELATED_FILE of file# field# to rel_file#
+                    if rel_file# ne 0 begin
+                      if (DfQuery_ExcludeFile(file#)<>DFQ_ALWAYS) ;
+                        send add_file rel_file#
+                    end
+                  loop
+                end
+              end
+              else error 200 ("Related file could not be opened (entry: "+string(file#)+")")
+            end_procedure
+
+            procedure fill_list
+              integer file# st#
+
+              send delete_data
+              send delete_data to (oSet(self))
+
+              get pMainFile to file#
+              if file# send add_file file#
+              send InsertFileNames
+              send notify_filechange file#
+            end_procedure
+
+            procedure OnChangeMainFile
+              send fill_list
+            end_procedure
+
+            procedure onchange
+              integer file#
+              get aux_value item (current_item(self)) to file#
+              send notify_filechange file#
+              send request_status_help 1
+            end_procedure
+
+            function current_aux returns integer
+              function_return (aux_value(self,current_item(self)))
+            end_function
+
+            Function Status_Help integer itm_tmp# returns string
+              integer itm# aux#
+              string str#
+              if num_arguments eq 0 get current_item to itm#
+              //else move itm_tmp# to itm#
+              get aux_value item itm# to aux#
+              get VdfQuery_file_status_help aux# to str#
+              function_return str#
+            End_Function
+
+            procedure DoGotoFile integer liFile
+              integer liMax liItm
+              get item_count to liMax
+              decrement liMax
+              for liItm from 0 to liMax
+                if (aux_value(self,liItm)=liFile) set current_item to liItm
+              loop
+            end_procedure
+          end_object
+          send aps_goto_max_row
+          send make_row_space
+          object oDBMS_Fields is a aps.list //snap sl_down
+            property integer pDisplayFieldNamesUser 1
+            property integer pFileNumber            0
+            set size to 75 150
+
+            on_key kswitch send switch
+            on_key kswitch_back send switch_back
+            on_key kEnter Send do_add_field
+            on_key kuser send toggle_display
+
+            set peAnchors to (anTop+anLeft+anBottom)
+            procedure toggle_display
+              set pDisplayFieldNamesUser to (not(pDisplayFieldNamesUser(self)))
+              send InsertFieldNames
+            end_procedure
+
+            property integer piOgParam0 0
+            set piOgParam0 to (og_param(0))
+            procedure mouse_down2 integer liWin integer liCharPos
+              send mouse_down liWin liCharPos // Take focus
+              if (piOgParam0(self)) send popup to (oVdfQuery_FieldSelectTab1_FM(self))
+              else send popup to (oVdfQuery_FieldSelect_FM(self))
+            end_procedure
+
+            procedure InsertFieldNames
+              integer type#
+              integer itm# max# fld# file#
+              string str#
+              get pFileNumber to file#
+              get pDisplayFieldNamesUser to type#
+              get item_count to max#
+              for itm# from 0 to (max#-1)
+                get aux_value item itm# to fld#
+                if fld# lt 256 begin
+                  if type# get FieldInf_FieldLabel_Long file# fld# to str#
+                  else get_attribute DF_FIELD_NAME of file# fld# to str#
+                  set value item itm# to str#
+                end
+              loop
+              set dynamic_update_state to true
+            end_procedure
+
+            if (integer(og_param(0))) on_key key_ctrl+key_a send DoAddAllFields
+            if (integer(og_param(0))) on_key key_ctrl+key_i send DoAddIndexFields
+            procedure FieldNamesLogical
+              set pDisplayFieldNamesUser to false
+              send InsertFieldNames
+            end_procedure
+            procedure FieldNamesUser
+              set pDisplayFieldNamesUser to true
+              send InsertFieldNames
+            end_procedure
+            procedure mouse_click integer i1 integer i2
+               Send do_add_field
+            end_procedure
+            procedure load_virtual_fields integer file#
+              integer obj# fld# max#
+              get FieldInf_VirtualFields_Object file# to obj#
+              if obj# begin
+                get row_count of obj# to max#
+                for fld# from 0 to (max#-1)
+                  if (piFieldActive.i(obj#,fld#)) begin
+                    send add_item msg_do_add_field (psFieldLabel.i(obj#,fld#))
+                    set aux_value item (item_count(self) - 1) to (fld#+256)
+                  end
+                loop
+              end
+            end_procedure
+            procedure file_change integer file#
+              integer field# max_field# fieldtype# st#
+              string str#
+              send delete_data
+              set pFileNumber to file#
+
+              if file# begin
+                get_attribute DF_FILE_NUMBER_FIELDS of file# to max_field#
+                move (max_field# min 255) to max_field#
+
+                for field# from 0 to max_field#
+                  get_attribute DF_FIELD_NAME of file# field# to str#
+                  move (FieldInf_FieldType(file#,field#)) to fieldtype#
+                  if (fieldtype#<>DF_OVERLAP and fieldtype#<>DF_BINARY) begin
+                    ifnot (StringBeginsWith(str#,"@")) begin
+                      ifnot (DfQuery_ExcludeField(file#,field#)) begin
+                        send add_item msg_do_add_field "" //str#
+                        set aux_value item (item_count(self)-1) to field#
+                      end
+                    end
+                  end
+                loop
+                send InsertFieldNames
+                send load_virtual_fields file#
+              end
+            end_procedure
+            function current_aux returns integer
+              function_return (aux_value(self,current_item(self)))
+            end_function
+            function iFindField.i integer liField returns integer
+              integer liItm liMax
+              get item_count to liMax
+              decrement liMax
+              for liItm from 0 to liMax
+                if (aux_value(self,liItm)=liField) function_return liItm
+              loop
+              function_return -1 // not found
+            end_function
+            procedure DoAddIndexFields
+              integer liIndex liFile liMax liItm liField lbFieldAllowed
+              string lsFields
+              get current_aux of (oDBMS_Files(self)) to liFile
+              if liFile begin
+                get iFdxSelectIndex 0 liFile to liIndex
+                if liIndex begin
+                  get FDX_IndexAsFields 0 liFile liIndex to lsFields
+                  get FDX_FieldsTranslateOverlaps 0 liFile lsFields to lsFields
+                  get HowManyIntegers lsFields to liMax
+                  for liItm from 1 to liMax
+                    get ExtractInteger lsFields liItm to liField
+                    if liField begin // Exclude recnum
+                      get iFindField.i liField to lbFieldAllowed
+                      if (lbFieldAllowed<>-1) begin
+                        send DoGotoField liField
+                        send do_add_field
+                      end
+                    end
+                  loop
+                end
+              end
+            end_procedure
+            procedure DoAddAllFields
+              integer itm# max#
+              get item_count to max#
+              for itm# from 0 to (max#-1)
+                if (aux_value(self,itm#)) begin // Exclude recnum
+                  set current_item to itm#
+                  send do_add_field
+                end
+              loop
+            end_procedure
+            Function Status_Help integer itm_tmp# returns string
+              integer itm# file# aux#
+              string str#
+              if num_arguments eq 0 get current_item to itm#
+              else move itm_tmp# to itm#
+              get current_aux of (oDBMS_Files(self)) to file#
+              get aux_value item itm# to aux#
+              get VdfQuery_field_status_help file# aux# to str#
+              function_return str#
+            End_Function
+            procedure OnChange
+              send request_status_help 1
+            end_procedure
+            procedure DoGotoField integer liField
+              integer liMax liItm
+              get item_count to liMax
+              decrement liMax
+              for liItm from 0 to liMax
+                if (aux_value(self,liItm)=liField) set current_item to liItm
+              loop
+            end_procedure
+          end_object // oDBMS_Files
+          set label of (oDBMS_Fields(self)) to t.DfQuery.DBMSfields
+          set Label_Shadow_Display_Mode of (oDBMS_Fields(self)) to TBSHADOW_ON_NONE // Nicholas Herlick
+          set label_justification_mode of (oDBMS_Fields(self)) to JMODE_TOP
+          set label_offset of (oDBMS_Fields(self)) to 0 0
+          procedure notify_filechange integer file#
+            send file_change to (oDBMS_Fields(self)) file#
+          end_procedure
+        END_DEFINE_OBJECT_GROUP
+        CREATE_OBJECT_GROUP OG_QueryViewComponent 1
+
+        object oGrp is a aps.Group label t.DfQuery.LblGrpPrnt snap sl_right relative_to (oDBMS_Files(self))
+          set p_auto_column to 0
+          set peAnchors to (anTop+anLeft+anRight+anBottom)
+          object oGrd is a aps.Grid
+            set peResizeColumn to rcAll
+            set peAnchors to (anTop+anLeft+anRight+anBottom)
+            on_key kenter send next
+            set size to 100 0
+            set line_width to 5 0
+            set form_margin item 0 to 25
+            set form_margin item 1 to 2
+            set form_margin item 2 to 2
+            set form_margin item 3 to 4
+            set form_margin item 4 to 4
+            set form_datatype item 0 to ascii_window
+            set form_datatype item 1 to ascii_window
+            set form_datatype item 2 to ascii_window
+            set form_datatype item 3 to 1
+            set form_datatype item 4 to 1
+            set header_label item 0 to t.DfQuery.LblGrdPrnt0
+            set header_label item 1 to t.DfQuery.LblGrdPrnt1
+            set header_label item 2 to t.DfQuery.LblGrdPrnt2
+            set header_label item 3 to t.DfQuery.LblGrdPrnt3
+            set header_label item 4 to t.DfQuery.LblGrdPrnt4
+            set Status_Help item 0 to t.DfQuery.SthGrdPrnt0
+            set Status_Help item 1 to t.DfQuery.SthGrdPrnt1
+            set Status_Help item 2 to t.DfQuery.SthGrdPrnt2
+            set Status_Help item 3 to t.DfQuery.SthGrdPrnt3
+            set Status_Help item 4 to t.DfQuery.SthGrdPrnt4
+            //set highlight_row_state to true
+            //set highlight_row_color to (rgb(0,255,255))
+
+            set CurrentCellColor     to clHighlight
+            set CurrentCellTextColor to clHighlightText
+            set CurrentRowColor      to clHighlight
+            set CurrentRowTextColor  to clHighlightText
+
+            set select_mode to multi_select
+            set auto_top_item_state to false
+            on_key kdelete_record send delete_row
+            on_key key_ctrl+key_j send calculate_offsets
+            on_key kswitch send switch
+            on_key kswitch_back send switch_back
+
+            procedure load_report_info // Title, file, fields to be printed
+              integer row# max# file# field# base# sum# cr# fontsize#
+              integer lhExprArr liExprRow
+              number start# width#
+              string name# font#
+              set pReportTitle of oReport_info# to (report_title(self))
+              set pMainFile of oReport_info# to (pMainFile(self))
+              set pOrdering of oReport_info# to (pOrdering(self))
+              set pBottomText of oReport_info# to "bottom"
+              send delete_data to oReport_info#
+              get report_fontsize to fontsize#
+              get report_font to font#
+              // wp2 - addded for wp1
+              set psFontName of oReport_info# to Font#
+              set piFontSize of oReport_info# to FontSize#
+
+              move (oQuery_ExprArray(self)) to lhExprArr
+
+              get item_count to max#
+
+              for row# from 0 to (max#/5-1)
+                move (row#*5) to base#
+                get aux_value item base# to file#
+                move (low(file#)) to field#
+                move (hi(file#)) to file#
+                get value item base# to name#
+                get select_state item (base#+1) to sum#
+                get select_state item (base#+2) to cr#
+                get value item (base#+3) to start#
+                get value item (base#+4) to width#
+                if file# begin
+                  send add_field to oReport_info# file# field# name# cr# start# width# font# fontsize# sum# 0 0 0
+                end
+                else begin
+                  get aux_value item (base#+1) to liExprRow
+                  send add_field to oReport_info# file# field# name# cr# start# width# font# fontsize# sum# 0 lhExprArr liExprRow
+                end
+              loop
+            end_procedure
+            function base_item returns integer
+              integer itm#
+              get current_item to itm#
+              function_return ((itm#/5)*5)
+            end_function
+            procedure add_row
+              integer base#
+              get item_count to base#
+              set dynamic_update_state to DFFALSE
+              send add_item msg_none ""
+              send add_item msg_none ""
+              send add_item msg_none ""
+              send add_item msg_none ""
+              send add_item msg_none ""
+              set dynamic_update_state to DFTRUE
+            end_procedure
+            procedure insert_row
+              integer base#
+              if (item_count(self)) begin
+                get base_item to base#
+                set dynamic_update_state to DFFALSE
+                send insert_item 0 "" base#
+                send insert_item 0 "" base#
+                send insert_item 0 "" base#
+                send insert_item 0 "" base#
+                send insert_item 0 "" base#
+                set dynamic_update_state to DFTRUE
+              end
+              else send add_row
+            end_procedure
+            procedure delete_row
+              integer base#
+              if (item_count(self)) begin
+                get base_item to base#
+                set dynamic_update_state to DFFALSE
+                send delete_item base#
+                send delete_item base#
+                send delete_item base#
+                send delete_item base#
+                send delete_item base#
+                set dynamic_update_state to DFTRUE
+              end
+            end_procedure
+
+            procedure do_expression integer liRow integer liBase
+              integer liType lhExprArr liFieldType
+              move (oQuery_ExprArray(self)) to lhExprArr
+
+              set aux_value item liBase to 0
+              set value item liBase to (psLabel.i(lhExprArr,liRow))
+
+              set aux_value item (liBase+1) to liRow
+
+              move (piType.i(lhExprArr,liRow)) to liFieldType
+
+              if liFieldType ne DF_BCD set item_shadow_state item (liBase+1) to DFTRUE
+              else set checkbox_item_state item (liBase+1) to DFTRUE
+
+              set checkbox_item_state item (liBase+2) to DFTRUE
+
+              if liFieldType eq DF_TEXT set item_shadow_state item (liBase+4) to DFTRUE
+              set current_item to liBase
+            end_procedure
+
+            procedure do_field integer file# integer field# integer base#
+              integer fieldtype#
+              set aux_value item base# to (file#*65536+field#)
+              set value item base# to (FieldInf_FieldLabel_Short(file#,field#))
+
+              move (FieldInf_FieldType(file#,field#)) to fieldtype#
+
+              if fieldtype# ne DF_BCD set item_shadow_state item (base#+1) to DFTRUE
+              else set checkbox_item_state item (base#+1) to DFTRUE
+
+              set checkbox_item_state item (base#+2) to DFTRUE
+
+              if fieldtype# eq DF_TEXT set item_shadow_state item (base#+4) to DFTRUE
+              set current_item to base#
+            end_procedure
+
+            procedure add_field integer file# integer field#
+              integer base#
+              get item_count to base#
+              send add_row
+              send do_field file# field# base#
+              set dynamic_update_state to true
+              send calculate_offsets
+            end_procedure
+
+            procedure insert_field integer file# integer field#
+              integer base#
+              get base_item to base#
+              send insert_row
+              send do_field file# field# base#
+              set dynamic_update_state to true
+              send key kuparrow
+            end_procedure
+
+            function bIsExprRow integer liBase returns integer
+              function_return (not(aux_value(self,liBase)))
+            end_function
+
+            procedure DoCcAdd
+              integer liRow lhExprArr liBase
+              move (oQuery_ExprArray(self)) to lhExprArr
+              send DoInformExpressionThingAboutAllowedTables to (oDBMS_Files(self))
+              get iPopup.ii of (Query_ColumnExpression(self)) lhExprArr -1 to liRow
+              if (liRow<>-1) begin
+                get item_count to liBase
+                send add_row
+                send do_expression liRow liBase
+                set dynamic_update_state to DFTRUE
+                send calculate_offsets
+              end
+            end_procedure
+            procedure DoCcInsert
+              integer liRow lhExprArr liBase
+              move (oQuery_ExprArray(self)) to lhExprArr
+              send DoInformExpressionThingAboutAllowedTables to (oDBMS_Files(self))
+              get iPopup.ii of (Query_ColumnExpression(self)) lhExprArr -1 to liRow
+              if (liRow<>-1) begin
+                get base_item to liBase
+                send insert_row
+                send do_expression liRow liBase
+                set dynamic_update_state to DFTRUE
+                send calculate_offsets
+              end
+            end_procedure
+
+            procedure DoCcEdit
+              integer liBase lhExprArr liExprRow liRow
+              if (item_count(self)) begin
+                get base_item to liBase
+                if (bIsExprRow(self,liBase)) begin
+                  send DoInformExpressionThingAboutAllowedTables to (oDBMS_Files(self))
+                  move (oQuery_ExprArray(self)) to lhExprArr
+                  get aux_value item (liBase+1) to liExprRow
+                  get iPopup.ii of (Query_ColumnExpression(self)) lhExprArr liExprRow to liRow
+                  if (liRow<>-1) begin
+                    send do_expression liRow liBase
+                    set dynamic_update_state to DFTRUE
+                    send calculate_offsets
+                  end
+                end
+              end
+            end_procedure
+
+
+            function row_start integer row# returns number
+              function_return (value(self,row#*5+3))
+            end_function
+            function row_width integer row# returns number
+              function_return (value(self,row#*5+4))
+            end_function
+            procedure set row_start integer row# number value#
+              set value item (row#*5+3) to value#
+            end_procedure
+            procedure set row_width integer row# number value#
+              set value item (row#*5+4) to value#
+            end_procedure
+            function row_file integer row# returns integer
+              function_return (hi(integer(aux_value(self,row#*5))))
+            end_function
+            function row_field integer row# returns integer
+              function_return (low(integer(aux_value(self,row#*5))))
+            end_function
+            function row_cr integer row# returns integer
+              function_return (select_state(self,row#*5+2))
+            end_function
+            function row_label integer row# returns string
+              function_return (value(self,row#*5))
+            end_function
+            function row_expr_row integer row# returns string
+              function_return (integer(aux_value(self,row#*5+1)))
+            end_function
+
+            procedure row_change integer liRowFrom integer liRowTo
+              integer liFile liField
+              get row_file liRowTo to liFile
+              get row_field liRowTo to liField
+              if (liFile<>0) begin
+                send DoGotoFile to (oDBMS_Files(self)) liFile
+                send DoGotoField to (oDBMS_Fields(self)) liField
+              end
+            end_procedure
+            procedure item_change integer liItm1 integer liItm2 returns integer
+              integer liRval liColumns
+              get Grid_Columns self to liColumns
+              forward get msg_item_change liItm1 liItm2 to liRval
+              if ((liItm1/liColumns)<>(liRval/liColumns)) send row_change (liItm1/liColumns) (liRval/liColumns)
+              procedure_return liRval
+            end_procedure
+
+
+            procedure MarkUsedExpressions
+              integer liRow liMax liExprRow liBase liFileField lhExprArr
+              move (oQuery_ExprArray(self)) to lhExprArr
+              get Grid_RowCount self to liMax
+              decrement liMax
+              for liRow from 0 to liMax
+                get Grid_RowBaseItem self liRow to liBase
+                get aux_value item liBase to liFileField
+                ifnot liFileField begin
+                  get aux_value item (liBase+1) to liExprRow
+                  send CleanUp_MarkAsUsed to lhExprArr liExprRow
+                end
+              loop
+            end_procedure
+
+            procedure GetNewExpressionIDs
+              integer liRow liMax liExprRow liBase liFileField lhExprArr
+              move (oQuery_ExprArray(self)) to lhExprArr
+              get Grid_RowCount self to liMax
+              decrement liMax
+              for liRow from 0 to liMax
+                get Grid_RowBaseItem self liRow to liBase
+                get aux_value item liBase to liFileField
+                ifnot liFileField begin
+                  get aux_value item (liBase+1) to liExprRow
+                  get pbCleanupNewRow.i of lhExprArr liExprRow to liExprRow
+                  set aux_value item (liBase+1) to liExprRow
+                end
+              loop
+            end_procedure
+
+            procedure calculate_offsets
+              integer max# row# fieldtype# mrg# file# field# fontsize#
+              integer printable_file# obj# liExprRow lhExprArr
+              number width# start# space# label_width#
+              string font# row_label#
+              move (oQuery_ExprArray(self)) to lhExprArr
+
+              get Current_Destination to printable_file#
+              if printable_file# eq 2 begin
+                get Current_FileFormat to printable_file#
+                if printable_file# eq DFQ.FORMAT.PRINT move 1 to printable_file#
+                else move 0 to printable_file#
+              end
+              else move 0 to printable_file#
+
+              if printable_file# move 1 to space#
+              else get pColumnSpace to space#
+
+              move (item_count(self)/5) to max#
+              move (base_item(self)/5) to row#
+              if row# ne 0 begin
+                get row_width (row#-1) to width#
+                get row_start (row#-1) to start#
+                move (start#+space#) to start#
+              end
+              else begin
+                move 0 to width#
+                move 0 to start#
+              end
+              get report_fontsize to fontsize#
+              get report_font to font#
+              for row# from row# to (max#-1)
+                get row_file row# to file#
+                get row_field row# to field#
+                if (file#=0) begin
+                  get row_expr_row row# to liExprRow
+                  move (piType.i(lhExprArr,liExprRow)) to fieldtype#
+                end
+                else move (FieldInf_FieldType(file#,field#)) to fieldtype#
+                if fieldtype# ne DF_TEXT begin
+                  move (start#+width#) to start#
+                  if (row_cr(self,row#)) move 0 to start#
+                  if (file#=0) get piWidth.i of lhExprArr liExprRow to mrg#
+                  else get VdfQuery_field_margin file# field# to mrg#
+                  if printable_file# begin
+                    move mrg# to width#
+                    move (length(row_label(self,row#))) to label_width#
+                  end
+                  else begin
+                    get VdfQuery_field_width_cm fieldtype# mrg# 0 font# fontsize# to width#
+                    get row_label row# to row_label#
+                    get VdfQuery_value_width_cm row_label# font# fontsize# to label_width#
+                  end
+                  if label_width# gt width# move label_width# to width#
+                  set row_start row# to start#
+                  set row_width row# to width#
+                  move (start#+space#) to start#
+                end
+              loop
+            end_procedure
+
+            procedure OnChangeMainFile
+              send delete_data
+            end_procedure
+          end_object
+          set multi_button_size to 14 40
+          object oBtn1 is a aps.Multi_Button
+            set peAnchors to (anRight+anBottom)
+            on_item t.DfQuery.LblAddField send do_add_field
+          end_object
+          object oBtn2 is a aps.Multi_Button
+            set peAnchors to (anRight+anBottom)
+            on_item t.DfQuery.LblInsertField send do_insert_field
+          end_object
+          object oBtn3 is a aps.Multi_Button
+            set peAnchors to (anRight+anBottom)
+            on_item t.DfQuery.LblDeleteField send delete_row to (oGrd(self))
+          end_object
+          if giVdfQuery_Expressions_State begin
+            object oBtn4 is a aps.Multi_Button
+              set peAnchors to (anRight+anBottom)
+              procedure DoCcAdd
+                send DoCcAdd to (oGrd(self))
+              end_procedure
+              procedure DoCcInsert
+                send DoCcInsert to (oGrd(self))
+              end_procedure
+              procedure DoCcEdit
+                send DoCcEdit to (oGrd(self))
+              end_procedure
+              procedure PopupFM
+                integer liLoc liCol liRow liSzCol liSzRow
+                send Mouse_MoveToObject self
+                send FLOATMENU_PrepareAddItem msg_DoCcAdd    t.btn.add
+                send FLOATMENU_PrepareAddItem msg_DoCcInsert t.btn.insert
+                send FLOATMENU_PrepareAddItem msg_DoCcEdit   t.btn.edit
+                send popup to (FLOATMENU_Apply(self))
+              end_procedure
+              procedure OnClick
+                send popupFM
+              end_procedure
+              set label to t.DfQuery.Expression
+            end_object
+          end
+          object oBtn5 is a aps.Multi_Button
+            set peAnchors to (anRight+anBottom)
+            set multi_button_size to 14 50
+            on_item t.DfQuery.LblAdjustBelow send calculate_offsets to (oGrd(self))
+          end_object
+          send aps_locate_multi_buttons
+        end_object
+        procedure do_add_field
+          integer file# field#
+          get current_aux of (oDBMS_Files(self)) to file#
+          get current_aux of (oDBMS_Fields(self)) to field#
+          send add_field to (oGrd(oGrp(self))) file# field#
+          send key to (oDBMS_Fields(self)) kdownarrow
+        end_procedure
+        procedure do_insert_field
+          integer file# field#
+          get current_aux of (oDBMS_Files(self)) to file#
+          get current_aux of (oDBMS_Fields(self)) to field#
+          send insert_field to (oGrd(oGrp(self))) file# field#
+        end_procedure
+        procedure add_report_field integer file# integer field#
+          send add_field to (oGrd(oGrp(self))) file# field#
+        end_procedure
+      end_object
+      object oTab2 is a aps.TabPage label t.DfQuery.LblTab2
+        CREATE_OBJECT_GROUP OG_QueryViewComponent 0
+
+        property integer piExprRow -1
+
+        procedure MarkUsedExpressions
+          integer liExprRow
+          get piExprRow to liExprRow
+          if (liExprRow<>-1) send CleanUp_MarkAsUsed to (oQuery_ExprArray(self)) liExprRow
+        end_procedure
+
+        procedure GetNewExpressionIDs
+          integer liExprRow
+          get piExprRow to liExprRow
+          if (liExprRow<>-1) set piExprRow to (pbCleanupNewRow.i(oQuery_ExprArray(self),liExprRow))
+        end_procedure
+        register_object oGrp
+        procedure DoCritExpression
+          integer lbOk liExprRow lhExprArr
+          string lsExpression
+          move (oQuery_ExprArray(self)) to lhExprArr
+          get piExprRow to liExprRow
+          if (liExprRow=-1) begin
+            get row_count of lhExprArr to liExprRow
+            set psLongLabel.i  of lhExprArr liExprRow to (replace(":",t.DfQuery.SelectionCrit,""))
+            set psLabel.i      of lhExprArr liExprRow to (replace(":",t.DfQuery.SelectionCrit,""))
+            set piType.i       of lhExprArr liExprRow to DF_BCD
+            set psExpression.i of lhExprArr liExprRow to ""
+          end
+          get psExpression.i of lhExprArr liExprRow to lsExpression
+
+          send DoInformExpressionThingAboutAllowedTables to (oDBMS_Files(oTab1(oTabs(self))))
+
+          get iPopup.sis of (Query_EditCriteriaExpression(self)) lsExpression TYPE.INTEGER t.DfQuery.SelCritExpr to lbOk
+          if (lbOk<>-1) begin
+            get psExpression of (Query_EditCriteriaExpression(self)) to lsExpression
+            move (trim(Text_CompressSubstCr(lsExpression,""))) to lsExpression
+            if (lsExpression<>"") begin
+              set psExpression.i of lhExprArr liExprRow to lsExpression
+              set piExprRow to liExprRow
+            end
+            else set piExprRow to -1
+          end
+          send UpdateExpressionIndicatorText to (oGrp(self))
+        end_procedure
+
+        object oGrp is a aps.Group label t.DfQuery.LblGrpCrit snap SL_RIGHT relative_to (oDBMS_Files(self))
+          set peAnchors to (anTop+anLeft+anRight+anBottom)
+          object oCritDialogArray is a cArray
+            property integer pDisplayLocked   0
+            property integer pFieldRowsPerTab 4
+            item_property_list
+              item_property string  psLabel.i
+              item_property integer piMargin.i
+              item_property integer piType.i // Field type
+              item_property integer piComp.i // Comparator
+              item_property string  psVal1.i
+              item_property string  psVal2.i
+              item_property integer piFile.i
+              item_property integer piField.i
+            end_item_property_list
+            procedure add_crit_and_value string label# integer mrg# integer type# integer comp# string val1# string val2# integer file# integer field#
+              integer row#
+              get row_count to row#
+              set psLabel.i  item row# to label#
+              set piMargin.i item row# to mrg#
+              set piType.i   item row# to type#
+              set piComp.i   item row# to comp#
+              set psVal1.i   item row# to val1#
+              set psVal2.i   item row# to val2#
+              set piFile.i   item row# to file#
+              set piField.i  item row# to field#
+            end_procedure
+          end_object
+
+          set p_auto_column to 0
+          object oGrd is a aps.Grid
+            set peResizeColumn to rcAll
+            set peAnchors to (anTop+anLeft+anRight+anBottom)
+            if giVdfQuery_Expressions_State set Size to 87 0
+            else set Size to 100 0
+            set Line_Width to 3 0
+            set Form_Margin item 0 to 20
+            set Form_Margin item 1 to 2
+            set Form_Margin item 2 to 20
+            set Form_Datatype item 0 to ascii_window
+            set Form_Datatype item 1 to ascii_window
+            set Form_Datatype item 2 to ascii_window
+            set Header_Label item 0 to t.DfQuery.LblGrdCrit0
+            set Header_Label item 1 to t.DfQuery.LblGrdCrit1
+            set Header_Label item 2 to t.DfQuery.LblGrdCrit2
+            set Status_Help item 0 to t.DfQuery.SthGrdCrit0
+            set Status_Help item 1 to t.DfQuery.SthGrdCrit1
+            set Status_Help item 2 to t.DfQuery.SthGrdCrit2
+            set Highlight_Row_State to true
+//          set Highlight_Row_Color to (rgb(0,255,255))
+            set CurrentCellColor     to clHighlight
+            set CurrentCellTextColor to clHighlightText
+            set CurrentRowColor      to clHighlight
+            set CurrentRowTextColor  to clHighlightText
+
+            Set pbUseDisabledColor  To True
+            Set peDisabledColor     To clWhite // clBtnShadow
+            Set peDisabledTextColor To clBlack // clBtnText
+
+            set Select_Mode to MULTI_SELECT
+            set Auto_Top_Item_State to false
+            on_key kdelete_record send delete_row
+            on_key kswitch send switch
+            on_key kswitch_back send switch_back
+
+            function row_count returns integer
+              function_return (item_count(self)/3)
+            end_function
+
+            procedure load_report_info // Selection criteria
+              integer row# max# oDSV# file# fld# comp# critidx# newcomp#
+              integer lbError liExprRow lhExprArr
+              string val1# val2#
+              move (oDefault_Selection_Values(self)) to oDSV#
+              get row_count to max#
+
+              for row# from 0 to (max#-1)
+                get row_file row# to file#
+                get row_field row# to fld#
+                get row_crit row# to critidx#
+                get row_comp row# to comp#
+                get qry_crit_val1 of oDSV# critidx# to val1#
+                get qry_crit_val2 of oDSV# critidx# to val2#
+
+                if comp# eq SC_COMP_OR_LIST begin // or-list
+                  send add_criteria_orlist to oReport_info# file# fld# val1#
+                  send add_criteria_text to oReport_info# (value(self,row#*3+0)) comp# (replaces("|",val1#,"; "))
+                end
+                else begin
+                  send add_criteria_simple to oReport_info# file# fld# comp# val1# val2#
+                  send add_criteria_text to oReport_info# (value(self,row#*3+0)) comp# (value(self,row#*3+2))
+                end
+              loop
+
+              get piExprRow to liExprRow
+              if (liExprRow<>-1) begin
+                move (oQuery_ExprArray(self)) to lhExprArr
+                send add_criteria_boolean_expr to oReport_info# (piExprId.i(lhExprArr,liExprRow))
+                send add_criteria_text to oReport_info# "" -1 (psExpression.i(lhExprArr,liExprRow))
+              end
+
+        //    liExprRow lhExprArr
+        //
+        //    send DoInformExpressionThingAboutAllowedTables to (oDBMS_Files(oTab1(self)))
+        //
+        //    get psExpression to lsExpression
+        //    get sPrepareExpression.s of (Query_ExprParser(self)) lsExpression to lsExpression
+        //    if (trim(lsExpression)<>"") begin
+        //      get iParse_Expr.s of (Query_ExprParser(self)) lsExpression to lbError
+        //      // If lbError is not 0 we have to abort the query!!!
+        //      get piExprID of (Query_ExprParser(self)) to liExprId
+        //      send add_criteria_boolean_expr to oReport_info# liExprId
+        //        // send add_criteria_text to oReport_info# (value(self,row#*3+0)) comp# (value(self,row#*3+2))
+        //    end
+            end_procedure
+            function base_item returns integer
+              integer itm#
+              get current_item to itm#
+              function_return ((itm#/3)*3)
+            end_function
+            register_procedure do_one_value
+            procedure add_row
+              integer base#
+              get item_count to base#
+              set dynamic_update_state to false
+              send add_item msg_none ""
+              send add_item msg_none ""
+              send add_item msg_do_one_value ""
+              set dynamic_update_state to true
+            end_procedure
+            procedure insert_row
+              integer base#
+              if (item_count(self)) begin
+                get base_item to base#
+                set dynamic_update_state to false
+                send insert_item 0 "" base#
+                send insert_item 0 "" base#
+                send insert_item 0 "" base#
+                set dynamic_update_state to true
+              end
+              else send add_row
+            end_procedure
+            procedure delete_row
+              integer base#
+              if (item_count(self)) begin
+                get base_item to base#
+                set dynamic_update_state to false
+                send delete_item base#
+                send delete_item base#
+                send delete_item base#
+                set dynamic_update_state to true
+              end
+            end_procedure
+            procedure do_field integer file# integer field# integer base#
+              integer fieldtype# comp# type# obj#
+
+              set aux_value item base# to (file#*65536+field#)
+
+              set value item base# to (FieldInf_FieldLabel_Long(file#,field#))
+              set item_shadow_state item (base#+1) to true
+              set item_shadow_state item (base#+2) to true
+              set dynamic_update_state to true // Force update
+
+              move (FieldInf_FieldType(file#,field#)) to fieldtype#
+
+              get VdfQuery_SelectCompMode fieldtype# 0 to comp#
+
+              set value item (base#+1) to (DfQuery_CompModeTxt_Short(comp#))
+              set aux_value item (base#+1) to comp#
+
+              if fieldtype# eq DF_ASCII move ascii_window to type#
+              else begin
+                if fieldtype# eq DF_DATE move date_window to type#
+                else begin
+                  if fieldtype# eq DF_TEXT move ascii_window to type#
+                  else move 0 to type#
+                end
+              end
+              set value item (base#+2) to (DfQuery_CritText(self,type#,comp#,"",""))
+
+              set dynamic_update_state to true
+              set current_item to (base#+2)
+            end_procedure
+
+            procedure add_field integer file# integer field#
+              integer base#
+              get item_count to base#
+              send add_row
+              set dynamic_update_state to true
+              send do_field file# field# base#
+            end_procedure
+
+            procedure insert_field integer file# integer field#
+              integer base#
+              get base_item to base#
+              send insert_row
+              set dynamic_update_state to true
+              send do_field file# field# base#
+              send key kuparrow
+            end_procedure
+
+            function row_file integer row# returns integer
+              function_return (hi(integer(aux_value(self,row#*3))))
+            end_function
+            function row_field integer row# returns integer
+              function_return (low(integer(aux_value(self,row#*3))))
+            end_function
+            function row_field_type integer row# returns integer
+              integer file# field# fieldtype#
+              get row_file row# to file#
+              get row_field row# to field#
+              move (FieldInf_FieldType(file#,field#)) to fieldtype#
+              function_return fieldtype#
+            end_function
+            function row_label integer row# returns string
+              function_return (value(self,row#*3))
+            end_function
+            function row_crit integer row# returns integer
+              function_return (aux_value(self,row#*3+2))
+            end_function
+            function row_form_margin integer row# returns integer
+              integer file# field# rval#
+              get row_file row# to file#
+              get row_field row# to field#
+              get VdfQuery_field_margin file# field# to rval#
+              function_return rval#
+            end_function
+            function row_comp integer row# returns integer
+              function_return (aux_value(self,row#*3+1))
+            end_function
+
+            procedure OnChangeMainFile
+              send delete_data
+            end_procedure
+
+          //procedure DoDisplayArrayValues
+          //  send debug_display_array (oDefault_Selection_Values(self))
+          //end_procedure
+          //on_key kuser send DoDisplayArrayValues
+
+            procedure add_criteria_to_CritDialogArray integer row#
+              integer arr# obj# crit# base# type# comp# mrg# lock# cr#
+              integer file# field#
+              string val1# val2# label#
+              move (oCritDialogArray(self)) to arr#
+              move (oDefault_Selection_Values(self)) to obj#
+              get row_crit row# to crit#
+              if crit# begin
+                get qry_crit_val1 of obj# crit# to val1#
+                get qry_crit_val2 of obj# crit# to val2#
+              end
+              get row_label row# to label#
+              get row_form_margin row# to mrg#
+              get row_field_type row# to type#
+              get row_comp row# to comp#
+              get row_file row# to file#
+              get row_field row# to field#
+
+              if type# eq DF_ASCII move ASCII_WINDOW to type#
+              else begin
+                if type# eq DF_DATE move DATE_WINDOW to type#
+                else begin
+                  if type# eq DF_TEXT move ASCII_WINDOW to type#
+                  else get FieldInf_DecPoints file# field# to type#
+                end
+              end
+              send add_crit_and_value to arr# label# mrg# type# comp# val1# val2# file# field#
+            end_procedure
+
+            procedure do_one_value
+              integer obj# crit# base# row# type# comp# mrg# CritDialogArr# liFile liField
+              string val1# val2# label#
+              if (item_count(self)) begin
+                move (oDefault_Selection_Values(self)) to obj#
+                move (oCritDialogArray(self)) to CritDialogArr#
+                get base_item to base#
+                move (base#/3) to row#
+                send delete_data to CritDialogArr#
+                send add_criteria_to_CritDialogArray row#
+                get psLabel.i  of CritDialogArr# item 0 to label#
+                get piMargin.i of CritDialogArr# item 0 to mrg#
+                get piType.i   of CritDialogArr# item 0 to type#
+                get piComp.i   of CritDialogArr# item 0 to comp#
+                get psVal1.i   of CritDialogArr# item 0 to val1#
+                get psVal2.i   of CritDialogArr# item 0 to val2#
+                get piFile.i   of CritDialogArr# item 0 to liFile
+                get piField.i  of CritDialogArr# item 0 to liField
+                // label# mrg# type# comp# val1# val2#
+                CREATE_OBJECT_GROUP OG_QuerySingleCrit PARENT (parent(aps_PanelID(self))) (label#+":") mrg# type# comp# val1# val2# liFile liField
+                send popup_modal to OG_Current_Object#
+
+                if (pReturnValue(OG_Current_Object#)) begin
+                  if (pReturnValue(OG_Current_Object#)) eq 1 begin
+                    get value_from of OG_Current_Object# to val1#
+                    get value_to of OG_Current_Object# to val2#
+                    get row_crit row# to crit#
+                    ifnot crit# get qry_new_criteria of obj# to crit#
+                    send qry_change_criteria to obj# crit# val1# val2#
+                    set aux_value item (base#+2) to crit#
+                    set value item (base#+2) to (DfQuery_CritText(self,type#,comp#,val1#,val2#))
+                  end
+                  else begin // reset
+                    set aux_value item (base#+2) to 0
+                    set value item (base#+2) to ""
+                  end
+                end
+                set dynamic_update_state to true
+                send request_destroy_object to OG_Current_Object#
+              end
+            end_procedure
+
+            procedure load_global_crit_array
+              integer row# CritDialogArr# max#
+              move (oCritDialogArray(self)) to CritDialogArr#
+              send delete_data to CritDialogArr#
+
+              get item_count to max#
+              move (max#/3) to max#
+              for row# from 0 to (max#-1)
+                send add_criteria_to_CritDialogArray row#
+              loop
+            end_procedure
+
+            procedure do_all_values
+              integer CritDialogArr# max# oDefault_Selection_Values# crit# row#
+              integer base# comp# type#
+              string val1# val2#
+              send load_global_crit_array
+              move (oDefault_Selection_Values(self)) to oDefault_Selection_Values#
+              move (oCritDialogArray(self)) to CritDialogArr#
+              CREATE_OBJECT_GROUP OG_QuerySelectDialog PARENT (parent(aps_PanelID(self))) (report_title(self)) CritDialogArr#
+              send popup_modal to OG_Current_Object#
+              if (pReturnValue(OG_Current_Object#)) begin
+                // User pressed OK. Let's get our values back:
+                get row_count of CritDialogArr# to max#
+                for row# from 0 to (max#-1)
+                  move (row#*3) to base#
+                  get row_crit row# to crit#
+                  ifnot crit# get qry_new_criteria of oDefault_Selection_Values# to crit#
+                  set aux_value item (base#+2) to crit#
+                  move (psVal1.i(CritDialogArr#,row#)) to val1#
+                  move (psVal2.i(CritDialogArr#,row#)) to val2#
+                  move (piType.i(CritDialogArr#,row#)) to Type#
+                  move (piComp.i(CritDialogArr#,row#)) to Comp#
+                  send qry_change_criteria to oDefault_Selection_Values# crit# val1# val2#
+                  set value item (base#+2) to (DfQuery_CritText(self,type#,comp#,val1#,val2#))
+                loop
+              end
+              send request_destroy_object to OG_Current_Object#
+            end_procedure
+
+            Procedure Header_Mouse_Click Integer Item#
+              integer comp# base# fieldtype#
+              forward send Header_Mouse_Click Item#
+              if (item_count(self)) begin
+                if item# eq 1 begin
+                  get base_item to base#
+                  get aux_value item (base#+1) to comp#
+                  get row_field_type (base#/3) to fieldtype#
+                  get VdfQuery_SelectCompMode fieldtype# comp# to comp#
+                  set aux_value item (base#+1) to comp#
+                  set value item (base#+1) to (DfQuery_CompModeTxt_Short(comp#))
+                end
+                if item# eq 2 send do_one_value
+              end
+            end_procedure
+            procedure Request_Header_Mouse_Click
+              integer base#
+              get base_item to base#
+              send Header_Mouse_Click (current_item(self)-base#)
+            end_procedure
+            on_key kprompt send Request_Header_Mouse_Click
+            on_key kenter send Request_Header_Mouse_Click
+          end_object // oGrd
+          send aps_goto_max_row
+          if giVdfQuery_Expressions_State begin
+            object oExpressionIndicator is a Form
+              set peAnchors to (anLeft+anBottom)
+              set size to 10 100
+              set TextColor to clBlue
+              set Enabled_State to False
+              set Form_Border item 0 to Border_None
+            end_object
+            send aps_auto_locate_control (oExpressionIndicator(self))
+            send aps_align_by_sizing (oExpressionIndicator(self)) (oGrd(self)) SL_ALIGN_RIGHT
+          end
+          procedure UpdateExpressionIndicatorText
+            integer liExprRow
+            if giVdfQuery_Expressions_State begin
+              get piExprRow to liExprRow
+              if (liExprRow<>-1) set value of (oExpressionIndicator(self)) to t.DfQuery.ExprCritAdded
+              else set value of (oExpressionIndicator(self)) to ""
+            end
+          end_procedure
+
+          set multi_button_size to 14 40
+          object oBtn1 is a aps.Multi_Button
+            set peAnchors to (anRight+anBottom)
+            on_item t.DfQuery.LblAddField send do_add_field
+          end_object
+          object oBtn2 is a aps.Multi_Button
+            set peAnchors to (anRight+anBottom)
+            on_item t.DfQuery.LblInsertField send do_insert_field
+          end_object
+          object oBtn3 is a aps.Multi_Button
+            set peAnchors to (anRight+anBottom)
+            on_item t.DfQuery.LblDeleteField send delete_row to (oGrd(self))
+          end_object
+          if giVdfQuery_Expressions_State begin
+            object oBtn4 is a aps.Multi_Button
+              set peAnchors to (anRight+anBottom)
+              on_item t.DfQuery.Expression send DoCritExpression
+            end_object
+          end
+          object oBtn5 is a aps.Multi_Button
+            set peAnchors to (anRight+anBottom)
+            set multi_button_size to 14 50
+            on_item t.DfQuery.LblDefaultValue send do_all_values to (oGrd(self))
+          end_object
+          send aps_locate_multi_buttons
+        end_object
+        procedure do_add_field
+          integer file# field#
+          get current_aux of (oDBMS_Files(self)) to file#
+          get current_aux of (oDBMS_Fields(self)) to field#
+          send add_field to (oGrd(oGrp(self))) file# field#
+          send activate to (oGrd(oGrp(self)))
+        end_procedure
+        procedure do_insert_field
+          integer file# field#
+          get current_aux of (oDBMS_Files(self)) to file#
+          get current_aux of (oDBMS_Fields(self)) to field#
+          send insert_field to (oGrd(oGrp(self))) file# field#
+          send activate to (oGrd(oGrp(self)))
+        end_procedure
+      end_object
+      object oTab3 is a aps.TabPage label t.DfQuery.LblTab3
+        set p_auto_column to 1
+
+        object oFrm is a vdq.ComboFormAux label t.DfQuery.LblPrintOrder abstract aft_ascii50
+          set peAnchors to (anTop+anLeft+anRight)
+          set entry_state item 0 to false
+          set combo_sort_state to false
+          on_key kswitch_back send activate to (oTitle(self))
+          send aps_tab_column_define 1 60 55 jmode_right
+          procedure OnChangeMainFile
+            integer obj# idx# forced_index# row# max#
+            string str# default_index#
+            move (oVdfQuery_IndexAnalyzer(self)) to obj#
+            send read_file_definition to obj# (pMainfile(self))
+            send idx_translate_overlaps_all to obj#
+            move (og_param(1)) to forced_index#
+            if forced_index# ge 0 begin
+              get idx_field_names of obj# forced_index# 1 0 to default_index#
+              set pOrdering to forced_index#
+            end
+
+            move "" to default_index#
+            send Combo_Delete_Data
+            send combo_add_item "Recnum" 0
+            for idx# from 1 to 15
+              get idx_field_names of obj# idx# 1 0 to str#
+              if str# ne "" begin
+                send combo_add_item str# idx#
+                if default_index# eq "" begin
+                  move str# to default_index#
+                  set pOrdering to idx#
+                end
+              end
+            loop
+
+            get FieldInf_VirtualIndices_Object (pMainFile(self)) to obj#
+            if obj# begin
+              get row_count of obj# to max#
+              for idx# from 0 to (max#-1)
+                send combo_add_item (psIndexName.i(obj#,idx#)) (idx#+256)
+              loop
+            end
+            send combo_add_item "Ad hoc index" 1023
+
+            if default_index# ne "" set value item 0 to default_index#
+            else set value item 0 to "Recnum"
+          end_procedure
+          procedure OnChange
+            integer idx#
+            get Combo_Current_Aux_Value to idx#
+            set pOrdering to idx#
+            send fill_break_list
+          end_procedure
+        end_object
+        object oAdHoc is a aps.Button snap SL_RIGHT_SPACE
+          set peAnchors to (anTop+anRight)
+          set size to 14 40
+          on_item "Ad hoc" send DoAdHoc
+        end_object
+        procedure DoAdHoc
+          integer lhQueryOrderExpression liFile liRval
+          move (oQueryOrderExpression(self)) to lhQueryOrderExpression
+          get pMainFile to liFile
+          get iPopup.ii of (oQueryDefineAdhocIndexPn(self)) liFile lhQueryOrderExpression to liRval
+          if liRval send fill_break_list
+        end_procedure
+        send aps_goto_max_row
+        send aps_make_row_space 4
+        object oGrd is a aps.Grid
+          set peResizeColumn to rcAll
+          set peAnchors to (anTop+anLeft+anRight+anBottom)
+          set Size to 100 0
+          set Line_Width to 2 0
+          set Form_Margin item 0 to 2
+          set Form_Margin item 1 to 30
+          set Form_Datatype item 0 to ascii_window
+          set Form_Datatype item 1 to ascii_window
+          set Header_Label item 0 to t.DfQuery.LblGrdBreak1
+          set Header_Label item 1 to t.DfQuery.LblGrdBreak2
+          set Status_Help  item 0 to t.DfQuery.SthGrdBreak0
+          set Status_Help  item 1 to t.DfQuery.SthGrdBreak1
+          set Highlight_Row_State to DFTRUE
+          //set Highlight_Row_Color to (rgb(0,255,255))
+          set CurrentCellColor     to clHighlight
+          set CurrentCellTextColor to clHighlightText
+          set CurrentRowColor      to clHighlight
+          set CurrentRowTextColor  to clHighlightText
+
+
+          set Select_Mode to multi_select
+          set Auto_Top_Item_State to DFFALSE
+          on_key kswitch send switch
+          on_key kswitch_back send switch_back
+          procedure fill_list
+            integer idx# seg# max# obj# field# file# base#
+            move (oVdfQuery_IndexAnalyzer(self)) to obj#
+            send delete_data
+            get pMainFile to file#
+            set dynamic_update_state to DFFALSE
+            get pOrdering to idx#
+            if idx# lt 256 begin
+              get idx_max_segment of obj# idx# to max#
+              for seg# from 1 to (max#-1) // Exclude the least significant segment
+                get idx_segment of obj# idx# seg# to field#
+                get item_count to base#
+                send add_item MSG_none ""
+                set aux_value item base# to (file#*65536+field#)
+                set checkbox_item_state item base# to DFTRUE
+                send add_item MSG_none (FieldInf_FieldLabel_Long(file#,field#)+": ")
+              loop
+            end
+            else begin
+              if (idx#=1023) begin // Ad hoc
+                move (oQueryOrderExpression(self)) to obj#
+                get row_count of obj# to max#
+                for seg# from 0 to (max#-1) // Do not exclude the least significant segment
+                  get piFile.i of obj# seg# to file#
+                  get piField.i of obj# seg# to field#
+                  get item_count to base#
+                  send add_item msg_none ""
+                  set aux_value item base# to (file#*65536+field#)
+                  set checkbox_item_state item base# to DFTRUE
+                  send add_item msg_none (sSegmentName(obj#,seg#)+": ")
+                loop
+              end
+              else begin
+                move (idx#-256) to idx#
+                get FieldInf_VirtualIndex_Object file# idx# to obj#
+                if obj# begin
+                  get row_count of obj# to max#
+                  for seg# from 0 to (max#-2) // Exclude the least significant segment
+                    get piField.i of obj# seg# to field#
+                    get item_count to base#
+                    send add_item msg_none ""
+                    set aux_value item base# to (file#*65536+field#)
+                    set checkbox_item_state item base# to DFTRUE
+                    send add_item msg_none (sSegmentName(obj#,seg#)+": ")
+                  loop
+                end
+              end
+            end
+            set dynamic_update_state to DFTRUE
+          end_procedure
+          procedure OnChangeMainFile
+            set object_shadow_state of (oAdHoc(self)) to DFTRUE
+            send fill_list
+          end_procedure
+        end_object
+        send aps_goto_max_row
+        send aps_make_row_space 4
+        object oFrm2 is a vdq.ComboFormAux label t.DfQuery.LblSearchOrder abstract aft_ascii50
+          set peAnchors to (anLeft+anRight+anBottom)
+          set entry_state item 0 to false
+          set combo_sort_state to false
+          send aps_tab_column_define 1 60 55 jmode_right
+          procedure OnChangeMainFile
+            integer obj# idx# forced_index# row# max#
+            string str# default_index#
+            move (oVdfQuery_IndexAnalyzer(self)) to obj#
+            send read_file_definition to obj# (pMainfile(self))
+            send idx_translate_overlaps_all to obj#
+            move (og_param(1)) to forced_index#
+            if forced_index# ge 0 begin
+              get idx_field_names of obj# forced_index# 1 0 to default_index#
+              set pOrdering to forced_index#
+            end
+
+            move "" to default_index#
+            send Combo_Delete_Data
+            send combo_add_item "Recnum" 0
+            for idx# from 1 to 15
+              get idx_field_names of obj# idx# 1 0 to str#
+              if str# ne "" begin
+                send combo_add_item str# idx#
+                if default_index# eq "" begin
+                  move str# to default_index#
+                  set pOrdering to idx#
+                end
+              end
+            loop
+            if default_index# ne "" set value item 0 to default_index#
+            else set value item 0 to "Recnum"
+            set object_shadow_state to DFTRUE
+          end_procedure
+          function iIndex returns integer
+            integer idx#
+            get Combo_Current_Aux_Value to idx#
+            function_return idx#
+          end_function
+        end_object // oFrm
+        procedure fill_break_list
+          integer order#
+          get pOrdering to order#
+          set object_shadow_state of (oFrm2(self)) to (order#<256)
+          send fill_list to (oGrd(self))
+          set object_shadow_state of (oAdHoc(self)) to (order#<>1023)
+        end_procedure
+        procedure load_report_info // Index and breaks
+          integer row# max# itm# obj# new_max# index# file# field# lhExprArr
+          get pMainFile to file#
+          set pMainFile of oReport_Info# to file#
+          move (oQuery_ExprArray(self)) to lhExprArr
+          move (pOrdering(self)) to index#
+          if index# ge 256 begin
+            set pCustom_Sort_State of oReport_Info# to true
+            if index# eq 1023 set pCustom_Sort_Object of oReport_Info# to (oQueryOrderExpression(self))
+            else set pCustom_Sort_Object of oReport_Info# to (FieldInf_VirtualIndex_Object(file#,index#-256))
+            set pOrdering of oReport_Info# to (iIndex(oFrm2(self)))
+          end
+          else begin
+            set pCustom_Sort_State of oReport_Info# to false
+            set pCustom_Sort_Object of oReport_Info# to 0
+            set pOrdering of oReport_Info# to index#
+          end
+          move (oGrd(self)) to obj#
+          move (item_count(obj#)/2) to max#
+          move -1 to new_max#
+          for row# from 0 to (max#-1)
+            move (row#*2) to itm#
+            if (select_state(obj#,itm#)) move row# to new_max#
+          loop
+
+          for row# from 0 to new_max#
+            move (row#*2) to itm#
+            get aux_value of obj# item itm# to file#
+            move (low(file#)) to field#
+            move (hi(file#)) to file#
+            send define_break_level to oReport_Info# file# field# (aux_value(obj#,itm#+1)) lhExprArr (select_state(obj#,itm#)) (value(obj#,itm#+1))
+          loop
+        end_procedure
+        procedure aps_beautify
+          send aps_align_inside_container_by_moving (oGrd(self)) SL_ALIGN_CENTER
+        end_procedure
+      end_object
+      object oTab4 is a aps.TabPage label t.DfQuery.Texts
+        set p_auto_column to 0
+        object oLblTopText is a aps.TextBox
+          set peAnchors to (anTop+anLeft)
+          set fixed_size to 10 50
+          set justification_mode to JMODE_RIGHT
+          set label to (t.DfQuery.TextBefore+":")
+        end_object
+        object oEditTop is a aps.Edit
+          set peAnchors to (anTop+anLeft+anRight)
+          set size to 67 100
+        end_object
+        send aps_goto_max_row
+        object oLblButtomText is a aps.TextBox
+          set peAnchors to (anTop+anLeft)
+          set fixed_size to 10 50
+          set justification_mode to JMODE_RIGHT
+          set label to (t.DfQuery.TextAfter+":")
+        end_object
+        object oEditBottom is a aps.Edit
+          set peAnchors to (anTop+anLeft+anRight+anBottom)
+          set size to 67 100
+        end_object
+        procedure aps_beautify
+          send aps_align_inside_container_by_sizing (oEditTop(self)) SL_ALIGN_RIGHT
+          send aps_align_inside_container_by_sizing (oEditBottom(self)) SL_ALIGN_RIGHT
+        end_procedure
+      end_object
+      object oTab5 is a aps.TabPage label t.DfQuery.LblTab5
+        set p_auto_column to 1
+        on_key kswitch_back send activate to (oTitle(self))
+        send aps_tab_column_define 1 60 55 jmode_right
+        send aps_tab_column_define 2 220 55 jmode_right
+        object oFont is a aps.ComboForm label t.DfQuery.LblFont abstract aft_ascii25
+          set combo_sort_state to false
+          set entry_state item 0 to false
+          send Combo_Add_Item "Arial"
+          send Combo_Add_Item "Courier New"
+          send Combo_Add_Item "Times New Roman"
+          set value item 0 to "Times New Roman"
+          set pFont to "Times New Roman"
+          procedure OnChange
+            string str#
+            move (value(self,0)) to str#
+            set pFont to str#
+          end_procedure
+        end_object
+        object oFontSize is a aps.ComboForm abstract aft_numeric2.0 snap sl_right
+          set combo_sort_state to false
+          set entry_state item 0 to false
+          send Combo_Add_Item "8"
+          send Combo_Add_Item "10"
+          send Combo_Add_Item "12"
+          send Combo_Add_Item "14"
+          set value item 0 to 12
+          set pFontSize to 12
+          procedure OnChange
+            integer sz#
+            move (value(self,0)) to sz#
+            set pFontSize to sz#
+          end_procedure
+        end_object
+        object oPrintCriteria is a aps.CheckBox label t.DfQuery.LblIncludeCrit
+          set select_state item 0 to true
+        end_object
+        object oUseAnsiCharacters is a aps.CheckBox label t.DfQuery.UseAnsi snap 2
+          set object_shadow_state to true
+        end_object
+        object oPrintTotalsOnly is a aps.CheckBox label t.DfQuery.LblPrintTotals
+        end_object
+        object oIncludeLabels is a aps.CheckBox label t.DfQuery.InclNames snap 2
+          set object_shadow_state to true
+        end_object
+        object oOrientation is a aps.CheckBox label t.DfQuery.LblLandscape
+        end_object
+        object oSemiColon is a aps.CheckBox label t.DfQuery.Semicolon snap 2
+          set object_shadow_state to true
+        end_object
+        set p_auto_column to 0
+        send aps_goto_max_row
+        object oGrp1 is a aps.Group label t.DfQuery.ReportDest
+          set peAnchors to (anTop+anLeft+anRight)
+          set p_auto_column to 0
+          object oRad is a aps.RadioContainer
+            object oRad1 is a aps.Radio label t.DfQuery.Dest_Printer
+            end_object
+            object oRad2 is a aps.Radio label t.DfQuery.Dest_Preview snap sl_right
+            end_object
+            object oRad3 is a aps.Radio label t.DfQuery.Dest_File snap sl_right
+            end_object
+            set current_radio to 1 // Preview
+            procedure notify_select_state integer to# integer from#
+              send auto_shade_objects
+            end_procedure
+          end_object
+          object oFrm1 is a aps.Form snap SL_RIGHT_SPACE abstract AFT_ASCII80
+            set peAnchors to (anTop+anLeft+anRight)
+            set p_extra_internal_width to -250 // We don't want the form to be 80 characters wide
+            set form_button item 0 to 1           // Manually add a prompt button
+            set form_button_value item 0 to "..." //              "
+            set object_shadow_state to true
+            on_key kprompt send form_button_notification
+            procedure form_button_notification integer itm#
+              integer obj#
+              string str# lsStartDir
+              move (oVdfQuery_SaveAs(self)) to obj#
+              get Query_Folder QRYFOLD_CURRENT_USER_OUT to lsStartDir
+              set Initial_Folder of obj# to lsStartDir
+              if (Show_Dialog(obj#)) set value item 0 to (File_Name(obj#))
+            end_procedure
+          end_object
+          object oCf1 is a vdq.ComboFormAux snap SL_RIGHT
+            set peAnchors to (anTop+anRight)
+            set form_margin item 0 to 12
+            set entry_state item 0 to false
+            send combo_add_item t.DfQuery.FileFormatCD DFQ.FORMAT.CD
+            send combo_add_item t.DfQuery.FileFormatLD DFQ.FORMAT.LD
+            send combo_add_item t.DfQuery.FileFormatPR DFQ.FORMAT.PRINT
+            send combo_add_item "HTML"                 DFQ.FORMAT.HTML
+            send combo_add_item "XML"                  DFQ.FORMAT.XML
+            set object_shadow_state to true
+            procedure OnChange
+              send auto_shade_objects
+            end_procedure
+          end_object
+          procedure auto_shade_objects
+            integer rad# format# print_or_html# print_or_xml#
+            get current_radio of (oRad(self)) to rad#
+            move (rad#<>2) to rad# // Not file!
+            set object_shadow_state of (oCf1(self)) to rad#
+            set object_shadow_state of (oFrm1(self)) to rad#
+            set object_shadow_state of (oFont(self)) to (not(rad#))
+            set object_shadow_state of (oFontSize(self)) to (not(rad#))
+            get Combo_Current_Aux_Value of (oCf1(self)) to format#
+            move (format#=DFQ.FORMAT.PRINT or format#=DFQ.FORMAT.HTML) to print_or_html# //
+            move (format#=DFQ.FORMAT.XML) to print_or_xml# //
+            set object_shadow_state of (oPrintCriteria(self)) to (not(print_or_html# or rad#))
+            set object_shadow_state of (oPrintTotalsOnly(self)) to (not(print_or_html# or rad#))
+            set object_shadow_state of (oOrientation(self)) to (not(rad#)) // (not(print_or_html# or rad#))
+            set object_shadow_state of (oUseAnsiCharacters(self)) to (rad# or (format#=DFQ.FORMAT.HTML))
+            set object_shadow_state of (oIncludeLabels(self)) to (rad# or print_or_html# or print_or_xml#)
+            set object_shadow_state of (oSemiColon(self)) to (rad# or not(format#=DFQ.FORMAT.CD))
+          end_procedure
+        end_object // oGrp1
+        procedure load_report_info // Destination, totals only, and much more
+          string lsOutFileName lsStartDir
+          set pPrintCriteria      of oReport_Info# to (select_state(oPrintCriteria(self),0))
+          set pTotalsOnly         of oReport_Info# to (select_state(oPrintTotalsOnly(self),0))
+          set pLandscape          of oReport_Info# to (select_state(oOrientation(self),0))
+          set pDestination        of oReport_Info# to (current_radio(oRad(oGrp1(self))))
+          set pFileFormat         of oReport_Info# to (Combo_Current_Aux_Value(oCf1(oGrp1(self))))
+          //set pOutFileName        of oReport_Info# to (value(oFrm1(oGrp1(self)),0))
+
+          get value of (oFrm1(oGrp1(self))) item 0 to lsOutFileName
+          if (lsOutFileName<>"") begin
+            ifnot (lsOutFileName contains sysconf(SYSCONF_DIR_SEPARATOR) or lsOutFileName contains ":") begin
+              get Query_Folder QRYFOLD_CURRENT_USER_OUT to lsStartDir
+              if (lsStartDir<>"") get Files_AppendPath lsStartDir lsOutFileName to lsOutFileName
+            end
+          end
+          set pOutFileName        of oReport_Info# to lsOutFileName
+
+          set pSemiColon          of oReport_Info# to (select_state(oSemiColon(self),0))
+          set pIncludeLabels      of oReport_Info# to (select_state(oIncludeLabels(self),0))
+          set pUseAnsiCharacters  of oReport_Info# to (not(object_shadow_state(oUseAnsiCharacters(self))) and select_state(oUseAnsiCharacters(self),0))
+          if (pFileFormat(oReport_Info#)=DFQ.FORMAT.HTML) set pUseAnsiCharacters of oReport_Info# to DFTRUE
+          set psTextTop           of oReport_Info# to (Text_EditObjectValue(oEditTop(oTab4(oTabs(self)))))
+          set psTextBottom        of oReport_Info# to (Text_EditObjectValue(oEditBottom(oTab4(oTabs(self)))))
+        end_procedure
+#IFDEF USE$VPE
+#ELSE
+        procedure DoWinPrintSetup
+          integer lbOk
+          get DFPrintSetupDialog of oWinPrintReport# to lbOk
+        end_procedure
+
+        object oPrinterSelect_Button is a aps.Multi_Button
+          set peAnchors to (anBottom+anRight)
+          on_item t.DfQuery.Dest_Printer send DoWinPrintSetup
+        end_object
+        send aps_locate_multi_buttons
+#ENDIF
+      //object oOpen_Button is a aps.Multi_Button
+      //  set peAnchors to (anBottom+anRight)
+      //  on_item t.btn.open send read_report_definition
+      //end_object
+      //object oSave_Button is a aps.Multi_Button
+      //  set peAnchors to (anBottom+anRight)
+      //  set object_shadow_state to (og_param(2))
+      //  on_item t.btn.save send write_report_definition
+      //end_object
+      //send aps_locate_multi_buttons
+        procedure aps_beautify
+          send aps_align_inside_container_by_sizing (oGrp1(self)) sl_align_right
+#IFDEF USE$VPE
+#ELSE
+          send aps_auto_locate_control (oPrinterSelect_Button(self)) SL_LOWER_RIGHT_CORNER
+#ENDIF
+      //  send aps_auto_locate_control (oSave_Button(self)) SL_LOWER_RIGHT_CORNER
+      //  send aps_auto_locate_control (oOpen_Button(self)) SL_LEFT (oSave_Button(self))
+        end_procedure
+      end_object // oTab5
+      procedure new_main_file
+        send OnChangeMainFile
+        if (pMainFile(self)) begin
+          set object_shadow_state of (oTabs(self)) to false
+          set object_shadow_state of (oRun_Button(self)) to false
+          send OnChangeMainFile to (oGrd(oGrp(oTab1(self))))
+          send OnChangeMainFile to (oGrd(oGrp(oTab2(self))))
+          send OnChangeMainFile to (oDBMS_Files(oTab1(self)))
+          send OnChangeMainFile to (oDBMS_Files(oTab2(self)))
+          send OnChangeMainFile to (oFrm(oTab3(self)))
+          send OnChangeMainFile to (oFrm2(oTab3(self)))
+          send OnChangeMainFile to (oGrd(oTab3(self)))
+        end
+        else begin
+          set object_shadow_state of (oTabs(self)) to true
+          set object_shadow_state of (oRun_Button(self)) to true
+        end
+      end_procedure
+      function anything_to_lose returns integer
+        integer rval#
+        function_return 1
+      end_function
+    end_object // oTabs
+
+    procedure Add_Field integer iFile integer iField
+      send add_field to (oGrd(oGrp(oTab1(oTabs(self))))) iFile iField
+    end_procedure
+
+    procedure force_DD integer lhDD
+      set phForcedDD to lhDD
+      send DoSetFile of oMainFile (main_file(lhDD)) 1
+      set enabled_state of oMainFile to FALSE
+      set Button_Shadow_State of (oTab2(oTabs(self))) to TRUE
+      set Button_Shadow_State of (oTab3(oTabs(self))) to TRUE
+    end_procedure
+
+    function report_font returns string
+      function_return (pFont(self))
+    end_function
+    function report_fontsize returns integer
+      function_return (pFontSize(self))
+    end_function
+
+    function Current_Destination returns integer
+      function_return (current_radio(oRad(oGrp1(oTab5(oTabs(self))))))
+    end_function
+
+    function Current_FileFormat returns integer
+      function_return (Combo_Current_Aux_Value(oCf1(oGrp1(oTab5(oTabs(self))))))
+    end_function
+
+    procedure go_tab1
+      send Request_Switch_to_Tab to (oTabs(self)) 0 3
+    end_procedure
+    procedure go_tab2
+      send Request_Switch_to_Tab to (oTabs(self)) 1 3
+    end_procedure
+    procedure go_tab3
+      send Request_Switch_to_Tab to (oTabs(self)) 2 3
+    end_procedure
+    procedure go_Tab4
+      send Request_Switch_to_Tab to (oTabs(self)) 3 3
+    end_procedure
+    procedure go_Tab5
+      send Request_Switch_to_Tab to (oTabs(self)) 4 3
+    end_procedure
+
+    procedure DoCritValueDialog
+      send do_all_values to (oGrd(oGrp(oTab2(oTabs(self)))))
+    end_procedure
+
+    procedure request_run_report
+      integer lhExprArr lbInterpretOK
+      if (pMainFile(self)) begin
+        send reset to oReport_Info#
+        send CleanUpExpressions // Remove expressions not used
+
+        send DoInformExpressionThingAboutAllowedTables to (oDBMS_Files(oTab1(oTabs(self))))
+        move (oQuery_ExprArray(self)) to lhExprArr
+        get iInterpretAll of lhExprArr to lbInterpretOK
+
+        if lbInterpretOK begin
+          send load_report_info to (oGrd(oGrp(oTab1(oTabs(self)))))
+          send load_report_info to (oGrd(oGrp(oTab2(oTabs(self)))))
+          send load_report_info to (oTab3(oTabs(self)))
+          send load_report_info to (oTab5(oTabs(self)))
+          set phDataSetObject of oReport_Info# to (phForcedDD(self))
+          send run to oReport_Info#
+          set phDataSetObject of oReport_Info# to 0
+        end
+        else send DisplayErrors to lhExprArr
+      end
+    end_procedure
+
+    object oRun_Button is a aps.Multi_Button
+      set peAnchors to (anBottom+anRight)
+      on_item t.DfQuery.Run send request_run_report
+    end_object
+    object oBtn2 is a aps.Multi_Button
+      set peAnchors to (anBottom+anRight)
+      on_item t.btn.close send close_panel
+    end_object
+    send aps_locate_multi_buttons
+
+    procedure aps_beautify
+      send aps_beautify to (oTab3(oTabs(self)))
+      send aps_beautify to (oTab4(oTabs(self)))
+      send aps_beautify to (oTab5(oTabs(self)))
+      send aps_align_inside_container_by_moving (oToolButton(self)) sl_align_right
+    end_procedure
+
+    procedure Close_Panel
+      forward send Close_Panel
+      if (pDestroyOnClose(self)) send Deferred_Request_Destroy_Object
+    end_procedure
+
+    procedure Close_Query_View // Meant to be broadcasted by somebody that needs to close all queries
+      set delegation_mode to DELEGATE_TO_PARENT
+      send close_panel
+    end_procedure
+
+    procedure CleanUpExpressions // Remove expressions not used
+      integer lhExprArr
+      move (oQuery_ExprArray(self)) to lhExprArr
+      send CleanUp_Prepare to lhExprArr
+      send MarkUsedExpressions to (oGrd(oGrp(oTab1(oTabs(self)))))
+      send MarkUsedExpressions to (oTab2(oTabs(self)))
+      send MarkUsedExpressions to (oQueryOrderExpression(self))
+      send CleanUp_CalcNewRow to lhExprArr
+      send GetNewExpressionIDs to (oGrd(oGrp(oTab1(oTabs(self)))))
+      send GetNewExpressionIDs to (oTab2(oTabs(self)))
+      send GetNewExpressionIDs to (oQueryOrderExpression(self))
+      send CleanUp_Purge to lhExprArr
+    end_procedure
+
+    procedure write_deffile_channel integer liChannel
+      integer liFile liIndex liFontSize
+      integer        liIndex2                                                 // 07/07/2004
+      integer lbPrintCriteria lbTotalsOnly
+      integer liDestination liFileFormat lhTab5 orientation# lbAnsi lbPrintLabels lbSemicolon
+      string lsFileName lsTitle lsFont lsValue
+      send CleanUpExpressions // Remove expressions not used
+      move (oTab5(oTabs(self))) to lhTab5
+      writeln channel liChannel "QDF2.0"
+      get pMainFile to liFile
+      get value of (oTitle(self)) item 0        to lsTitle
+      move (Combo_Current_Aux_Value(oFrm(oTab3(oTabs(self)))))  to liIndex
+      move (Combo_Current_Aux_Value(oFrm2(oTab3(oTabs(self))))) to liIndex2   // 07/07/2004
+      move (Value(oFont(oTab5(oTabs(self))),0))           to lsFont
+      move (Value(oFontSize(oTab5(oTabs(self))),0))       to liFontSize
+      move (select_state(oPrintCriteria(lhTab5),0))       to lbPrintCriteria
+      move (select_state(oPrintTotalsOnly(lhTab5),0))     to lbTotalsOnly
+      move (select_state(oOrientation(lhTab5),0))         to orientation#
+      move (select_state(oUseAnsiCharacters(lhTab5),0))   to lbAnsi
+      move (select_state(oIncludeLabels(lhTab5),0))       to lbPrintLabels
+      move (select_state(oSemicolon(lhTab5),0))           to lbSemicolon
+      move (current_radio(oRad(oGrp1(lhTab5))))           to liDestination
+      move (Combo_Current_Aux_Value(oCf1(oGrp1(lhTab5)))) to liFileFormat
+      move (value(oFrm1(oGrp1(lhTab5)),0))                to lsFileName
+      writeln liFile
+      writeln lsTitle
+// 07/07/2004
+//    writeln liIndex
+      if (liIndex < 256) move liIndex to liIndex2   // AdHoc is 1023,  256+ are virtual indices
+      writeln liIndex "," liIndex2
+// 07/07/2004  end
+      writeln lsFont
+      writeln liFontSize
+      writeln lbPrintCriteria
+      writeln lbTotalsOnly
+      writeln orientation#
+      writeln lbAnsi
+      writeln lbPrintLabels
+      writeln lbSemicolon
+      writeln liDestination
+      writeln liFileFormat
+      writeln lsFileName
+      send SEQ_WriteGridItems  liChannel (oGrd(oGrp(oTab1(oTabs(self)))))
+      send SEQ_WriteGridItems  liChannel (oGrd(oGrp(oTab2(oTabs(self)))))
+      send SEQ_WriteArrayItems liChannel (oDefault_Selection_Values(self))
+      send SEQ_WriteGridItems  liChannel (oGrd(oTab3(oTabs(self))))
+      move (Text_EditObjectValue(oEditTop(oTab4(oTabs(self))))) to lsValue
+      writeln (length(lsValue))
+      write lsValue
+      move (Text_EditObjectValue(oEditBottom(oTab4(oTabs(self))))) to lsValue
+      writeln (length(lsValue))
+      write lsValue
+      writeln (piExprRow(oTab2(oTabs(self))))
+      send SEQ_Write to (oQuery_ExprArray(self)) liChannel
+      send SEQ_Write to (oQueryOrderExpression(self)) liChannel
+    end_procedure
+
+    procedure Write_Report_Definition
+      integer liChannel
+      string lsFileName lsStartDir
+      if giVdfQuery_OldFolders_State get Query_Folder QRYFOLD_PUBLIC_DEF to lsStartDir
+      else get Query_Folder QRYFOLD_CURRENT_USER_DEF to lsStartDir
+      if (lsStartDir<>"") ;
+           get SEQ_SelectOutFileStartDir t.DfQuery.SaveFileCaption t.DfQuery.FileFilter lsStartDir to lsFileName
+      else get SEQ_SelectOutFile t.DfQuery.SaveFileCaption t.DfQuery.FileFilter to lsFileName
+
+      //move (SEQ_SelectOutFile(t.DfQuery.SaveFileCaption,t.DfQuery.FileFilter)) to lsFileName
+      if lsFileName ne "" begin
+        get SEQ_DirectOutput lsFileName to liChannel
+        if (liChannel>-1) begin
+          send write_deffile_channel liChannel
+          send SEQ_CloseOutput liChannel
+        end
+      end
+    end_procedure
+
+    procedure load_deffile_channel integer channel#
+      integer file# ordering# font_size# ansi# labels# len# semicolon#
+      integer       SearchOrder#  // 07/07/2004
+      integer crit_in_report# totals_only#
+      integer liDestination file_format# oTab5# open# orientation#
+      string  title# font# str# version# fn#
+      readln str#
+      if (str#="QDF1.0" or str#="QDF1.1" or str#="QDF1.3" or str#="QDF1.4" or str#="QDF2.0") begin
+        move str# to version#
+        move (oTab5(oTabs(self))) to oTab5#
+        readln channel channel# file#
+        move (DBMS_IsOpenFile(file#)) to open#
+        ifnot open# begin
+          if (DBMS_CanOpenFile(file#)) move (DBMS_OpenFile(file#,DF_SHARE,0)) to open#
+          else error 200 "File could not be opened"
+        end
+        if open# begin
+          set pMainFile to file#
+          send new_main_file to (oTabs(self))
+          readln title#
+// 07/07/2004
+//        readln ordering#
+          readln ordering# SearchOrder#
+          if (ordering# = 1023) begin     // 1023 is AdHoc index
+             if (SearchOrder# = 0) move 1 to SearchOrder#
+          end
+          if (ordering# < 256) begin      // 256+ are virtual indices
+             if (SearchOrder# = 0) move ordering# to SearchOrder#
+          end
+// 07/07/2004 end
+          readln font#                  // eg Times Roman
+          readln font_size#
+          readln crit_in_report#
+          readln totals_only#
+          if version# ne "QDF1.0" readln orientation#
+          else move 0 to orientation#
+          if version# ge "QDF1.4" begin
+            readln ansi#
+            readln labels#
+            readln semicolon#
+          end
+          else begin
+            move 0 to ansi#
+            move 0 to labels#
+          end
+          readln liDestination
+          readln file_format#
+          readln fn#
+          set Combo_Current_Aux_Value of (oMainFile(self)) to file#
+          send SEQ_ReadGridItems channel# (oGrd(oGrp(oTab1(oTabs(self)))))
+          send SEQ_ReadGridItems channel# (oGrd(oGrp(oTab2(oTabs(self)))))
+          send SEQ_ReadArrayItems channel# (oDefault_Selection_Values(self))
+          set value of (oTitle(self)) item 0 to title#
+          set Combo_Current_Aux_Value of (oFrm(oTab3(oTabs(self)))) to ordering#
+          send OnChange to (oFrm(oTab3(oTabs(self))))
+// 07/07/2004
+          set Combo_Current_Aux_Value of (oFrm2(oTab3(oTabs(self)))) to SearchOrder#
+          send OnChange to (oFrm2(oTab3(oTabs(self))))
+// 07/07/2004 end
+          set value of (oFont(oTab5#)) to font#
+          send onchange to (oFont(oTab5#))
+          set value of (oFontSize(oTab5#)) to font_size#
+          send onchange to (oFontSize(oTab5#))
+          set select_state of (oPrintCriteria(oTab5#)) item 0 to crit_in_report#
+          set select_state of (oPrintTotalsOnly(oTab5#)) item 0 to totals_only#
+          set select_state of (oOrientation(oTab5#)) item 0 to orientation#
+          set select_state of (oUseAnsiCharacters(oTab5#)) item 0 to ansi#
+          set select_state of (oIncludeLabels(oTab5#)) item 0 to labels#
+          set select_state of (oSemiColon(oTab5#)) item 0 to semicolon#
+          set current_radio of (oRad(oGrp1(oTab5#))) to liDestination
+          set Combo_Current_Aux_Value of (oCf1(oGrp1(oTab5#))) to file_format#
+          set value of (oFrm1(oGrp1(oTab5#))) item 0 to fn#
+          send auto_shade_objects to (oGrp1(oTab5#))
+          if version# ge "QDF1.3" send SEQ_ReadGridItems channel# (oGrd(oTab3(oTabs(self))))
+          if version# ge "QDF2.0" begin
+            readln len#
+            read_block str# len#
+            send Text_SetEditObjectValue (oEditTop(oTab4(oTabs(self)))) str#
+            readln len#
+            read_block str# len#
+            send Text_SetEditObjectValue (oEditBottom(oTab4(oTabs(self)))) str#
+            set piExprRow of (oTab2(oTabs(self))) to (SEQ_ReadLn(channel#))
+            send SEQ_Read to (oQuery_ExprArray(self)) channel#
+            send SEQ_Read to (oQueryOrderExpression(self)) channel#
+//            send OnChange to (oFrm(oTab3(oTabs(self))))
+          end
+          send UpdateExpressionIndicatorText to (oGrp(oTab2(oTabs(self))))
+        end
+      end
+      else send obs t.DfQuery.IncompDefFile
+    end_procedure
+
+    procedure load_deffile string lsFileName
+      integer liChannel
+      if lsFileName ne "" begin
+        get SEQ_DirectInput lsFileName to liChannel
+        if (liChannel>=0) begin
+          send load_deffile_channel liChannel
+          send SEQ_CloseInput liChannel
+        end
+        else send obs "Query definition file not found" ("("+lsFileName+")")
+      end
+    end_procedure
+
+    procedure Read_Report_Definition
+      string lsDefFile lsStartDir
+      if giVdfQuery_OldFolders_State get Query_Folder QRYFOLD_PUBLIC_DEF to lsStartDir
+      else get Query_Folder QRYFOLD_CURRENT_USER_DEF to lsStartDir
+      if (lsStartDir<>"") ;
+           get SEQ_SelectFileStartDir t.DfQuery.OpenFileCaption t.DfQuery.FileFilter lsStartDir to lsDefFile
+      else get SEQ_SelectFile t.DfQuery.OpenFileCaption t.DfQuery.FileFilter to lsDefFile
+      if lsDefFile ne "" send load_deffile lsDefFile
+    end_procedure
+
+    procedure NewQuery
+      send Activate_Query_Vw
+    end_procedure
+
+    set Border_Style to BORDER_THICK   // Make panel resizeable
+    send new_main_file to (oTabs(self))
+    move self to OG_Current_Object#
+
+  end_object // oVDFQuery_View
+  set piMinSize of OG_Current_Object# to (hi(size(OG_Current_Object#))) (low(size(OG_Current_Object#)))
+END_DEFINE_OBJECT_GROUP // OG_QueryView
+
+procedure CreateNewQuery integer tmpfile# string tmp_deffile#
+  integer File# Self# Client_ID#
+  string deffile#
+  move self to Self#
+  move (Client_ID(Self#)) to Client_ID#
+  if num_arguments begin
+    move tmpfile# to file#
+    if num_arguments gt 1 move tmp_deffile# to deffile#
+    else move "" to deffile#
+  end
+  else begin
+    move 0 to file#
+    move "" to deffile#
+  end
+  if Client_ID# begin
+    CREATE_OBJECT_GROUP OG_QueryView PARENT Client_ID# file# -1 0
+    send popup to OG_Current_Object#
+    if (not(file#) and deffile#<>"") send load_deffile to OG_Current_Object# deffile#
+  end
+  else error 666 "ClientArea not found!"
+end_procedure
+
+procedure Activate_Query_Vw string tmp_deffile#
+  string deffile#
+  if num_arguments move tmp_deffile# to deffile#
+  else move "" to deffile#
+  send CreateNewQuery 0 deffile# // 0 means: create view with no file selected
+end_procedure
+
+procedure Request_CreateNewQuery
+  integer file# focus# dm# svr# Self# Client_ID#
+  move self to Self#
+  move (Client_ID(Self#)) to Client_ID#
+  if Client_ID# begin
+    move (focus(desktop)) to focus#
+    //JK - 2000/05/22:
+    // Changed following line to disallow access from modal panels
+    if ((focus# > desktop) and not(modal_state(focus#))) begin
+      get delegation_mode of focus# to dm#
+      set delegation_mode of focus# to no_delegate_or_error
+      get server of focus# to svr#
+      set delegation_mode of focus# to dm#
+      if svr# get main_file of svr# to file#
+      CREATE_OBJECT_GROUP OG_QueryView PARENT Client_ID# file# -1 0
+      send popup to OG_Current_Object#
+    end
+    //JK - 2000/05/22:
+    // Added following line
+    else send stop_box "VdfQuery is not available from here!"
+  end
+  else error 666 "ClientArea not found!"
+end_procedure
+
+function iCreateSubQueryView global integer file# integer ordering# returns integer
+  integer self# Client_ID# rval#
+  move self to Self#
+  move (Client_ID(Self#)) to Client_ID#
+  if Client_ID# begin
+    CREATE_OBJECT_GROUP OG_QueryView PARENT Client_ID# file# ordering# 1
+    move OG_Current_Object# to rval#
+  end
+  else error 666 "ClientArea not found!"
+  function_return rval#
+end_function
+
+function iCreateQueryView global returns integer
+  integer self# Client_ID# rval#
+  move self to Self#
+  move (Client_ID(Self#)) to Client_ID#
+  if Client_ID# begin
+    CREATE_OBJECT_GROUP OG_QueryView PARENT Client_ID# 0 -1 0
+    move OG_Current_Object# to rval#
+  end
+  else error 666 "ClientArea not found!"
+  function_return rval#
+end_function
+
+class cVdfQueryLauncher is a cArray
+  procedure construct_object
+    forward send construct_object
+    property integer piVDFQueryObject 0
+  end_procedure
+  procedure DoCreateQuery
+    set piVDFQueryObject to (iCreateQueryView())
+  end_procedure
+  procedure DoSaveDefinition string fn#
+    integer liChannel
+    get SEQ_DirectOutput fn# to liChannel
+    if (liChannel>=0) begin
+      send write_deffile_channel to (piVDFQueryObject(self)) liChannel
+      send SEQ_CloseOutput liChannel
+    end
+  end_procedure
+  procedure DoReadDefinition string fn#
+    send load_deffile to (piVDFQueryObject(self)) fn#
+  end_procedure
+  procedure DoRunQuery
+    send request_run_report to (piVDFQueryObject(self))
+  end_procedure
+  procedure DoSelectionDialog
+    send DoCritValueDialog to (piVDFQueryObject(self))
+  end_procedure
+  procedure DoPopup
+    send popup to (piVDFQueryObject(self))
+  end_procedure
+  procedure DoDestroyQuery
+    send request_destroy_object to (piVDFQueryObject(self))
+    set piVDFQueryObject to 0
+  end_procedure
+  procedure DoAddField integer iFile integer iField
+    send Add_Field of (piVDFQueryObject(self)) iFile iField
+  end_procedure
+  procedure DoSetLandscape integer lbState
+    integer hObj
+    get piVDFQueryObject to hObj
+    set select_state of (oOrientation(oTab5(oTabs(hObj)))) item 0 to lbState
+  end_procedure
+  procedure set CriteriaValue integer row# string value1# string value2#
+    integer obj#
+    string tmp#
+    get row_crit of (oGrd(oGrp(oTab2(oTabs(piVDFQueryObject(self)))))) row# to row#
+    move (oDefault_Selection_Values(piVDFQueryObject(self))) to obj#
+    if num_arguments eq 2 move "" to tmp#
+    else move value2# to tmp#
+    set value of obj# item (row#*2) to value1#
+    set value of obj# item (row#*2+1) to tmp#
+  end_procedure
+  procedure set QueryTitle string str#
+    set value of (oTitle(piVDFQueryObject(self))) item 0 to str#
+  end_procedure
+  // Pepe
+  procedure AutoSetup_dbGrid
+    boolean lbModal
+    integer lhDD lhDEO liMax liColumn liFile liField
+    send Focus_Analyze_Focus
+    get Focus_Info FOCUS_DEO_MODAL to lbModal
+    ifnot lbModal begin
+      get Focus_Info FOCUS_DD to lhDD
+      if lhDD begin
+        get Focus_Info FOCUS_DEO_ID to lhDEO
+        if (base_class(lhDEO)=LIST_CLASS) begin
+          send DoCreateQuery
+          send force_DD of (piVDFQueryObject(self)) lhDD
+          set QueryTitle to ""
+          get Grid_Columns lhDEO to liMax
+          decrement liMax
+          for liColumn from 0 to liMax
+            get data_file of lhDEO liColumn to liFile
+            if (liFile<>0) begin
+              get data_field of lhDEO liColumn to liField
+              send DoAddField liFile liField
+            end
+          loop
+          send DoSetLandscape TRUE // <---Pepe's line
+          send DoPopup
+          send DoRunQuery
+        end
+        else error 203 "Only works with dbList and dbGrid classes"
+      end
+      else error 202 "DD object not found"
+    end
+    else error 201 "Not available from within a modal panel"
+  end_procedure
+end_class // cVdfQueryLauncher
+
+//procedure AutoLaunchGridQuery
+//end_procedure
+
+register_object oGridQueryLauncher
+procedure AutoLaunchGridQuery for AppClientArea
+  ifnot (oGridQueryLauncher(self)) begin
+    object oGridQueryLauncher is a cVdfQueryLauncher
+    end_object
+  end
+  send AutoSetup_dbGrid of oGridQueryLauncher
+end_procedure

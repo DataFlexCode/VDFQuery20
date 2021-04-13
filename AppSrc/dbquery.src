@@ -1,0 +1,164 @@
+// Compile this program to get a stand alone query tool for Visual DataFlex
+
+Use DfAllEnt.pkg
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>170) // If 17.1 or higher
+    Set_StrictEval to True // Make the runtime check for un-managed string eval's
+#ENDIF
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190) // If 19.1 or higher
+  Use OldFMACCommands.pkg
+#ENDIF
+
+Use LangSymb.pkg // Language symbols
+
+define lng_default for LNG_ENGLISH // <-- Change default language here
+
+Use Splash.utl   // Graphic splish-splash
+Use About.utl    // About dialog
+
+set AppInfo AI_TITLE       to "DBQuery"
+set AppInfo AI_SUBTITLE    to "for Windows"
+Set AppInfo AI_VERSION     to "2.5 Beta"
+set AppInfo AI_REVISION    to ""
+set AppInfo AI_AUTHOR      to "Sture ApS"
+set AppInfo AI_WATERMARK   to ""
+set AppInfo AI_RELEASEDATE to ""
+
+object oSplash is a cGraphicSplash
+end_object
+send activate to (oSplash(self))
+
+Use MdiExt.utl
+Use OpenStat.nui // cTablesOpenStatus class (formely cFileAllFiles)
+
+Use Version.nui
+
+Use cApplication.pkg
+Object oApplication is a cApplication
+    Set pbEnterKeyAsTabKey to DFTRUE
+    Set psAutoOpenWorkspace to "" // Do not attempt to open "config.ws"
+End_Object // oApplication
+
+Use WsFunctions.pkg // Workspace functions encapsulated in WsFunctions object (VdfQueryLib)
+
+// If you Use WinPrint:
+//Use VDFQuery.utl // DFQUERY for Visual DataFlex (WinPrint version)
+
+// If you Use VPE:
+Use VpeQuery.utl // DFQUERY for Visual DataFlex (VPE version)
+
+use OpenStat.pkg
+Use Login.utl
+
+Use SelectWorkspace.dg
+Use WorkSpc.utl
+register_object Main
+register_object Client_Area
+Procedure Do_Select_WorkSpace
+  integer hoWorkspace eOpened
+  string sWorkspace
+  Get phoWorkspace of ghoApplication to hoWorkspace
+  Get SelectRecentWorkspaceFile of WsFunctions to sWorkspace
+ 
+  //get WorkSpc_SelectWS to sWorkspace
+  If (sWorkspace<>"") Begin
+    Send DoClearPaths of hoWorkspace
+    //Get OpenWorkspace of hoWorkspace sWorkspace to eOpened
+    Get OpenWorkspace of WsFunctions sWorkspace to eOpened
+    If (eOpened <> WSWORKSPACEOPENED) Begin
+      Send Stop_Box "The selected workspace is invalid."
+    End
+    broadcast recursive send Close_Query_View to desktop
+    broadcast recursive send delete_fieldinfo_data to desktop // Clears some arrays in fieldinf.pkg
+    send OpenStat_CloseAllFiles
+    send Open_A_View_Please to (Client_Area(Main(Self)))
+  End
+end_procedure
+
+Procedure Do_Select_Filelist
+  Integer hoWs eOpened
+  String lsFilelist lsPath
+  Get phoWorkspace of ghoApplication to hoWs
+
+  Get SEQ_SelectFile "Open Filelist.cfg" "filelist.cfg|filelist.cfg|*.cfg|*.CFG" to lsFileList
+  If (lsFilelist<>"") Begin
+    
+    Get SEQ_ExtractPathFromFileName lsFilelist to lsPath
+    Send DoClearPaths of hoWs
+    //Get OpenWorkspace of hoWorkspace sWorkspace to eOpened
+
+    Set psHome            of hoWs to lsPath
+    Set psWorkspaceName   of hoWs to ""
+    Set psAppSrcPath      of hoWs to ""
+    Set psAppHtmlPath     of hoWs to ""
+    Set psBitmapPath      of hoWs to ""
+    Set psDataPath        of hoWs to lsPath
+    Set psDdSrcPath       of hoWs to ""
+    Set psDescription     of hoWs to ""
+    Set psFileList        of hoWs to lsFilelist
+    Set psHelpPath        of hoWs to ""
+    Set psIdeSrcPath      of hoWs to ""
+    Set psProgramPath     of hoWs to ""
+//    Set psSystemDfPath    of hoWs to (VdfSystemDfPath(hoWs))
+//    Set psSystemMakePath  of hoWs to (VdfSystemMakePath(hoWs))
+    Set psWorkspaceWSFile of hoWs to ""
+
+    Set psDfPath           of hoWS to lsPath
+    Set_Attribute DF_FILELIST_NAME to lsFilelist
+    Set_Attribute DF_OPEN_PATH     to lsPath
+    Broadcast Recursive Send Close_Query_View to desktop
+    Broadcast Recursive Send delete_fieldinfo_data to desktop // Clears some arrays in fieldinf.pkg
+    Send OpenStat_CloseAllFiles
+    Send Open_A_View_Please to (Client_Area(Main(Self)))
+  End
+End_Procedure
+
+Object Main is a Panel
+  set label to "DBQuery" // "Rapportgenerator"
+  DFCreate_Menu Main_Menu
+    DFCreate_Menu "&File" FilePullDown is a ViewPopupMenu
+      on_item "Sort"             send Activate_Sort_Vw
+      on_item "New Query"        send Activate_Query_Vw
+      on_item ""                 send none
+//      on_item "Select workspace" send Do_Select_WorkSpace
+      On_Item "Select filelist"  Send Do_Select_FileList
+      On_Item ""                 Send none
+      on_item "Login"            send DoLogin
+      on_item "Display open"     send OpenStat.DisplayFileLocations
+      on_item ""                 send none
+      on_item "Exit \aAlt+F4"    send exit_application
+    End_Menu
+    #include Win_PM.inc     // Window of available views
+  End_Menu
+
+  Object Client_Area IS A AppClientArea
+    procedure Open_A_View_Please
+      send Activate_Query_Vw
+    end_procedure
+    procedure DoLogin
+      get DBMS_GetDriverLogin 0 to windowindex
+    end_procedure
+    
+    Use VdfQuery.rv // VDFQuery
+
+    // This is used here simply to make sure that the packages
+    // will be in the upload. You may comment the next line to
+    // save size on the compiled file.
+    Use VdfSort.vw  // Reindexing routines
+  End_Object  // Client_Area
+
+  Object Status_Bar is a cSturesStatusBar
+  End_Object
+End_Object // Main
+send deactivate to (oSplash(self))
+send Open_A_View_Please to (Client_Area(Main(self)))
+
+Start_UI
+

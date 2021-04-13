@@ -1,0 +1,218 @@
+// Use QryFolde.pkg // Directory setup for VDFQuery and DbQuery (defs and out)
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Files.utl    // Utilities for handling file related stuff (No User Interface)
+Use DfDir.nui    // Identify the location DF files and directories
+Use WinUser.nui  // User_Windows_User_Name function
+Use Language     // Set default languange if not set by compiler command line
+Use WildCard.nui // vdfq_WildCardMatch function
+
+#IF LNG_DEFAULT=LNG_DUTCH
+  define t.qryfolder.name.QueryDef     for "Query definities"
+  define t.qryfolder.name.DefPostFix   for "Definities"
+  define t.qryfolder.name.QueryOut     for "Query output"
+  define t.qryfolder.name.OutPostFix   for "Output"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SPANISH                 // 26/01/2004 Pepe GuimarÆes Moose Software  pg@moose-software.com
+  define t.qryfolder.name.QueryDef     for "Definiciones de Query"
+  define t.qryfolder.name.DefPostFix   for "Definiciones"
+  define t.qryfolder.name.QueryOut     for "Salida Query"
+  define t.qryfolder.name.OutPostFix   for "Salida"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ENGLISH
+  define t.qryfolder.name.QueryDef     for "Query definitions"
+  define t.qryfolder.name.DefPostFix   for "Definitions"
+  define t.qryfolder.name.QueryOut     for "Query output"
+  define t.qryfolder.name.OutPostFix   for "Output"
+#ENDIF
+#IF LNG_DEFAULT=LNG_DANISH
+  define t.qryfolder.name.QueryDef     for "Rapport definitioner"
+  define t.qryfolder.name.DefPostFix   for "Definitioner"
+  define t.qryfolder.name.QueryOut     for "Rapport udskrifter"
+  define t.qryfolder.name.OutPostFix   for "Udskrifter"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SWEDISH
+  define t.qryfolder.name.QueryDef     for "Rapportdefinitioner"
+  define t.qryfolder.name.DefPostFix   for "Definitioner"
+  define t.qryfolder.name.QueryOut     for "Rapportutskrifter"
+  define t.qryfolder.name.OutPostFix   for "Utskrifter"
+#ENDIF
+#IF LNG_DEFAULT=LNG_NORWEGIAN
+  define t.qryfolder.name.QueryDef     for "Query definitions"
+  define t.qryfolder.name.DefPostFix   for "Definitions"
+  define t.qryfolder.name.QueryOut     for "Query output"
+  define t.qryfolder.name.OutPostFix   for "Output"
+#ENDIF
+#IF LNG_DEFAULT=LNG_GERMAN
+  define t.qryfolder.name.QueryDef     for "Query definitions"
+  define t.qryfolder.name.DefPostFix   for "Definitions"
+  define t.qryfolder.name.QueryOut     for "Query output"
+  define t.qryfolder.name.OutPostFix   for "Output"
+#ENDIF
+#IF LNG_DEFAULT=LNG_PORTUGUESE
+  define t.qryfolder.name.QueryDef     for "Query definitions"
+  define t.qryfolder.name.DefPostFix   for "Definitions"
+  define t.qryfolder.name.QueryOut     for "Query output"
+  define t.qryfolder.name.OutPostFix   for "Output"
+#ENDIF
+#IF LNG_DEFAULT=LNG_FRENCH
+  define t.qryfolder.name.QueryDef     for "Query definitions"
+  define t.qryfolder.name.DefPostFix   for "Definitions"
+  define t.qryfolder.name.QueryOut     for "Query output"
+  define t.qryfolder.name.OutPostFix   for "Output"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ITALIAN
+  define t.qryfolder.name.QueryDef     for "Definizioni Query"
+  define t.qryfolder.name.DefPostFix   for "Definizioni"
+  define t.qryfolder.name.QueryOut     for "Query output"
+  define t.qryfolder.name.OutPostFix   for "Output"
+#ENDIF
+
+enumeration_list
+  define QRYFOLD_DEF_ROOT         // data\querydef
+  define QRYFOLD_OUT_ROOT         // data\queryout
+  define QRYFOLD_USERNAME_FNC
+  define QRYFOLD_USERNAME_OBJ
+  define QRYFOLD_PUBLIC_DEF
+  define QRYFOLD_CURRENT_USER_DEF
+  define QRYFOLD_CURRENT_USER_OUT
+  define QRYFOLD_DISABLE_USER_SUBFOLDERS
+end_enumeration_list
+
+desktop_section
+  object oQry_FolderSetup is a cArray
+    function bCreateDir string lsDir returns integer
+      // Attempt to create directory if it does not exists
+      integer liExists lbCreateError
+      get SEQ_FileExists lsDir to liExists
+      if (liExists=SEQIT_NONE) begin
+        get wvaWin32_CreateDirectory (ToAnsi(lsDir)) to lbCreateError
+        ifnot lbCreateError get SEQ_FileExists lsDir to liExists
+      end
+      function_return (liExists=SEQIT_DIRECTORY)
+    end_function
+
+    procedure DoDefaults
+      integer liCh
+      string lsDir lsFile lsDefDir lsOutDir
+
+      get dfdir_location DFDIR_FILELIST_CFG to lsDir
+      get Files_AppendPath lsDir "vdfquery.ini" to lsFile
+      if (SEQ_FileExists(lsFile)=SEQIT_FILE) begin
+        // Config file found, read it
+        get SEQ_DirectInput lsFile to liCh
+        if (liCh>=0) begin
+          get SEQ_ReadLn liCh to lsDefDir
+          get SEQ_ReadLn liCh to lsOutDir
+          send SEQ_CloseInput liCh
+        end
+      end
+      else begin
+        // Config file not found, locate default directories
+        get dfdir_location DFDIR_FILELIST_CFG to lsDir
+        get Files_AppendPath lsDir t.qryfolder.name.QueryDef to lsDefDir
+        get Files_AppendPath lsDir t.qryfolder.name.QueryOut to lsOutDir
+      end
+      if (bCreateDir(self,lsDefDir)) set value QRYFOLD_DEF_ROOT to lsDefDir
+      if (bCreateDir(self,lsOutDir)) set value QRYFOLD_OUT_ROOT to lsOutDir
+    end_procedure
+
+    function sQryCurrentUserName returns string
+      integer lhObj lhGet
+      string lsUser
+      send DoDefaults
+      get value item QRYFOLD_USERNAME_OBJ to lhObj
+      get value item QRYFOLD_USERNAME_FNC to lhGet
+      if (lhObj and lhGet) get lhGet of lhObj to lsUser
+      else get User_Windows_User_Name to lsUser
+      function_return lsUser
+    end_function
+
+    function sQryPublicDef returns string
+      string lsRval
+      send DoDefaults
+      get value QRYFOLD_DEF_ROOT to lsRval
+      function_return lsRval
+    end_function
+
+    function sQryCurUserDef returns string
+      integer lbOK
+      string lsRval lsUser lsDir
+      send DoDefaults
+      get value QRYFOLD_DEF_ROOT to lsDir
+      if (lsDir<>"" and integer(value(self,QRYFOLD_DISABLE_USER_SUBFOLDERS))=0) begin
+        get sQryCurrentUserName to lsUser
+        get Files_AppendPath lsDir lsUser to lsRval
+        get bCreateDir lsRval to lbOK
+        ifnot lbOK move "" to lsRval
+      end
+      else move "" to lsRval
+      function_return lsRval
+    end_function
+
+    function sQryCurUserOut returns string
+      integer lbOK
+      string lsRval lsUser lsDir
+      send DoDefaults
+
+      get value QRYFOLD_OUT_ROOT to lsDir
+      if (lsDir<>"" and integer(value(self,QRYFOLD_DISABLE_USER_SUBFOLDERS))=0) begin
+        get sQryCurrentUserName to lsUser
+        move (lsUser*t.qryfolder.name.OutPostFix) to lsUser
+        get Files_AppendPath lsDir lsUser to lsRval
+        get bCreateDir lsRval to lbOK
+        ifnot lbOK move "" to lsRval
+      end
+      else move "" to lsRval
+      function_return lsRval
+    end_function
+
+  end_object
+end_desktop_section
+
+procedure set Query_Folder global integer liItem string lsValue
+  set value of (oQry_FolderSetup(self)) liItem to lsValue
+end_procedure
+
+function Query_Folder global integer liItem returns string
+  if (liItem=QRYFOLD_PUBLIC_DEF)       function_return (sQryPublicDef(oQry_FolderSetup(self)))
+  if (liItem=QRYFOLD_CURRENT_USER_DEF) function_return (sQryCurUserDef(oQry_FolderSetup(self)))
+  if (liItem=QRYFOLD_CURRENT_USER_OUT) function_return (sQryCurUserOut(oQry_FolderSetup(self)))
+  function_return (value(oQry_FolderSetup(self),liItem))
+end_function
+
+object oQry_DefArray is a cArray
+  item_property_list
+    item_property string  psFile.i
+    item_property string  psTitle.i
+    item_property integer piMainFile.i
+  end_item_property_list
+  procedure AddFile string lsFile string lsFolder
+    integer liFile liChannel liRow
+    string lsTitle lsLine
+    if (vdfq_WildCardMatch(lsFile)) begin
+      get row_count to liRow
+
+      get Files_AppendPath lsFolder lsFile to lsFile
+      get SEQ_DirectInput lsFile to liChannel
+      if (liChannel>=0) begin
+        readln channel liChannel lsLine
+        if (lsLine="QDF2.0") begin
+          readln liFile
+          readln lsTitle
+          set psFile.i     liRow to lsFile
+          set psTitle.i    liRow to lsTitle
+          set piMainFile.i liRow to liFile
+        end
+        send SEQ_CloseInput liChannel
+      end
+    end
+  end_procedure
+  procedure fill_array
+    string lsFolder
+    send delete_data
+    send WildCardMatchPrepare "*.qdf"
+    get Query_Folder QRYFOLD_CURRENT_USER_DEF to lsFolder
+    send SEQ_Load_ItemsInDir lsFolder
+    send SEQ_CallBack_ItemsInDir SEQCB_FILES_ONLY MSG_AddFile self
+  end_procedure
+end_object // oQry_DefArray

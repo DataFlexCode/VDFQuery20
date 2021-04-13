@@ -1,0 +1,74 @@
+// Use Spec0006.utl // Function MakeStringConstant
+
+Use Strings.nui  // String manipulation for VDF
+
+//> If the length of the return value is two longer than the length of
+//> the passed argument, the function only put qoutes around it. Otherwise
+//> the argument has been converted to a concatenation of string constants.
+//>
+//>  World tour '99          becomes   "World tour '99"
+//>  7" nails                becomes   '7" nails'
+//>  10" reels for an '88    becomes   "10"+'" reels for an '+"'88"
+//
+
+function MakeStringConstant global string str# returns string
+  integer len# pos#
+  string char# rval# current_quote#
+  ifnot "'" in str# function_return ("'"+str#+"'")
+  ifnot '"' in str# function_return ('"'+str#+'"')
+  move "" to rval#
+  move (length(str#)) to len#
+  if (left(str#,1)) eq '"' move "'" to current_quote#
+  else move '"' to current_quote#
+  move current_quote# to rval#
+  for pos# from 0 to len#
+    move (mid(str#,1,pos#)) to char#
+    if char# eq current_quote# begin
+      move (rval#+current_quote#+"+") to rval#
+      if current_quote# eq "'" move '"' to current_quote#
+      else move "'" to current_quote#
+      move (rval#+current_quote#) to rval#
+    end
+    move (rval#+char#) to rval#
+  loop
+  move (rval#+current_quote#) to rval#
+  function_return rval#
+end_function
+
+function MakeStringConstantMax255Help global string str# returns string
+  integer len# pos#
+  string char# rval# current_quote#
+  ifnot "'" in str# function_return ("'"+str#+"'")
+  ifnot '"' in str# function_return ('"'+str#+'"')
+  move "" to rval#
+  move (length(str#)) to len#
+  if (left(str#,1)) eq '"' move "'" to current_quote#
+  else move '"' to current_quote#
+  move current_quote# to rval#
+  for pos# from 0 to len#
+    move (mid(str#,1,pos#)) to char#
+    if char# eq current_quote# begin
+      move (rval#+current_quote#+"+") to rval#
+      if current_quote# eq "'" move '"' to current_quote#
+      else move "'" to current_quote#
+      move (rval#+current_quote#) to rval#
+    end
+    move (rval#+char#) to rval#
+  loop
+  move (rval#+current_quote#) to rval#
+  function_return rval#
+end_function
+
+function MakeStringConstantMax255 global string str# returns string
+  integer liLen liPos
+  string lsRval lsChunk
+  move (length(str#)) to liLen
+  move "" to lsRval
+  for liPos from 0 to (liLen-1/250)
+    if liPos move (lsRval+"+") to lsRval
+    move (mid(str#,250,liPos*250+1)) to lsChunk
+    move (lsRval+MakeStringConstantMax255Help(lsChunk)) to lsRval
+  loop
+  function_return lsRval
+end_function
+

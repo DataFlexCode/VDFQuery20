@@ -1,0 +1,82 @@
+use dfallent.pkg
+use datadict.pkg
+use aps.pkg
+use gridutil.utl
+
+object oValtable_Sellist is a aps.ModalPanel
+  set locate_mode to CENTER_ON_SCREEN
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer pbResult
+
+  object oGrid is a aps.Grid
+    send GridPrepare_AddColumn "" AFT_ASCII40
+    send GridPrepare_Apply self
+    set select_mode to NO_SELECT
+    on_key KNEXT_ITEM send switch
+    on_key KPREVIOUS_ITEM send switch_back
+    set Header_Visible_State to false
+    set peAnchors to (anTop+anLeft+anRight+anBottom)
+    procedure fill_state integer lhValTable
+      integer liMax liRow
+      string lsDataValue lsDescription
+      send delete_data
+      get Data_Item_Count to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        get Data_Value of lhValTable to lsDataValue
+        get Data_Description of lhValTable to lsDescription
+        if (lsDescription<>"" and lsDataValue<>lsDescription) move (lsDataValue*lsDescription) to lsDataValue
+        send add_item MSG_NONE lsDataValue
+        set aux_value item liRow to liRow // Pointer to entry in DescriptionValidationTable
+      loop
+    end_procedure
+    function current_value integer lhValTable returns string
+      integer liAux
+      get aux_value item CURRENT to liAux
+      function_return (Data_Value(lhValTable,liAux))
+    end_function
+  end_object
+
+  object oBtn1 is a aps.Multi_Button
+    on_item "OK" send close_panel_ok
+    set peAnchors to (anBottom+anRight)
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item "Annuller" send close_panel
+    set peAnchors to (anBottom+anRight)
+  end_object
+  send aps_locate_multi_buttons
+
+  procedure close_panel_ok
+    set pbResult to DFTRUE
+    send close_panel
+  end_procedure
+
+  procedure popup.is integer lhValTable string lsCaption
+    integer lhInvokingObject
+    set label to lsCaption
+    move (focus(desktop)) to lhInvokingObject
+    send fill_list of oGrid lhValTable
+    send popup
+    if (pbResult(self)) begin
+      set value of lhInvokingObject item CURRENT to (current_value(oGrid,lhValTable))
+    end
+  end_procedure
+end_object // oValtable_Sellist
+send aps_SetMinimumDialogSize (oValtable_Sellist(self)) // Set minimum size
+
+
+procedure popup_valtable_sellist global integer lhValTable string lsCaption
+  send popup.is of oValtable_Sellist lhValTable lsCaption
+end_procedure
+
+// Eksempel:
+// object oForm is a aps.Form label "blablabla" abstract AFT_ASCII20
+//   set prompt_button_mode to PB_PROMPTON
+//   on_key KPROMPT send prompt
+//   procedure prompt
+//     send popup_valtable_sellist lhEnEllerAndenTable "V‘lg blablabla"
+//   end_procedure
+// end_object

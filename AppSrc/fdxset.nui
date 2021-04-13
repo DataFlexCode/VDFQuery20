@@ -1,0 +1,482 @@
+// Use FdxSet.nui   // cFdxSetOfTables, cFdxSetOfFields, cFdxSetOfIndices
+
+Use FDX.nui      // cFDX class
+Use FDX_Attr.nui // FDX compatible attribute functions
+Use Strings.nui  // String manipulation for VDF
+Use WildCard.nui // vdfq_WildCardMatch function
+
+enumeration_list
+  define FDXSET_NONE
+  define FDXSET_EQ
+  define FDXSET_NE
+  define FDXSET_LT
+  define FDXSET_LE
+  define FDXSET_GE
+  define FDXSET_GT
+  define FDXSET_END // Must be the higher number defined
+end_enumeration_list
+
+function sFdxSet_CompText global integer comp# returns string
+  if comp# eq FDXSET_NONE function_return ""
+  if comp# eq FDXSET_LT   function_return "LT"
+  if comp# eq FDXSET_LE   function_return "LE"
+  if comp# eq FDXSET_EQ   function_return "EQ"
+  if comp# eq FDXSET_GE   function_return "GE"
+  if comp# eq FDXSET_GT   function_return "GT"
+  if comp# eq FDXSET_NE   function_return "NE"
+end_function
+
+//> Call back all legal comparison modes when attribute is attr#
+procedure FdxSet_Comp_CallBack global integer attr# integer msg# integer obj#
+  integer comp# type#
+  if (API_AttrDiscreteValues(attr#)) begin // Is the attribute represented by a set of (symbolic) discrete values?
+    send msg# to obj# FDXSET_EQ (sFdxSet_CompText(FDXSET_EQ))
+    send msg# to obj# FDXSET_NE (sFdxSet_CompText(FDXSET_NE))
+  end
+  else begin
+    if (API_AttrType(attr#)=ATTRTYPE_IDXSEG) send msg# to obj# FDXSET_EQ (sFdxSet_CompText(FDXSET_EQ))
+    else begin
+      if (API_AttrValueType(attr#)) eq DF_BCD begin
+        for comp# from 1 to (FDXSET_END-1)
+          send msg# to obj# comp# (sFdxSet_CompText(comp#))
+        loop
+      end
+      else begin // DF_ASCII
+        send msg# to obj# FDXSET_EQ (sFdxSet_CompText(FDXSET_EQ))
+        send msg# to obj# FDXSET_NE (sFdxSet_CompText(FDXSET_NE))
+      end
+    end
+  end
+end_procedure
+
+class cFdxSet is a cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property string psTitle ""
+    property integer piFDX_Server 0
+    object oAuxArray is a cArray
+    end_object
+    property integer piTestAttribute  0
+    property integer piTestCompMode   FDXSET_NONE
+    property string  psTestValue      ""
+  end_procedure
+  procedure display_criterion
+    send obs (API_Attr_Name(piTestAttribute(self))) (sFdxSet_CompText(piTestCompMode(self))) (psTestValue(self))
+  end_procedure
+  item_property_list
+    item_property integer piFile.i
+    item_property integer piItem.i
+  end_item_property_list cFdxSet
+  //***** PRIVATE ***************************************************
+  procedure AddItem integer file# integer item#
+    integer row#
+    get row_count to row#
+    set piFile.i  row# to file#
+    set piItem.i row# to item#
+  end_procedure
+  function iFindItem.ii integer file# integer item# returns integer
+    integer max# row#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      if (piFile.i(self,row#)=file# and piItem.i(self,row#)=item#) function_return row#
+    loop
+    function_return -1
+  end_function
+  function iAddItem integer file# integer item# returns integer
+    if (iFindItem.ii(self,file#,item#)) eq -1 begin
+      send AddItem file# item#
+      function_return 1
+    end
+    //function_return 0
+  end_function
+  procedure AddItemIfNotAlready integer file# integer item#
+    integer grb#
+    get iAddItem file# item# to grb#
+  end_procedure
+
+                          procedure private.add_to_help_array integer file# integer item#
+                            integer itm# arr#
+                            move (oAuxArray(self)) to arr#
+                            set value of arr# item (item_count(arr#)) to (IntToStrR(file#,4)+IntToStrR(item#,4))
+                          end_procedure
+                          procedure private.CopyDownFromHelpArray
+                            integer arr# max# itm#
+                            string str#
+                            move (oAuxArray(self)) to arr#
+                            send sort_items to arr# ASCENDING
+                            send reset
+                            get item_count of arr# to max#
+                            for itm# from 0 to (max#-1)
+                              get value of arr# item itm# to str#
+                              send AddItem (left(str#,4)) (right(str#,4))
+                            loop
+                            send delete_data to arr#
+                          end_procedure // Introduction to algorithms, MIT Press  0-262-03141-8
+
+  //***** ****************************************************
+  function iValidate.iiss integer type# integer comp# ;
+                      string scurrentvalue# string stestvalue# returns integer
+    number ncurrentvalue# ntestvalue#
+    if type# eq DF_BCD begin
+      move scurrentvalue# to ncurrentvalue#
+      move stestvalue#    to ntestvalue#
+      if comp# eq FDXSET_LT function_return (ncurrentvalue#<ntestvalue#)
+      if comp# eq FDXSET_LE function_return (ncurrentvalue#<=ntestvalue#)
+      if comp# eq FDXSET_EQ function_return (ncurrentvalue#=ntestvalue#)
+      if comp# eq FDXSET_GE function_return (ncurrentvalue#>=ntestvalue#)
+      if comp# eq FDXSET_GT function_return (ncurrentvalue#>ntestvalue#)
+      if comp# eq FDXSET_NE function_return (ncurrentvalue#<>ntestvalue#)
+    end
+    else begin // Then it's DF_ASCII
+      uppercase scurrentvalue#
+      uppercase stestvalue#
+      if comp# eq FDXSET_LT function_return (scurrentvalue#<stestvalue#)
+      if comp# eq FDXSET_LE function_return (scurrentvalue#<=stestvalue#)
+      if comp# eq FDXSET_EQ function_return (vdfq_WildCardMatch(scurrentvalue#))
+      if comp# eq FDXSET_GE function_return (scurrentvalue#>=stestvalue#)
+      if comp# eq FDXSET_GT function_return (scurrentvalue#>stestvalue#)
+      if comp# eq FDXSET_NE function_return (scurrentvalue#<>stestvalue#)
+    end
+    function_return 1
+  end_function
+
+  procedure reset
+    send delete_data
+  end_procedure
+
+  procedure sort_rows
+    integer max# row#
+    send delete_data to (oAuxArray(self))
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      send private.add_to_help_array (piFile.i(self,row#)) (piItem.i(self,row#))
+    loop
+    send private.CopyDownFromHelpArray
+  end_procedure
+
+  function iValidate_Item.ii integer file# integer item# returns integer
+  end_function
+
+  //> Function iNumberOfFiles returns the number of different tables
+  //> represented by fields currently in the set.
+  function iNumberOfFiles returns integer
+    integer max# file# row#
+    string str#
+    move "" to str#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      get piFile.i row# to file#
+      move (overstrike("1",str#,file#)) to str#
+    loop
+    move (replaces(" ",str#,"")) to str#
+    function_return (length(str#)) // Clever!
+  end_function
+
+  //***** SET OPERATIONS ********************************************
+  procedure DoUnion.i integer oFdxSetOfItems
+    integer row# max#
+    get row_count of oFdxSetOfItems to max#
+    for row# from 0 to (max#-1)
+      send AddItemIfNotAlready (piFile.i(oFdxSetOfItems,row#)) (piItem.i(oFdxSetOfItems,row#))
+    loop
+    send sort_rows
+  end_procedure
+  procedure DoInterSection.i integer oFdxSetOfItems
+    integer max# row# file# item#
+    send delete_data to (oAuxArray(self))
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      get piFile.i row# to file#
+      get piItem.i row# to item#
+      if (iFindItem.ii(oFdxSetOfItems,file#,item#)) ne -1 send private.add_to_help_array file# item#
+    loop
+    send private.CopyDownFromHelpArray
+  end_procedure
+  procedure DoComplement.i integer oFdxSetOfItems // Remove all fields that are also in oFdxSetOfItems
+    integer row# max# found_row#
+    get row_count of oFdxSetOfItems to max#
+    for row# from 0 to (max#-1)
+      get iFindItem.ii (piFile.i(oFdxSetOfItems,row#)) (piItem.i(oFdxSetOfItems,row#)) to found_row#
+      if found_row# ne -1 send delete_row found_row#
+    loop
+  end_procedure
+  procedure DoRemoveFile.i integer liFile
+    integer liMax liRow
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      if (piFile.i(self,liRow)=liFile) begin
+        send delete_row liRow
+        decrement liRow
+        decrement liMax
+      end
+    loop
+  end_procedure
+end_class // cFdxSet
+
+class cFdxSetOfTables is a cFdxSet
+  function iValidate_Item.ii integer file# integer item# returns integer
+    integer attr# oFDX# type# comp#
+    string scurrentvalue# stestvalue#
+    get piFDX_Server to oFDX#
+    get piTestAttribute to attr#
+    get piTestCompMode to comp#
+    if (attr# and comp#) begin
+      get psTestValue to stestvalue#
+      get API_AttrValueType attr# to type#
+      get FDX_AttrValue_FILE oFDX# attr# file# to scurrentvalue#
+      function_return (iValidate.iiss(self,type#,comp#,scurrentvalue#,stestvalue#))
+    end
+    function_return 0
+  end_function
+
+  procedure Traverse_All      //> Go through all files in the world
+    integer oFDX# file#
+    //send display_criterion
+    send delete_data
+    if (piTestCompMode(self)=FDXSET_EQ and API_AttrValueType(piTestAttribute(self))=DF_ASCII) send WildCardMatchPrepare (uppercase(psTestValue(self)))
+    get piFDX_Server to oFDX#
+    move 0 to file#
+    repeat
+      get iNextFileThatCanOpen of oFDX# file# to file#
+      if (file# and iValidate_Item.ii(self,file#,0)) send AddItem file# 0
+    until file# eq 0
+  end_procedure
+  procedure make_set_of_files integer obj#
+    integer max# row# file#
+    send reset to obj#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      send AddItemIfNotAlready to obj# (piFile.i(self,row#)) 0
+    loop
+  end_procedure
+end_class // cFdxSetOfTables
+
+//> A set of fields is a set of (file,field). The cFdxSetOfFields class
+//> is able to contain such a set and it's able to search a FDX object
+//> for fields
+
+class cFdxSetOfFields is a cFdxSet
+  function iValidate_Item.ii integer file# integer field# returns integer
+    integer attr# oFDX# type# comp#
+    string scurrentvalue# stestvalue#
+    get piFDX_Server to oFDX#
+    get piTestAttribute to attr#
+    get piTestCompMode to comp#
+    if (attr# and comp#) begin
+      get psTestValue to stestvalue#
+      get API_AttrValueType attr# to type#
+      get FDX_AttrValue_FIELD oFDX# attr# file# field# to scurrentvalue#
+      function_return (iValidate.iiss(self,type#,comp#,scurrentvalue#,stestvalue#))
+    end
+    function_return 0
+  end_function
+
+  procedure Traverse_All      //> Go through all fields in the world
+    integer oFDX# file# item# max# type# attr#
+    send reset
+    //send display_criterion
+    get piFDX_Server to oFDX#
+    get piTestAttribute to attr#
+    if (API_AttrValueType(attr#)=DF_ASCII and piTestCompMode(self)=FDXSET_EQ) send WildCardMatchPrepare (uppercase(psTestValue(self)))
+    move 0 to file#
+    repeat
+      get iNextFileThatCanOpen of oFDX# file# to file#
+      if file# begin
+        move (FDX_AttrValue_FILE(oFDX#,DF_FILE_NUMBER_FIELDS,file#)) to max#
+        for item# from 1 to max#
+          if (iValidate_Item.ii(self,file#,item#)) send AddItem file# item#
+        loop
+      end
+    until file# eq 0
+  end_procedure
+
+  function private.iFindFieldWithOffset.ii integer file# integer offset# returns integer
+    integer oFDX# item# max_item#
+    get piFDX_Server to oFDX#
+    move (FDX_AttrValue_FILE(oFDX#,DF_FILE_NUMBER_FIELDS,file#)) to max_item#
+    for item# from 1 to max_item#
+      if (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_OFFSET,file#,item#)) eq offset# function_return item#
+    loop
+    //function_return 0
+  end_function
+
+  procedure private.Traverse_Relating_Help integer Parent_File# integer Parent_Field# string Child_Files#
+    integer file# item# itm# max# oFDX# max_item# Rel_File# Rel_Field# Rootitem#
+    integer Parent_Offset# Parent_OverlapOffset#
+    integer Child_Offset# Child_OverlapOffset#
+    get piFDX_Server to oFDX#
+    move (HowManyIntegers(Child_Files#)) to max#
+    move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_OFFSET,parent_file#,Parent_Field#)) to Parent_Offset#
+    for itm# from 1 to max#
+      move (ExtractInteger(Child_Files#,itm#)) to file#
+      move (FDX_AttrValue_FILE(oFDX#,DF_FILE_NUMBER_FIELDS,File#)) to max_item#
+      for item# from 1 to max_item#
+        move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_RELATED_FILE,file#,item#)) to Rel_File#
+        if Rel_File# eq Parent_File# begin
+          move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_RELATED_FIELD,file#,item#)) to Rel_Field#
+          if Rel_Field# eq Parent_Field# send private.Traverse_Related_Help file# item#
+          else begin
+            if (integer(FDX_AttrValue_FIELD(oFDX#,DF_FIELD_TYPE,file#,item#))) eq DF_OVERLAP begin
+              // Does it overlap our RootField?
+              if (integer(FDX_AttrValue_SPECIAL1(oFDX#,DF_FIELD_OVERLAP,Rel_File#,Rel_Field#,Parent_Field#))) begin
+
+                // OK! We know that they overlap. Now we have to figure out
+                // which field in the child file corresponds
+                // to Parent_file.Parent_Field#:
+                move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_OFFSET,Rel_File#,Rel_Field#)) to Parent_OverlapOffset#
+
+                move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_OFFSET,file#,item#)) to Child_OverlapOffset#
+                move (Child_OverlapOffset#+Parent_Offset#-Parent_OverlapOffset#) to Child_Offset#
+
+                get private.iFindFieldWithOffset.ii file# Child_Offset# to Rootitem#
+                if Rootitem# send private.Traverse_Related_Help file# Rootitem#
+                else send obs "Overlap structure mismatch (2)"
+                //send private.Traverse_Related_Help file# item#
+              end
+            end
+          end
+        end
+      loop
+    loop
+  end_procedure
+
+  procedure private.Traverse_Related_Help integer File# integer Rootitem#
+    integer oFDX# item# max_item# rel_file# rel_item# self#
+    integer RootField_Offset# field_offset# rel_file_offset#
+    integer liAliasFile liMaxAliasFile liPos
+    string ChildFiles# lsAliasFiles
+    get piFDX_Server to oFDX#
+    // Just in case we need it:
+    move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_OFFSET,file#,Rootitem#)) to RootField_Offset#
+    if (iFindItem.ii(self,file#,Rootitem#)) eq -1 begin
+      send AddItem file# Rootitem#
+      move self to self#
+      move (FDX_AttrValue_FILE(oFDX#,DF_FILE_NUMBER_FIELDS,File#)) to max_item#
+      for item# from 1 to max_item#
+        // Does it relate?
+        move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_RELATED_FILE,file#,item#)) to rel_file#
+        if rel_file# begin // OK! We relate
+          move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_RELATED_FIELD,file#,item#)) to rel_item#
+          if item# eq Rootitem# begin // Is it the field, we are specifically querying?
+            send private.Traverse_Related_Help rel_file# rel_item#
+          end
+          else begin
+            // Is it an overlap? Otherwise we are not interested.
+            if (integer(FDX_AttrValue_FIELD(oFDX#,DF_FIELD_TYPE,file#,item#))) eq DF_OVERLAP begin
+              // Does it overlap our RootField?
+              if (integer(FDX_AttrValue_SPECIAL1(oFDX#,DF_FIELD_OVERLAP,file#,Rootitem#,item#))) begin
+                // OK! We know that they overlap. Now we have to figure out
+                // which field in the related file corresponds to our RootField:
+                move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_OFFSET,file#,item#)) to field_offset#
+                move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_OFFSET,rel_file#,rel_item#)) to rel_file_offset#
+                // This is the offset of our root field be in the related file:
+                move (rel_file_offset#-field_offset#+RootField_Offset#) to rel_file_offset#
+                get private.iFindFieldWithOffset.ii rel_file# rel_file_offset# to rel_item# // overload
+                if rel_item# send private.Traverse_Related_Help rel_file# rel_item#
+                else send obs "Overlap structure mismatch (1)"
+              end
+            end
+          end
+        end
+      loop
+      // Does anybody relate to it?
+      get sChildFiles.i of oFDX# file# to ChildFiles#
+      send private.Traverse_Relating_Help File# Rootitem# ChildFiles#
+      // Are there any alias files that we have to go through?
+      get sAliasFiles.i of oFDX# File# to lsAliasFiles
+      get HowManyIntegers lsAliasFiles to liMaxAliasFile
+      for liPos from 1 to liMaxAliasFile
+        get ExtractInteger lsAliasFiles liPos to liAliasFile
+        send private.Traverse_Related_Help liAliasFile Rootitem#
+      loop
+    end
+  end_procedure
+
+  procedure Traverse_ConnectedFields integer file# integer field#
+    send reset
+    send private.Traverse_Related_Help file# field#
+  end_procedure
+
+  procedure make_set_of_files integer obj#
+    integer max# row# file#
+    send reset to obj#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      send AddItemIfNotAlready to obj# (piFile.i(self,row#)) 0
+    loop
+  end_procedure
+end_class // cFdxSetOfFields
+
+class cFdxSetOfIndices is a cFdxSet
+  function iValidate_Item.ii integer file# integer index# returns integer
+    integer attr# oFDX# type# comp# attrtype# seg# max_seg#
+    string scurrentvalue# stestvalue#
+    get piFDX_Server to oFDX#
+    get piTestAttribute to attr#
+    get piTestCompMode to comp#
+    if (attr# and comp#) begin
+      get API_AttrType attr# to attrtype#
+      get psTestValue to stestvalue#
+      get API_AttrValueType attr# to type#
+      if attrtype# eq ATTRTYPE_INDEX begin
+        get FDX_AttrValue_INDEX oFDX# attr# file# index# to scurrentvalue#
+        function_return (iValidate.iiss(self,type#,comp#,scurrentvalue#,stestvalue#))
+      end
+      if attrtype# eq ATTRTYPE_IDXSEG begin
+        // If we get to this point we can be sure that the comperator is EQ
+        get FDX_AttrValue_INDEX oFDX# DF_INDEX_NUMBER_SEGMENTS file# index# to max_seg#
+        for seg# from 1 to max_seg#
+          get FDX_AttrValue_IDXSEG oFDX# attr# file# index# seg# to scurrentvalue#
+          if (iValidate.iiss(self,type#,comp#,scurrentvalue#,stestvalue#)) function_return 1
+        loop
+      end
+    end
+    function_return 0
+  end_function
+
+  procedure Traverse_All      //> Go through all indices in the world
+    integer oFDX# file# Index# max# type# segments# attr#
+    send reset
+    //send display_criterion
+    get piFDX_Server to oFDX#
+    get piTestAttribute to attr#
+    if (API_AttrValueType(attr#)=DF_ASCII and piTestCompMode(self)=FDXSET_EQ) send WildCardMatchPrepare (uppercase(psTestValue(self)))
+    move 0 to file#
+    repeat
+      get iNextFileThatCanOpen of oFDX# file# to file#
+      if file# begin
+        for Index# from 1 to 16
+          get FDX_AttrValue_INDEX oFDX# DF_INDEX_NUMBER_SEGMENTS file# index# to segments#
+          if segments# if (iValidate_Item.ii(self,file#,Index#)) send AddItem file# Index#
+        loop
+      end
+    until file# eq 0
+  end_procedure
+
+  procedure make_set_of_files integer obj#
+    integer max# row# file#
+    send reset to obj#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      send AddItemIfNotAlready to obj# (piFile.i(self,row#)) 0
+    loop
+  end_procedure
+
+  procedure make_set_of_fields integer obj#
+    integer max# row# file# index# seg# segments# oFDX# field#
+    send reset to obj#
+    get piFDX_Server to oFDX#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      get piFile.i row# to file#
+      get piItem.i row# to index#
+      get FDX_AttrValue_INDEX oFDX# DF_INDEX_NUMBER_SEGMENTS file# index# to segments#
+      for seg# from 1 to segments#
+        move (FDX_AttrValue_IDXSEG(oFDX#,DF_INDEX_SEGMENT_FIELD,file#,index#,seg#)) to field#
+        if field# send AddItemIfNotAlready to obj# file# field#
+      loop
+    loop
+  end_procedure
+
+end_class // cFdxSetOfIndices

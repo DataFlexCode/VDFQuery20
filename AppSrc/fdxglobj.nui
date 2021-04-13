@@ -1,0 +1,36 @@
+// Use FdxGlObj.nui // Global FDX object (ghFDX)
+use Fdx.nui
+
+integer ghFDX
+desktop_section
+  object oFDXGL is a cFDX
+    move self to ghFDX
+  end_object
+end_desktop_section
+
+// liReadMode may be FDX_ALL_OPEN or FDX_ALL_FILES meaning read all
+// open files or read all files in filelist.cfg
+procedure FDXGL_ReadCurrentFileList global integer liReadMode
+  send Read_Current_Filelist to ghFDX liReadMode
+end_procedure
+
+function FDXGL_ReadFile global string lsFileName returns integer
+  string liChannel
+  move (SEQ_DirectInput(lsFileName)) to liChannel
+  if (liChannel>=0) begin
+    send Seq_Read to ghFDX liChannel
+    set psFileName of ghFDX to lsFileName
+    send SEQ_CloseInput liChannel
+    function_return 1
+  end
+end_function
+
+procedure FDXGL_WriteFile global string lsFileName
+  string liChannel
+  move (SEQ_DirectOutput(lsFileName)) to liChannel
+  if (liChannel>=0) begin
+    send Seq_Write to ghFDX liChannel
+    send SEQ_CloseOutput liChannel
+    function_return 1
+  end
+end_procedure

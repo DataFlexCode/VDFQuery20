@@ -1,0 +1,365 @@
+// **********************************************************************
+// Use AutoPrmt.utl // Automatic prompt lists for VDF, (DefaultPromptList(self))
+//
+// by Sture Andersen
+//
+// Try to send popup to (DefaultPromptList(self)) and see what happens
+//
+// Create: Thu  14-04-1997
+// Update: Sat  10-05-1997 - Restructure
+//         Wed  16-07-1997 - Object index_analyzer is now private
+//         Thu  30-10-1997 - Now runs from dbForms with no server
+//         Mon  15-12-1997 - Procedure DefaultPromptList added
+//         Sat  05-12-1998 - When PL's are constructed (not auto_server)
+//                           in VDF5, the server of the dbList has to be
+//                           set.
+//         Wed  10-02-1999 - Prompt lists are now re-sizable.
+//         Tue  30-11-1999 - Changing function call from expressional to
+//                           non-expressional fixed "illegal message"
+//                           problem (shouldn't have happened in the
+//                           first place because delegation_mode was set
+//                           to no_delegate_or_error).
+//         Mon  30+06-2003 - Changed height of selection list (double height)
+// ***********************************************************************
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+Use Dynamo.utl   // Dynamic creation of objects for VDF
+Use DataView.utl // Classes for analyzing index definitions
+Use Buttons.utl  // Button texts
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+
+// define AUTOPRMT$DEBUG
+
+class apl.DataDictionary is a aps.DataDictionary
+  procedure construct_object
+    property string  pPromptList_Fields            ""
+    property integer pPromptList_Auto_Server_State 1
+    forward send construct_object
+  end_procedure
+  procedure PromptListAddField integer file# integer fld#
+    set pPromptList_Fields to (pPromptList_Fields(self)+pad(string(file#),4)+pad(string(fld#),4))
+  end_procedure
+  function is_apl.DataDictionary returns integer
+    function_return 1
+  end_function
+end_class
+
+class apl.dbList is a aps.dbList
+  procedure construct_object
+    forward send construct_object
+    // Mysteriously this isn't called
+    set CurrentCellColor to (rgb(255,128,128))
+    set size to 200 0
+  end_procedure
+  procedure end_construct_object
+    forward send end_construct_object
+    ifnot (move_value_out_state(self)) begin
+      on_key kenter send close_panel_ok
+    end
+  end_procedure
+end_class
+
+#COMMAND Add_PromptList_Field
+ #PUSH !e
+ #PUSH !f
+ #SET E$ !1
+ #SET F$ %!1
+ send PromptListAddField !e !f
+ #POP F$
+ #POP E$
+#ENDCOMMAND
+
+class apl.dbModalPanel is a aps.dbModalPanel
+  procedure construct_object
+    forward send construct_object
+    property integer pListObj 0
+    property integer pButton1 0
+    property integer pButton2 0
+    property integer piResult 0
+    set Border_Style to BORDER_THICK   // Make panel resizeable
+    set pMinimumSize to 100 150
+    on_key kCancel send close_panel
+  end_procedure
+  procedure close_panel_ok
+    set piResult to 1
+    send close_panel
+  end_procedure
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    set p_max_column to 150 // Minimum width of container
+    send aps_resize (pListObj(self)) delta_rw# 0
+    send aps_register_multi_button (pButton1(self))
+    send aps_register_multi_button (pButton2(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+  procedure popup
+    set piResult to 0
+    forward send popup
+  end_procedure
+end_class // apl.dbModalPanel
+
+class aps_PromptListDynamo is a aps_ObjectDynamo
+  procedure construct_object
+    forward send construct_object
+    object private.oIndexAnalyzer is a cIndexAnalyzer
+    end_object
+    set value item class.dbModalPanel to U_apl.dbModalPanel
+    set value item class.dbList       to U_apl.dbList
+  end_procedure
+
+  function iCreatePromptList integer file# string fields# integer auto_server_state# integer move_value_out_state# returns integer
+    integer ModalPanel# lst# data_file# data_field# dd#
+    integer idx# element# itm# max# btn#
+
+    ifnot file# function_return 0
+
+    // If no fields were passed, we find some ourselves:
+    if fields# eq "" get prompt_list_fields of (private.oIndexAnalyzer(self)) file# to fields#
+
+    if fields# ne "" begin // If we have any fields to display:
+      send add_top_message set_label (File_Display_Name(file#))
+      get icreate_dynamo_object class.dbModalPanel to ModalPanel#
+        // Indentation indicates that the object was pushed on the
+        // container stack
+
+        set p_max_column of ModalPanel# to 150 // Minimum width of container
+
+        if auto_server_state# begin
+          send add_top_message set_auto_server_state 1
+          send add_top_message set_deferred_state 1
+          send add_top_message set_main_file file#
+        end
+        else begin
+          get icreate_dynamo_dso file# to dd#
+          set server of ModalPanel# to dd#
+          // In VDF5 we have to set the server of the dbList:
+          send add_top_message set_server dd#
+        end
+
+        send push_data_fields fields#
+
+        // No single column wider than 150:
+        send add_top_message set_p_max_column_width 150
+        send add_top_message set_move_value_out_state move_value_out_state#
+        send add_top_message set_CurrentCellColor (rgb(255,128,128))
+        send add_top_message set_size 200 0
+        get icreate_dynamo_object class.dbList to lst#
+
+        set list_object of ModalPanel# to lst#
+        set pListObj    of ModalPanel# to lst#
+        // Shade the columns that do not have a main index:
+        move (element(lst#)) to element#
+        get item_count of element# to max#
+        for itm# from 0 to (max#-1)
+          get data_file of element# item itm# to data_file#
+          if file# eq data_file# begin
+            get data_field of element# item itm# to data_field#
+            if data_field# begin // If recnum we allow search
+              get_attribute df_field_index of data_file# data_field# to idx# // Have an index?
+              ifnot idx# set item_option of element# item itm# to noenter true // (not(idx#))
+              //else       set item_option of element# item itm# to noenter false
+            end
+          end
+          else set item_option of element# item itm# to noenter true
+        loop
+
+        send add_top_message set_value     0 t.btn.ok
+        if move_value_out_state# send add_top_message set_p_message msg_ok
+        else                     send add_top_message set_p_message msg_close_panel_ok
+        send add_top_message set_aux_value 0 lst#
+        send add_top_message set_psExtraLabel t.key.return
+
+        get icreate_dynamo_object class.Multi_Button to btn#
+        set pButton1 of ModalPanel# to btn#
+
+        send add_top_message set_value     0 t.btn.cancel
+        send add_top_message set_p_message msg_cancel
+        send add_top_message set_aux_value 0 lst#
+        send add_top_message set_psExtraLabel t.key.esc
+        get icreate_dynamo_object class.Multi_Button to btn#
+        set pButton2 of ModalPanel# to btn#
+
+        send aps_locate_multi_buttons to ModalPanel#
+
+      send pop_object // dbModalPanel
+    end
+    else move 0 to ModalPanel#
+    function_return ModalPanel#
+  end_function
+end_class // aps_PromptListDynamo
+
+object PromptListDynamo is a aps_PromptListDynamo
+end_object
+
+class cDefaultPromptList is a cArray
+  procedure construct_object
+    forward send construct_object
+    property integer pPrevObj   0
+    property integer pDynamoObj (PromptListDynamo(self))
+
+    property integer pDataFile          private 0
+    property integer pDataField         private 0
+    property string  pFields            private ""
+    property integer pAuto_Server_State private 0
+    property integer pMoveValueOutState private 0
+  end_procedure
+
+  procedure Initialize_From_File integer file# string fields#
+    set !$.pDataFile           to 0
+    set !$.pDataField          to 0
+    set !$.pFields             to ""
+    set !$.pAuto_Server_State  to 0
+    set !$.pDataFile           to file#
+    set !$.pMoveValueOutState  to 1
+    if num_arguments ge 1 set !$.pFields to fields#
+  end_procedure
+
+  procedure Initialize_From_Deo integer focus#
+    integer file# field# auto_server_state# dm# svr# is_apl_DD#
+    string fields#
+    set !$.pDataFile           to 0
+    set !$.pDataField          to 0
+    set !$.pFields             to ""
+    set !$.pAuto_Server_State  to 1
+    set !$.pMoveValueOutState  to 1
+
+    if focus# gt desktop begin
+      get delegation_mode of focus# to dm#
+      set delegation_mode of focus# to no_delegate_or_error
+      get data_file of focus# item current to file#
+      get data_field of focus# item current to field#
+      get server of focus# to svr#
+      set delegation_mode of focus# to dm#
+
+      if file# begin
+        if svr# get which_data_set of svr# file# to svr#
+        if (svr# and file# eq main_file(svr#) and Extended_DSO_State(svr#)) begin
+          get delegation_mode of svr# to dm#
+          set delegation_mode of svr# to no_delegate_or_error
+          get is_apl.DataDictionary of svr# to is_apl_DD#
+          if is_apl_DD# begin
+            get pPromptList_Fields            of svr# to fields#
+            get pPromptList_Auto_Server_State of svr# to auto_server_state#
+          end
+          else move 1 to auto_server_state#
+          set delegation_mode of svr# to dm#
+        end
+
+        set !$.pDataFile           to file#
+        set !$.pDataField          to field#
+        set !$.pFields             to fields#
+        set !$.pAuto_Server_State  to auto_server_state#
+      end
+    end
+  end_procedure
+
+  procedure exec_popup
+    integer PromptList# DataFile# Auto_Server_State# MoveValueOutState#
+    string Fields#
+    get !$.pDataFile          to DataFile#
+    get !$.pFields            to Fields#
+    get !$.pAuto_Server_State to Auto_Server_State#
+    get !$.pMoveValueOutState to MoveValueOutState#
+    #IFDEF AUTOPRMT$DEBUG
+      send obs "procedure exec_popup (1)"
+    #ENDIF
+    if (pPrevObj(self)) begin
+      #IFDEF AUTOPRMT$DEBUG
+        send obs "procedure exec_popup (2)" ("Now destroying object: "+name(pPrevObj(self))) ("with object ID: "+string(pPrevObj(self)))
+      #ENDIF
+      send request_destroy_object to (pPrevObj(self))
+    end
+    #IFDEF AUTOPRMT$DEBUG
+      send obs "procedure exec_popup (3)"
+    #ENDIF
+    get iCreatePromptList of (pDynamoObj(self)) DataFile# Fields# Auto_Server_State# MoveValueOutState# to PromptList#
+    #IFDEF AUTOPRMT$DEBUG
+      send obs "procedure exec_popup (4)"
+    #ENDIF
+    set pPrevObj to PromptList#
+    #IFDEF AUTOPRMT$DEBUG
+      send obs "procedure exec_popup (5)"
+    #ENDIF
+    if PromptList# send popup to PromptList#
+    #IFDEF AUTOPRMT$DEBUG
+      send obs "procedure exec_popup (6)"
+    #ENDIF
+  end_procedure
+
+  procedure request_popup
+    integer file# field# idx#
+    send Initialize_From_Deo (focus(desktop))
+    get !$.pDataFile  to file#
+    get !$.pDataField to field#
+    if (file# and field#) begin // If activated from a db control.
+      get_attribute df_field_index of file# field# to idx# // Have an index?
+      // If the field is indexed, the user could find anyway:
+      if idx# send exec_popup
+    end
+  end_procedure
+
+  procedure popup
+    send Initialize_From_Deo (focus(desktop))
+    send exec_popup
+  end_procedure
+
+  function iPopup.is integer file# string fields# returns integer
+    set !$.pDataFile           to file#
+    set !$.pDataField          to 0
+    set !$.pFields             to fields#
+    set !$.pAuto_Server_State  to 0
+    set !$.pMoveValueOutState  to 0
+    #IFDEF AUTOPRMT$DEBUG
+      send obs "function iPopup.is" ("file: "+string(file#)) ("Fields: "+fields#)
+    #ENDIF
+    send exec_popup
+    function_return (piResult(pPrevObj(self)))
+  end_procedure
+end_class // cDefaultPromptList
+
+object DefaultPromptList is a cDefaultPromptList
+end_object
+
+class cDefaultPromptList_File is an array
+  procedure construct_object
+    forward send construct_object
+    property integer main_file 0
+  end_procedure
+  procedure popup
+    send PromptListPopupFile (main_file(self))
+  end_procedure
+end_class
+
+object oDefPLs is an array
+end_object
+
+//> Function PromptList_File may be used for setting up prompt list
+//> objects for files in DD classes (on non related fields).
+function PromptList_File integer file# returns integer
+  integer obj#
+  get value of (oDefPLs(self)) item file# to obj#
+  ifnot obj# begin
+    object oDefaultPromptList_File is a cDefaultPromptList_File
+      set main_file to file#
+      move self to obj#
+    end_object
+    set value of (oDefPLs(self)) item file# to obj#
+  end
+  function_return obj#
+end_function
+
+procedure request_popup_DefaultPromptList for cObject
+  send request_popup to (DefaultPromptList(self))
+end_procedure
+
+procedure PromptListPopupFile integer file#
+  send Initialize_From_File to (DefaultPromptList(self)) file# ""
+  send exec_popup to (DefaultPromptList(self))
+end_procedure
+
+//> Function PromptListSelectRecord returns TRUE if a record was selected,
+//> otherwise FALSE. If a record is selected the record will be present
+//> in its record buffer.
+function PromptListSelectRecord global integer file# string fields# returns integer
+  function_return (iPopup.is(DefaultPromptList(self),file#,fields#))
+end_function

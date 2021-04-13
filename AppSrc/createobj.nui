@@ -1,0 +1,16 @@
+// Use Createobj.nui // Function create_object_within_parent
+//
+// This function will create an object of class liClass as if it was nested
+// inside object with object_id lhParent.
+
+function create_object_within_parent global integer liClass integer lhParent returns integer
+  integer lhRval lhSelf
+  name liClass U_rizla_class
+  move self to lhSelf
+  move lhParent to self
+  object rizla_object is a rizla_class
+    move self to lhRval
+  end_object
+  move lhSelf to self
+  function_return lhRval
+end_function

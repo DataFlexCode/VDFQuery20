@@ -1,0 +1,16 @@
+// Use copyright.nui // sCopyrightText function
+
+// Created Sat 04-10-2003
+
+Use Dates.nui    // Date routines (No User Interface)
+
+
+//> In year 2003 sCopyrightText(2003,"Sture ApS") will return "Copyright 2003, Sture ApS"
+//> In year 2005 sCopyrightText(2003,"Sture ApS") will return "Copyright 2003-2005, Sture ApS"
+function sCopyrightText global integer liFirstYear string lsCompany returns string
+  string lsRval
+  move "Copyright #, #" to lsRval
+  if (iSysYear()=liFirstYear) move (replace("#",lsRval,string(liFirstYear))) to lsRval
+  else move (replace("#",lsRval,string(liFirstYear)+"-"+string(iSysYear()))) to lsRval
+  function_return (replace("#",lsRval,trim(lsCompany)))
+end_function

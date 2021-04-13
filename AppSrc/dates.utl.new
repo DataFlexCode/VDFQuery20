@@ -1,0 +1,593 @@
+// **********************************************************************
+// Use Dates.utl    // Date manipulation for VDF and DF3.2
+//
+// by Sture Andersen (sa1@vd.dk)
+//
+// The file contains a number of global functions for manipulating
+// dates. The package may be used with DataFlex 3.1 and Visual DataFlex.
+// This package is public domain.
+//
+// The package file is accompanied by a Word document (dfutil.doc)
+// listing the functions and their use.
+//
+//
+// Create: Fri  06-06-1997 - Merger of s_utl020, 021, 022, 023, 024, 025.
+// Update: Thu  26-06-1997 - Fixes for strange behavior when date4_state is set.
+//                         - Addition of popup_calendar to VDF.
+//         Sun  29-06-1997 - Character mode popup calender.
+//         Fri  04-07-1997 - Function WeekToDate added.
+//         Thu  10-07-1997 - Fixes.
+//         Mon  11-08-1997 - WeekToDate fixed.
+//         Sun  24-08-1997 - Character mode popup calender finished.
+//         Mon  15-12-1997 - Procedure Request_Popup_Calendar added.
+//         Mon  29-12-1997 - Procedures ItemYear2to4, ItemDate2to4 and
+//                           ItemSysdate added.
+//         Mon  29-12-1997 - Procedures FieldYear2to4, FieldDate2to4 and
+//                           FieldSysdate added.
+//         Sun  01-02-1998 - Functions Module_Compile_Date and
+//                           Module_Compile_Time added.
+//         Wed  25-02-1998 - Request_Popup in calendar object now only
+//                           responds if entry_state of the calling object
+//                           is true (VDF version). (No apparent effect)
+//         Sat  28-03-1998 - Added the following functions:
+//                             TS_SysTime      TS_ExtractDate
+//                             TS_ExtractTime  TS_ConvertToString
+//         Tue  26-05-1998 - Procedure TS_UI_Update added
+//         Sat  01-08-1998 - mask_date_window taken into account
+//         Mon  10-08-1998 - Functions Module_Start_Date and
+//                           Module_Start_Time added.
+//         Wed  02-09-1998 - Parameter for Module_Start_Date removed
+//         Mon  12-10-1998 - Portuguese added
+//         Wed  04-11-1998 - TS_TimeEstimator class added
+//         Tue  29-12-1998 - Function DateAsString added
+//         Wed  13-01-1999 - Function DateWeekNumber changed according to
+//                           Kjetil Johanson
+//         Mon  18-01-1999 - Function DateWeekNumber changed according to
+//                           Kjetil Johanson (again)
+//         Tue  19-01-1999 - Changed procedure names in TS_TimeEstimator
+//                           class (Continue->TS_Continue and Pause->
+//                           TS_Pause)
+//         Thu  21-01-1999 - Procedures DateFormatAsString and DateFormatName
+//                           added.
+//                         - Procedures DateCurrentSeparator and
+//                           DateCurrentFormat added.
+//         Tue  13-04-1999 - Julian constants added: Jan1st1900, Jan1st2000
+//                           Jan1st1000 and Jan1st100
+//         Mon  26-04-1999 - Changed procedure FieldYear2to4 and ItemYear2to4
+//                           to trap 3 digit years.
+//         Wed  27-04-1999 - Changed Dutch abbriviated day names (to 2 characters)
+//         Sun  02-05-1999 - Added function TS_Compose2
+//                         - Fixed error in TS_ConvertToString
+//         Tue  01-06-1999 - Added procedure popup_no_export to calendar.
+//         Thu  15-06-1999 - Fixed Date4to2 function and exporting dates
+//                           from the calendar to forms with no form_margin.
+//         Tue  07-09-1999 - Added function DateAsText
+//         Wed  27-10-1999 - Temporary fix for Module_Compile_Date function
+//                           in combination with y2k.
+//         Wed  19-12-1999 - Function StrToDate added.
+//                         - Existing function DateAsString renamed to
+//                           DateToStr.
+//         Mon  03-01-2000 - Fix for VDF4. Popup calendar on empty date field
+//                           would result in seeding the calendar on year 100.
+//                           This error was caused by the fact that VDF 4
+//                           ignores SYSDATE4_STATE such that the sysdate
+//                           command returns 03-01-100
+//         Wed  01-02-2000 - Define instead of #REPLACE
+//         Wed  23-08-2000 - Function TS_Module_Compile_Time added
+//         Sat  04-08-2001 - Function StrToDate in Dates.nui fixed by Paul
+//                           Cooling
+//         Sat  30-08-2003 - Odd date thing fixed by Wil van Antwherpen. (Search: **WvA:)
+//         Fri  27-04-2007 - Added oTextBoxMonth to display vdfq_MonthName in oCont3d to right of DayHeader (Garret Mott, search "GM ")
+//         Thu  13-12-2007 - Added Procedure Popup to "object popup_calendar" 
+//                           to reset size - to cover Skinning issue in 12.1 (Garret Mott, search "GM ")
+//                           Note that this may be fixed by DAW at some point!
+//
+// NOTE:  There is language dependent string constants in this file.
+//        Currently there are sections for dutch, english, danish, swedish,
+//        norwegian, spanish, german and portuguese
+//
+//        These sections may be identified by searching the symbol LNG_DEFAULT
+//
+// ***********************************************************************
+Use Dates.nui    // Date routines (No User Interface)
+Use ErrorHnd.nui // cErrorHandlerRedirector class and oErrorHandlerQuiet object (No User Interface)
+
+define DATES_INCLUDE_POPUP for 1   // If set to 0 the popup calendar will not be included
+
+procedure ItemSysdate for desktop integer liItm
+  date ldDate
+  get value item liItm to ldDate
+  if ldDate eq 0 begin
+    sysdate4 ldDate
+    set changed_value item liItm to ldDate
+  end
+end_procedure
+
+procedure ItemDate2to4 for desktop integer liItm
+  integer liYear
+  date ldDate ldNewDate
+  send ErrorHnd_Quiet_Activate
+  get value item liItm to ldDate
+  send ErrorHnd_Quiet_Deactivate
+
+  move (vdfq_DateSegment(ldDate,DS_YEAR)) to liYear
+  if (liYear=0 and ldDate<>0) move (DateIncr(ldDate,3,iSysYear())) to ldNewDate
+  else move ldDate to ldNewDate
+
+  move (Date2to4(ldNewDate)) to ldNewDate
+  move (vdfq_DateSegment(ldNewDate,3)) to liYear
+  if (liYear>99 and liYear<1000) begin
+    error 15 // Illegal entry in this window
+    procedure_return 1
+  end
+  if ldNewDate ne ldDate set value item liItm to ldNewDate
+end_procedure
+
+procedure ItemYear2to4 for desktop integer liItm
+  integer liYear liNewYear
+  get value item liItm to liYear
+  if (liYear>99 and liYear<1000) begin
+    error 15 // Illegal entry in this window
+    procedure_return 1
+  end
+  move (Year2to4(liYear)) to liNewYear
+  if liNewYear ne liYear set value item liItm to liNewYear
+end_procedure
+
+
+#IF DATES_INCLUDE_POPUP
+ register_procedure NotifyPopupCalendarChange date ldDate
+ register_procedure NotifyPopupCalendarSelect date ldDate
+
+  use DFAllent
+  class calendar.textbox is a textbox
+    procedure construct_object
+      forward send construct_object
+      Set Auto_Size_State To DFFALSE
+      Set Justification_Mode To (JMODE_VCENTER+JMODE_CENTER)
+    end_procedure
+  end_class
+
+  register_object oBtn1
+  register_object oBtn6
+
+  class calendar.button is a button
+
+    procedure construct_object
+      forward send construct_object
+      set size to 15 18
+      on_key kleftarrow   send prev_day
+      on_key krightarrow  send next_day
+      on_key kuparrow     send prev_week
+      on_key kdownarrow   send next_week
+      property date pdAssignedDate public 0
+    end_procedure
+
+    procedure switch // This makes all 42 buttons act as if they are one focus
+      send activate to (oBtn1(self))
+    end_procedure
+    procedure switch_back
+      send activate to (oBtn6(self))
+    end_procedure
+
+    procedure mouse_down
+      integer lhSelf
+      forward send mouse_down
+      move self to lhSelf
+      delegate set pdCurrentDate to (pdAssignedDate(lhSelf))
+    end_procedure
+  end_class
+
+  desktop_section
+    object popup_calendar is a ModalPanel
+      set size to 165 250
+      property date    pdCurrentDate  public 0
+      property integer p_current_year  public -1
+      property integer p_current_month public -1
+      property integer pExportState    public 1
+      
+      //GM 12/13/2007 To reset size when using Skinning in 12.1 - may be fixed by DAW???
+      Procedure Popup
+        Integer iSizeBefore iSizeAfter
+
+        Get Size of Self  to iSizeBefore
+        Forward Send Popup
+        Get Size of Self  to iSizeAfter
+        If (iSizeAfter<iSizeBefore) Set Size of Self to iSizeBefore
+      End_Procedure
+      //End of GM 
+      
+      on_key key_ctrl+key_pgup send prev_year
+      on_key key_ctrl+key_pgdn send next_year
+      on_key          key_pgup send prev_month
+      on_key          key_pgdn send next_month
+      on_key key_ctrl+key_d    send go_today
+      on_key kcancel           send cancel
+
+
+      object oCont3d is a container3d
+        Set location to 5 5
+        set size to 120 237
+        object oTextboxYear is a calendar.textbox
+          set location to 5 5
+          set size to 15 30
+          set border_style to BORDER_STATICEDGE
+          procedure display
+            set value to (p_current_year(self))
+          end_procedure
+        end_object
+        object oDaynameHeader is a container3d
+          set location to 5 39
+          set size to 15 126
+          set border_style to BORDER_STATICEDGE
+          procedure initialize
+            integer liItm
+            for liItm from 0 to 6
+              #PUSH !Zb   // Compiler trick (non static number of objects)
+              #SET ZB$ -1
+              object oTxt is a calendar.textbox
+                set size to 12 17
+                set location to 0 (liItm*17.6+1)
+                #IF LNG_DEFAULT=LNG_DUTCH // The dutch only wants the first 2 letters of the weekday
+                 set value to (left(vdfq_DayName(liItm+1),2))
+                #ELSE
+                 set value to (left(vdfq_DayName(liItm+1),3))
+                #ENDIF
+              end_object
+              #POP ZB$    // End trick
+            loop
+          end_procedure
+          send initialize
+        end_object
+
+        //GM 04/27/07 to display Month in container
+        object oTextboxMonth is a calendar.textbox
+          set location to 5 170
+          set size to 15 50
+          set border_style to BORDER_STATICEDGE
+          procedure display
+            set value to (vdfq_MonthName(p_current_month(self)))
+          end_procedure
+        end_object
+        //End of GM 
+        
+        object oWeekNumberHeader is a container3d
+          set location to 24 5
+          set size     to 89 30
+          set border_style to BORDER_STATICEDGE
+          object oObjIdArray is an array
+          end_object
+          procedure initialize
+            integer liItm lhObj
+            move (oObjIdArray(self)) to lhObj
+            for liItm from 0 to 5
+              #PUSH !Zb    // Compiler trick. Non static number
+              #SET ZB$ -1  // of child objects.
+              object oTxt is a textbox
+                set size to 15 30
+                set location to (liItm*15+1) 1
+                set value of lhObj item (item_count(lhObj)) to self
+              end_object
+              #POP ZB$     // End trick
+            loop
+          end_procedure
+          procedure display
+            integer liItm lhObj
+            date ldDate ldLastDate
+            move (oObjIdArray(self)) to lhObj
+            get pdCurrentDate to ldDate
+            move (FirstDayInMonth(ldDate)) to ldDate
+            move (LastDayInMonth(ldDate)) to ldLastDate
+            move (ldDate-DateDayNumber(ldDate)+1) to ldDate
+            for liItm from 0 to 5
+              if (liItm*7+ldDate) le ldLastDate ;
+                set value of (integer(value(lhObj,liItm))) to (t.calendar.week*string(DateWeekNumber(liItm*7+ldDate)))
+              else set value of (integer(value(lhObj,liItm))) to ""
+            loop
+          end_procedure
+          send initialize
+        end_object
+        object oDaysGrid is a container3d
+          set location to 23 39
+          set size     to 100 127
+          set border_style to BORDER_NONE
+          object oBtnArray is an array
+          end_object
+          procedure initialize
+            integer liRow liCol lhBtnArray
+            move (oBtnArray(self)) to lhBtnArray
+            for liRow from 0 to 5
+              for liCol from 0 to 6
+                #PUSH !Zb
+                #SET ZB$ -1
+                object oBtn is a calendar.button
+                  set location to (liRow*15) (liCol*18)
+                  set value of lhBtnArray item (item_count(lhBtnArray)) to self
+                  on_item "" send move_value_out_ok
+                end_object
+                #POP ZB$
+              loop
+            loop
+          end_procedure
+          send initialize
+
+          procedure display.iii integer liItm integer liDay integer lbActivate
+            integer lhObj liCurrentDay
+            move (integer(value(oBtnArray(self),liItm))) to lhObj
+            move (vdfq_DateSegment(pdCurrentDate(self),DS_DAY)) to liCurrentDay
+            if lbActivate begin
+              if liDay eq liCurrentDay send activate to lhObj
+            end
+            else begin
+              if liDay begin
+                set value of lhObj to liDay
+                set visible_state of lhObj to DFTRUE
+                set pdAssignedDate of lhObj to (DateCompose(liDay,p_current_month(self),p_current_year(self)))
+              end
+              else set visible_state of lhObj to DFFALSE
+            end
+          end_procedure
+
+          procedure display integer lbActivate
+            integer liFirstItem liLastItem liItm liDay liDate
+            get pdCurrentDate to liDate
+            move (FirstDayInMonth(liDate)) to liDate
+            move (DateDayNumber(liDate)-1) to liFirstItem
+            // **WvA: 27-08-2003 VDF9.1 Needs the integer datevalue to be casted to
+            // a date before the expression can be evaluated.
+            move (LastDayInMonth(liDate)-date(liDate)+liFirstItem) to liLastItem
+            // **
+            ifnot lbActivate begin
+              for liItm from 0 to (liFirstItem-1)
+                send display.iii liItm 0 0
+              loop
+            end
+            move 1 to liDay
+            for liItm from liFirstItem to liLastItem
+              send display.iii liItm liDay lbActivate
+              increment liDay
+            loop
+            ifnot lbActivate begin
+              for liItm from (liLastItem+1) to 41
+                send display.iii liItm 0 0
+              loop
+            end
+          end_procedure
+        end_object
+        object oTxtMonth is a calendar.textbox
+          set size to 12 27
+          set location to 25 185
+          set value to t.calendar.month
+        end_object
+        object oBtn1 is a button
+          set size to 12 12
+          set location to 40 185
+          on_item "" send prev_month
+          set bitmap to "prev.bmp"
+          procedure switch_back
+            send display_main
+          end_procedure
+        end_object
+        object oBtn2 is a button
+          set size to 12 12
+          set location to 40 200
+          on_item "" send next_month
+          set bitmap to "next.bmp"
+        end_object
+        object oTxtYear is a calendar.textbox
+          set size to 12 27
+          set location to 70 185
+          set value to t.calendar.year
+        end_object
+        object oBtn3 is a button
+          set size to 12 12
+          set location to 85 185
+          on_item "" send prev_year
+          set bitmap to "prev.bmp"
+        end_object
+        object oBtn4 is a button
+          set size to 12 12
+          set location to 85 200
+          on_item "" send next_year
+          set bitmap to "next.bmp"
+        end_object
+      end_object
+      object oBtn5 is a button
+        set size to 14 60
+        set location to 129 115
+        on_item t.calendar.ok send move_value_out_ok
+      end_object
+      object oBtn6 is a button
+        set size to 14 60
+        set location to 129 182
+        on_item t.calendar.cancel send cancel
+        procedure switch
+          send display_main
+        end_procedure
+      end_object
+      procedure next_year
+        set pdCurrentDate to (DateIncr(pdCurrentDate(self),DS_YEAR,1))
+        send display_main
+      end_procedure
+      procedure prev_year
+        set pdCurrentDate to (DateIncr(pdCurrentDate(self),DS_YEAR,-1))
+        send display_main
+      end_procedure
+      procedure next_month
+        set pdCurrentDate to (DateIncr(pdCurrentDate(self),DS_MONTH,1))
+        send display_main
+      end_procedure
+      procedure prev_month
+        set pdCurrentDate to (DateIncr(pdCurrentDate(self),DS_MONTH,-1))
+        send display_main
+      end_procedure
+      procedure next_week
+        set pdCurrentDate to (DateIncr(pdCurrentDate(self),DS_WEEK,1))
+        send display_main
+      end_procedure
+      procedure prev_week
+        set pdCurrentDate to (DateIncr(pdCurrentDate(self),DS_WEEK,-1))
+        send display_main
+      end_procedure
+      procedure next_day
+        set pdCurrentDate to (DateIncr(pdCurrentDate(self),DS_DAY,1))
+        send display_main
+      end_procedure
+      procedure prev_day
+        set pdCurrentDate to (DateIncr(pdCurrentDate(self),DS_DAY,-1))
+        send display_main
+      end_procedure
+      procedure go_today
+        date ldDate
+        sysdate4 ldDate
+        set pdCurrentDate to ldDate
+        send display_main
+      end_procedure
+      property integer invoking_object_id public 0
+      procedure OnChange date ldDate
+        integer lhFocus lbDelegationMode
+        get invoking_object_id to lhFocus
+        if lhFocus gt desktop begin
+          get delegation_mode of lhFocus to lbDelegationMode
+          set delegation_mode of lhFocus to no_delegate_or_error
+          send NotifyPopupCalendarChange to lhFocus ldDate
+          set delegation_mode of lhFocus to lbDelegationMode
+        end
+      end_procedure
+      procedure display
+        integer liDate liMonth liYear
+        get pdCurrentDate to liDate
+        send OnChange liDate
+        move (vdfq_DateSegment(liDate,DS_YEAR)) to liYear
+        move (vdfq_DateSegment(liDate,DS_MONTH)) to liMonth
+        if (p_current_year(self)<>liYear or p_current_month(self)<>liMonth) begin
+          set p_current_year to liYear
+          set p_current_month to liMonth
+          set value to (t.calendar.calendar_popup+", "+vdfq_MonthName(liMonth))
+          Send display to (oTextboxMonth(oCont3d(Self))) //GM 04/27/2007
+          send display to (oTextboxYear(oCont3d(self)))
+          send display to (oWeekNumberHeader(oCont3d(self)))
+          send display to (oDaysGrid(oCont3d(self))) 0
+        end
+      end_procedure
+      procedure display_main
+        send display
+        send display to (oDaysGrid(oCont3d(self))) 1
+      end_procedure
+      procedure popup_no_export
+        set pExportState to DFFALSE
+        send popup
+        set pExportState to DFTRUE
+      end_procedure
+
+      procedure popup_group
+        integer lhFocus
+        date ldDate
+        move (focus(desktop)) to lhFocus
+        set invoking_object_id to lhFocus
+        get value of lhFocus item current to ldDate
+        ifnot (integer(ldDate)) move (dSysdate()) to ldDate
+        move (Date2to4(ldDate)) to ldDate
+        set pdCurrentDate to ldDate
+        send display
+        forward send popup_group
+        send display to (oDaysGrid(oCont3d(self))) 1
+      end_procedure
+
+      procedure move_value_out
+        integer lhFocus lbDelegationMode liMargin liDataType
+//      if (pExportState(self)) begin
+          get invoking_object_id to lhFocus
+          if lhFocus gt desktop begin
+            get delegation_mode of lhFocus to lbDelegationMode
+            set delegation_mode of lhFocus to no_delegate_or_error
+            send NotifyPopupCalendarSelect to lhFocus (pdCurrentDate(self))
+            get form_margin of lhFocus item current to liMargin
+            get form_datatype of lhFocus item current to liDataType
+            set delegation_mode of lhFocus to lbDelegationMode
+            if (pExportState(self)) begin
+              if (liMargin>=10 or liDataType=mask_date_window or liDataType=date_window) set value of lhFocus item current to (pdCurrentDate(self))
+              else             set value of lhFocus item current to (Date4to2(pdCurrentDate(self)))
+              set item_changed_state of lhFocus item current to DFTRUE
+            end
+          end
+//      end
+      end_procedure
+
+      procedure move_value_out_ok
+        send move_value_out
+        send deactivate
+      end_procedure
+
+      procedure request_popup
+        integer lhFocus liType lbDelegationMode
+        move (focus(desktop)) to lhFocus
+        if lhFocus gt desktop begin
+          get delegation_mode of lhFocus to lbDelegationMode
+          set delegation_mode of lhFocus to no_delegate_or_error
+          get form_datatype of lhFocus item current to liType
+          if (liType=date_window or liType=mask_date_window) send popup
+          set delegation_mode of lhFocus to lbDelegationMode
+        end
+      end_procedure
+    end_object
+  end_desktop_section
+  // If the procedure below was not defined "for BaseClass" its symbolic
+  // substitute would become negative (because located on the desktop). This
+  // would result in the toolbar object not being able to handle it. Therefore:
+  procedure request_popup_calendar for BaseClass
+    send request_popup to (popup_calendar(self))
+  end_procedure
+  procedure popup_calendar_no_export
+    send popup_no_export to (popup_calendar(self))
+  end_procedure
+  register_procedure Add_Toolbar_Button_Bitmap string lsBmp string lsTip string lsStatusHelp integer liMsg integer lhObj
+  procedure Add_Calendar_tbButton integer lhToolButton
+    send Add_Toolbar_Button_Bitmap to lhToolButton "DfCalend.bmp" t.calendar.calendar_popup t.calendar.Activate msg_request_popup_calendar
+  end_procedure
+ function s.calendar returns integer // Backwards compatible!!
+   function_return (popup_calendar(self))
+ end_function
+#ENDIF // DATES_INCLUDE_POPUP
+
+// Karl,
+// Structure is as follows,
+//
+// //put this code in the top portion of the view code or in the program
+// code.
+//
+// Type SystemTime
+//   field SystemTime.iYear As Word
+//   field SystemTime.iMonth As Word
+//   field SystemTime.iDayOfWeek As Word
+//   field SystemTime.iDay As Word
+//   field SystemTime.iHour As Word
+//   field SystemTime.iMinute As Word
+//   field SystemTime.iSecond As Word
+//   field SystemTime.iMilliseconds As Word
+// End_Type
+//
+// external_function GetSystemTime "GetSystemTime" kernel32.dll Pointer lpGST Returns VOID_TYPE
+//
+// //put this code in an onClick or wherever
+// procedure onclick
+//   integer iRetVal
+//   string TimeData
+//   pointer GST
+//
+//   ZeroType SystemTime to TimeData
+//   getAddress from TimeData to GST
+//
+//   move (GetSystemTime(GST)) to iRetVal
+// end_procedure
+//
+// To extract the data from the Structure after calling the function use
+// the getbuff command as follows:
+//
+// getbuff from TimeData as SystemTime.IVAL to var
+//
+// where IVAL is one of the vars such as iYear or iDay, etc.
+//
+// OLIVER NELSON
+//
+//

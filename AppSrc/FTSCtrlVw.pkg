@@ -1,0 +1,537 @@
+use aps.pkg
+use fts.nui
+use gridutil.utl
+use strings.utl
+Use MsgBox.utl   // obs procedure
+
+Use FTSData.nui // cFTS_TableAccess class.
+Use FTSTblCr.pkg // Free text search - Create FTS tables (FTS_CreateTables)
+Use API_Attr.nui // Functions for querying API attributes (No User Interface)
+Use Version.nui
+Use ToolUtilities.pkg // aps.YellowBox class
+Use FTSCreate.pkg // Wizard for creating (and another one for dropping) a set of FTS tables
+
+
+object oDefaultFTS_System is a cFTS_System
+  set phAllowFastViewToRebuild to false
+  object oWordSplitter is a cFTS_WordSplitter
+    set psLetters to FTS_WORDCHARACTERS_ENGLISH // Englidh letters
+    set pbCrLfCanBeTrusted to True
+  end_object
+  object oTableAccess is a cFTS_TableAccess
+    set psRootNamePrefix to "ft"
+    set psPurpose to "Default"
+    set pbOpenTablesOnDefine to false // Do not open tables on definition
+    function bConvertFilelistTo4095 returns integer
+      function_return (MB_Verify4("Your filelist.cfg is an old one","with less than 256 entries.","","Should it be converted to a 4095 entry filelist?",1))
+    end_function
+  end_object
+  object oIndexer is a cFTS_Indexer
+  end_object
+  object oSearcher is a cFTS_Searcher
+  end_object
+  object oBrowser is a cFTS_ResultBrowser
+  end_object
+end_object // oDefaultFTS_System
+
+object oFTS_OpenTablesDialog is a aps.ModalPanel label "Open FTS tables"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer pbResult
+  object oYellow is a aps.YellowBox
+    set size to 40 300
+    set value item 0 to "Using this dialog you may open an existing set of FTS tables or create a new set of FTS tables."
+    set value item 1 to ""
+    set value item 2 to 'If you have compiled a custom FTS handling object into this application you also have the option to select which FTS handler object (other than the one labelled "default") should be used to open the tables.'
+  end_object
+  send aps_goto_max_row
+  send aps_make_row_space 5
+  object oLabel1 is a aps.TextBox label "Open this set of FTS tables:"
+    set fixed_size to 10 200
+    set Fontweight to 900
+  end_object
+  send aps_goto_max_row
+  object oExisting is a aps.Grid
+    send GridPrepare_AddColumn ""                            AFT_ASCII6
+    send GridPrepare_AddColumn "Existing sets of FTS tables" AFT_ASCII40
+    send GridPrepare_Apply self
+    set select_mode to NO_SELECT
+    on_key KNEXT_ITEM send switch
+    on_key KPREVIOUS_ITEM send switch_back
+    set size to 43 0
+    procedure fill_list
+      integer lhTableAccessObject lhObj liMax liRow
+      move oDefaultFTS_System to lhTableAccessObject
+      get phTableAccessObject of lhTableAccessObject to lhTableAccessObject
+      send delete_data
+      send DoBuildSetsOfTables of lhTableAccessObject
+      move (oListOfSets(lhTableAccessObject)) to lhObj
+      get row_count of lhObj to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        send add_item MSG_NONE (psPrefix.i(lhobj,liRow))
+        send add_item MSG_NONE (psOpenDescription.i(lhobj,liRow))
+      loop
+      send Grid_SetEntryState self 0
+    end_procedure
+    function sCurrentPrefix returns string
+      integer liBase
+      if (item_count(self)) begin
+        get Grid_BaseItem self to liBase
+        function_return (value(self,liBase))
+      end
+      function_return ""
+    end_function
+  end_object // oExisting
+  procedure DoCreate
+    send Popup_FTS_CreateTablesWizard
+    send fill_list of oExisting
+  end_procedure
+  object oCreateBtn is a aps.Button snap SL_RIGHT_SPACE
+    set size to 14 50
+    on_item "Create new" send DoCreate
+  end_object
+  send aps_goto_max_row
+  send aps_make_row_space 5
+  object oLabel2 is a aps.TextBox label "Using this FTS controller:"
+    set fixed_size to 10 200
+    set Fontweight to 900
+  end_object
+  send aps_goto_max_row
+  object oControllerGrid is a aps.Grid
+    set peAnchors to (anTop+anLeft+anRight+anBottom)
+    Set peResizeColumn to rcSelectedColumn // make sure mode is correct
+    Set piResizeColumn to 1          // this is the column to resize
+    set size to 43 0
+    send GridPrepare_AddColumn "Purpose"      AFT_ASCII10
+    send GridPrepare_AddColumn "Object name"  AFT_ASCII40
+    send GridPrepare_AddColumn "Can update"   AFT_ASCII3
+    send GridPrepare_Apply self
+    set select_mode to NO_SELECT
+    on_key KNEXT_ITEM send switch
+    on_key KPREVIOUS_ITEM send switch_back
+    procedure fill_list
+      integer lhArray liRow liMax liBase lhTableAccess lhFTS
+      send delete_data
+      move oFTS_SystemList to lhArray
+      get row_count of lhArray to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        get item_count to liBase
+        get phFTS_System.i of lhArray liRow to lhFTS
+        get phTableAccessObject of lhFTS to lhTableAccess
+        send add_item MSG_NONE (psPurpose(lhTableAccess))
+        set aux_value item liBase to lhFTS
+        send add_item MSG_NONE (name(lhFTS))
+        if (phAllowFastViewToRebuild(lhFTS)) send add_item MSG_NONE "yes"
+        else send add_item MSG_NONE "no"
+      loop
+      send Grid_SetEntryState self DFFALSE
+    end_procedure
+    send fill_list
+    function hCurrentFTS returns integer
+      integer liBase
+      if (item_count(self)) begin
+        get Grid_BaseItem self to liBase
+        function_return (aux_value(self,liBase))
+      end
+      function_return 0
+    end_function
+  end_object // oGrid
+  procedure close_panel_ok
+    set pbResult to true
+    send close_panel
+  end_procedure
+  object oBtn1 is a aps.Multi_Button
+    on_item "Open" send close_panel_ok
+    set peAnchors to (anBottom+anRight)
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item "Cancel" send close_panel
+    set peAnchors to (anBottom+anRight)
+  end_object
+  send aps_locate_multi_buttons
+  function hPopup returns integer
+    integer lhFTS lbOpen
+    string lsPrefix
+    set pbResult to false
+    send fill_list of oExisting
+    send popup
+    if (pbResult(self)) begin
+      get hCurrentFTS of oControllerGrid to lhFTS
+      get sCurrentPrefix of oExisting to lsPrefix
+      if (lhFTS<>0 and lsPrefix<>"") begin
+        set psRootNamePrefix of (phTableAccessObject(lhFTS)) to lsPrefix
+        get DoOpenTables of (phTableAccessObject(lhFTS)) to lbOpen
+        ifnot lbOpen begin
+          error 214 "tables could not be opened"
+          move 0 to lbOpen
+          move 0 to lhFTS
+        end
+      end
+      else begin
+        error 213 "No tables found"
+        move 0 to lhFTS
+      end
+    end
+    else move 0 to lhFTS
+    function_return lhFTS
+  end_function
+  procedure aps_beautify
+    send aps_align_inside_container_by_sizing (oYellow(self)) SL_ALIGN_RIGHT
+  end_procedure
+end_object // oFTS_OpenTablesDialog
+
+object oFTS_ControlView is a aps.View label "FTS Control Panel"
+
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  set Window_Style to WS_MAXIMIZEBOX 1
+  on_key kCancel send close_panel
+  property integer phFTS_SystemObject (oDefaultFTS_System(self))
+  function hTableAccessObject returns integer
+    integer lhFTS
+    get phFTS_SystemObject to lhFTS
+    function_return (phTableAccessObject(lhFTS))
+  end_function
+
+  object oPrefix is a aps.Form label "FTS tables name prefix:" abstract AFT_ASCII2
+    set p_extra_internal_width to 10
+    set enabled_state to false
+  end_object
+  object oFTSObjectName is a aps.Form label "FTS controller object:" abstract AFT_ASCII80 snap SL_RIGHT_SPACE
+    set p_extra_internal_width to -120
+    set enabled_state to false
+    set peAnchors to (anTop+anLeft+anRight)
+  end_object
+
+  object oOpenBtn is a aps.Multi_Button
+    on_item "Open tables" send DoFtsTablesOpen
+    set peAnchors to (anTop+anRight)
+  end_object
+  object oDropBtn is a aps.Multi_Button
+    on_item "Drop tables" send DoFtsTablesDrop
+    set peAnchors to (anTop+anRight)
+  end_object
+  object oCloseBtn is a aps.Multi_Button
+    on_item "Close tables" send DoFtsTablesClose
+    set enabled_state to false
+    set peAnchors to (anTop+anRight)
+  end_object
+  send aps_locate_multi_buttons
+
+  send aps_goto_max_row
+  send aps_make_row_space 5
+
+  object oTabs is a aps.TabDialog
+    set peAnchors to (anTop+anRight+anBottom+anLeft)
+    set p_auto_column to 0
+    object oTableAccessTab is a aps.TabPage label "Table Access"
+
+      object oLabel1 is a aps.TextBox label "These tables are currently opened:"
+        set fixed_size to 10 200
+        set Fontweight to 900
+      end_object
+      send aps_goto_max_row
+      object oGrid is a aps.Grid
+        send GridPrepare_AddColumn "Table"             AFT_ASCII10
+        send GridPrepare_AddColumn "User display name" AFT_ASCII32
+        send GridPrepare_AddColumn "Filelist"          AFT_NUMERIC4.0
+        send GridPrepare_AddColumn "# Records"         AFT_NUMERIC8.0
+        send GridPrepare_Apply self
+        set select_mode to NO_SELECT
+        on_key KNEXT_ITEM send switch
+        on_key KPREVIOUS_ITEM send switch_back
+        set peAnchors to (anTop+anLeft+anRight+anBottom)
+        set peResizeColumn to rcSelectedColumn // make sure mode is correct
+        set piResizeColumn to 1          // this is the column to resize
+        set size to 62 0
+        procedure fill_list
+          integer liMax liRow lhTableAccess liFile liRecords
+          string lsValue
+          get hTableAccessObject to lhTableAccess
+          send delete_data
+          get row_count of lhTableAccess to liMax
+          decrement liMax
+          for liRow from 0 to liMax
+            if (piOpenState.i(lhTableAccess,liRow)) begin
+              get piFile.i of lhTableAccess liRow to liFile
+              if liFile get_attribute DF_FILE_LOGICAL_NAME of liFile to lsValue
+              else move "" to lsValue
+              send add_item MSG_NONE (lowercase(lsValue))
+              if liFile get_attribute DF_FILE_DISPLAY_NAME of liFile to lsValue
+              move (rtrim(lsValue)) to lsValue
+              send add_item MSG_NONE (lowercase(lsValue))
+              send add_item MSG_NONE (string(liFile))
+              get_attribute DF_FILE_RECORDS_USED of liFile to liRecords
+              send add_item MSG_NONE (string(liRecords))
+            end
+          loop
+          send Grid_SetEntryState self false
+        end_procedure
+      end_object // oGrid
+      send aps_goto_max_row
+      send aps_make_row_space 10
+      procedure DoRebuildIndex
+        integer lbOK
+        get MB_Verify4 "This will rebuild the FTS index from scratch. It may" "therefore be a lengthy operation that" "you hereby agree to. By the way, do you?" "" 0 to lbOK
+        if lbOK begin
+          send DoRebuildFtsIndex of (phFTS_SystemObject(self))
+          send fill_list of oGrid
+          send obs "Rebuild complete"
+        end
+      end_procedure
+      procedure DoRefreshGrid
+        send fill_list of oGrid
+      end_procedure
+      object oRefreshBtn is a aps.Button
+        set peAnchors to (anLeft+anBottom+anRight)
+        on_item "Refresh list" send DoRefreshGrid
+      end_object
+      send aps_goto_max_row
+      object oRebuildBtn is a aps.Button
+        set peAnchors to (anLeft+anBottom+anRight)
+        on_item "Rebuild index" send DoRebuildIndex
+      end_object
+      procedure aps_beautify
+        send aps_align_inside_container_by_moving (oGrid(self)) SL_ALIGN_CENTER
+        send aps_align_inside_container_by_moving (oRefreshBtn(self)) SL_ALIGN_CENTER
+        send aps_align_inside_container_by_moving (oRebuildBtn(self)) SL_ALIGN_CENTER
+      end_procedure
+    end_object // oTableAccessTab
+
+
+    object oSearchTab is a aps.TabPage label "Search"
+      object oSearchString is a aps.Form label "Search value:" abstract AFT_ASCII80
+        set p_extra_internal_width to -200
+      end_object
+      object oBtn is a aps.Button snap SL_RIGHT_SPACE
+        on_item "Search" send DoSearch
+      end_object
+      send aps_goto_max_row
+      object oGrid is a aps.Grid
+        set size to 200 0
+        send GridPrepare_AddColumn "Field"  AFT_NUMERIC3.0
+        send GridPrepare_AddColumn "Name"   AFT_ASCII15
+        send GridPrepare_AddColumn "Value"  AFT_ASCII60
+        send GridPrepare_Apply self
+        set select_mode to NO_SELECT
+        on_key KNEXT_ITEM send switch
+        on_key KPREVIOUS_ITEM send switch_back
+        procedure fill_list
+          integer liFile liField liMax lhTableAccessObject lhSearcherObject liError
+          string lsValue
+          send delete_data
+          send UpdateError ""
+          get hTableAccessObject to lhTableAccessObject
+          move (phSearcherObject(phFTS_SystemObject(self))) to lhSearcherObject
+          if (pbAllTablesAreOpen(lhTableAccessObject)) begin
+            get value of oSearchString to lsValue
+
+            send DoCreateSearch of lhSearcherObject -1 lsValue 0 0 0
+            get piFile.i of lhTableAccessObject FTSTABLE_SEARCH to liFile
+
+            get_attribute DF_FILE_NUMBER_FIELDS of liFile to liMax
+            for liField from 1 to liMax
+              send add_item MSG_NONE liField
+              get_attribute DF_FIELD_NAME of liFile liField to lsValue
+              send add_item MSG_NONE lsValue
+              get_field_value liFile liField to lsValue
+              send add_item MSG_NONE lsValue
+            loop
+            send Grid_SetEntryState self DFFALSE
+            get_field_value liFile 11 to liError // ERROR_CODE
+            get FT_ErrorText liError to lsValue
+            send UpdateError lsValue
+          end
+          else send obs "Tables need to be opened"
+        end_procedure
+      end_object
+      send aps_goto_max_row
+      object oErrorMessage is a aps.Form abstract AFT_ASCII40
+        set enabled_state to false
+      end_object
+      procedure UpdateError string lsValue
+        set value of oErrorMessage to lsValue
+      end_procedure
+      send aps_size_identical_max (oGrid(Self)) (oErrorMessage(self)) SL_HORIZONTAL
+      procedure DoSearch
+        send fill_list of oGrid
+      end_procedure
+    end_object // oSearch
+    object oWordSplitterTab is a aps.TabPage label "Test Word Splitter"
+      object oLetters is a aps.Form abstract AFT_ASCII255 label "Legal letters"
+        set peAnchors to (anTop+anLeft+anRight)
+        set p_extra_internal_width to -900
+        procedure DoDefaultValue
+          string lsValue
+          set delegation_mode to DELEGATE_TO_PARENT
+          get psLetters of (phWordsplitterObject(phFTS_SystemObject(self))) to lsValue
+          set value item 0 to (FTS_Parameter(FTS_WORDCHARACTERS))
+        end_procedure
+        procedure OnChange
+          send update_list
+        end_procedure
+      end_object
+      procedure MakeLettersDanish
+        set value of oLetters to FTS_WORDCHARACTERS_DANISH
+      end_procedure
+      procedure MakeLettersEnglish
+        set value of oLetters to FTS_WORDCHARACTERS_ENGLISH
+      end_procedure
+      send aps_goto_max_row
+      object oBtn_DK is a aps.Button
+        set peAnchors to (anTop+anRight)
+        on_item "Danish" send MakeLettersDanish
+      end_object
+      object oBtn_UK is a aps.Button snap SL_RIGHT
+        set peAnchors to (anTop+anRight)
+        on_item "English" send MakeLettersEnglish
+      end_object
+      object oBelow32 is a aps.CheckBox label "Paragraphs can be trusted to not include CR/LF characters" snap SL_RIGHT_SPACE
+        set peAnchors to (anTop+anLeft)
+        procedure DoDefaultValue
+          integer lbState
+          set delegation_mode to DELEGATE_TO_PARENT
+          get pbCrLfCanBeTrusted of (phWordsplitterObject(phFTS_SystemObject(self))) to lbState
+          set checked_state to lbState
+        end_procedure
+        procedure OnChange
+          send update_list
+        end_procedure
+      end_object
+      send aps_goto_max_row
+      object oText is a aps.Edit label "Test this text (cut and paste something here):"
+        set peAnchors to (anTop+anRight+anBottom+anLeft)
+        set label_justification_mode to JMODE_TOP
+        set size to 180 220
+        procedure OnChange
+          send update_list
+        end_procedure
+      end_object
+      object oResultGrid is a aps.Grid snap SL_RIGHT
+        set peAnchors to (anTop+anRight+anBottom)
+        set size to 160 0
+        send GridPrepare_AddColumn "#"    AFT_ASCII4
+        send GridPrepare_AddColumn "Word" AFT_ASCII40
+        send GridPrepare_Apply self
+        set select_mode to NO_SELECT
+        on_key KNEXT_ITEM send switch
+        on_key KPREVIOUS_ITEM send switch_back
+        on_key KEY_CTRL+KEY_R send sort_data
+
+        function iSpecialSortValueOnColumn.i integer column# returns integer
+          if column# eq 0 function_Return 1
+        end_function
+
+        function sSortValue.ii integer column# integer itm# returns string
+          if column# eq 0 function_return (IntToStrR(value(self,itm#),4))
+        end_function
+
+        procedure sort_data.i integer column#
+          send Grid_SortByColumn self column#
+        end_procedure
+
+        procedure sort_data
+          integer cc#
+          get Grid_CurrentColumn self to cc#
+          send sort_data.i cc#
+        end_procedure
+
+        procedure header_mouse_click integer itm#
+          send sort_data.i itm#
+          forward send header_mouse_click itm#
+        end_procedure
+
+        procedure fill_list
+          integer lbBelow32 lhWordSplitter liRow liMax
+          string lsLetters lsText lsWord
+          set dynamic_update_state to DFFALSE
+          send delete_data
+
+          get value of oLetters to lsLetters
+          get checked_state of oBelow32 to lbBelow32
+          get Text_EditObjectValue (oText(self)) to lsText
+
+          get phWordsplitterObject of (phFTS_SystemObject(self)) to lhWordSplitter
+          set psLetters of lhWordSplitter to lsLetters
+          set pbCrLfCanBeTrusted of lhWordSplitter to lbBelow32
+
+          send DoReset of lhWordSplitter
+          send DoAddText of lhWordSplitter lsText
+
+          get row_count of lhWordSplitter to liMax
+          decrement liMax
+          for liRow from 0 to liMax
+            send add_item MSG_NONE (liRow+1)
+            send add_item MSG_NONE (psWord.i(lhWordSplitter,liRow))
+          loop
+
+          send Grid_SetEntryState self DFFALSE
+          send update_totals (liMax+1)
+          set dynamic_update_state to DFTRUE
+        end_procedure
+      end_object // oResultGrid
+      object oTotalWords is a aps.Form abstract AFT_ASCII40 snap SL_DOWN
+        set peAnchors to (anRight+anBottom)
+        set enabled_state to false
+      end_object
+      send aps_size_identical_max (oTotalWords(self)) (oResultGrid(self)) SL_HORIZONTAL
+
+      procedure update_totals integer liWordCount
+        set value of oTotalWords to ("Total words: "+string(liWordCount))
+      end_procedure
+      procedure update_list
+        send fill_list of oResultGrid
+      end_procedure
+    end_object // oWordSplitterTab
+  end_object // oTabs
+
+  procedure DoFtsTablesClose
+    integer lhTableAccess
+    get hTableAccessObject to lhTableAccess
+    send DoCloseTables of lhTableAccess
+    set value of oPrefix to ""
+    set value of oFTSObjectName to ""
+    send fill_list of (oGrid(oTableAccessTab(oTabs(self))))
+    set enabled_state of oCloseBtn to false
+    set enabled_state of oOpenBtn to true
+    set enabled_state of oDropBtn to true
+  end_procedure
+  procedure DoFtsTablesDrop
+    integer lhFTS
+    move (oDefaultFTS_System(self)) to lhFTS
+    send Popup_FTS_DropTablesWizard lhFTS
+  end_procedure
+  procedure DoFtsTablesOpen
+    integer lhFTS
+    get hPopup of oFTS_OpenTablesDialog to lhFTS
+    if lhFTS begin
+      set phFTS_SystemObject to lhFTS
+      send fill_list of (oGrid(oTableAccessTab(oTabs(self))))
+      set value of oPrefix to (psRootNamePrefix(phTableAccessObject(lhFTS)))
+      set value of oFTSObjectName to (name(lhFTS))
+      set enabled_state of oCloseBtn to true
+      set enabled_state of oOpenBtn to false
+      set enabled_state of oDropBtn to false
+    end
+  end_procedure
+  procedure popup
+    broadcast recursive send DoDefaultValue
+    forward send popup
+  end_procedure
+  object oCloseBtn is a aps.Multi_Button
+    set peAnchors to (anRight+anBottom)
+    on_item "Close" send close_panel
+  end_object
+  procedure aps_beautify
+    send aps_beautify of (oTableAccessTab(oTabs(self)))
+  end_procedure
+  send aps_locate_multi_buttons
+end_object // oFTS_ControlView
+send aps_SetMinimumDialogSize (oFTS_ControlView(self))
+
+procedure Popup_FTS_ControlPanel
+  send popup of oFTS_ControlView
+end_procedure
+

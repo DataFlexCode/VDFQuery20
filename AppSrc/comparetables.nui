@@ -1,0 +1,247 @@
+// Use CompareTables.nui // cCompareTableData class
+
+Use DBMS.nui     // Basic DBMS functions (No User Interface)
+Use FdxCompa.nui // Class for comparing table definitions
+Use Compare.nui  // Abstract class for comparing item based information
+Use ApiIndex.nui // Switch indices offline and back online
+USe FList.nui    // A lot of FLIST procedures and functions
+
+class cCompareTableDataHelp is a cDoubleOrderedCompare
+  //> Augment this function in order to seed the left buffer (1). Return true
+  //> if the seeding was succesful. For example:
+  function iSeed1 returns integer
+    integer liTable
+    get piTable1 to liTable
+    clear liTable
+    function_return TRUE
+  end_function
+  //> Augment this function in order to seed the right buffer (2). Return true
+  //> if the seeding was succesful.
+  function iSeed2 returns integer
+    integer liTable
+    get piTable2 to liTable
+    clear liTable
+    function_return TRUE
+  end_function
+  //> The function should be augmented to return the value for the left buffer (1) to be used for comparing. For example:
+  function sValue1 returns string
+    integer liTable liIndex
+    get piTable1 to liTable
+    get piIndex to liIndex
+    function_return (API_IndexValue(liTable,liIndex))
+  end_procedure
+  //> The function should be augmented to return the value for the right buffer (2) to be used for comparing.
+  function sValue2 returns string
+    integer liTable liIndex
+    get piTable2 to liTable
+    get piIndex to liIndex
+    function_return (API_IndexValue(liTable,liIndex))
+  end_procedure
+  //> Augment to "advance" the left buffer. Return true if advancing was succesful. Could be:
+  function iAdvance1 returns integer
+    integer liTable liIndex
+    get piTable1 to liTable
+    get piIndex to liIndex
+    vfind liTable liIndex GT
+    function_return (found)
+  end_function
+  //> Augment to "advance" the right buffer. Return true if advancing was succesful.
+  function iAdvance2 returns integer
+    integer liTable liIndex
+    get piTable2 to liTable
+    get piIndex to liIndex
+    vfind liTable liIndex GT
+    function_return (found)
+  end_function
+  //> This is sent when items are found to be identical.
+  procedure Match string lsValue1 string lsValue2
+    send IndexValueMatch lsValue1 lsValue2
+  end_procedure
+  //> This is sent when a left side (1) item cannot be matched.
+  procedure NotMatched1 string lsValue
+    send IndexValueNotMatched1 lsValue
+  end_procedure
+  //> This is sent when a right side (2) item cannot be matched.
+  procedure NotMatched2 string lsValue
+    send IndexValueNotMatched2 lsValue
+  end_procedure
+end_class // cCompareTableDataHelp
+
+enumeration_list
+  define CTP_ALL
+  define CTP_TABLE1_MISSING
+  define CTP_TABLE2_MISSING
+  define CTP_BOTH_PRESENT
+  define CTP_EITHER_MISSING
+end_enumeration_list
+
+class cCompareTableData is a cArray
+  procedure construct_object
+    forward send construct_object
+    property integer piTable1
+    property integer piTable2
+    property integer piIndex
+    property string psTable1
+    property string psTable2
+    property integer piCompMode 0
+    object oComparer is a cCompareTableDataHelp
+    end_object
+    object oIgnoreFields is a cARray
+    end_object
+  end_procedure
+
+  procedure set IgnoreFieldState integer liField boolean lbState
+    set value of oIgnoreFields liField to lbState
+  end_procedure
+
+  function IgnoreFieldState integer liField returns boolean
+    function_return (value(oIgnoreFields,liField))
+  end_function
+
+  procedure IgnoreFieldsClearAll
+    send delete_Data of oIgnoreFields
+  end_procedure
+
+  item_property_list
+    item_property string  psIndex1.i
+    item_property integer piRecnum1.i
+    item_property string  psIndex2.i
+    item_property integer piRecnum2.i
+  end_item_property_list cCompareTableData
+
+   procedure add_row string lsIndex1 integer liRecnum1 string lsIndex2 integer liRecnum2
+    integer liRow liCompMode
+    boolean lbAdd
+    get piCompMode to liCompMode
+
+    if (liCompMode=CTP_ALL) move TRUE to lbAdd
+    if (liCompMode=CTP_TABLE1_MISSING and liRecnum1=0) move TRUE to lbAdd
+    if (liCompMode=CTP_TABLE2_MISSING and liRecnum2=0) move TRUE to lbAdd
+    if (liCompMode=CTP_BOTH_PRESENT and liRecnum1<>0 and liRecnum2<>0) move TRUE to lbAdd
+    if (liCompMode=CTP_EITHER_MISSING and (liRecnum1=0 or liRecnum2=0)) move TRUE to lbAdd
+
+    if lbAdd begin
+      get row_count to liRow
+      set psIndex1.i  liRow to lsIndex1
+      set piRecnum1.i liRow to liRecnum1
+      set psIndex2.i  liRow to lsIndex2
+      set piRecnum2.i liRow to liRecnum2
+    end
+  end_procedure
+
+            procedure AutoSetTableNumbers
+              integer liFile
+              get FLIST_TemporaryEntry 500 to liFile
+              set piTable1 to liFile
+              get FLIST_TemporaryEntry liFile to liFile
+              set piTable2 to liFile
+            end_procedure
+
+            function OpenTable integer liFile string lsFile returns integer
+              integer liError
+              get DBMS_OpenFileAs lsFile liFile DF_SHARE 0 to liError
+
+              ifnot liError move 1 to liError // Table could not be opened
+              else move 0 to liError // No errors
+              function_return liError
+            end_function
+
+            procedure CloseTables
+              integer liTable
+              get piTable1 to liTable
+              send DBMS_CloseFile liTable
+              get piTable2 to liTable
+              send DBMS_CloseFile liTable
+            end_procedure
+
+  // If this function returns 0 we are ready to start comparing the contents
+  function bOpenTables string lsFile1 string lsFile2 returns integer
+    integer liError lhFdx1 lhFdx2 lhPgmObj
+    boolean lbChanged
+    send AutoSetTableNumbers
+    get OpenTable (piTable1(self)) lsFile1 to liError
+    ifnot liError get OpenTable (piTable2(self)) lsFile2 to liError
+    ifnot liError begin // Compare the tables. They must be identical!
+      get NewFdxObject (piTable1(self)) to lhFdx1
+      get NewFdxObject (piTable2(self)) to lhFdx2
+      get iFdxCompareTables.iiiiii lhPgmObj lhFdx1 (piTable1(self)) lhFdx2 (piTable2(self)) FDXCOMP_MODE_FILE to lhPgmObj
+
+      if (piProgramType(lhPgmObj)<>PGM_TYPE_EMPTY) move 2 to liError // Table definiitons are not identical
+
+      send destroy of lhFdx1
+      send destroy of lhFdx2
+      send destroy of lhPgmObj
+
+    end
+    if liError send CloseTables
+    set psTable1 to lsFile1
+    set psTable2 to lsFile2
+    function_return liError
+  end_function
+
+//function bValidateTables string lsFile1 string lsFile2 returns integer
+//  integer liError
+//  get bOpenTables lsFile1 lsFile2 to liError
+//  send CloseTables
+//  function_return liError
+//end_function
+
+  procedure call_back_results integer lhMsg integer lhObj
+    integer liMax liRow
+    string lsIndexValue
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get psIndex1.i liRow to lsIndexValue
+      if (lsIndexValue="") get psIndex2.i liRow to lsIndexValue
+      send lhMsg of lhObj lsIndexValue (piRecnum1.i(self,liRow)) (piRecnum2.i(self,liRow))
+    loop
+  end_procedure
+
+  procedure run_table_comparison
+    send delete_data
+    send run of oComparer
+  end_procedure
+
+  function FieldValuesIdentical returns boolean
+    integer liField liMaxField liType
+    integer liTable1 liTable2
+    string lsValue1 lsValue2
+    get piTable1 to liTable1
+    get piTable2 to liTable2
+
+    get_Attribute DF_FILE_NUMBER_FIELDS of liTable1 to liMaxField
+    for liField from 1 to liMaxField
+      ifnot (IgnoreFieldState(self,liField)) begin
+        get_Attribute DF_FIELD_TYPE of liTable1 liField to liType
+        if (liType<>DF_OVERLAP) begin
+          get_field_value liTable1 liField to lsValue1
+          get_field_value liTable2 liField to lsValue2
+          if (lsValue1<>lsValue2) function_return FALSE
+        end
+      end
+    loop
+    function_Return TRUE
+  end_function
+
+  procedure IndexValueMatch string lsValue1 string lsValue2
+    integer liRecnum1 liRecnum2
+    ifnot (FieldValuesIdentical(self)) begin
+      get_field_value (piTable1(self)) 0 to liRecnum1
+      get_field_value (piTable2(self)) 0 to liRecnum2
+      send add_row lsValue1 liRecnum1 lsValue2 liRecnum2
+    end
+  end_procedure
+
+  procedure IndexValueNotMatched1 string lsValue
+    integer liRecnum
+    get_field_value (piTable1(self)) 0 to liRecnum
+    send add_row lsValue liRecnum "" 0
+  end_procedure
+
+  procedure IndexValueNotMatched2 string lsValue
+    integer liRecnum
+    get_field_value (piTable2(self)) 0 to liRecnum
+    send add_row "" 0 lsValue liRecnum
+  end_procedure
+end_class // cCompareTableData

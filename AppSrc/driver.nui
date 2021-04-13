@@ -1,0 +1,26 @@
+// Use Driver.nui   // This package is used to load a driver DLL
+
+Use Files.nui    // Utilities for handling file related stuff (No User Interface)
+Use DBMS.nui     // Basic DBMS functions (No User Interface)
+Use API_Attr.nui // Functions for querying API attributes (No User Interface)
+
+function DRV_LoadDriverByName global string lsDriverName returns integer
+  string lsDriverFile lsDir
+  move (lsDriverName+".DLL") to lsDriverFile
+  if (SEQ_FileExists(lsDriverFile)<>SEQIT_FILE) begin
+    // What? Driver not found? We'll have to look for it then:
+    move (SEQ_FindFileAlongDFPath(lsDriverFile)) to lsDir
+    // What? Not found again? We'll look along the EXE search path then:
+    if lsDir eq "" move (SEQ_FindFileAlongPath(API_OtherAttr_Value(OA_PATH),lsDriverFile)) to lsDir
+    if lsDir eq "" function_return 0 // If we didn't find it it doesn't exist! Goodbye!
+    move (SEQ_ComposeAbsoluteFileName(lsDir,lsDriverName)) to lsDriverName
+  end
+  load_driver lsDriverName
+  function_return 1
+end_function // DRV_LoadDriverByName
+
+function DRV_LoadDriverByType global integer liType returns integer
+  string lsDriverName
+  get DBMS_TypeToDriverName liType to lsDriverName
+  function_return (DRV_LoadDriverByName(lsDriverName))
+end_function // DRV_LoadDriverByType

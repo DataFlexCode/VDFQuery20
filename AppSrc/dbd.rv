@@ -1,0 +1,324 @@
+// Use dbd.rv // DBD - Report object
+
+Use APS.pkg      // Auto Positioning and Sizing classes for VDF
+Use ApsRptVw.pkg // aps.ReportView
+use cWinReport2.pkg
+Use WinPrint_ImageDefinition.pkg
+
+
+object oDbdReport is a aps.ReportView label "DB Description - Printed report"
+  on_key kcancel send close_panel
+  property integer phDbdSystem public 0
+  property integer phDbdView public 0
+
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+
+  object oTableSelect is a aps.Group label "Select tables"
+    set peAnchors to (anTop+anLeft+anRight+anBottom)
+    set p_auto_column to 0
+    object oGrid is a aps.Grid
+      send GridPrepare_AddCheckBoxColumn
+      send GridPrepare_AddColumn "#"      AFT_ASCII4
+      send GridPrepare_AddColumn "Table"  AFT_ASCII30
+      send GridPrepare_AddColumn "Name"   AFT_ASCII12
+      send GridPrepare_Apply self
+      set select_mode to MULTI_SELECT
+      set highlight_row_state to true
+      on_key KNEXT_ITEM     send switch
+      on_key KPREVIOUS_ITEM send switch_back
+      set peAnchors to (anTop+anLeft+anRight+anBottom)
+      set peResizeColumn to rcSelectedColumn
+      set piResizeColumn to 2
+      procedure HandleTable integer liId string lsName string lsLogic_name string lsPhysic_name integer liNot_found string lsOpenas_path string lsDescription
+        integer liBase
+        get item_count to liBase
+        send Grid_AddCheckBoxItem self DFTRUE
+        set aux_value item liBase to liId
+        send add_item msg_none liId
+        send add_item msg_none lsName
+        send add_item msg_none lsLogic_name
+      end_procedure
+      procedure fill_list
+        integer lhTableAccess
+        move (phTableAccessObject(integer(phDbdSystem(self)))) to lhTableAccess
+        send delete_data
+        set dynamic_update_state to false
+        send Callback_All_Tables of lhTableAccess MSG_HandleTable self
+        set dynamic_update_state to true
+        send Grid_SetEntryState self DFFALSE
+      end_procedure
+      procedure select_toggling integer itm# integer i#
+        integer ci# iColumns
+        get Grid_Columns self to iColumns
+        get current_item to ci#
+        move ((ci#/iColumns)*iColumns) to ci# // Redirect to first column
+        forward send select_toggling ci# i#
+      end_procedure
+    end_object
+    procedure DoSelectAll
+      send Grid_RowSelectAll (oGrid(self))
+    end_procedure
+    procedure DoSelectNone
+      send Grid_RowDeselectAll (oGrid(self))
+    end_procedure
+    object oBtn1 is a aps.Multi_Button
+      set peAnchors to (anRight+anBottom)
+      on_item "Select all" send DoSelectAll
+    end_object
+    object oBtn1 is a aps.Multi_Button
+      set peAnchors to (anRight+anBottom)
+      on_item "Clear" send DoSelectNone
+    end_object
+    send aps_locate_multi_buttons
+  end_object
+  Object oOther is a aps.Group Label "Other:" snap SL_DOWN
+    set peAnchors to (anLeft+anRight+anBottom)
+    object oIncludeFieldAndIndex is a aps.CheckBox label "Include field and index descriptions"
+      set checked_state to true
+    end_object
+  end_object
+  Object oDestination is a aps.RadioGroup Label "Output Device:" snap SL_DOWN
+    set peAnchors to (anLeft+anRight+anBottom)
+    send tab_column_define 1 60 55 jmode_left
+    Object oScreen is a aps.Radio label "Screen"
+      Set Status_Help to "Preview the report to screen"
+    End_Object
+    Object oPrinter is a aps.Radio snap SL_RIGHT_SPACE label "Printer"
+      Set Status_Help to "Send the report to the default printer"
+    End_Object
+    Procedure Notify_Select_State  Integer iNewItem  Integer iOldItem
+      Forward Send Notify_Select_State  iNewItem  iOldItem
+      If (iNewItem=0) Set Output_Device_Mode To PRINT_TO_WINDOW
+      Else            Set Output_Device_Mode To PRINT_TO_PRINTER
+    End_Procedure
+    Set Current_Radio to 0
+  End_Object    // oDestination
+  send aps_size_identical_max (oTableSelect(self)) (oDestination(self)) SL_HORIZONTAL
+  send aps_size_identical_max (oOther(self)) (oDestination(self)) SL_HORIZONTAL
+  on_key ksave_record send Run_Report
+  object oBtn1 is a aps.Multi_Button
+    set peAnchors to (anRight+anBottom)
+    on_item "Run report" send Run_Report
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    set peAnchors to (anRight+anBottom)
+    procedure DoSetup
+      integer hoReport
+      Get  Report_Object_ID To hoReport
+      Send DFPrintSetup     To hoReport
+    end_procedure
+    on_item "Setup" send DoSetup
+  end_object
+  object oBtn3 is a aps.Multi_Button
+    set peAnchors to (anRight+anBottom)
+    on_item "Close" send close_panel
+  end_object
+  send aps_locate_multi_buttons
+
+  Object oReport is a cWinReport2
+    Set No_Finding_State to TRUE
+
+    property integer piId
+    property string  psName
+    property string  psLogic_name
+    property string  psPhysic_name
+    property integer piNot_found
+    property string  psOpenas_path
+    property string  psDescription
+
+    procedure PrintTable integer liId string lsName string lsLogic_name string lsPhysic_name integer liNot_found string lsOpenas_path string lsDescription
+      integer liGrb
+      set piId          to liId
+      set psName        to lsName
+      set psLogic_name  to lsLogic_name
+      set psPhysic_name to lsPhysic_name
+      set piNot_found   to liNot_found
+      set psOpenas_path to lsOpenas_path
+      set psDescription to lsDescription
+      get handle_report_line to liGrb
+    end_procedure
+
+    procedure PrintSelectedTable integer liRow integer liBase
+      integer liFile lhTableAccess
+      move (phTableAccessObject(integer(phDbdSystem(self)))) to lhTableAccess
+      get aux_value of (oGrid(oTableSelect(self))) liBase to liFile
+      send Callback_One_Table of lhTableAccess liFile msg_PrintTable self
+    end_procedure
+
+    Function Start_Report returns integer
+      integer liOk
+      string lsTitle
+
+      move "DB Description" to lsTitle
+
+      set Report_Title to lsTitle
+//      set Report_SubTitle to lsTitle
+
+      Set No_Finding_State to TRUE
+      Forward Get Start_Report to liOk
+      if (liOk=RPT_OK) begin
+        send DFSetMargins to WinPrintID 2.5 1.5 1.5 1.5
+        send Grid_RowCallBackSelected (oGrid(oTableSelect(self))) msg_PrintSelectedTable self
+      end
+      Get End_Report liOk to liOk
+      function_return liOk
+    end_function
+
+    object oBodyImage is a cWinPrint_ImageDefinition
+      send Add_Column "#"               1.0 DF_BCD   0 DFFALSE DFFALSE
+      set Bold_State to true
+      send Add_Column "Logical name"    1.5 DF_ASCII 0 DFFALSE DFFALSE
+      set Bold_State to true
+      send Add_Column "Table"           4.5 DF_ASCII 0 DFFALSE DFFALSE
+      set Bold_State to true
+    end_object
+
+    Procedure_Section Page_Top
+        DFBeginHeader DFPageTop         // Header of type DFPageTop
+            DFHeaderPos   HDR_LEFT      // left justify the data in the header
+            DFHeaderFrame HDR_MARGINS   // Paint frame margin to margin
+
+            DFFont "Arial"              // Using Arial font size 20
+            DFFontSize 20
+            DFWritelnPos (Report_Title(self)) 0.5  FONT_BOLD
+
+            DFFontSize 14
+//            DFWritePos "Sub title" 0.5  FONT_BOLD
+
+            DFFont "Times New Roman"    // Use font Times New Roman
+            DFFontSize 12               // font size 14
+            DFWritePos "Page:"        13   (FONT_ITALIC+FONT_BOLD)
+            DFWritePos "#pagecount#"  15   (FONT_ITALIC+FONT_BOLD)
+            DFWriteln  ""               // print a blank line
+            DFFontSize 10
+            send Output_Header to oBodyImage
+        DFEndHeader
+    End_Procedure   // Page_Top
+
+              Procedure Print_Text string lsLabel string lsValue
+                move (trim(lsValue)) to lsValue
+                if (lsValue<>"") begin
+                  DFWritePos lsLabel 1.6 //0 -1 0
+                  DFWritePos lsValue 4.2 FONT_ITALIC -1 0
+                  DFWriteLn ""
+                end
+              end_procedure
+
+    Procedure_Section Body
+        Send Update_Status (string(piId(self))+" "+psLogic_name(self))
+        send BlankForm_Image to oBodyImage
+        send Print_Value to oBodyImage 0 (piId(self))
+        send Print_Value to oBodyImage 1 (psLogic_name(self))
+        send Print_Value to oBodyImage 2 (psName(self))
+        DFFontSize 10
+        DFWriteln  ""               // print a blank line
+        send Output_Image to oBodyImage
+        send Print_Text "Table description:" (psDescription(self))
+        forward send Body
+    End_Procedure   // Body
+
+    Procedure_Section Page_Bottom
+      DFFont "Times New Roman"
+      DFFontSize 10
+
+      DFBeginHeader DFPageBottom    // Header of type DFPageBottom
+        DFHeaderPos   HDR_CENTER    // Center the data in the header
+        DFHeaderFrame HDR_MARGINS   // Frame margin to margin
+        DFWrite "Printed on: " (FONT_ITALIC)
+
+        // Using the RptToday property in DFReport to set the date
+        DFWriteln (string(dSysDate())+" "+sSysTime()) (FONT_ITALIC)
+      DFEndHeader
+    End_Procedure
+
+    Object oFieldReport is a WinReport
+      Set No_Finding_State to TRUE
+
+      property integer piTbl_Id
+      property integer piFld_Pos
+      property string  psFld_Name
+      property integer piFld_Not_Found
+      property string  psFld_Description
+      property string  psSuggested_Label
+      property string  psFld_Definition
+
+      object oBodyImage is a cWinPrint_ImageDefinition
+        send Add_Column "#"               3.1 DF_BCD   0 DFFALSE DFFALSE
+        set Bold_State to true
+        send Add_Column "Field"           3.6 DF_ASCII 0 DFFALSE DFFALSE
+        set Bold_State to true
+        send Add_Column "Type"            9.0 DF_ASCII 0 DFFALSE DFFALSE
+        set Bold_State to true
+      end_object
+
+      procedure PrintField integer liTbl_Id integer liFld_Pos string lsFld_Name integer liFld_Not_Found string lsFld_Description string lsSuggested_Label string lsFld_Definition
+        integer liGrb
+        set piTbl_Id          to liTbl_Id
+        set piFld_Pos         to liFld_Pos
+        set psFld_Name        to lsFld_Name
+        set piFld_Not_Found   to liFld_Not_Found
+        set psFld_Description to lsFld_Description
+        set psSuggested_Label to lsSuggested_Label
+        set psFld_Definition  to lsFld_Definition
+        get handle_report_line to liGrb
+      end_procedure
+
+      Function Start_Report returns integer
+        integer liOk lbRun liFile lhTableAccess liIndex
+        move (phTableAccessObject(integer(phDbdSystem(self)))) to lhTableAccess
+        get checked_state of (oIncludeFieldAndIndex(oOther(self))) to lbRun
+        Forward Get Start_Report to liOk
+        if (liOk=RPT_OK) begin
+          if lbRun begin
+            get piId to liFile
+            DFFontSize 10
+            //send Output_Header of oBodyImage
+            move 2 to liIndex // 2=Ordered by position
+            if (piId(self)=DBDLIB_DICTIONARY) move 1 to liIndex
+            if (piId(self)=DBDLIB_CALENDAR  ) move 1 to liIndex
+            if (piId(self)=DBDLIB_ARTICLES  ) move 1 to liIndex
+
+            send Callback_TableFields of lhTableAccess liFile msg_PrintField self liIndex
+          end
+        end
+        Get End_Report liOk to liOk
+        function_return liOk
+      end_function
+
+                Procedure Print_Text string lsLabel string lsValue
+                  move (trim(lsValue)) to lsValue
+                  if (lsValue<>"") begin
+                    DFWritePos lsLabel 3.9 //0 -1 0
+                    DFWritePos lsValue 6.5 FONT_ITALIC -1 0
+                    DFWriteLn ""
+                  end
+                end_procedure
+
+      procedure_section Body
+        send BlankForm_Image to oBodyImage
+        send Print_Value to oBodyImage 0 (piFld_Pos(self))
+        send Print_Value to oBodyImage 1 (psFld_Name(self))
+        send Print_Value to oBodyImage 2 (psFld_Definition(self))
+        DFFontSize 10
+//      DFWriteln  ""               // print a blank line
+        send Output_Image to oBodyImage
+        send Print_Text "Field description:" (psFld_Description(self))
+        forward send Body
+      end_procedure   // Body
+    end_object
+  End_object
+  procedure DestroyingDbdView integer lhView
+    if (lhView=phDbdView(self)) send close_panel
+  end_procedure
+  procedure popup
+    send fill_list of (oGrid(oTableSelect(self)))
+    forward send popup
+  end_procedure
+End_Object
+send aps_SetMinimumDialogSize (oDbdReport(self))
+
+procedure popup_dbdreport integer lhDbdSystem integer lhView
+  set phDbdSystem of oDbdReport to lhDbdSystem
+  set phDbdView of oDbdReport to lhView
+  send popup of oDbdReport
+end_procedure

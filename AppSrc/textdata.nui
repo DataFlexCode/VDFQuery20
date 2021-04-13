@@ -1,0 +1,532 @@
+// Use TextData.nui // cTextDataReader class
+
+Use DFAllent.pkg
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Files.nui    // Utilities for handling file related stuff
+Use Spec0008.utl // Small arrays with integer Codes (Dictionaries)
+Use GlobalFunctionsProcedures.pkg // DAW thing
+Use Mapper.nui   // Classes for (field) mapping
+Use Spec0015.nui // Functions StringIsDate and StringIsDateTime
+
+
+enumeration_list // iFileOpen.s return codes
+  define TDATFO_OK
+  define TDATFO_FILE_NOT_FOUND
+  define TDATFO_FILE_EMPTY
+  define TDATFO_NO_ITEMS_ON_FIRST_LINE
+  define TDATFO_ILLEGAL_NUMBER_OF_COLUMN_NAMES
+end_enumeration_list
+
+enumeration_list // iReadNext returns codes
+  define TDATRN_OK
+  define TDATRN_EOF
+  define TDATRN_ERROR
+end_enumeration_list
+
+desktop_section
+  object oTextDataParameterList is a cIntegerCodeToText
+    IntegerCodeList
+      Define_IntegerCode TDAT_FIELD_SEP      "Field delimiter"
+      Define_IntegerCode TDAT_QUOTATION_CHAR "Quotation character"
+      Define_IntegerCode TDAT_DECIMAL_SEP    "Decimal separator"
+      Define_IntegerCode TDAT_DATE_SEP       "Date separator"
+      Define_IntegerCode TDAT_DATE_FORMAT    "Date format"
+      Define_IntegerCode TDAT_COLUMN_NAMES   "Column names in first row"
+      Define_IntegerCode TDAT_OEM_CHARSET    "OEM character conversion"
+      Define_IntegerCode TDAT_COLUMN_COUNT   "Number of columns"
+      Define_IntegerCode TDAT_FIXED_POS      "Fixed positions"
+    End_IntegerCodeList
+  end_object
+  object oTextDataColumnTypes is a cIntegerCodeToText
+    IntegerCodeList
+      Define_IntegerCode TDAT_CT_UNKNOWN   "Unknown (ASCII)"
+      Define_IntegerCode TDAT_CT_NUMBER    "Number"
+      Define_IntegerCode TDAT_CT_DATE      "Date"
+      Define_IntegerCode TDAT_CT_DATE_TIME "Date-Time"
+      Define_IntegerCode TDAT_CT_ASCII     "ASCII"
+      Define_IntegerCode TDAT_CT_TEXT      "Text"
+    End_IntegerCodeList
+  end_object
+end_desktop_section
+
+class cTextDataParameters is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object
+    set value item TDAT_FIELD_SEP      to ";"
+    set value item TDAT_QUOTATION_CHAR to '"'
+    set value item TDAT_DECIMAL_SEP    to ","
+    set value item TDAT_DATE_SEP       to "-"
+    set value item TDAT_DATE_FORMAT    to DF_DATE_EUROPEAN
+    set value item TDAT_COLUMN_NAMES   to DFTRUE
+    set value item TDAT_OEM_CHARSET    to DFFALSE
+    set value item TDAT_COLUMN_COUNT   to 0 // Meaning determined by first column
+  end_procedure
+end_class // cTextDataParameters
+
+// cTextDataFixedColumnPosistions is a help class to be used from inside
+// the cTextDataReader class when reading fixed column data formats.
+class cTextDataFixedColumnPositions is a cArray
+  item_property_list
+    item_property integer piColumnStart.i
+    item_property integer piColumnWidth.i
+  end_item_property_list cTextDataFixedColumnPositions
+end_class // cTextDataFixedColumnPositions
+
+class cAnalyseLog is a cArray
+  item_property_list
+    item_property integer piColumn.i
+    item_property integer piLine.i
+    item_property string  psValue.i
+    item_property string  psComment.i
+  end_item_property_list cAnalyseLog
+  procedure DoAddLogEntry integer liLine integer liColumn string lsValue string lsComment
+    integer liRow
+    get row_count to liRow
+    set piColumn.i  liRow to liColumn
+    set piLine.i    liRow to liLine
+    set psValue.i   liRow to lsValue
+    set psComment.i liRow to lsComment
+  end_procedure
+  procedure DoReset
+    send delete_data
+  end_procedure
+end_class // cAnalyseLog
+
+class cTextDataColumnAnalyser is a cArray
+  item_property_list
+    item_property integer piDataType.i   //
+    item_property integer piMaxLength.i
+    item_property integer piMaxDecimals.i
+    item_property integer piCantBeNumber.i
+    item_property integer piCantBeDate.i
+    item_property integer piCantBeDateTime.i
+  end_item_property_list cTextDataColumnAnalyser
+  procedure DoReset
+    send delete_data
+  end_procedure
+  procedure DoAddCurrentRow integer lhAnalyseLog
+    integer liMax liRow lhParent liLen liDecPos liDateFormat liDecChar
+    integer lhTextDataParameters liLine liDateSep
+    string lsValue lsDecChar lsDateSep
+    move (parent(self)) to lhParent
+
+    get phTextDataParameters of lhParent to lhTextDataParameters
+    get value of lhTextDataParameters item TDAT_DECIMAL_SEP to lsDecChar
+    move (ascii(lsDecChar)) to liDecChar
+    get value of lhTextDataParameters item TDAT_DATE_SEP    to lsDateSep
+    move (ascii(lsDateSep)) to liDateSep
+    get value of lhTextDataParameters item TDAT_DATE_FORMAT to liDateFormat
+
+    //send obs "Format:" liDateFormat "Separator:" lsDateSep
+
+    get item_count  of lhParent to liMax
+    get piCurrentRowStartedInLine of lhParent to liLine
+    decrement liMax
+    for liRow from 0 to liMax
+      get value of lhParent liRow to lsValue
+      move (length(lsValue)) to liLen
+      if (liLen>piMaxLength.i(self,liRow)) set piMaxLength.i liRow to liLen
+
+      // Is it a text field?
+      if (pos(character(10),lsValue)) begin
+        ifnot (piDataType.i(self,liRow)) begin // If not already determined
+          set piDataType.i liRow to TDAT_CT_TEXT
+          send DoAddLogEntry to lhAnalyseLog liLine liRow lsValue "contains text data"
+        end
+      end
+      else begin
+        move (pos(lsDecChar,lsValue)) to liDecPos
+        if (liDecPos and (liLen-liDecPos)>piMaxDecimals.i(self,liRow)) set piMaxDecimals.i liRow to (liLen-liDecPos)
+        ifnot (piDataType.i(self,liRow)) begin // If not already determined
+          ifnot (piCantBeNumber.i(self,liRow)) begin // It could still be a number
+            ifnot (StringIsNumber(lsValue,liDecChar)) begin
+              set piCantBeNumber.i liRow to DFTRUE
+              send DoAddLogEntry to lhAnalyseLog liLine liRow lsValue "can not be number"
+            end
+          end
+          ifnot (piCantBeDate.i(self,liRow)) begin // It could still be a date
+            ifnot (StringIsDate(lsValue,liDateSep,liDateFormat)) begin
+              set piCantBeDate.i liRow to DFTRUE
+              send DoAddLogEntry to lhAnalyseLog liLine liRow lsValue "can not be date"
+            end
+          end
+          ifnot (piCantBeDateTime.i(self,liRow)) begin // It could still be a date-time
+            ifnot (StringIsDateTime(lsValue,liDateSep,liDateFormat)) begin
+              set piCantBeDateTime.i liRow to DFTRUE
+              send DoAddLogEntry to lhAnalyseLog liLine liRow lsValue "can not be date-time"
+            end
+          end
+          if (piCantBeNumber.i(self,liRow) and piCantBeDate.i(self,liRow) and piCantBeDateTime.i(self,liRow)) begin
+            set piDataType.i liRow to TDAT_CT_ASCII
+            send DoAddLogEntry to lhAnalyseLog liLine liRow "" "must be ASCII (may change to TEXT)"
+          end
+        end
+      end
+    loop
+  end_procedure
+  procedure DoAnalyseFile string lsFileName integer lhAnalyseLog
+    integer liResult liMax liRow liCount
+    string lsValue
+    send DoReset
+    send DoReset to lhAnalyseLog
+    get iFileOpen.s lsFileName to liResult
+    if (liResult=TDATFO_OK) begin
+      send SentinelOn ("Analysing "+lsFileName)
+      move 0 to liCount
+      repeat
+        get iReadNext to liResult
+        if (liResult=TDATRN_OK) begin
+          increment liCount
+          send DoAddCurrentRow lhAnalyseLog
+          send SentinelUpdate1 (string(liCount)+" rows have been read")
+        end
+      until (liResult<>TDATRN_OK)
+      send SentinelOff
+      if (liResult=TDATRN_ERROR) begin
+        get sErrorText to lsValue
+        send obs lsValue
+      end
+      get row_count to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        ifnot (piDataType.i(self,liRow)) begin // If not already determined
+          if (piCantBeNumber.i(self,liRow)+piCantBeDate.i(self,liRow)+piCantBeDateTime.i(self,liRow)=2) begin
+            if (piCantBeNumber.i(self,liRow) and piCantBeDate.i(self,liRow) and not(piCantBeDateTime.i(self,liRow))) begin
+              set piDataType.i liRow to TDAT_CT_DATE_TIME
+              send DoAddLogEntry to lhAnalyseLog -1 liRow "" "must be date-time"
+            end
+            if (piCantBeNumber.i(self,liRow) and not(piCantBeDate.i(self,liRow)) and piCantBeDateTime.i(self,liRow)) begin
+              set piDataType.i liRow to TDAT_CT_DATE
+              send DoAddLogEntry to lhAnalyseLog -1 liRow "" "must be date"
+            end
+            if (not(piCantBeNumber.i(self,liRow)) and piCantBeDate.i(self,liRow) and piCantBeDateTime.i(self,liRow)) begin
+              set piDataType.i liRow to TDAT_CT_NUMBER
+              send DoAddLogEntry to lhAnalyseLog -1 liRow "" "must be number"
+            end
+          end
+        end
+      loop
+    end
+  end_procedure
+end_class // cTextDataColumnAnalyser
+
+// An object of this class is able to read a line from a sequential file
+// and split it into items according to its properties
+class cTextDataReader is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object
+
+    // Is data in fixed column positions? (if so we need the array):
+    property integer pbFixedPositions      DFFALSE
+    // Convert line feeds to spaces:
+    property integer pbTransformLFtoSP     DFFALSE
+    // Convert characters below 32 (other than 8, 10 and 13) to spaces:
+    property integer pbTransform31toSP     DFTRUE
+    // Number of columns per records:
+    property integer piColumnCount         -1
+    property integer piPrivate.OEM         0
+    //
+    property integer phTextDataParameters  0
+
+    // This is used if we are dealing with fixed column positions:
+    object oTextDataFixedColumnPositions is a cTextDataFixedColumnPositions
+    end_object
+    object oColumnHeaders is a cArray
+    end_object
+    object oTextDataColumnAnalyser is a cTextDataColumnAnalyser
+    end_object
+    object oAnalyseLog is a cAnalyseLog
+    end_object
+
+    property string  psFileName  ""
+    property integer piLinesRead 0
+    property integer piErrorLine 0
+    property integer piChannel   0
+    property integer piCurrentRowStartedInLine 0
+  end_procedure
+
+  procedure SentinelOn string lsCaption
+  end_procedure
+  procedure SentinelUpdate1 string lsValue
+  end_procedure
+  procedure SentinelUpdate2 string lsValue
+  end_procedure
+  procedure SentinelOff
+  end_procedure
+
+  function sErrorText returns string
+    function_return ("Illegal number of items on line "+string(piErrorLine(self)))
+  end_function
+
+  function sConvertedValue.i integer liItm returns string
+    integer liType liFormat
+    string lsValue lsDec
+    get value item liItm to lsValue
+    get piDataType.i of (oTextDataColumnAnalyser(self)) liItm to liType
+    // if TDAT_CT_UNKNOWN TDAT_CT_ASCII or TDAT_CT_TEXT we don't do a thing
+
+    if (liType=TDAT_CT_NUMBER) begin
+      get value of (phTextDataParameters(self)) item TDAT_DECIMAL_SEP to lsDec
+      move (replace(lsDec,lsValue,CurrentDecimalSeparator())) to lsValue
+    end
+    else if (liType=TDAT_CT_DATE) begin
+      get value of (phTextDataParameters(self)) item TDAT_DATE_SEP    to lsDec
+      get value of (phTextDataParameters(self)) item TDAT_DATE_FORMAT to liFormat
+      move (StringFormatToDate(lsValue,ascii(lsDec),liFormat)) to lsValue
+    end
+    else if (liType=TDAT_CT_DATE_TIME) begin
+      get value of (phTextDataParameters(self)) item TDAT_DATE_SEP    to lsDec
+      get value of (phTextDataParameters(self)) item TDAT_DATE_FORMAT to liFormat
+      move (StringFormatToDate(lsValue,ascii(lsDec),liFormat)) to lsValue
+    end
+    function_return lsValue
+  end_function
+
+  function sTypeText.i integer liColumn returns string
+    integer lhTextDataColumnAnalyser liType
+    string lsType
+    move (oTextDataColumnAnalyser(self)) to lhTextDataColumnAnalyser
+    get piDataType.i of lhTextDataColumnAnalyser liColumn to liType
+    get psText.i of (oTextDataColumnTypes(self)) liType to lsType
+    move (lsType+", "+string(piMaxLength.i(lhTextDataColumnAnalyser,liColumn))) to lsType
+    if (liType=TDAT_CT_NUMBER) move (lsType+" ("+string(piMaxDecimals.i(lhTextDataColumnAnalyser,liColumn))+")") to lsType
+    function_return lsType
+  end_function
+
+  function sColumnName.i integer liColumn returns string
+    string lsRval
+    get value of (oColumnHeaders(self)) item liColumn to lsRval
+    if (lsRval="") move ("Column "+string(liColumn+1)) to lsRval
+    function_return lsRval
+  end_function
+
+  procedure DoTransferToMapableObject integer lhMapObject
+    integer liMax liRow
+    send DoReset to lhMapObject
+    get piColumnCount to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      send DoAddItem to lhMapObject liRow (sColumnName.i(self,liRow)) ""
+    loop
+  end_procedure
+
+  procedure DoSplitInItems string lsLine
+    integer lhTextDataParameters
+    integer liPos liLen liItem liIn
+    string lsFieldSep lsItem lsChar lsEndQuote lsQuotes
+    send delete_data
+    get phTextDataParameters to lhTextDataParameters
+    get value of lhTextDataParameters item TDAT_FIELD_SEP to lsFieldSep
+    get value of lhTextDataParameters item TDAT_QUOTATION_CHAR to lsQuotes
+    move (length(lsLine)) to liLen
+    move 0 to liItem
+    move "" to lsItem
+    move "" to lsEndQuote
+    for liPos from 1 to liLen
+      move (mid(lsLine,1,liPos)) to lsChar
+      if lsEndQuote eq "" begin
+        if lsChar eq lsFieldSep begin
+          set value item liItem to lsItem
+          move "" to lsItem
+          increment liItem
+        end
+        else begin
+          if (length(lsItem)=0 and lsQuotes contains lsChar) move lsChar to lsEndQuote
+          else move (lsItem+lsChar) to lsItem
+        end
+      end
+      else begin
+        if lsChar eq lsEndQuote begin
+          move (mid(lsLine,1,liPos+1)) to lsChar
+          if lsChar eq lsEndQuote begin
+            increment liPos
+            move (lsItem+lsChar) to lsItem
+          end
+          else begin
+            move "" to lsEndQuote
+            set value item liItem to lsItem
+          end
+        end
+        else move (lsItem+lsChar) to lsItem
+      end
+    loop
+    if (lsItem<>"" or right(lsLine,1)=lsFieldSep) set value item liItem to lsItem
+  end_procedure
+
+  function iFileOpen.s string lsFileName returns integer
+    integer liRval liChannel lhTextDataParameters liColumnCount lbOEM
+    integer lbColumnNames
+    integer lhColumnHeaders liMax liItm
+    string lsLineValue
+    set psFileName to lsFileName
+    get SEQ_DirectInput lsFileName to liChannel
+    if liChannel ge 0 begin
+      get phTextDataParameters to lhTextDataParameters
+      get value of lhTextDataParameters item TDAT_COLUMN_COUNT to liColumnCount
+      get value of lhTextDataParameters item TDAT_OEM_CHARSET  to lbOEM
+      get value of lhTextDataParameters item TDAT_COLUMN_NAMES to lbColumnNames
+      set piPrivate.OEM to lbOEM
+      if (liColumnCount=0) begin
+        // If that is zero the column count is determined by the first line
+        // in the file.
+        readln channel liChannel lsLineValue
+        if (seqeof) begin
+          move TDATFO_FILE_EMPTY to liRval
+          send SEQ_CloseInput liChannel
+        end
+        else begin
+          ifnot lbOEM get ToOEM lsLineValue to lsLineValue
+          send DoSplitInItems lsLineValue
+          if (item_count(self)) begin
+            move TDATFO_OK to liRval
+            move (oColumnHeaders(self)) to lhColumnHeaders
+            send delete_data to lhColumnHeaders
+            get item_count to liMax
+            move liMax to liColumnCount
+            decrement liMax
+            for liItm from 0 to liMax
+              if lbColumnNames set value of lhColumnHeaders item liItm to (value(self,liItm))
+              else set value of lhColumnHeaders item liItm to ("Column "+string(liItm+1))
+            loop
+            if lbColumnNames set piLinesRead to 1
+            else begin
+              set piLinesRead to 0
+              // At this point we have to restore the channel position. We do
+              // this the hard way:
+              close_input channel liChannel
+              direct_input channel liChannel lsFileName
+            end
+          end
+          else begin
+            move TDATFO_NO_ITEMS_ON_FIRST_LINE to liRval
+            send SEQ_CloseInput liChannel
+          end
+        end
+      end
+      else begin // Fixed number of columns
+        if lbColumnNames begin
+          move (oColumnHeaders(self)) to lhColumnHeaders
+          readln channel liChannel lsLineValue
+          if (seqeof) begin
+            move TDATFO_FILE_EMPTY to liRval
+            send SEQ_CloseInput liChannel
+          end
+          else begin
+            set piLinesRead to 1
+            ifnot lbOEM get ToOEM lsLineValue to lsLineValue
+            send DoSplitInItems lsLineValue
+            if (item_count(self)) begin
+              move (oColumnHeaders(self)) to lhColumnHeaders
+              send delete_data to lhColumnHeaders
+              get item_count to liMax
+              if (liMax=liColumnCount) begin
+                decrement liMax
+                for liItm from 0 to liMax
+                  set value of lhColumnHeaders item liItm to (value(self,liItm))
+                loop
+                move TDATFO_OK to liRval
+              end
+              else begin
+                move TDATFO_ILLEGAL_NUMBER_OF_COLUMN_NAMES to liRval
+                send SEQ_CloseInput liChannel
+              end
+            end
+            else begin
+              move TDATFO_NO_ITEMS_ON_FIRST_LINE to liRval
+              send SEQ_CloseInput liChannel
+            end
+          end
+        end
+        else begin
+          set piLinesRead to 0
+          move TDATFO_OK to liRval
+        end
+      end
+      set piColumnCount to liColumnCount
+      set piChannel to liChannel
+    end
+    else move TDATFO_FILE_NOT_FOUND to liRval
+    function_return liRval
+  end_function // iFileOpen.s
+
+  function iReadNext returns integer
+    integer liColumnCount liColumnsRead liRval liChannel lbOEM
+    integer lhTextDataParameters liErrorLine lbFirst
+    string lsLineValue lsLine
+
+    get phTextDataParameters to lhTextDataParameters
+    get value of lhTextDataParameters item TDAT_COLUMN_COUNT to liColumnCount
+    get value of lhTextDataParameters item TDAT_OEM_CHARSET  to lbOEM
+
+    // If an error occurs we will attribute it to this line:
+    get piLinesRead to liErrorLine // +1 !
+    increment liErrorLine
+    set piCurrentRowStartedInLine to liErrorLine // overload
+
+    get piColumnCount to liColumnCount
+    get piChannel to liChannel
+    move 0 to liColumnsRead
+    move "" to lsLinevalue
+    move DFTRUE to lbFirst
+
+    send delete_data
+
+    repeat
+      readln channel liChannel lsLine
+      if (seqeof) begin
+        if (item_count(self)) begin
+          set piErrorLine to liErrorLine
+          function_return TDATRN_ERROR
+        end
+        else function_return TDATRN_EOF
+      end
+      ifnot lbOEM get ToOEM lsLine to lsLine
+      set piLinesRead to (piLinesRead(self)+1)
+
+      ifnot lbFirst move (lsLineValue+character(10)) to lsLineValue
+      move (lsLineValue+lsLine) to lsLineValue
+
+      move DFFALSE to lbFirst
+      send DoSplitInItems lsLineValue
+      get item_count to liColumnsRead
+    until (liColumnsRead>=liColumnCount)
+
+    if (liColumnsRead=0 or liColumnsRead=liColumnCount) move TDATRN_OK to liRval
+    else begin
+      set piErrorLine to liErrorLine
+      move TDATRN_ERROR to liRval
+    end
+
+    function_return liRval
+  end_function // iReadNext
+  procedure FileClose
+    send SEQ_CloseInput (piChannel(self))
+  end_procedure
+  procedure DoAnalyseFile string lsFileName
+    send DoAnalyseFile to (oTextDataColumnAnalyser(self)) lsFileName (oAnalyseLog(self))
+  end_procedure
+  procedure DoCallback string lsFileName integer liGet integer lhObj
+    integer liResult lbCancel
+    string lsValue
+    get iFileOpen.s lsFileName to liResult
+    if (liResult=TDATFO_OK) begin
+      repeat
+        get iReadNext to liResult
+        if (liResult=TDATRN_OK) get liGet of lhObj to lbCancel
+      until (liResult<>TDATRN_OK or lbCancel)
+      if (liResult=TDATRN_ERROR) begin
+        get sErrorText to lsValue
+        send obs lsValue
+      end
+      send FileClose
+    end
+  end_procedure
+end_class // cTextDataReader
+
+//
+// object oTextDataParameters is a cTextDataParameters
+// end_object
+//
+// object oTextDataReader is a cTextDataReader
+//   set phTextDataParameters to (oTextDataParameters(self))
+// end_object

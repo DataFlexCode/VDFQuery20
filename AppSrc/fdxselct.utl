@@ -1,0 +1,615 @@
+// Use FdxSelct.utl // Functions iFdxSelectOneFile and iFdxSelectOneField
+Use Fdx_Attr.utl // FDX compatible attribute functions
+Use FdxField.nui // FDX Field things
+Use FdxIndex.nui // Index analysing functions
+Use GridUtil.utl // Grid and List utilities
+Use SetOfFld.utl // cSetOfFields class
+Use DBMS.utl     // Basic DBMS functions
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+class cFdxSelectOneFileList is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    set line_width to 4 0
+    set header_label item 0 to "#"
+    set header_label item 1 to "Display name"
+    set header_label item 2 to "DF name"
+    set header_label item 3 to "Root name"
+    set form_margin item 0 to  4   //
+    set form_margin item 1 to  40  //
+    set form_margin item 2 to  10  //
+    set form_margin item 3 to  32  //
+    set highlight_row_state to true
+    set CurrentCellColor     to clHighlight
+    set CurrentCellTextColor to clHighlightText
+    set CurrentRowColor      to clHighlight
+    set CurrentRowTextColor  to clHighlightText
+//   set highlight_row_color to (rgb(0,255,255))
+//   set current_item_color to (rgb(0,255,255))
+    set select_mode to no_select
+    on_key knext_item send switch
+    on_key kprevious_item send switch_back
+    on_key key_ctrl+key_r send sort_data
+    property integer piValidateFunction 0
+    property integer piValidateObject   0
+  end_procedure
+
+  procedure mouse_click integer liItem integer liGrb
+    if ((liItem-1)<item_count(self)) send close_panel_ok
+  end_procedure
+
+  function sSortValue.ii integer column# integer itm# returns string
+    if column# eq 0 function_return (IntToStrR(value(self,itm#),4))
+  end_function
+  function iSpecialSortValueOnColumn.i integer column# returns integer
+    if column# eq 0 function_return 1
+    function_return 0 // Otherwise no special anything
+  end_function
+
+  procedure sort_data.i integer column#
+    send Grid_SortByColumn self column#
+  end_procedure
+  procedure sort_data
+    integer cc#
+    get Grid_CurrentColumn self to cc#
+    send sort_data.i cc#
+  end_procedure
+  procedure header_mouse_click integer itm#
+    send sort_data.i itm#
+    forward send header_mouse_click itm#
+  end_procedure
+  procedure fill_list.ii integer oFDX# integer suggest_file#
+    integer file# suggest_itm# fnc# obj# ok#
+    send delete_data
+    get piValidateFunction to fnc#
+    get piValidateObject   to obj#
+    move 0 to file#
+    move -1 to suggest_itm#
+    send cursor_wait to (cursor_control(self))
+    repeat
+      move (FDX_AttrValue_FLSTNAV(oFDX#,DF_FILE_NEXT_USED,file#)) to file#
+      if file# begin
+//      if (iCanOpen.i(oFDX#,file#)) begin
+        if (FDX_CanOpenFile(oFDX#,file#)) begin
+          if obj# ne 0 get fnc# of obj# file# to ok#
+          else move 1 to ok#
+          if ok# begin
+            if file# eq suggest_file# move (item_count(self)) to suggest_itm#
+            send add_item msg_none (string(file#))
+            send add_item msg_none (rtrim(FDX_AttrValue_FILELIST(oFDX#,DF_FILE_DISPLAY_NAME,file#)))
+            send add_item msg_none (FDX_AttrValue_FILELIST(oFDX#,DF_FILE_LOGICAL_NAME,file#))
+            send add_item msg_none (FDX_AttrValue_FILELIST(oFDX#,DF_FILE_ROOT_NAME,file#))
+          end
+        end
+      end
+    until file# eq 0
+    send cursor_ready to (cursor_control(self))
+    set dynamic_update_state to dfTrue
+    if suggest_itm# ne -1 set current_item to suggest_itm#
+     send Grid_SetEntryState self 0
+  end_procedure
+  function iCurrentFile returns integer
+    integer itm#
+    ifnot (item_count(self)) function_return 0
+    get current_item to itm#
+    move ((itm#/4)*4) to itm#
+    function_return (value(self,itm#))
+  end_function
+end_class // cFdxSelectOneFileList
+
+class cFdxSelectOneFieldList is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    set line_width to 7 0
+    set header_label item 0 to "#"
+    set header_label item 1 to "Name"
+    set header_label item 2 to "Type"
+    set header_label item 3 to "Len"
+    set header_label item 4 to "Offset"
+    set header_label item 5 to "Idx"
+    set header_label item 6 to "Relation"
+    set form_margin item 0 to  2   // #
+    set form_margin item 1 to  15  // Name
+    set form_margin item 2 to  4   // Type
+    set form_margin item 3 to  5   // Len
+    set form_margin item 4 to  5   // Offset
+    set form_margin item 5 to  3   // Idx
+    set form_margin item 6 to  30  // Relation
+    set highlight_row_state to true
+    set CurrentCellColor     to clHighlight
+    set CurrentCellTextColor to clHighlightText
+    set CurrentRowColor      to clHighlight
+    set CurrentRowTextColor  to clHighlightText
+//  set highlight_row_color to (rgb(0,255,255))
+//  set current_item_color to (rgb(0,255,255))
+    set select_mode to no_select
+    on_key knext_item send switch
+    on_key kprevious_item send switch_back
+  end_procedure
+  function sRelFieldName.iii integer oFDX# integer file# integer field# returns string
+    function_return (FDX_FieldName(oFDX#,file#,field#,1))
+  end_function
+  procedure fill_list.iiii integer oFDX# integer file# integer suggest_file# integer suggest_field#
+    integer field# max_field# suggest_itm# type# len# dec# idx#
+    send delete_data
+    ifnot file# get FDX_NextFileThatCanOpen oFDX# 0 to file#
+    if file# ne suggest_file# move 0 to suggest_field#
+    move -1 to suggest_itm#
+    if (FDX_CanOpenFile(oFDX#,file#)) begin
+      move (FDX_AttrValue_FILE(oFDX#,DF_FILE_NUMBER_FIELDS,file#)) to max_field#
+      for field# from 1 to max_field#
+        if field# eq suggest_field# move (item_count(self)) to suggest_itm#
+        send add_item msg_none (string(field#))
+        send add_item msg_none (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_NAME,file#,field#))
+        move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_TYPE,file#,field#)) to type#
+        send add_item msg_none (API_ShortFieldTypeName(type#))
+        move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_LENGTH,file#,field#)) to len#
+        if type# eq DF_BCD begin
+          move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_PRECISION,file#,field#)) to dec#
+          send add_item msg_none (string(len#-dec#)+"."+string(dec#))
+        end
+        else send add_item msg_none (string(len#))
+        send add_item msg_none (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_OFFSET,file#,field#))
+        move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_INDEX,file#,field#)) to idx#
+        if idx# send add_item msg_none (string(idx#))
+        else    send add_item msg_none ""
+        send add_item msg_none (sRelFieldName.iii(self,oFDX#,FDX_AttrValue_FIELD(oFDX#,DF_FIELD_RELATED_FILE,file#,field#),FDX_AttrValue_FIELD(oFDX#,DF_FIELD_RELATED_FIELD,file#,field#)))
+      loop
+    end
+    set dynamic_update_state to true
+    if suggest_itm# ne -1 set current_item to suggest_itm#
+    send Grid_SetEntryState self 0
+  end_procedure
+  function iCurrentField returns integer
+    integer itm#
+    ifnot (item_count(self)) function_return 0
+    get current_item to itm#
+    move ((itm#/7)*7) to itm#
+    function_return (value(self,itm#))
+  end_function
+end_class // cFdxSelectOneFieldList
+
+desktop_section
+object oFdxSelectOneFile is a aps.ModalPanel label "Select table"
+  set locate_mode to CENTER_ON_SCREEN
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  property integer piResult 0
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  object oLst is a cFdxSelectOneFileList
+    set size to 200 0
+    on_key kenter send close_panel_ok
+  end_object
+  object oBtn1 is a aps.Multi_Button
+      on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+      on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    set piResult to 1
+    send close_panel
+  end_procedure
+  function iPopup.iiii integer oFDX# integer suggest# integer fnc# integer obj# returns integer
+    integer rval#
+    set piValidateFunction of (oLst(self)) to fnc#
+    set piValidateObject   of (oLst(self)) to obj#
+    send fill_list.ii to (oLst(self)) oFDX# suggest#
+    set piResult to 0
+    send popup
+    if (piResult(self)) move (iCurrentFile(oLst(self))) to rval#
+    else move 0 to rval#
+    function_return rval#
+  end_function
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oLst(self)) delta_rw# 0
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+end_object // oFdxSelectOneFile
+
+//>This function is defined in a package called "fdxselct.utl". This
+//>function calls an object defined just before the function (note that two
+//>versions of this object is defined, one for VDF and one for DF3.2). The
+//>Function returns the number of the selected file or 0 if the user
+//>cancelled the dialog.
+//>
+//>lhFDX: Object ID that holds a set of table definitions. VDFQuery passes
+//>zero in order not to use such an object and instead let the user select
+//>a table that is actually there (physically present).
+//>
+//>liDefaultFile: If this parameter is not zero, the cursor will locate
+//>itself on the corresponding file as the the dialog pops up. VDFQuery
+//>passes the number of the currently selected file.
+//>
+//>liValidFnc, liValidObj: Identifies a booelan function (liValidFnc) in an
+//>object (liValidObj) that may be used to validate each file, before it is
+//>added to the selection list (1 makes the file go in the list, 0 excludes
+//>the file). VDFQuery passes a function that checks that "@" is not part
+//>of the display name, and the the file has not been excluded by the
+//>programmer (this is what Dan Walsh describes with the
+//>VdfQuery_ExcludeFile message).
+//>
+//>Check the code calling this function in VDFQuery.utl to get the full
+//>picture
+function iFdxSelectOneFileValidate global integer lhFDX integer liDefaultFile integer liValidFnc integer liValidObj returns integer
+  function_return (iPopup.iiii(oFdxSelectOneFile(self),lhFDX,liDefaultFile,liValidFnc,liValidObj))
+end_function
+
+//> Function iFdxSelectOneFile returns number of selected file or 0
+//> if the user cancelled the dialog. If the liDefaultFile parameter is the number
+//> of an existing table, the cursor will locate itself on that as the
+//> the dialog pops up.
+function iFdxSelectOneFile global integer lhFDX integer liDefaultFile returns integer
+  function_return (iFdxSelectOneFileValidate(lhFDX,liDefaultFile,0,0))
+end_function
+
+object oFdxSelectOneField is a aps.ModalPanel label "Select field"
+  set locate_mode to CENTER_ON_SCREEN
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  property integer piResult 0
+  property integer piFDX_Server  0
+  property integer piCurrentFile 0
+  property integer piLockFile    0
+  on_key ksave_record send close_panel_ok
+  on_key kcancel      send close_panel
+  on_key kprompt      send Table_Select
+  send aps_make_row_space 10
+  object oFrm1 is a aps.Form label "Table" abstract AFT_NUMERIC4.0
+    set label_justification_mode to JMODE_TOP
+    set object_shadow_state to true
+  end_object
+  object oFrm2 is a aps.Form label "Display name" abstract AFT_ASCII40 snap SL_RIGHT
+    set label_justification_mode to JMODE_TOP
+    set object_shadow_state to true
+  end_object
+  object oFrm3 is a aps.Form label "DF name" abstract AFT_ASCII10 snap SL_RIGHT
+    set label_justification_mode to JMODE_TOP
+    set object_shadow_state to true
+  end_object
+  object oFrm4 is a aps.Form label "Root name" abstract AFT_ASCII35 snap SL_RIGHT
+    set label_justification_mode to JMODE_TOP
+    set object_shadow_state to true
+  end_object
+  procedure DoUpdateDisplay
+    integer oFDX# file#
+    get piFDX_Server  to oFDX#
+    get piCurrentFile to file#
+    set value of (oFrm1(self)) item 0 to file#
+    set value of (oFrm2(self)) item 0 to (rtrim(FDX_AttrValue_FILELIST(oFDX#,DF_FILE_DISPLAY_NAME,file#)))
+    set value of (oFrm3(self)) item 0 to (FDX_AttrValue_FILELIST(oFDX#,DF_FILE_LOGICAL_NAME,file#))
+    set value of (oFrm4(self)) item 0 to (FDX_AttrValue_FILELIST(oFDX#,DF_FILE_ROOT_NAME,file#))
+  end_procedure
+  object oLst is a cFdxSelectOneFieldList snap SL_DOWN relative_to (oFrm1(self))
+    on_key kenter send close_panel_ok
+  end_object
+  procedure close_panel_ok
+    set piResult to 1
+    send close_panel
+  end_procedure
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item "Change table" send Table_Select
+  end_object
+  object oBtn3 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+
+  procedure Table_Select
+    integer file# oFDX#
+    get piFDX_Server to oFDX#
+    ifnot (piLockFile(self)) begin
+      move (iFdxSelectOneFile(oFDX#,piCurrentFile(self))) to file#
+      if file# begin
+        send fill_list.iiii to (oLst(self)) oFDX# file# 0 0
+        set piCurrentFile to file#
+        send DoUpdateDisplay
+      end
+    end
+  end_procedure
+
+  function iPopup.iii integer oFDX# integer lock_file# integer suggest# returns integer
+    integer rval# suggest_file# suggest_field# file# field#
+    move (hi(suggest#)) to suggest_file#
+    move (low(suggest#)) to suggest_field#
+    set piResult to 0
+
+    if (lock_file# and suggest_file#) if lock_file# ne suggest_file# move 0 to suggest_file#
+    ifnot suggest_file# move 0 to suggest_field#
+
+    set piFDX_Server to oFDX#
+    set piLockFile   to lock_file#
+
+    if lock_file# move lock_file# to file#
+    else begin
+      if suggest_file# move suggest_file# to file#
+      else get FDX_NextFileThatCanOpen oFDX# 0 to file# // Find first#
+    end
+
+    if file# begin
+      send fill_list.iiii to (oLst(self)) oFDX# file# suggest_file# suggest_field#
+      set piCurrentFile to file#
+      send DoUpdateDisplay
+      send popup
+      if (piResult(self)) begin
+        get piCurrentFile to file#
+        move (iCurrentField(oLst(self))) to field#
+        move (file#*65536+field#) to rval#
+      end
+      else move 0 to rval#
+    end
+    else begin
+      send obs "Sorry, no tables to select"
+      move 0 to rval#
+    end
+    function_return rval#
+  end_function
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oLst(self)) delta_rw# 0
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_register_multi_button (oBtn3(self))
+    send aps_register_max_rc (oFrm4(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+  procedure aps_beautify
+    send aps_align_by_moving (oFrm2(self)) (oFrm1(self)) SL_ALIGN_BOTTOM
+    send aps_align_by_moving (oFrm3(self)) (oFrm2(self)) SL_ALIGN_BOTTOM
+    send aps_align_by_moving (oFrm4(self)) (oFrm3(self)) SL_ALIGN_BOTTOM
+    send aps_align_inside_container_by_moving (oLst(self)) SL_ALIGN_CENTER
+  end_procedure
+end_object // oFdxSelectOneField
+
+//> Function iFdxSelectOneField returns selected file multiplied by 65536
+//> plus the number of the selected field. If the user cancels the dialog
+//> 0 will be returned. If a file# is passed as the first parameter the
+//> dialog will be locked to that file.
+function iFdxSelectOneField global integer oFDX# integer file# integer suggest# returns integer
+  function_return (iPopup.iii(oFdxSelectOneField(self),oFDX#,file#,suggest#))
+end_function
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+class cFdxSelectFieldsList is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    send GridPrepare_AddColumn ""           AFT_ASCII3
+    send GridPrepare_AddColumn "Name"       AFT_ASCII25
+    send GridPrepare_AddColumn "Type"       AFT_ASCII6
+    send GridPrepare_AddColumn "Length"     AFT_ASCII8
+    send GridPrepare_AddColumn "Relates to" AFT_ASCII12
+    send GridPrepare_Apply self
+    set select_mode to MULTI_SELECT
+    on_key kswitch send switch
+    on_key kswitch_back send switch_back
+  end_procedure
+  procedure select_toggling integer itm# integer i#
+    forward send select_toggling (Grid_BaseItem(self)) i# // Redirect to first column
+  end_procedure
+  procedure fill_list.iii integer oFDX# integer file# integer set#
+    integer field# max_field# base# rel_file#
+    set dynamic_update_state to DFFALSE
+    send delete_data
+    move (FDX_AttrValue_FILE(oFDX#,DF_FILE_NUMBER_FIELDS,file#)) to max_field#
+    for field# from 0 to max_field#
+      get item_count to base#
+      send add_item msg_none ""
+      set checkbox_item_state item base# to true
+      if (iFindField.ii(set#,file#,field#)<>-1) set select_state item base# to true
+      send add_item msg_none (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_NAME,file#,field#))
+      send add_item msg_none (StringFieldType(FDX_AttrValue_FIELD(oFDX#,DF_FIELD_TYPE,file#,field#)))
+      send add_item msg_none (FDX_FieldLength(oFDX#,file#,field#))
+      move (FDX_AttrValue_FIELD(oFDX#,DF_FIELD_RELATED_FILE,file#,field#)) to rel_file#
+      if rel_file# send add_item msg_none (FDX_AttrValue_FILELIST(oFDX#,DF_FILE_LOGICAL_NAME,rel_file#))
+      else send add_item msg_none ""
+    loop
+    send Grid_SetEntryState self 0
+    set dynamic_update_state to DFTRUE
+  end_procedure
+  procedure rebuild_set integer set# integer file#
+    integer row# max# fld# base# columns#
+    send reset to set#
+    get Grid_Columns self to columns#
+    get Grid_RowCount self to max#
+    for row# from 0 to (max#-1)
+      move (row#*columns#) to base#
+      if (select_state(self,base#)) send add_field to set# file# row#
+    loop
+  end_procedure
+  procedure select_help integer st#
+    integer row# max# base# columns#
+    get Grid_Columns self to columns#
+    get Grid_RowCount self to max#
+    for row# from 0 to (max#-1)
+      move (row#*columns#) to base#
+      set select_state item base# to st#
+    loop
+    set dynamic_update_state to true
+  end_procedure
+  procedure select_all
+    send select_help 1
+  end_procedure
+  procedure select_none
+    send select_help 0
+  end_procedure
+end_class // cFdxSelectFieldsList
+
+object oFdxSelectFields is a aps.ModalPanel
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult 0
+  set pMinimumSize to 150 0
+  object oLst is a cFdxSelectFieldsList
+    on_key kenter send next
+    set size to 200 0
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item "Select all" send select_all to (oLst(self))
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item "Deselect all" send select_none to (oLst(self))
+  end_object
+  object oBtn3 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn4 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons sl_vertical
+  procedure close_panel_ok
+    set piResult to 1
+    send close_panel
+  end_procedure
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oLst(self)) delta_rw# 0
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_register_multi_button (oBtn3(self))
+    send aps_register_multi_button (oBtn4(self))
+    send aps_locate_multi_buttons sl_vertical
+    send aps_auto_size_container
+  end_procedure
+  function iPopup.iii integer oFDX# integer file# integer set# returns integer
+    set piResult to 0
+    send fill_list.iii to (oLst(self)) oFDX# file# set#
+    set label to ("Select fields: "+FDX_AttrValue_FILELIST(oFDX#,DF_FILE_LOGICAL_NAME,file#))
+    send popup
+    if (piResult(self)) begin
+      send rebuild_set to (oLst(self)) set# file#
+    end
+    function_return (piResult(self))
+  end_function
+end_object // oFdxSelectFields
+
+//> Function iFdxSelectFields returns 1 if the the user did indeed select a
+//> set of fields and 0 if the user cancelled the selection. If 1 is returned
+//> the function will modify the set of fields passed to it in parameter
+//> set#.
+function iFdxSelectFields global integer oFDX# integer file# integer set# returns integer
+  integer close# open# rval#
+  ifnot oFDX# begin
+    if (DBMS_IsOpenFile(file#)) begin
+      move 0 to close#
+      move 1 to open#
+    end
+    else begin
+      if (DBMS_OpenFile(file#,DF_SHARE,0)) begin
+        move 1 to close#
+        move 1 to open#
+      end
+      else begin
+        move 0 to close#
+        move 0 to open#
+      end
+    end
+  end
+  else begin
+    move 0 to close#
+    move 1 to open#
+  end
+  move (iPopup.iii(oFdxSelectFields(self),oFDX#,file#,set#)) to rval#
+  if close# close file#
+  function_return rval#
+end_function
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+class cFdxSelectIndexList is a aps.List
+  procedure construct_object integer img#
+    forward send construct_object img#
+    on_key kswitch send switch
+    on_key kswitch_back send switch_back
+    property integer phFDX 0
+    property integer piFile 0
+  end_procedure
+  procedure mouse_click integer liItem integer liGrb
+    if ((liItem-1)<item_count(self)) send close_panel_ok
+  end_procedure
+  procedure AddIndex integer liFile integer liIndex string lsFields integer liType
+    send add_item MSG_NONE (string(liIndex)+": "+FDX_IndexAsFieldNames(phFDX(self),piFile(self),liIndex,0))
+    set aux_value item (item_count(self)-1) to liIndex
+  end_procedure
+  procedure fill_list.ii integer oFDX# integer file#
+    integer field# max_field# base# rel_file#
+    set phFDX to oFDX#
+    set piFile to file#
+    set dynamic_update_state to DFFALSE
+    send delete_data
+    send FDX_IndexCallback oFDX# file# DF_INDEX_TYPE_ONLINE MSG_AddIndex self
+    send FDX_IndexCallback oFDX# file# DF_INDEX_TYPE_BATCH MSG_AddIndex self
+    set dynamic_update_state to DFTRUE
+  end_procedure
+end_class // cFdxSelectIndexList
+
+object oFdxSelectIndex is a aps.ModalPanel
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult 0
+  set pMinimumSize to 150 0
+  object oLst is a cFdxSelectIndexList
+    on_key kenter send close_panel_ok
+    set size to 100 300
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    set piResult to (aux_value(oLst(self),CURRENT))
+    send close_panel
+  end_procedure
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oLst(self)) delta_rw# 0
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+  function iPopup.ii integer oFDX# integer file# returns integer
+    set piResult to 0
+    send fill_list.ii to (oLst(self)) oFDX# file#
+    set label to ("Select index: "+FDX_AttrValue_FILELIST(oFDX#,DF_FILE_LOGICAL_NAME,file#))
+    send popup
+    function_return (piResult(self))
+  end_function
+end_object // oFdxSelectIndex
+end_desktop_section
+
+function iFdxSelectIndex global integer oFDX# integer file# returns integer
+  integer close# open# rval#
+  ifnot oFDX# begin
+    if (DBMS_IsOpenFile(file#)) begin
+      move 0 to close#
+      move 1 to open#
+    end
+    else begin
+      if (DBMS_OpenFile(file#,DF_SHARE,0)) begin
+        move 1 to close#
+        move 1 to open#
+      end
+      else begin
+        move 0 to close#
+        move 0 to open#
+      end
+    end
+  end
+  else begin
+    move 0 to close#
+    move 1 to open#
+  end
+  move (iPopup.ii(oFdxSelectIndex(self),oFDX#,file#)) to rval#
+  if close# close file#
+  function_return rval#
+end_function

@@ -1,0 +1,52 @@
+// Use API_Attr     // UI objects for use with API_Attr.utl
+Use API_Attr.utl // Functions for querying API attributes
+Use aps.pkg
+
+//register_procedure FdxSet_Comp_CallBack global integer attr# integer msg# integer obj#
+
+class Api_Attr.ComboFormAux is a aps.ComboFormAux
+  procedure contruct_object
+    forward send contruct_object
+    on_key kenter send next
+    set allow_blank_state to false
+  end_procedure
+  procedure fill_list_attrtype_help integer attr#
+    send combo_add_item (API_Attr_DisplayName(attr#)) attr#
+  end_procedure
+  procedure fill_list_attrtype integer type#
+    send API_AttrType_Callback type# msg_fill_list_attrtype_help self
+    set entry_state item 0 to false
+  end_procedure
+  procedure fill_list_attrtypes
+    integer max# attrtype#
+    move (API_AttrType_Count()) to max#
+    for attrtype# from 0 to (max#-1)
+      send combo_add_item (API_AttrType_Name(attrtype#)) attrtype#
+    loop
+    set entry_state item 0 to false
+  end_procedure
+  procedure prepare_attr_values_help integer value# string codename# string displayname#
+    send combo_add_item displayname# value#
+  end_procedure
+  procedure prepare_attr_values integer attr#
+    send Combo_Delete_Data
+    if (API_AttrDiscreteValues(attr#)) begin
+      send API_AttrValue_Callback attr# msg_prepare_attr_values_help self
+      set entry_state item 0 to false
+    end
+    else begin
+      set entry_state item 0 to true
+      set value item 0 to ""
+    end
+  end_procedure
+  procedure comparison_modes_help integer comp# string str#
+    send combo_add_item str# comp#
+  end_procedure
+  procedure prepare_comparison_modes integer attr#
+    send Combo_Delete_Data
+    send FdxSet_Comp_CallBack attr# msg_comparison_modes_help self
+    set entry_state item 0 to false
+  end_procedure
+end_class // Api_Attr.ComboFormAux
+
+

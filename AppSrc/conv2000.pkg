@@ -1,0 +1,110 @@
+﻿// Use Conv2000.pkg // UI bricks for reindexing a set of tables
+
+Use Conv2000.utl // Make date fields y2000
+Use GridUtil.utl // Grid and List utilities
+
+object oWaitWhileConv2000 is a cProcessStatusPanel
+  Set allow_cancel_state of ghoStatusPanel to DFFALSE
+  procedure DoCaption string sCaption
+    Set Caption_Text of ghoStatusPanel to sCaption
+    Set Message_Text of ghoStatusPanel to ""
+    Set Action_Text  of ghoStatusPanel to ""
+    Set Title_Text   of ghoStatusPanel to ""
+  End_Procedure       
+  procedure UpdateWait1 string sStr
+    Set Message_Text of ghoStatusPanel to sStr
+  end_procedure
+  procedure UpdateWait2 string sStr
+    Set Action_Text of ghoStatusPanel to sStr
+  end_procedure
+//   set piCallbackObj of gloConv2000# to self
+  procedure Start_StatusPanel
+    send DoCaption "Converting tables"
+    send Start_StatusPanel of ghoStatusPanel
+  end_procedure
+  procedure Stop_StatusPanel
+    send Stop_StatusPanel of ghoStatusPanel
+  end_procedure
+end_object
+
+Use Aps.pkg
+Use RGB.utl      // Some color functions
+Class cConv2000List is a aps.Grid
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piConv2000Object gloConv2000# // Global integer defined in Conv2000.utl
+    send GridPrepare_AddCheckBoxColumn
+    send GridPrepare_AddColumn "Table"  AFT_ASCII40
+    send GridPrepare_AddColumn "Status" AFT_ASCII40
+    send GridPrepare_Apply self
+    set select_mode to MULTI_SELECT
+    set highlight_row_state to true
+    on_key KNEXT_ITEM     send switch
+    on_key KPREVIOUS_ITEM send switch_back
+  end_procedure
+
+  procedure select_toggling integer itm# integer i#
+    integer ci# iColumns
+    get Grid_Columns self to iColumns
+    get current_item to ci#
+    move ((ci#/iColumns)*iColumns) to ci# // Redirect to first column
+    forward send select_toggling ci# i#
+  end_procedure
+
+  procedure fill_list
+    integer iObj iRow iMax iBase iStatus
+    string sStatusText
+    send delete_data
+    set dynamic_update_state to false
+    get piConv2000Object to iObj
+    get row_count of iObj to iMax
+    decrement iMax
+    for iRow from 0 to iMax
+      get item_count to iBase
+      send Grid_AddCheckBoxItem self DFTRUE
+      set aux_value item iBase to iRow
+      send add_item msg_none (psRootName.i(iObj,iRow))
+      get piStatus.i of iObj iRow to iStatus
+      move (Y2K_TableStatusText(iStatus)) to sStatusText
+      if iStatus eq Y2K_CONVERTED begin
+//      move (sStatusText+" (# dates in # records)") to sStatusText
+        move ("(# dates in # records)") to sStatusText
+//        replace "#" in sStatusText with (piAux2.i(iObj,iRow)) to sStatusText
+//        replace "#" in sStatusText with (piAux1.i(iObj,iRow)) to sStatusText
+        Move (Replace("#",sStatusText,piAux2.i(iObj,iRow))) to sStatusText
+        Move (Replace("#",sStatusText,piAux1.i(iObj,iRow))) to sStatusText
+      End
+      send add_item msg_none sStatusText
+    loop
+    send Grid_SetEntryState self DFFALSE
+    set dynamic_update_state to true
+    send update_total (iMax+1)
+  end_procedure
+
+  procedure update_total integer iItemsInList
+  end_procedure
+
+  procedure DoConv_Help integer iRow integer iBase
+    send Add_Rootname to (piConv2000Object(self)) (value(self,iBase+1))
+  end_procedure
+
+  procedure DoConv
+    integer iCallBackTmp iConv2000Object
+    get piConv2000Object to iConv2000Object
+    get piCallbackObj of iConv2000Object to iCallBackTmp
+    set piCallbackObj of iConv2000Object to (oWaitWhileConv2000(self))
+    send Start_StatusPanel to (oWaitWhileConv2000(self))
+    send reset to iConv2000Object
+    send Grid_RowCallBackSelected self msg_DoConv_Help
+    send DoConv to iConv2000Object
+    send Stop_StatusPanel to (oWaitWhileConv2000(self))
+    send fill_list
+    set piCallbackObj of iConv2000Object to iCallBackTmp
+  end_procedure
+  procedure Reset
+    send reset to (piConv2000Object(self))
+    send fill_list
+  end_procedure
+end_class // cConv2000List
+
+

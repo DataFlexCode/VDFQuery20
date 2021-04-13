@@ -1,0 +1,128 @@
+Use Files.utl    // Utilities for handling file related stuff
+Use StructEx.utl // Restructuring extensions
+Use MsgBox.utl   // obs procedure
+Use FList.nui    // A lot of FLIST- procedures and functions
+Use DFMatrix.utl // DFMatrix application glue
+
+object oDfmFnc01 is a fdxrpt.ModalClient label "Create selected tables (empty ones)"
+  object oFrm1 is a aps.SelectDirForm label "Target directory:" abstract AFT_ASCII50
+    on_key kenter send next
+    set p_extra_internal_width to -40
+  end_object
+  send aps_goto_max_row
+  send make_column_space 70
+  object oCb1 is a aps.CheckBox label "Update FILELIST.CFG"
+    set checked_state to true
+  end_object
+  object oCb2 is a aps.CheckBox label "Create FD files" snap SL_DOWN
+  end_object
+  object oCb3 is a aps.CheckBox label "Create DEF files" snap SL_DOWN
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send DoReport
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  function sDestination returns string
+    function_return (value(oFrm1(self),0))
+  end_function
+  function iUpdateFilelist returns integer
+    function_return (checked_state(oCb1(self)))
+  end_function
+  function iCreateFD returns integer
+    function_return (checked_state(oCb2(self)))
+  end_function
+  function iCreateDEF returns integer
+    function_return (checked_state(oCb3(self)))
+  end_function
+  set piDontRegister to dfTrue // Don't register with the main menu
+  procedure Callback_Filelist_Entry integer liFile integer lbSelected integer lbShaded
+    integer lhFDX liNeverMind lbCreateDEF lbCreateFD
+    string lsFolder lsLogical lsRoot lsLogicalPath lsRootPath
+    get sDestination to lsFolder
+    get piFDX_Server to lhFDX
+    get FDX_AttrValue_FILELIST lhFDX DF_FILE_ROOT_NAME liFile to lsRoot
+    get FDX_AttrValue_FILELIST lhFDX DF_FILE_LOGICAL_NAME liFile to lsLogical
+
+    get DBMS_StripPathAndDriver lsRoot to lsRoot
+    if (lsFolder<>"") begin
+      get Files_AppendPath lsFolder lsRoot to lsRootPath
+    end
+    get RSX_CreateTableFromFDX lhFDX liFile lsRootPath to liNeverMind
+    if (iUpdateFilelist(self)) begin
+      set_attribute DF_FILE_ROOT_NAME    of liFile to lsRoot
+      set_attribute DF_FILE_LOGICAL_NAME of liFile to lsLogical
+      set_attribute DF_FILE_DISPLAY_NAME of liFile to (FDX_AttrValue_FILELIST(lhFDX,DF_FILE_DISPLAY_NAME,liFile))
+    end
+    get Files_AppendPath lsFolder (lowercase(lsLogical)) to lsLogicalPath
+
+    get iCreateDEF to lbCreateDEF
+    get iCreateFD  to lbCreateFD
+
+
+    if (lbCreateDEF or lbCreateFD) begin
+      move (ToAnsi(lsLogicalPath)) to lsLogicalPath
+      if (DBMS_OpenFileAs(lsRootPath,liFile,DF_SHARE,0)) begin
+        if lbCreateDEF begin
+          Output_Aux_File DF_AUX_FILE_DEF For liFile Number liFile to (lsLogicalPath+".def")
+        end
+        if lbCreateFD begin
+          Output_Aux_File DF_AUX_FILE_FD For liFile Number liFile to (lsLogicalPath+".fd")
+        end
+        close liFile
+      end
+    end
+  end_procedure
+  procedure DoReport
+    integer update_filelist# select_count#
+    string dir# filelist#
+    get File_Select_Count of (DFMatrix_SelectorObject()) to select_count#
+    ifnot select_count# send obs "No tables selected!"
+    else begin
+      get iUpdateFilelist to update_filelist#
+      if update_filelist# begin
+        get sDestination to dir#
+        if dir# ne "" begin
+          if (SEQ_FileExists(dir#)=SEQIT_DIRECTORY) begin
+            move (SEQ_ComposeAbsoluteFileName(dir#,"filelist.cfg")) to filelist#
+            ifnot (SEQ_FileExists(filelist#)) begin
+              if (MB_Verify4("A 'Filelist.cfg' does not exist","in that area!","Create one?","",1)) begin
+                if (FLIST_CreateEmptyFileList(filelist#)) begin
+                  send FLIST_PushCurrentFilelist
+                  send FLIST_SetCurrentFilelist filelist#
+                  send RS_Progress RS_PG_LEAVE_ON
+                  send Callback_Filelist_Entries 1 0 // This does the actual work!
+                  send RS_Progress RS_PG_OFF
+                  send FLIST_PopCurrentFilelist
+                  send obs "Done"
+                end
+                else send obs "A 'Filelist.cfg' could not be created." "Operation has been cancelled."
+              end
+            end
+            else begin
+              send FLIST_PushCurrentFilelist
+              send FLIST_SetCurrentFilelist filelist#
+              send RS_Progress RS_PG_LEAVE_ON
+              send Callback_Filelist_Entries 1 0 // This does the actual work!
+              send RS_Progress RS_PG_OFF
+              send FLIST_PopCurrentFilelist
+              send obs "Done"
+            end
+          end
+          else send obs "The specified directory does not exist" ("("+dir#+")")
+          procedure_return
+        end
+      end
+      send RS_Progress RS_PG_LEAVE_ON
+      send Callback_Filelist_Entries 1 0 // This does the actual work!
+      send RS_Progress RS_PG_OFF
+      send obs "Done"
+    end
+  end_procedure
+end_object // oDfmFnc01
+
+procedure Popup_CreateFromFdx
+  send popup to (oDfmFnc01(self))
+end_function

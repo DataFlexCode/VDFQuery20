@@ -1,0 +1,101 @@
+// Use Edit.utl     // cEditor class
+
+Use Files.utl    // Utilities for handling file related stuff
+Use Strings.utl  // String manipulation for VDF
+
+class cEditor is an aps.Edit
+  procedure construct_object integer img#
+    if num_arguments gt 0 forward send construct_object img#
+    else forward send construct_object
+    property integer piLeadInKey private 0 // 0=none, 1=cQ, 2=cK
+    on_key key_ctrl+key_right_arrow send word_right
+    on_key key_ctrl+key_left_arrow  send word_left
+  end_procedure
+  procedure word_left
+    send key kword_left
+  end_procedure
+  procedure word_right
+    send key kword_right
+  end_procedure
+  procedure display_position
+  end_procedure
+  procedure block_cut
+    send copy 1 clipboard true
+    set dynamic_update_state to true
+  end_procedure
+  procedure block_copy
+    send copy 0 clipboard true
+    set dynamic_update_state to true
+  end_procedure
+  procedure buffer_insert
+    send beginning_of_data to clipboard
+    send mark_on
+    send end_of_data to clipboard
+    send paste to clipboard 0 self 0
+    set dynamic_update_state to true
+  end_procedure
+  procedure line_mark
+    integer pos#
+    get position to pos#
+    send move_absolute (hi(pos#)) 0
+    send mark_on
+  end_procedure
+  procedure block_delete
+    send cut false clipboard true
+  end_procedure
+  procedure external_edit
+    string path#
+    send write "extedit.tmp" 0
+    #IFDEF _DOS_
+     runprogram wait "e extedit.tmp"
+    #ENDIF
+    #IFDEF _UNIX_
+     runprogram wait "vi extedit.tmp"
+    #ENDIF
+    send delete_data
+    send read "extedit.tmp"
+    get SEQ_FindFileAlongDfPath "extedit.tmp" to path#
+    get SEQ_ComposeAbsoluteFileName path# "extedit.tmp" to path#
+    get SEQ_TranslatePathToAbsolute path# to path#
+    erasefile path#
+    send refresh_screen
+    send beginning_of_data
+  end_procedure
+  procedure key integer key#
+    integer LeadInKey#
+    get cEditor.piLeadInKey to LeadInKey#
+    if LeadInKey# eq 1 begin // LeadIn=Q?
+      if key# eq key_ctrl+key_y send delete_to_eol
+      set cEditor.piLeadInKey to 0
+    end
+    else if LeadInKey# eq 2 begin // LeadIn=K?
+      if key# eq key_ctrl+key_h send mark_off
+      if key# eq key_ctrl+key_b send mark_on
+      if key# eq key_ctrl+key_y send block_delete
+      set cEditor.piLeadInKey to 0
+    end
+    else begin
+      if key# eq key_ctrl+key_q set cEditor.piLeadInKey to 1
+      else if key# eq key_ctrl+key_k set cEditor.piLeadInKey to 2
+      else begin
+        set cEditor.piLeadInKey to 0
+        if key# eq key_ctrl+key_y send delete_line
+        else if key# eq key_alt+key_k  send mark_on
+        else if key# eq key_alt+key_l  send line_mark
+        else if key# eq key_ctrl+key_c send block_copy
+        else if key# eq key_ctrl+key_v send buffer_insert
+        else if key# eq key_ctrl+key_x send block_cut
+        else if key# eq key_alt+key_u  send mark_off
+        else if key# eq key_alt+key_e  send external_edit
+        else forward send key key#
+      end
+    end
+    send display_position
+  end_procedure
+  procedure set psValueAsString string str#
+    send Text_SetEditObjectValue self str#
+  end_procedure
+  function psValueAsString returns string // That's a parameter for a global function
+    function_return (Text_EditObjectValue(self))
+  end_function
+end_class

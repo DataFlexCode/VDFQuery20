@@ -1,0 +1,197 @@
+// Use TableUpd.nui // Class for updating table data
+
+use dfallent.pkg
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Spec0008.utl // Small arrays with integer Codes (Dictionaries)
+Use DBMS.nui     // Basic DBMS functions (No User Interface)
+Use ErrorHnd.nui // cErrorHandlerRedirector class and oErrorHandlerQuiet object (No User Interface)
+Use API_Attr.nui // Functions for querying API attributes (No User Interface)
+Use ApiIndex.nui // Switch indices offline and online
+
+desktop_section
+  object oTableUpdateLockModes is a cIntegerCodeToText
+    IntegerCodeList
+      Define_IntegerCode TUPD_LOCK_MODE_OPEN_EXCLUSIVE   "Lock mode"
+      Define_IntegerCode TUPD_LOCK_MODE_ONE_TRANSACTION  "All in one transaction"
+      Define_IntegerCode TUPD_LOCK_MODE_UNLOCK_EVERY     "Transaction size"
+      Define_IntegerCode TUPD_LOCK_MODE_NO_LOCK          "No locking"
+    End_IntegerCodeList
+  end_object
+
+  object oTableUpdateParameterList is a cIntegerCodeToText
+    IntegerCodeList
+      Define_IntegerCode TUPD_CREATE_NEW_TABLE     "Create new table"
+      Define_IntegerCode TUPD_ZEROFILE_TABLE       "Reset table before reading"
+      Define_IntegerCode TUPD_OVERWRITE_EXISTING   "Overwrite existing data"
+      Define_IntegerCode TUPD_DO_NOT_CHECK_INDEX   "Do not check for existing records"
+      Define_IntegerCode TUPD_SWITCH_INDEX_OFFLINE "Switch indices off-line"
+      Define_IntegerCode TUPD_LOCK_MODE            "Lock mode"
+      Define_IntegerCode TUPD_UNLOCK_COUNT         "Unlock every # record"
+    End_IntegerCodeList
+  end_object
+end_desktop_section
+
+class cTableUpdateParameters is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    set value item TUPD_CREATE_NEW_TABLE     to DFFALSE
+    set value item TUPD_ZEROFILE_TABLE       to DFFALSE
+    set value item TUPD_OVERWRITE_EXISTING   to DFFALSE
+    set value item TUPD_DO_NOT_CHECK_INDEX   to DFFALSE
+    set value item TUPD_SWITCH_INDEX_OFFLINE to DFFALSE
+    set value item TUPD_LOCK_MODE            to TUPD_LOCK_MODE_UNLOCK_EVERY
+    // Transaction chunk size. Setting TUPD_LOCK_MODE to
+    // TUPD_LOCK_MODE_UNLOCK_EVERY and TUPD_UNLOCK_COUNT to 1
+    // will make the cTableUpdater respond to every lock request.
+    // Setting it to 500 will make the cTable updater unlock
+    // for every 500 update
+    set value item TUPD_UNLOCK_COUNT         to 500
+  end_procedure
+end_class // cTableUpdateParameters
+
+desktop_section // Return values for iBeginTransaction function
+  object oTableUpdateLockRtnVal is a cIntegerCodeToText
+    IntegerCodeList
+      Define_IntegerCode TUPD_ILOCK_RTN_OK                   "OK"
+      Define_IntegerCode TUPD_ILOCK_RTN_MISSING_PARAM_OBJECT "Control object not found"
+      Define_IntegerCode TUPD_ILOCK_RTN_TABLE_COULDNT_OPEN   "Table could not be opened"
+    End_IntegerCodeList
+  end_object
+end_desktop_section
+
+class cTableUpdater is a cArray
+
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer phTableUpdateParameters 0
+    property integer piFile                  0
+    // The name of the table including path. If the table should be opened
+    // via FileList only, this property should be left empty.
+    property string  psFilePathName          ""
+    property integer piRequestSaveCount      0
+    property integer piErrorCount            0
+    property integer piLockRequestCount      0
+
+    // This property holds the transaction chunk size from the setup object
+    // once the transaction is started.
+    property integer piPrv.LockResponse      0
+    property integer piPrv.LockMode          0
+
+    property string  psPrv.Indices           ""
+  end_procedure
+
+            // If file <liFile> is already open when this function os called
+            // no attempt is made to interpret the contents of property
+            // psFilePathName. In that case the file will remain open in its
+            // current mode.
+            function iOpen returns integer
+              integer liLockMode liRval liFile liOpenMode liOpenRes
+              string lsFilePathName
+
+              move TUPD_ILOCK_RTN_OK to liRval // No errors, default return value
+
+              get piFile         to liFile
+              get psFilePathName to lsFilePathName
+              get value of (phTableUpdateParameters(self)) item TUPD_LOCK_MODE to liLockMode
+              // If the file is not already open:
+              ifnot (integer(API_AttrValue_FILE(DF_FILE_OPENED,liFile))) begin
+                if (liLockMode=TUPD_LOCK_MODE_OPEN_EXCLUSIVE) move DF_EXCLUSIVE to liOpenMode
+                else move DF_SHARE to liOpenMode
+                if (lsFilePathName="") move (DBMS_OpenFile(liFile,liOpenMode,0)) to liOpenRes
+                else move (DBMS_OpenFileAs(lsFilePathName,liFile,liOpenMode,0)) to liOpenRes
+                ifnot liOpenRes move TUPD_ILOCK_RTN_TABLE_COULDNT_OPEN to liRval
+              end
+              set piLockRequestCount to 0
+              set piRequestSaveCount to 0
+              set piErrorCount       to 0
+              set piPrv.LockResponse to (value(phTableUpdateParameters(self),TUPD_UNLOCK_COUNT))
+              set piPrv.LockMode     to (value(phTableUpdateParameters(self),TUPD_LOCK_MODE))
+              function_return liRval
+            end_function
+
+            procedure SwitchIndicesOffLine
+              integer liFile
+              string lsIndices
+              get piFile to liFile
+              get DoSwitchIndicesOffLine liFile to lsIndices
+              set psPrv.Indices to lsIndices
+            end_procedure
+            procedure SwitchIndicesOnLine
+              integer liFile
+              string lsIndices
+              get piFile to liFile
+              get psPrv.Indices to lsIndices
+              send DoSwitchIndicesOnline liFile lsIndices
+            end_procedure
+
+  function iBeginTransaction returns integer
+    integer lhTableUpdateParameters liRval liLockMode lbZerofile liFile
+    integer IbIndicesOffline
+    get piFile to liFile
+    get phTableUpdateParameters to lhTableUpdateParameters
+    if lhTableUpdateParameters begin
+      get iOpen to liRval
+      if (liRval=TUPD_ILOCK_RTN_OK) begin // It opened OK
+        get value of lhTableUpdateParameters item TUPD_ZEROFILE_TABLE to lbZerofile
+        if lbZerofile zerofile liFile
+
+        get value of lhTableUpdateParameters item TUPD_SWITCH_INDEX_OFFLINE to IbIndicesOffline
+        if IbIndicesOffline send SwitchIndicesOffLine
+
+        // If it has been specified that all should be done in one
+        // transaction, we lock the file here:
+        get value of lhTableUpdateParameters item TUPD_LOCK_MODE to liLockMode
+        if liLockMode eq TUPD_LOCK_MODE_ONE_TRANSACTION lock
+      end
+    end
+    else move TUPD_ILOCK_RTN_MISSING_PARAM_OBJECT to liRval
+    function_return liRval
+  end_function
+
+  function iEndTransaction returns integer
+    integer liLockMode IbIndicesOffline lhTableUpdateParameters
+    get phTableUpdateParameters to lhTableUpdateParameters
+    get piPrv.LockMode to liLockMode
+    if (liLockMode=TUPD_LOCK_MODE_ONE_TRANSACTION) unlock
+    if (liLockMode=TUPD_LOCK_MODE_UNLOCK_EVERY and piLockRequestCount(self)<>0) unlock
+
+    get value of lhTableUpdateParameters item TUPD_SWITCH_INDEX_OFFLINE to IbIndicesOffline
+    if IbIndicesOffline send SwitchIndicesOnLine
+
+    function_return 0 // All is well
+  end_function
+
+  procedure DoLock
+    integer liLockRequestCount
+    // We lock only if lock mode has been set to TUPD_LOCK_MODE_UNLOCK_EVERY
+    if (piPrv.LockMode(self)=TUPD_LOCK_MODE_UNLOCK_EVERY) begin
+      get piLockRequestCount to liLockRequestCount
+      ifnot liLockRequestCount lock
+      set piLockRequestCount to (liLockRequestCount+1)
+    end
+  end_procedure
+
+  procedure DoUnlock
+    integer liLockRequestCount liTransactionChunkSize
+    get piLockRequestCount to liLockRequestCount
+    get piPrv.LockResponse to liTransactionChunkSize
+    if (liLockRequestCount>=liTransactionChunkSize) begin
+      unlock
+      set piLockRequestCount to 0
+    end
+  end_procedure
+
+  // The function returns the number of errors generated by the
+  // saverecord command.
+  function iSaveRecord returns integer
+    integer liFile liRval
+    get piFile to liFile
+    set piRequestSaveCount to (piRequestSaveCount(self)+1)
+//  send ErrorHnd_Quiet_Activate // Transfer error handling to quiet handler
+    saverecord liFile
+//  send ErrorHnd_Quiet_Deactivate // Reset to normal error handling
+//  move (ErrorHnd_Quiet_ErrorCount()) to liRval
+    if liRval set piErrorCount to (piErrorCount(self)+1)
+    function_return liRval
+  end_function
+end_class

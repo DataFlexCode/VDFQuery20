@@ -1,0 +1,86 @@
+// Use RGB.nui      // Some basic RGB color functions
+// Part of VDFQuery by Sture ApS
+
+//> pkgdoc.begin
+//> This package contains some global functions to manipulate RGB colors.
+//> The RGB color model is an additive color model in which red, green, and blue light are combined in various ways
+//> to create other colors. The very idea for the model itself and the abbreviation "RGB" come from the three primary
+//> colors in additive light models (check: http://www.wordiq.com/definition/RGB).
+//> pkgdoc.end
+
+Use Strings.nui  // String manipulation for VDF
+
+//> Return a RGB color composed from red, green and blue components (each of a value between 0 and 255)
+function RGB_Compose global integer liRed integer liGreen integer liBlue returns integer
+  function_return (liBlue*256+liGreen*256+liRed)
+end_function
+
+//> Brighten a RGB color by a percentage.
+function RGB_Brighten global integer liColor integer liPercent returns integer
+  integer liRed liGreen liBlue
+  move (liColor IAND $0000FF) to liRed
+  move (liColor IAND $00FF00/256) to liGreen
+  move (liColor IAND $FF0000/65536) to liBlue
+  move (255-liRed*liPercent/100+liRed) to liRed
+  move (255-liGreen*liPercent/100+liGreen) to liGreen
+  move (255-liBlue*liPercent/100+liBlue) to liBlue
+  function_return (liBlue*256+liGreen*256+liRed)
+end_function
+
+//> Darken a RGB color by a percentage.
+function RGB_Darken global integer liColor integer liPercent returns integer
+  integer liRed liGreen liBlue
+  move (liColor IAND $0000FF) to liRed
+  move (liColor IAND $00FF00/256) to liGreen
+  move (liColor IAND $FF0000/65536) to liBlue
+  move (-liRed*liPercent/100+liRed) to liRed
+  move (-liGreen*liPercent/100+liGreen) to liGreen
+  move (-liBlue*liPercent/100+liBlue) to liBlue
+  function_return (liBlue*256+liGreen*256+liRed)
+end_function
+
+//> Blend two RGB colors weighing color1 by a percentage.
+function RGB_Blend global integer liColor1 integer liColor2 integer liPercent1 returns integer
+  integer liRed1 liGreen1 liBlue1
+  integer liRed2 liGreen2 liBlue2
+  move (liColor1 IAND $0000FF) to liRed1
+  move (liColor1 IAND $00FF00/256) to liGreen1
+  move (liColor1 IAND $FF0000/65536) to liBlue1
+  move (liColor2 IAND $0000FF) to liRed2
+  move (liColor2 IAND $00FF00/256) to liGreen2
+  move (liColor2 IAND $FF0000/65536) to liBlue2
+  move (liRed1*liPercent1+(100-liPercent1*liRed2)/100) to liRed1
+  move (liGreen1*liPercent1+(100-liPercent1*liGreen2)/100) to liGreen1
+  move (liBlue1*liPercent1+(100-liPercent1*liBlue2)/100) to liBlue1
+  function_return (liBlue1*256+liGreen1*256+liRed1)
+end_function
+
+//> Negate a RGB color
+function RGB_Negate global integer liColor returns integer
+  integer liRed liGreen liBlue
+  move (liColor IAND $0000FF) to liRed
+  move (liColor IAND $00FF00/256) to liGreen
+  move (liColor IAND $FF0000/65536) to liBlue
+  move (255-liRed) to liRed
+  move (255-liGreen) to liGreen
+  move (255-liBlue) to liBlue
+  function_return (liBlue*256+liGreen*256+liRed)
+end_function
+
+//> Translate a RGB color to HTML syntax.
+function RGB_ToHTML global integer liColor returns string
+  integer liRed liGreen liBlue
+  move (liColor IAND $0000FF) to liRed
+  move (liColor IAND $00FF00/256) to liGreen
+  move (liColor IAND $FF0000/65536) to liBlue
+  function_return ("#"+vdfq_ByteToHex(liRed)+vdfq_ByteToHex(liGreen)+vdfq_ByteToHex(liBlue))
+end_function
+
+function RGB_HTMLToRgb global string lsColor returns integer
+  integer liRed liGreen liBlue
+  move (uppercase(replace("#",lsColor,""))) to lsColor
+  get vdfq_HexToByte (mid(lsColor,2,1)) to liRed
+  get vdfq_HexToByte (mid(lsColor,2,3)) to liGreen
+  get vdfq_HexToByte (mid(lsColor,2,5)) to liBlue
+  function_return (RGB_Compose(liRed,liGreen,liBlue))
+end_function

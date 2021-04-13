@@ -1,0 +1,360 @@
+// Database performance tester (character mode))
+use app.utl
+Use TblDynAc.nui // Table, dynamic access (cDynamicTableAccess class)
+Use DBMS.nui     // Basic DBMS functions (No User Interface)
+Use TblDynAc.nui // Table, dynamic access (cDynamicTableAccess class)
+Use Wait.utl     // Something to put on screen while batching.
+Use Dates.nui    // Dates
+Use OpenStat.nui // cTablesOpenStatus class (formely cFileAllFiles) (No User Interface)
+Use fdx.nui
+
+Use Version.nui  // Define _OS_ and _VERSION_ symbols.
+
+#IF (_OS_=_OS_DOS_)
+ use tblcre~1.pkg
+#ELSE
+ use tblcreate.pkg
+#ENDIF
+
+// The FastView Table Pounder is used to see if a table placed on a given
+// drive can handle massive updating from a number of clients at the same
+// time. The goal is to determine that this can be done without errors,
+// thereby demonstrating the locking and cashing is correctly setup.
+//
+// The test cycle consists of creating 50 records in a test table, then finding
+// 50 records and marking them for deletion and then deleting them. The time
+// it takes to complete one iteration is displayed in a list (i.e. the time
+// it takes to perform 150 updates to the test table).
+//
+
+class cPerformanceTest_TableAccess is a cDynamicTableAccess
+  procedure construct_object
+    forward send construct_object
+
+    set pbAllowTemporaryFilelistEntries to TRUE
+
+    set psRootNamePrefix to ""
+
+    set TableBaseData 0 to "fvsyspnd" "DB Performance test table" 0
+  end_procedure
+
+  function DoOpenTables returns integer
+    integer liRval liFile liLen
+    forward get DoOpenTables to liRval
+    function_return liRval
+  end_function
+            procedure DeclareOpenError string lsError
+              move (replace("#",lsError,psRootNamePrefix(self))) to lsError
+              send error 718 lsError
+            end_procedure
+end_class // cPerformanceTest_TableAccess
+
+object oSysPound_TableDefinitions is a cArray
+
+  object oTable_SysPound is a cTableCreator
+    procedure OnDefine
+      set piMaxRecords to 1000000 // 1 million
+      send DoAddField  "CREATE_TIME"  DF_BCD   14
+      send DoAddField  "CREATE_BY"    DF_BCD   14
+      send DoAddField  "DELETE_BY"    DF_BCD   14
+      send DoAddOnlineIndex 1 "create_time recnum"
+      send DoAddOnlineIndex 2 "delete_by recnum"
+    end_procedure
+  end_object
+
+  procedure DoCreateTables integer lhTableAccess
+    integer liFile lhAppDbTable lbSuccess
+    string lsRoot lsLogical lsDisplay
+
+    get piFile.i        of lhTableAccess 0 to liFile
+    get psRootname.i    of lhTableAccess 0 to lsRoot
+    get psLogicalName.i of lhTableAccess 0 to lsLogical
+    get psUserName.i    of lhTableAccess 0 to lsDisplay
+    set FileListValues of (oTable_SysPound(self)) to liFile lsRoot lsLogical lsDisplay
+    send DoDefine to (oTable_SysPound(self))
+    send CreateTable to (oTable_SysPound(self))
+  end_procedure
+end_object // oSysPound_TableDefinitions
+
+object oSystemPounder_TableAccess is a cPerformanceTest_TableAccess
+  set pbOpenTablesOnDefine to false
+end_object // oSystemPounder_TableAccess
+
+procedure SysPound_CreateTables global
+  integer lhTableAccess
+  move (oSystemPounder_TableAccess(self)) to lhTableAccess
+  send DoCreateTables to (oSysPound_TableDefinitions(self)) lhTableAccess
+end_procedure
+
+function SysPound_DropTables global returns integer
+  integer lbOK lhTableAccess
+  move (oSystemPounder_TableAccess(self)) to lhTableAccess
+  get DoEraseAllTables of lhTableAccess to lbOK
+  function_return lbOK
+end_function
+
+function SysPound_OpenTables global returns integer
+  function_return (DoOpenTables(oSystemPounder_TableAccess(self)))
+end_function
+
+object oTestSetup is a cArray
+#IF (_OS_=_OS_DOS_)
+  set value item 0 to 1000   // number of records
+  set value item 1 to 50000 // number of items in array
+#ELSE
+  set value item 0 to 10000   // number of records
+  set value item 1 to 500000 // number of items in array
+#ENDIF
+end_object
+
+
+/TestSetup.hdr
+⁄ƒTest setupƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒø
+/TestSetup.frm
+≥                                                    ≥
+≥   Number of records to create/edit/delete: _____.  ≥
+≥                                                    ≥
+≥   Number of items to add to array........:______.  ≥
+≥                                                    ≥
+/TestSetup.btn
+≥                              __________ __________ ≥
+¿ƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒŸ
+/*
+
+object oTestSetupPanel is a app.ModalClient TestSetup.hdr
+  set location to 8 18 absolute
+  on_key ksave_record send ok
+  on_key kcancel send cancel
+  object oForm is a Form TestSetup.frm
+    set location to 1 0 relative
+    item_list
+      on_item "" send next
+      on_item "" send next
+    end_item_list
+  end_object
+  object oBtn is a app.Button TestSetup.btn
+    set location to 6 0 relative
+    item_list
+      on_item t.btn.ok     send ok
+      on_item t.btn.cancel send cancel
+    end_item_list
+  end_object
+  procedure popup
+    integer lhTestSetup
+    integer rval#
+    move (oTestSetup(self)) to lhTestSetup
+    set value of (oForm(self)) item 0 to (value(lhTestSetup,0))
+    set value of (oForm(self)) item 1 to (value(lhTestSetup,1))
+    ui_accept self to rval#
+    if rval# eq MSG_OK begin
+      set value of lhTestSetup item 0 to (value(oForm(self),0))
+      set value of lhTestSetup item 1 to (value(oForm(self),1))
+    end
+  end_procedure
+end_object // oNewModalPanel
+
+
+/TestPanel.hdr
+⁄ƒDB Performance testerƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒø
+/TestPanel.lst
+≥                                                    ≥
+≥ __________________________________________________ ≥
+≥ __________________________________________________ ≥
+≥ __________________________________________________ ≥
+≥ __________________________________________________ ≥
+≥ __________________________________________________ ≥
+≥ __________________________________________________ ≥
+≥ __________________________________________________ ≥
+≥ __________________________________________________ ≥
+≥                                                    ≥
+/TestPanel.btn
+≥                _____________ __________ __________ ≥
+¿ƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒƒŸ
+/*
+
+object oTestPanelPanel is a app.ModalClient TestPanel.hdr
+  set location to 6 10 absolute
+  on_key ksave_record send ok
+  on_key kcancel send cancel
+  object oList is a List TestPanel.lst
+    set location to 1 0 relative
+    item_list
+      on_item "" send next
+      on_item "" send next
+    end_item_list
+
+    procedure WriteLn integer liIter string lsLine
+      integer liItemCount liCount
+      get item_count to liItemCount
+      for liCount from liItemCount to liIter
+        send add_item "" MSG_NONE
+      loop
+      set value item (liIter-1) to lsLine
+    end_procedure
+  end_object
+
+  procedure WriteLn integer liIter string lsLine
+    send writeln to (oList(self)) liIter lsLine
+  end_procedure
+
+  procedure DoSetup
+    send popup to (oTestSetupPanel(self))
+  end_procedure
+
+  function nSysTime returns number
+    function_return (TS_SysTime())
+  end_function
+
+  procedure Create100 number lnId integer liFile
+    integer liCount liMax
+    number lnCreateTime
+    get value of (oTestSetup(self)) item 0 to liMax
+    move 0 to liCount
+    repeat
+      clear liFile
+      get nSysTime to lnCreateTime
+      set_field_value liFile 1 to lnCreateTime
+      lock
+    //  vFind liFile 1 EQ
+    //  ifnot (found) begin
+          set_field_value liFile 2 to lnId
+          saverecord liFile
+          increment liCount
+    //  end
+      unlock
+    until (liCount>=liMax)
+  end_procedure
+  procedure Mark100 number lnId integer liFile
+    integer liCount lbFound liMax
+    number lnDeleteBy
+    get value of (oTestSetup(self)) item 0 to liMax
+    clear liFile
+    repeat
+      lock
+        vFind liFile 1 GT
+        move (found) to lbFound
+        if (found) begin
+          get_field_value liFile 3 to lnDeleteBy
+          if (lnDeleteBy=0) begin
+            set_field_value liFile 3 to lnId
+            saverecord liFile
+            increment liCount
+          end
+        end
+      unlock
+    until (liCount>=liMax or lbFound=0)
+  end_procedure
+
+  procedure Delete100 number lnId integer liFile
+    integer lbFound
+    number lnDeleteBy
+    clear liFile
+    set_field_value liFile 3 to lnId
+    repeat
+      vfind liFile 2 GT
+      get_field_value liFile 3 to lnDeleteBy
+      move (found) to lbFound
+      if lbFound move (lnDeleteBy=lnId) to lbFound
+      if lbFound delete liFile
+    until (not(lbFound))
+  end_procedure
+
+  object oTestArray is a cArray
+  end_object
+
+
+  procedure Array100
+    integer liMax lhArr liItem
+    get value of (oTestSetup(self)) item 1 to liMax
+    move (oTestArray(Self)) to lhArr
+    send delete_data to lhArr
+    for liItem from 0 to liMax
+      set value of lhArr item liItem to "ABCDEFGHIJKLMNOPQRSTUVWXYZíùè"
+    loop
+    send delete_data to lhArr
+  end_procedure
+
+  procedure DoRunTableTest
+    integer liFile liCount lbBreak li1000 liRecords liItems
+    number lnId lnTime
+    number lnStart lnStop
+
+    get piFile.i of (oSystemPounder_TableAccess(self)) 0 to liFile
+    get TS_SysTime to lnId
+    move 0 to liCount
+    send delete_data to (oList(self))
+
+    get value of (oTestSetup(self)) item 0 to liRecords
+    get value of (oTestSetup(self)) item 1 to liItems
+
+    increment liCount
+    send WriteLn liCount ("Record count: "+string(liRecords)+", Items: "+string(liItems))
+
+    send ScreenEndWait_On 0 0
+    get TS_SysTime to lnStart
+    move 0 to li1000
+    repeat
+      increment liCount
+      send ScreenEndWait_Update (li1000*1000+liCount)
+      send WriteLn liCount ("Iteration "+string(liCount-1)+": Create")
+      send ScreenEndWait_SetText "Create"
+      send Create100 lnId liFile
+      send WriteLn liCount ("Iteration "+string(liCount-1)+": Edit")
+      send ScreenEndWait_SetText "Edit"
+      send Mark100   lnId liFile
+      send WriteLn liCount ("Iteration "+string(liCount-1)+": Delete")
+      send ScreenEndWait_SetText "Delete"
+      send Delete100 lnId liFile
+
+      send WriteLn liCount ("Iteration "+string(liCount-1)+": Array")
+      send ScreenEndWait_SetText "Array"
+      send Array100 lnId liFile
+
+      get TS_SysTime to lnStop
+      move (lnStop-lnStart) to lnTime
+      send WriteLn liCount (sSysTime()+" Iteration "+string(li1000*1000+liCount-1)+":  "+string(lnTime)+" s")
+
+      get MB_CancelOnKeypress "Cancel test loop?" to lbBreak
+      move lnStop to lnStart
+      if (liCount=1000) begin
+        send delete_data to (oList(self))
+        move 0 to liCount
+        increment li1000
+      end
+    until lbBreak
+    send ScreenEndWait_Off
+  end_procedure
+  procedure DoRunArrayTest
+  end_procedure
+  object oBtn is a app.Button TestPanel.btn
+    set location to 11 0 relative
+    item_list
+      on_item "Run test" send DoRunTableTest
+      on_item "Setup" send DoSetup
+      on_item t.btn.close send cancel
+    end_item_list
+  end_object
+  procedure popup
+    integer lbOK rval#
+    send OpenStat_RegisterFiles
+    send OpenStat_CloseAllFiles
+    get SysPound_OpenTables to lbOK
+    ifnot lbOK begin
+      send SysPound_CreateTables
+      get SysPound_OpenTables to lbOK
+      if lbOK send obs "Test table has been succesfully created"
+    end
+    ifnot lbOK error 772 "fvsyspnd could not be opened (or created)"
+    else begin
+      ui_accept self to rval#
+      get SysPound_DropTables to lbOK
+      if lbOK send obs "Test table has been succesfully dropped"
+    end
+    send OpenStat_RestoreFiles
+  end_procedure
+end_object // oTestPanelPanel
+
+procedure Activate_PerformanceTest
+  send popup to (oTestPanelPanel(self))
+end_procedure
+

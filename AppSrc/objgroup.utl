@@ -1,0 +1,651 @@
+//**********************************************************************
+// Use ObjGroup.utl // Defining groups of objects
+//
+// Author:  Sture B. Andersen
+//
+// Create:  Fri  18-07-1997
+// Update:  Mon  17-11-1997 - Deferred_Request_Destroy_Object added
+//          Wed  28-01-1998 - Procedure Deferred_Message added
+//          Tue  11-08-1998 - Deferred_Message now implemented for use
+//                            with character mode as well. Beware though,
+//                            a lot of things will make it fail (inkey$
+//                            commands etc...)
+//                          - Non-use of K$ removed.
+//          Mon  18-01-1999 - Global integer NotExitingApplication
+//                            introduced.
+//                          - A lot of comments added.
+//          Sun  25-04-1999 - Fixed NotExitingApplication
+//          Tue  31-07-2001 - Added Exit_Application_Check (Fixed
+//                            NotExitingApplication for CM)
+//          Thu  08-08-2002 - Changed timer create/destroy strategy for
+//                            character mode DataFlex
+//
+// Purpose: 1: To provide a global mechanism for defining groups of objects
+//             that may be instatiated in different parts of the application
+//             object tree (determined at runtime).
+//
+//          2: To provide a method for adding a message to the back of the
+//             DataFlex message queue.
+//
+//          It's an odd couple of features to present in one and the same
+//          package but they really are depending upon its other services.
+//          Nice and tight...
+//
+// Blabla:  It may also be used as an easy method for creating multiple views
+//          at runtime from the same object definition. That would be done
+//          like this:
+//
+//          ³ use objgroup.utl
+//          ³
+//          ³ DEFINE_OBJECT_GROUP OG_Modules
+//          ³   object Modules_vw is a aps.dbview label (og_param(0))
+//          ³     object dd is a Modules_dd
+//          ³     end_object
+//          ³     set main_dd to (dd(self))
+//          ³     set server to (dd(self))
+//          ³     object cont is a aps.dbcontainer3d
+//          ³       set p_auto_column to false
+//          ³       object grd is a aps.dbGrid
+//          ³         begin_row
+//          ³           entry_item Modules.Code
+//          ³           entry_item Modules.Name
+//          ³         end_row
+//          ³       end_object
+//          ³     end_object
+//          ³     Procedure Close_Panel // Release when closed!
+//          ³       Forward Send Close_Panel
+//          ³       send Deferred_Request_Destroy_Object
+//          ³     End_Procedure
+//          ³     move self to OG_Current_Object# // global integer
+//          ³     // The previous line makes sure we know the object-ID of
+//          ³     // the view we just created.
+//          ³   end_object
+//          ³ END_DEFINE_OBJECT_GROUP
+//          ³
+//          ³ procedure OpenNewModuleVw // Access method
+//          ³   CREATE_OBJECT_GROUP OG_Modules "Yet another view"
+//          ³   send popup to OG_Current_Object#
+//          ³ end_procedure
+//
+//          This method does not require that the view is coded with
+//          APS objects.
+//
+//
+//          The Deferred_Message procedure
+//          ------------------------------
+//
+//          The package provides a third feature which is the Deferred_Message
+//          method. This is a way to tell DataFlex that you want a procedure
+//          to execute - not now - but when everything else is finished. In
+//          effect you can now send a message by adding it to the very end of
+//          the message queue.
+//
+//          Why would one want to do that? Well, I invented it to get around
+//          the problem of destroying panels, when they are closed. You may
+//          create a procedure like this:
+//
+//                      Procedure Close_Panel
+//                        forward send Close_Panel
+//                        send Request_Destroy_Object // Destroy when closed
+//                      End_Procedure
+//
+//          Because the runtime is still executing a procedure in the object
+//          you are destroying, you will get problems. Since this goes for
+//          all procedures within an object you simply cannot make an
+//          object destroy itself, when it is closed.
+//
+//          UNLESS you can find a way to put a message in the far back of
+//          the message queue. That would make sure that everything in
+//          connection with closing the panel had already happened before
+//          object destruction. And that is what the Deferred_Message
+//          procedure can do. Therefore you may instead write:
+//
+//                      Procedure Close_Panel
+//                        forward send Close_Panel
+//                        send Deferred_Message msg_Request_Destroy_Object
+//                      End_Procedure
+//
+//          Somewhere along the VDF versions (6 or 7) DAW fixed this
+//          particular problem so that now it is OK to destroy an object
+//          while executing one of its methods.
+//
+//
+//          This technique is also viable if you want to make more
+//          independant DDO structures perform something in one go. It
+//          is a fact that when a DDO object is doing something (saving
+//          or finding or the like) you cannot make another (un-connected)
+//          DDO structure do anything. It appears to be dead. The reason is
+//          that while a DDO is performing one of those DDO things it sets
+//          global integers OPERATION_MODE and OPERATION_ORIGIN to whatever
+//          thereby blocking other DDO's from doing anything. If you
+//          keep your tongue straight, you may use the Deferred_Message
+//          procedure to get around this limitation.
+//
+//          However, when using this technique, there is a couple of
+//          (hundred) pitfalls.
+//
+//          The technique I use to do this involves a timer object. The
+//          first time you send a deferred message this timer object
+//          will be created (and not before).
+//
+//          As I understand it, a timer in Windows simply must have a
+//          window handle (a Windows administrative thing that relates
+//          to a window you can see on screen) in order to function. A
+//          DataFlex application can have a lot of windows and it is
+//          important that this window is the ClientArea object of your
+//          application. Placing it anywhere else will give you problems.
+//
+//          If you get an error 'DFTimerManager doesn't have Window_Handle!'
+//          when you close your application, the timer object has been
+//          created in the wrong place. You can get around this by inserting
+//          this line in the beginning of the ClientArea object:
+//
+//                  Object Main_Client is a ClientArea
+//                    send Deferred_Message msg_none
+//                    ...
+//
+//          Another error situation arises if there is any deferred
+//          messages waiting to be executed when you close your
+//          application. This may happen for example if you hook up
+//          to the New_Current_Record method in a DD object.
+//
+//            Procedure New_Current_Record integer old_rec# integer new_rec#
+//              forward send New_Current_Record old_rec# new_rec#
+//              send Deferred_Message msg_Update_Other_DD_Structures
+//            End_Procedure
+//
+//          For reasons un-known to man kind, a DD object fires a
+//          New_Current_Record message when the object is destroyed (most
+//          likely at the time of exiting the application). Do you see the
+//          problem? A message is put in the message queue, when in fact
+//          control never returns to the program. Timers don't like
+//          that sort of thing. You will receive an "Can't kill timer!
+//          Windows error #" error.
+//
+//          If you get into this sort of trouble you may need to check
+//          the value of global integer NotExitingApplication (defined
+//          in this package) before you send a deferred message. The
+//          procedure above would now look like this:
+//
+//            Procedure New_Current_Record integer old_rec# integer new_rec#
+//              forward send New_Current_Record old_rec# new_rec#
+//              if NotExitingApplication ;
+//                 send Deferred_Message msg_Update_Other_DD_Structures
+//            End_Procedure
+//
+//
+//**********************************************************************
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+Use UI
+Use Macros.utl   // Various macros (DESKTOP_SECTION)
+Use Set.utl      // cArray, cSet and cStack classes
+Use Base.nui
+#REPLACE OBJGROUP$TEST 0 // If 1 you can check that objects are destroyed
+                         // when deferred_request_destroy_object is called
+desktop_section
+  integer NotExitingApplication
+  move 1 to NotExitingApplication
+  object OG_Current_Object_stack is an cStack
+    procedure Notify_Exit_Application
+      move 0 to NotExitingApplication
+    end_procedure
+    procedure Broadcast_Notify_Exit_Application
+      move 0 to NotExitingApplication
+    end_procedure
+    function Exit_Application_Check returns integer // CM check
+      move 0 to NotExitingApplication
+      function_return 0 // No changes
+    end_function
+  end_object
+
+  // This object holds all parameters for Object Group instantiations. The
+  // object is a stack and the last item holds the number of items for the
+  // current object group instantiation.
+  //   The global integer ObjectGroupCurrentOffset# points to the first
+  // parameter in the current object group instantiation.
+
+  integer OG_ParameterArray# // Object ID for OG_ParameterArray
+  object OG_ParameterArray is an array
+    move self to OG_ParameterArray#
+  end_object
+end_desktop_section
+
+integer OG_CurrentOffset#  //
+move 0 to OG_CurrentOffset#
+
+integer OG_Current_Object# //
+integer OG_Tmp# //
+
+// The prefix "og" stands for object group.
+procedure og_set_param global integer itm# string value#
+  set value of OG_ParameterArray# item (OG_CurrentOffset#+itm#) to value#
+end_procedure
+function og_param global integer itm# returns string
+  function_return (value(OG_ParameterArray#,OG_CurrentOffset#+itm#))
+end_function
+procedure og_allocate_param_space global integer itm#
+  integer item_count#
+  get item_count of OG_ParameterArray# to item_count#
+  set value of OG_ParameterArray# item (item_count#+itm#) to itm#
+  move item_count# to OG_CurrentOffset#
+end_procedure
+procedure og_add_param global string value#
+  integer item_count# max#
+  get item_count of OG_ParameterArray# to item_count#
+  get integer_value of OG_ParameterArray# item (item_count#-1) to max#
+  send delete_item to OG_ParameterArray# (item_count#-1)
+  set value of OG_ParameterArray# item (item_count#-1) to value#
+  set value of OG_ParameterArray# item item_count# to (max#+1)
+end_procedure
+procedure og_drop_params global // Delete all parameters from last OG instantiation
+  integer max# itm# item_count#
+  get item_count of OG_ParameterArray# to item_count#
+  get value of OG_ParameterArray# item (item_count#-1) to max#
+  for itm# from 0 to max#
+    send delete_item to OG_ParameterArray# (item_count#-1-itm#)
+  loop
+  get item_count of OG_ParameterArray# to item_count#
+  if item_count# ; // Only if not empty
+    move (item_count#-integer_value(OG_ParameterArray#,item_count#-1)-1) to OG_CurrentOffset#
+  else move 0 to OG_CurrentOffset#
+end_procedure
+
+// The above set of messages enables two different strategies for setting
+// up parameters for an OG instantiation:
+//
+//      1) sending og_allocate_param_space to allocate the necessary number
+//         of array items at one time. Afterwards the values are set using
+//         the og_set_param message
+//
+//      2) sending og_allocate_param_space with parameter 0 simply to
+//         indicate that a new parameter set is about to be specified.
+//         Parameter values are hereafter set by using the og_add_param
+//         message.
+//
+// Strategy 2 is somewhat slower than 1 but may be more convenient in
+// most instances.
+//
+// In any case message og_drop_params will drop the current parameters
+// by deleting them from the stack.
+
+#COMMAND DEFINE_OBJECT_GROUP
+ #SPUSH !$
+ #SET $$ !1
+ goto Skip_!1
+ Create_!1:
+   #REPLACE Lbl_!1 !a
+   #PUSH !Zb
+   #SET ZB$ -1
+#ENDCOMMAND
+
+#COMMAND END_DEFINE_OBJECT_GROUP
+   #POP ZB$
+   return
+ Skip_!$:
+ #SPOP !$
+#ENDCOMMAND
+
+#COMMAND CREATE_OBJECT_GROUP$HELP
+ #IF !0>0
+  send og_add_param !1
+  CREATE_OBJECT_GROUP$HELP !2 !3 !4 !5 !6 !7 !8 !9
+ #ENDIF
+#ENDCOMMAND
+#COMMAND CREATE_OBJECT_GROUP
+ #PUSH !Zb
+ #SET ZB$ -1
+ send og_allocate_param_space 0
+ #IFSAME !2 PARENT
+  CREATE_OBJECT_GROUP$HELP !4 !5 !6 !7 !8 !9
+  // Fear of self changing its value during delegation:
+  move self to OG_Tmp# // Stack self
+  send Push.i to (OG_Current_Object_stack(self)) OG_Tmp#
+  move !3 to OG_Tmp#
+  move OG_Tmp# to self
+ #ELSE
+  CREATE_OBJECT_GROUP$HELP !2 !3 !4 !5 !6 !7 !8 !9
+ #ENDIF
+ gosub Create_!1 // And I thought I would never need GOSUB again!
+ #IFSAME !2 PARENT
+  move (iPop(OG_Current_Object_stack(self))) to OG_Tmp#
+  move OG_Tmp# to self // Restore self
+ #ENDIF
+ send og_drop_params
+ #POP ZB$
+#ENDCOMMAND
+
+// The rest of this file is dedicated to supplying a method to be used when
+// destroying objects. The method Deferred_Request_Destroy_Object is understood
+// by all objects but should only be sent to panels (View's and ModalPanel's)
+//
+// The next couple of hundred lines is a duplicate of the standard VDF timer
+// package except that class names has been changed ("0" has been added). This
+// is needed because I do not want to rely on the DfTimer.pkg package. Why not?
+// Because that has to be USE'd from within the (App)ClientArea to avoid focus
+// loss at application start up. This package (ObjGroup.utl) may be used
+// anywhere and still work (as far as I know).
+
+Use Windows.pkg // Standard DAC packages
+Use winuser.nui //
+
+External_Function SetTimer0 "SetTimer" User32.DLL Integer hWnd Integer idTimer Integer idTimeout Pointer tmprc Returns Integer
+External_Function KillTimer0 "KillTimer" User32.DLL Integer hWnd Integer idTimer Returns Integer
+External_Function GetLastError0 "GetLastError" Kernel32.DLL Returns DWORD
+
+Integer giTimerManager#
+
+Class TimersArray0 is an Array
+    Function Find_Object Integer iObj Returns Integer
+        integer iMax
+        integer iItem
+        integer iValue
+        Get Item_count to iMax
+        Decrement iMax
+        For iItem from 1 to iMax
+            Get Integer_Value item iItem to iValue
+            If iValue EQ iObj Function_Return iItem
+        Loop
+        Function_Return -1
+    End_Function
+
+    Procedure Add_Object Integer iObj Returns Integer
+        integer iItem
+        Get Find_Object iObj to iItem
+        If iItem LT 0 Begin
+            Get Find_Object 0 to iItem
+            If iItem LT 0 Get Item_Count to iItem
+        End
+        Set Array_Value item iItem to iObj
+        Procedure_Return iItem
+    End_Procedure
+
+    Procedure Remove_Object Integer iObj
+        integer iItem
+        Get Find_Object iObj to iItem
+        If iItem GT 0 Set Array_Value item iItem to 0
+    End_Procedure
+    Procedure Destroy_Object
+        Delegate Send Kill_All_Timers
+        Forward Send Destroy_Object
+    End_Procedure
+End_Class // TimersArray0
+
+Class DFTimerManager0 is a DFControl
+    Procedure Construct_Object
+        Forward Send Construct_Object
+        Set Visible_State to FALSE
+        Set External_Class_Name "DFTimer" to "static"
+        Set External_Message WM_TIMER to OnTimer
+        Object TimersArray0 is a TimersArray0
+            Set Array_Value item 0 to -9999 // So we don't use item 0
+        End_Object
+        Move self to giTimerManager#
+    End_Procedure
+
+    Procedure Set Timer_Active_State Integer iObj Integer iState
+        integer iTimerID iTimeout iResult iSet
+        Dword   nResult
+        Handle  hWnd
+        Get Window_Handle to hWnd
+        If Not hWnd Begin
+            Error 999 "DFTimerManager doesn't have Window_Handle!"
+            Procedure_Return
+        End
+
+        Move (TimersArray0(self)) to iSet
+        If iState Begin
+            Get MSG_Add_Object of iSet iObj to iTimerID
+            Get Timeout of iObj to iTimeout
+            Move (SetTimer0(hWnd, iTimerID, iTimeout, 0)) to iResult
+            If Not iResult Begin
+                Error 999 "Can't create timer. Too many?"
+                Procedure_Return
+            End
+        End
+        Else Begin
+            Get Find_Object of iSet iObj to iTimerID
+            If iTimerID EQ -1 Procedure_Return
+            Move (KillTimer0(hWnd, iTimerID)) to iResult
+            If Not iResult Begin
+                Move (GetLastError0()) to nResult
+                Error 999 ("Can't kill timer! Windows error" * string(nResult) - "!")
+                Procedure_Return
+            End
+            Send Remove_Object to iSet iObj
+        End
+    End_Procedure
+
+    Function Timer_Active_State Integer iObj Returns Integer
+        integer iResult
+        Get Find_Object of (TimersArray0(self)) iObj to iResult
+        Function_Return (iResult NE 0)
+    End_Function
+
+    Procedure Kill_All_Timers
+        integer iMax iSet iItem iObj iResult
+        Handle  hWnd
+
+        Get Window_Handle to hWnd
+        If Not hWnd Begin
+            Error 999 "DFTimerManager doesn't have Window_Handle!"
+            Procedure_Return
+        End
+
+        Move (TimersArray0(self)) to iSet
+        Get Item_Count of iSet to iMax
+        Decrement iMax
+        For iItem From 1 to iMax
+            Get Integer_Value of iSet item iItem to iObj
+            If iObj Begin
+                Move (KillTimer0(hWnd, iItem)) to iResult
+                Set Array_Value of iSet item iItem to 0
+            End
+        Loop
+    End_Procedure
+
+    Procedure OnTimer Integer wParam Integer lParam
+        integer iObj
+        Get Integer_Value of (TimersArray0(self)) item wParam to iObj
+        If Not iObj Begin
+            Error 999 "OnTimer: Timer event without object!"
+            Procedure_Return
+        End
+        Send OnTimer to iObj wParam lParam
+    End_Procedure
+
+    Procedure Destroy_Object
+        Forward Send Destroy_Object
+        Move 0 to giTimerManager#
+    End_Procedure
+End_Class // DFTimerManager
+
+Class DFTimerManagerPanel0 is a DFPanel
+
+    Procedure Construct_Object
+        Forward Send Construct_Object
+        Set Visible_State to FALSE
+        Object DFTimerManager is a DFTimerManager0
+        End_Object
+    End_Procedure
+
+    Procedure End_Construct_Object
+        Forward Send End_Construct_Object
+        Send Page_Object TRUE
+        Broadcast Send Page_Object TRUE
+    End_Procedure
+End_Class
+
+Class DFTimer0 is a Textbox
+    Procedure Construct_Object
+        Forward Send Construct_Object
+        Set Visible_State to FALSE
+        Property Integer Timeout            Private 1000
+        Property Integer Timer_Message       0
+        Property Integer Timer_Object        0
+        Property Integer Auto_Start_State    TRUE
+        Property Integer Auto_Stop_State     TRUE
+    End_Procedure
+
+    Procedure Set Timer_Active_State Integer iState
+        integer iObj
+        Move self to iObj
+        If giTimerManager# Set Timer_Active_State of giTimerManager# iObj to iState
+    End_Procedure
+
+    Function Timer_Active_State returns integer
+        integer iState
+        integer iObj
+        Move self to iObj
+        If giTimerManager# Get Timer_Active_State of giTimerManager# iObj to iState
+        Function_Return iState
+    End_Function
+
+    Procedure Set Timeout Integer iTimeout
+        integer iActive
+        Set !$.Timeout to iTimeout
+        Get Timer_Active_State to iActive
+        If iActive Set Timer_Active_State to TRUE
+    End_Procedure
+
+    Function Timeout Returns Integer
+        integer iTimeout
+        Get !$.Timeout to iTimeout
+        Function_Return iTimeout
+    End_Function
+
+    Procedure OnTimer Integer iwParam Integer ilParam
+        integer iMsg
+        integer iObj
+        Get Timer_Message to iMsg
+        Get Timer_Object  to iObj
+        If (iMsg) Begin
+            Get Timer_Object  to iObj
+            If iObj Send iMsg to iObj iwParam ilParam
+            Else Send iMsg iwParam ilParam
+        End
+    End_Procedure
+
+    Procedure Page_Object Integer iState
+        Forward Send Page_Object iState
+        If (iState AND Auto_Start_State(self)) Set Timer_Active_State to TRUE
+    End_Procedure
+
+    Procedure Page_Delete
+        If (Auto_Stop_State(self)) Set Timer_Active_State to FALSE
+        Forward Send Page_Delete
+    End_Procedure
+
+    Procedure Destroy_Object
+        Set Timer_Active_State to FALSE
+        Forward Send Destroy_Object
+    End_Procedure
+End_Class // DFTimer0
+
+// This is where this package differs from the DAC package. Object
+// DFTimerManagerPanel0 is NOT instantiated at program start up
+// thus leaving focus un-disturbed. Instead they are created the first
+// time Deferred_Request_Destroy_Object is sent.
+
+DEFINE_OBJECT_GROUP OG_DeferredTimer
+  Object DFTimerManagerPanel0 is a DFTimerManagerPanel0
+    // This object will make the program lose its focus if instantiated
+    // before Main.Client_Area has been created.
+  End_Object
+
+  object oMessages is an Array
+  end_object
+
+  object oDestructionTimer is a DfTimer0
+    // And this object would have made the program crash
+    set auto_start_state to false
+    set auto_stop_state to false
+    property integer pDestroyObject 0
+    procedure OnTimer
+      integer obj# msg# oMessages#
+      #IF OBJGROUP$TEST
+       string str#
+      #ENDIF
+      get pDestroyObject to obj#
+      #IF OBJGROUP$TEST
+       move (name(obj#)) to str#
+      #ENDIF
+      if obj# begin
+        send request_destroy_object to obj#
+        set pDestroyObject to 0
+        set Timer_Active_State to false // Stop timer
+        #IF OBJGROUP$TEST
+         showln ("Object "+string(obj#)+" has been destroyed ("+str#+")")
+        #ENDIF
+        if (item_count(oMessages(self))) begin
+          set TimeOut to 0 // This means "as soon as possible"
+          set Timer_Active_State to true // Start timer
+        end
+      end
+      else begin
+        move (oMessages(self)) to oMessages#
+        if (item_count(oMessages#)) begin
+          get value of oMessages# item 0 to msg#
+          get value of oMessages# item 1 to obj#
+          send delete_item to oMessages# 0
+          send delete_item to oMessages# 0
+          set Timer_Active_State to false // Stop timer
+          if obj# send msg# to obj#
+          else send msg#
+          if (item_count(oMessages#)) begin
+            set TimeOut to 0 // This means "as soon as possible"
+            set Timer_Active_State to true // Start timer
+          end
+        end
+      end
+    end_procedure
+    procedure Deferred_Destroy integer obj#
+      set pDestroyObject to obj#
+      set TimeOut to 0 // This means "as soon as possible"
+      set Timer_Active_State to true // Start timer
+    end_procedure
+
+    procedure Send_Message integer msg# integer obj#
+      integer oMessages#
+      move (oMessages(self)) to oMessages#
+      set value of oMessages# item (item_count(oMessages#)) to msg#
+      set value of oMessages# item (item_count(oMessages#)) to obj#
+      set TimeOut to 0 // This means "as soon as possible"
+      set Timer_Active_State to true // Start timer
+    end_procedure
+  end_object
+END_DEFINE_OBJECT_GROUP
+
+Procedure Deferred_Request_Destroy_Object for cObject
+  integer self# Client_ID#
+  move self to self#
+  ifnot giTimerManager# begin //
+    move (Client_ID(self#)) to Client_ID#
+    if Client_ID# begin
+      #IF OBJGROUP$TEST
+       showln ("ClientID: "+name(Client_ID#))
+      #ENDIF
+      CREATE_OBJECT_GROUP OG_DeferredTimer PARENT Client_ID#
+    end
+    else error 666 "ClientArea not found!"
+  end
+  send Deferred_Destroy to (oDestructionTimer(giTimerManager#)) self#
+End_Procedure
+
+Procedure Deferred_Message for cObject integer msg# integer obj#
+  integer self# Client_ID#
+  move self to self#
+  ifnot giTimerManager# begin //
+    move (Client_ID(self#)) to Client_ID#
+    if Client_ID# begin
+      CREATE_OBJECT_GROUP OG_DeferredTimer PARENT Client_ID#
+    end
+    else error 666 "ClientArea not found!"
+  end
+  if num_arguments gt 1 send send_message to (oDestructionTimer(giTimerManager#)) msg# obj#
+  else send send_message to (oDestructionTimer(giTimerManager#)) msg# self#
+End_Procedure
+

@@ -1,0 +1,109 @@
+// Use Spec0007.utl // Display modal text (DoDisplayText)
+
+Use Strings.utl  // String manipulation for VDF
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+Use Buttons.utl  // Button texts
+object oDisplayText is a aps.ModalPanel
+  set locate_mode to CENTER_ON_SCREEN
+  on_key kcancel send close_panel
+  object oEdt is a aps.Edit
+    set size to 170 250
+    set TypeFace to "Courier New"
+    //set FontWeight to 900
+    set object_shadow_state to true
+    set border_style to BORDER_NONE
+  end_object
+  object oBtn is a aps.Multi_Button
+    on_item t.btn.close send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  set pMinimumSize to 0 75
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oEdt(self)) delta_rw# delta_cl#
+    send aps_register_multi_button (oBtn(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+  procedure display.ss string title# string text#
+    set label to title#
+    send Text_SetEditObjectValue (oEdt(self)) text#
+    send popup
+  end_procedure
+end_object // oDisplayText
+
+object oDisplayTextAskQuestion is a aps.ModalPanel
+  set locate_mode to CENTER_ON_SCREEN
+  on_key kcancel send close_panel
+  on_key kSave_Record send close_panel_ok
+  property integer pbResult 0
+  procedure close_panel_ok
+    set pbResult to DFTRUE
+    send close_panel
+  end_procedure
+  object oEdt is a aps.Edit
+    set size to 170 250
+    set TypeFace to "Courier New"
+    //set FontWeight to 900
+    set object_shadow_state to true
+    set border_style to BORDER_NONE
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  set pMinimumSize to 0 75
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oEdt(self)) delta_rw# delta_cl#
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+  function iDisplay.ss string title# string text# returns integer
+    set label to title#
+    send Text_SetEditObjectValue (oEdt(self)) text#
+    set pbResult to DFFALSE
+    send popup
+    function_return (pbResult(self))
+  end_function
+end_object // oDisplayTextAskQuestion
+
+procedure DoDisplayText global string title# string text#
+  send display.ss to (oDisplayText(self)) title# text#
+end_procedure
+
+desktop_section
+  object oDoDisplayTextLines is a cArray
+    function sCombinedValue returns string
+      integer liMax liItem
+      string lsRval lsChar10
+      move "" to lsRval
+      move (character(10)) to lsChar10
+      get item_count to liMax
+      decrement liMax
+      for liItem from 0 to liMax
+        move (lsRval+value(self,liItem)) to lsRval
+        if (liItem<>liMax) move (lsRval+lsChar10) to lsRval
+      loop
+      function_return lsRval
+    end_function
+  end_object
+end_desktop_section
+
+function DoDisplayTextConfirm global string title# string text# returns integer
+  if (text#="") get sCombinedValue of (oDoDisplayTextLines(self)) to text#
+  function_return (iDisplay.ss(oDisplayTextAskQuestion(self),title#,text#))
+end_function
+
+procedure DoDisplayTextConfirm_Reset global
+  send delete_data to (oDoDisplayTextLines(self))
+end_procedure
+procedure DoDisplayTextConfirm_AddLine global string lsLine
+  set value of (oDoDisplayTextLines(self)) item (item_count(oDoDisplayTextLines(self))) to lsLine
+end_procedure

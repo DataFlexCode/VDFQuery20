@@ -1,0 +1,239 @@
+#HEADER
+
+use aps.pkg
+use treenode_treeview_class.pkg // cTreeNodeView class
+
+#ENDHEADER
+
+
+use treenode.nui // Defines the cTreeNode class.
+Use DfMenu.pkg
+
+enumeration_list // Popup Menu Data item
+  define PMD_LABEL        // Menu item text
+  define PMD_SHADOW_STATE // Should the item be shadowed
+  define PMD_MESSAGE      // Message to be sent
+  define PMD_OBJECT       // Object to receive the message
+  define PMD_PARAMETER    // Parameters to be passed to object (could be the filename)
+  define PMD_IS_SUBMENU   // Private
+end_enumeration_list
+
+
+class cPopupMenuClass is a PopupMenu
+  procedure construct_object
+    forward send construct_object
+    property integer phMenuTreeNode
+  end_procedure
+end_class //
+
+class cPopupMenuDataObject is a cTreeNodeDataObject
+  function TreeViewLabel returns string
+    string lsLabel
+    get value item PMD_LABEL to lsLabel
+    function_return lsLabel
+  end_function
+end_class // cPopupMenuDataObject
+
+class cPopupMenuTreeNode is  a cTreeNode
+  procedure construct_object
+    forward send construct_object
+
+    set phNodeClass to U_cPopupMenuTreeNode
+    set phDataClass to U_cPopupMenuDataObject
+
+    property integer phPopupMenuClass U_cPopupMenuClass
+
+//  property integer phMenuObject 0
+//  // The phMenuObject is set to the object ID of the PopupMenu it
+//  // instantiates. The purpose of this is two-fold:
+//  //
+//  //  1. This way we can keep track of them and destroy them every time
+//  //     we need to create the menu a-new.
+//  //
+//  //  2. All the data carried by th ecPopupMenuDataObject object cannot
+//  //     be represented in a PopupMenu object. Therefore we should be
+//  //     able to identify which
+//  // The object ID of the instantiated menu can also be used
+//  //
+  end_procedure
+  procedure Add_Menu_Item string lsLabel integer lhMsg integer lhObj integer lbShadow string lsParam returns integer
+    integer lhItem
+    get hAddChildNode of self to lhItem
+    set DataObject_Array_Value of lhItem PMD_LABEL        to lsLabel
+    set DataObject_Array_Value of lhItem PMD_SHADOW_STATE to lbShadow
+    set DataObject_Array_Value of lhItem PMD_MESSAGE      to lhMsg
+    set DataObject_Array_Value of lhItem PMD_OBJECT       to lhObj
+    set DataObject_Array_Value of lhItem PMD_PARAMETER    to lsParam
+    set DataObject_Array_Value of lhItem PMD_IS_SUBMENU   to 0
+  end_procedure
+  function Add_SubMenu_Item string lsLabel string lbShadow returns integer
+    integer lhRval
+    get hAddChildNode of self to lhRval
+    set DataObject_Array_Value of lhRval PMD_LABEL        to lsLabel
+    set DataObject_Array_Value of lhRval PMD_SHADOW_STATE to lbShadow
+    set DataObject_Array_Value of lhRval PMD_MESSAGE      to 0
+    set DataObject_Array_Value of lhRval PMD_OBJECT       to 0
+    set DataObject_Array_Value of lhRval PMD_PARAMETER    to ""
+    set DataObject_Array_Value of lhRval PMD_IS_SUBMENU   to 1
+    function_return lhRval
+  end_function
+
+//function Instantiate_SubMenu returns integer
+//  integer lhSubMenu liMax liChild lhChild lhSelf
+//  move self to lhSelf
+//  object cPopupMenuClass is a cPopupMenuClass
+//    move self to lhSubMenu
+//    set phMenuTreeNode to lhSelf
+//  end_object
+//  get ChildCount to liMax
+//  decrement liMax
+//  for liChild from 0 to liMax
+//    get ChildNodeObject liChild to lhChild
+//    send Instantiate_Menu_Item of lhChild lhSubMenu
+//  loop
+//  function_return lhSubMenu
+//end_function
+//
+//procedure Instantiate_Menu_Item integer lhMenu
+//  integer lhMsg lhObj lbIsSubMenu lhSubMenu lbShadow
+//  string lsLabel lsParam
+//  get DataObject_Array_Value PMD_LABEL        to lsLabel
+//  get DataObject_Array_Value PMD_MESSAGE      to lhMsg
+//  get DataObject_Array_Value PMD_OBJECT       to lhObj
+//  get DataObject_Array_Value PMD_SHADOW_STATE to lbShadow
+//  get DataObject_Array_Value PMD_PARAMETER    to lsParam
+//  get DataObject_Array_Value PMD_IS_SUBMENU   to lbIsSubMenu
+//  if lbIsSubMenu begin
+//    get Instantiate_SubMenu to lhSubMenu
+//    send Add_Popup_Menu of lhMenu lhSubMenu lsLabel
+//  end
+//  else begin
+//    send Add_Item of lhMenu MSG_NONE lsLabel
+//  end
+//  set shadow_state item (item_count(self)-1) to lbShadow
+//end_procedure
+
+  // lhParentMenu <>0 Add items to that menu
+  // lhParentMenu = 0 Create a menu and return handle
+  function Instantiate integer lhParentMenu returns integer
+    integer liMax liChild lhChild lhSubMenu lhClass
+    integer lhMsg lhObj lbShadow lbIsSubMenu
+    string lsLabel lsParam
+
+    // First: If a Parent menu wasn't specified we'll create one ourselves:
+    if (lhParentMenu=0) begin
+      get phPopupMenuClass to lhClass
+      name lhClass U_cPopupMenuClassName
+      object oPopupMenu is a cPopupMenuClassName
+        move self to lhParentMenu
+      end_object
+    end
+
+
+    get ChildCount to liMax
+    decrement liMax
+    for liChild from 0 to liMax
+      get ChildNodeObject liChild to lhChild
+
+      get DataObject_Array_Value of lhChild PMD_LABEL        to lsLabel
+      get DataObject_Array_Value of lhChild PMD_MESSAGE      to lhMsg
+      get DataObject_Array_Value of lhChild PMD_OBJECT       to lhObj
+      get DataObject_Array_Value of lhChild PMD_SHADOW_STATE to lbShadow
+      get DataObject_Array_Value of lhChild PMD_PARAMETER    to lsParam
+      get DataObject_Array_Value of lhChild PMD_IS_SUBMENU   to lbIsSubMenu
+
+      if lbIsSubMenu begin
+        // We need to create the sub menu before adding it to the current menu
+        get Instantiate of lhChild 0 to lhSubMenu
+        showln "I'm attaching menu " lsLabel
+        send Add_Popup_Menu of lhParentMenu lhSubMenu lsLabel
+      end
+      else begin
+        send Add_Item of lhParentMenu MSG_NONE lsLabel
+        showln "I'm creating item " lsLabel
+
+      end
+      if (lsLabel<>"") set shadow_state of lhParentMenu item (item_count(lhParentMenu)-1) to lbShadow
+    loop
+
+    function_return lhParentMenu
+  end_function
+end_class // cPopupMenuTreeNode
+
+object oPopupMenuStructure is a cPopupMenuTreeNode
+      procedure DoPopulate
+        integer lhSubMenu lhSubSubMenu
+
+        set DataObject_Array_Value PMD_LABEL      to "Submenu"
+        set DataObject_Array_Value PMD_IS_SUBMENU to 1
+
+
+        send Add_Menu_Item "Menu Item 1" 0 0 0 "deterden1.fvw"
+        send Add_Menu_Item "Menu Item 2" 0 0 1 "deterden2.fvw"
+        send Add_Menu_Item "Menu Item 3" 0 0 0 "deterden3.fvw"
+        send Add_Menu_Item "" 0 0 0 ""
+        send Add_Menu_Item "Menu Item 4" 0 0 0 "deterden4.fvw"
+
+        get Add_SubMenu_Item "Undermenu 1" 0 to lhSubMenu
+            send Add_Menu_Item of lhSubMenu "Menu Item 5" 0 0 0 "deterden2.fvw"
+            send Add_Menu_Item of lhSubMenu "Menu Item 6" 0 0 0 "deterden3.fvw"
+        get Add_SubMenu_Item "Undermenu 2" 0 to lhSubMenu
+            send Add_Menu_Item of lhSubMenu "Menu Item 7" 0 0 0 "deterden1.fvw"
+            send Add_Menu_Item of lhSubMenu "Menu Item 8" 0 0 0 "deterden3.fvw"
+        get Add_SubMenu_Item "Undermenu 3" 0 to lhSubMenu
+            send Add_Menu_Item of lhSubMenu "Menu Item 9" 0 0 0 "deterden1.fvw"
+            send Add_Menu_Item of lhSubMenu "Menu Item 10" 0 0 0 "deterden2.fvw"
+            get Add_SubMenu_Item of lhSubMenu "UnderUndermenu 1" 0 to lhSubSubMenu
+                send Add_Menu_Item of lhSubSubMenu "Menu Item 11" 0 0 0 "deterden1.fvw"
+                send Add_Menu_Item of lhSubSubMenu "Menu Item 12" 0 0 0 "deterden2.fvw"
+
+            send Add_Menu_Item of lhSubMenu "Menu Item 13" 0 0 0 "deterden3.fvw"
+            send Add_Menu_Item of lhSubMenu "Menu Item 14" 0 0 0 "deterden3.fvw"
+
+      end_procedure
+      send DoPopulate
+end_object // oPopupMenuStructure
+
+use aps.pkg
+use treenode_treeview_class.pkg // cTreeNodeView class
+
+object oPopupMenuEditor is a aps.View label "Menu editor"
+  set locate_mode to CENTER_ON_SCREEN
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  on_key kcancel send close_panel
+
+  object oLst is a aps.TreeNodeViewEdit
+    set size to 200 200
+    set peAnchors to (anTop+anLeft+anRight+anBottom)
+    set phTreeNode to (oPopupMenuStructure(self))
+  end_object
+
+  procedure add_items_to_menu
+    integer lhMenu lhMenuImage lhBla
+    move (FunctionPullDown(main_menu(self))) to lhMenu
+    //move (main_menu(self)) to lhMenu
+    move (oPopupMenuStructure(self)) to lhMenuImage
+
+    get Instantiate of lhMenuImage lhMenu to lhBla
+
+//  get  Instantiate_SubMenu of lhMenuImage lhMenu to lhBla
+//  send Add_Popup_Menu of lhMenu lhBla "Thorbasse"
+  end_procedure
+
+  object oAdd is a aps.Multi_Button
+    on_item "Tilf›j" send add_items_to_menu
+    set peAnchors to (anBottom+anRight)
+
+  end_object
+
+  object oBtn1 is a aps.Multi_Button
+    on_item "OK" send close_panel
+    set peAnchors to (anBottom+anRight)
+  end_object
+  send aps_locate_multi_buttons
+
+end_object // oPopupMenuEditor
+
+procedure Activate_MenuEditor
+  send popup of oPopupMenuEditor
+end_procedure

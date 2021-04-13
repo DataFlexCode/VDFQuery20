@@ -1,0 +1,255 @@
+// Use DD_Debug.utl // DDO Starts on Ctrl+F1 (if not WebApp)
+  Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+  Use ApsTree.pkg  // APS version of TreeView class
+  Use FdxField.nui // FDX Field things
+  Use Focus.utl    // Retrieve basic information about object
+  Use Buttons.utl  // Button texts
+  Use FdxUiCls.pkg // UI classes for displaying FDX data
+  Use Classes.nui  // Class characteristics
+  Use Fdx2.utl     // FDX aware object for displaying a table definition
+
+  class cDbg_DDTreeViewImageList is a Fdx.TreeViewFieldSelectorImageList
+    procedure construct_object
+      forward send construct_object
+      set piMaxImages To 1
+    end_procedure
+    Procedure OnCreate // add the images
+      integer liImage lbError
+      move DFFALSE to lbError
+      get AddImageAutoPath 'Cls_Tab.bmp'  to liImage
+      if (liImage=-1) move DFTRUE to lbError
+      set pbImageError to lbError
+    End_Procedure
+  end_class // Fdx.TreeViewFieldSelectorImageList
+
+  class cDbg_DDTreeView is a aps.TreeView
+              procedure construct_object
+                forward send construct_object
+                property integer phRootDD 0
+                on_key kEnter send Default_Key
+                on_key KEY_CTRL+KEY_I send DisplayTableDefinition
+              end_procedure
+
+              procedure CreateImageList
+                object oImageList is a cDbg_DDTreeViewImageList
+                end_object
+                Set ImageListObject To (oImageList(self))
+              end_procedure
+
+    procedure Add_DDO integer lhDD integer lhItem
+      integer lhParentDD liMax lhNewHandle liFile liItem
+      get main_file of lhDD to liFile
+      get AddTreeItem (rtrim(FDX_AttrValue_FILELIST(0,DF_FILE_DISPLAY_NAME,liFile))) lhItem lhDD 0 0 to lhNewHandle
+      get data_set_server_count of lhDD to liMax
+      decrement liMax
+      for liItem from 0 to liMax
+        get data_set_server of lhDD liItem to lhParentDD
+        send Add_DDO lhParentDD lhNewHandle
+      loop
+      send DoExpandItem lhItem
+    end_procedure
+
+              procedure DisplayTableDefinition
+                integer liFile lhItem lhDD
+                get CurrentTreeItem to lhItem
+                if lhItem begin
+                  get ItemData lhItem to lhDD
+                  get main_file of lhDD to liFile
+                  send FDX_ModalDisplayFileAttributes 0 liFile
+                end
+              end_procedure
+
+    procedure OnCreateTree
+      integer lhRootDD lhRoot
+      get rootitem to lhRoot
+      if lhRoot send DoDeleteItem lhRoot
+
+      get phRootDD to lhRootDD
+      send Add_DDO lhRootDD 0
+
+    end_procedure
+    procedure end_construct_object
+      forward send end_construct_object
+      send CreateImageList
+    end_procedure
+  end_class // cDbg_DDTreeView
+
+  object oDbgPanel is a aps.ModalPanel label "DDO State"
+    on_key kCancel send close_panel
+    set locate_mode to CENTER_ON_SCREEN
+
+    object oTree is a cDbg_DDTreeView
+      set size to 200 125
+      procedure OnItemChanged handle lhItemNew handle lhItemOld
+        integer lhDD
+        get ItemData lhItemNew to lhDD
+        send OnNewDataDictionary lhDD
+      end_procedure
+    end_object
+    object oTabs is a aps.TabDiaLog snap SL_RIGHT
+      object oTab1 is a aps.TabPage label "Properties"
+        set p_auto_column to 0
+        object oGrd is a aps.Grid
+          send GridPrepare_AddColumn "Name" AFT_ASCII20
+          send GridPrepare_AddColumn "Value" AFT_ASCII40
+          send GridPrepare_Apply self
+          set size to 180 0
+          procedure add_value string lsLabel string lsValue
+            send add_item msg_none lsLabel
+            send add_item msg_none lsValue
+          end_procedure
+          procedure fill_list.i integer lhDD
+            integer liFile
+            move (main_file(lhDD)) to liFile
+            set dynamic_update_state to DFFALSE
+            send delete_data
+            send add_value "Main file"        (string(liFile))
+            send add_value "Filelist Root"    (API_AttrValue_FILELIST(DF_FILE_ROOT_NAME   ,liFile))
+            send add_value "Filelist Logical" (API_AttrValue_FILELIST(DF_FILE_LOGICAL_NAME,liFile))
+            send add_value "Filelist Display" (rtrim(API_AttrValue_FILELIST(DF_FILE_DISPLAY_NAME,liFile)))
+            send add_value "Current record"   (current_record(lhDD))
+            send add_value "Changed state"    (if(changed_state(lhDD),"True","False"))
+            send add_value "Should save"      (if(should_save(lhDD),"True","False"))
+            send add_value "Read only state"  (if(read_only_state(lhDD),"True","False"))
+            send Grid_SetEntryState self DFFALSE
+            set dynamic_update_state to DFTRUE
+          end_procedure
+        end_object
+      end_object
+      object oTab2 is a aps.TabPage label "DD Values"
+        object oGrd is a aps.Grid
+          send GridPrepare_AddColumn "Field" AFT_ASCII20
+          send GridPrepare_AddColumn "Value" AFT_ASCII30
+          send GridPrepare_AddColumn "Changed" AFT_ASCII4
+          send GridPrepare_Apply self
+          set select_mode to MULTI_SELECT
+          set size to 180 0
+          procedure select_toggling integer itm# integer i#
+          end_procedure
+          procedure fill_list.i integer lhDD
+            integer liMax liField liBase liFile liType
+            string lsName lsValue
+            set dynamic_update_state to DFFALSE
+            send delete_data
+            get main_file of lhDD to liFile
+            get field_count of lhDD to liMax
+            for liField from 0 to liMax
+              get item_count to liBase
+              get_attribute DF_FIELD_NAME of liFile liField to lsName
+              get_attribute DF_FIELD_TYPE of liFile liField to liType
+              if (liType<>DF_OVERLAP and liType<>DF_TEXT and liType<>DF_BINARY) begin
+                send add_item msg_none lsName
+                get field_current_value of lhDD liField to lsValue
+                send add_item msg_none lsValue
+                send add_item msg_none "" //(field_changed_state(lhDD,liField))
+                set checkbox_item_state item (liBase+2) to DFTRUE
+                set select_state item (liBase+2) to (field_changed_state(lhDD,liField))
+              end
+            loop
+            send Grid_SetEntryState self DFFALSE
+            set dynamic_update_state to DFTRUE
+          end_procedure
+        end_object
+      end_object
+      object oTab3 is a aps.TabPage label "DEO objects"
+        object oGrd is a aps.Grid
+          send GridPrepare_AddColumn "Name"    AFT_ASCII50
+          send GridPrepare_AddColumn "Changed" AFT_ASCII4
+          send GridPrepare_Apply self
+          set size to 180 0
+          set select_mode to MULTI_SELECT
+          procedure select_toggling integer itm# integer i#
+          end_procedure
+          procedure fill_list.i integer lhDD
+            integer liMax liItem lhDEO liBase liClass liFile liField
+            string lsValue lsTmp
+            set dynamic_update_state to DFFALSE
+            send delete_data
+            get data_set_user_interface_count of lhDD to liMax
+            for liItem from 0 to (liMax-1)
+              get item_count to liBase
+              get data_set_user_interface of lhDD liItem to lhDEO
+
+              get Cls_ObjectClass of lhDEO to liClass
+              if (liClass=-1) move "Unknown" to lsValue
+              else get Cls_ClassName liClass to lsValue
+              move (lsValue+" ("+string(lhDEO)+")") to lsValue
+
+              if (liClass<>-1) begin
+                // We assume that the object is DB aware
+                if (Cls_ClassIsMultiItem(liClass)) begin
+                  get main_file of lhDEO to liFile
+                  get_attribute DF_FILE_LOGICAL_NAME of liFile to lsTmp
+                  move (lsValue+", "+lsTmp) to lsValue
+                  if (liClass=class.dbGrid) begin
+                    move (lsValue+", changed_state="+if(changed_state(lhDEO),"T","F")) to lsValue
+                    move (lsValue+", no_delete_state="+if(no_delete_state(lhDEO),"T","F")) to lsValue
+                   end
+                end
+                else begin
+                  get data_file of lhDEO item 0 to liFile
+                  get data_field of lhDEO item 0 to liField
+                  get FDX_FieldName 0 liFile liField DFTRUE to lsTmp
+                  move (lsValue+", "+lsTmp) to lsValue
+                  if (liClass=class.dbEdit) move (lsValue+", changed_state="+if(changed_state(lhDEO),"T","F")) to lsValue
+                end
+              end
+              send add_item msg_none lsValue
+              send add_item msg_none ""
+              set checkbox_item_state item (liBase+1) to true
+              set select_state item (liBase+1) to (changed_state(lhDEO))
+            loop
+            send Grid_SetEntryState self DFFALSE
+            set dynamic_update_state to DFTRUE
+          end_procedure
+        end_object
+      end_object
+    end_object
+    procedure OnNewDataDictionary integer lhDD
+      send fill_list.i to (oGrd(oTab1(oTabs(self)))) lhDD
+      send fill_list.i to (oGrd(oTab2(oTabs(self)))) lhDD
+      send fill_list.i to (oGrd(oTab3(oTabs(self)))) lhDD
+    end_procedure
+    procedure popup.i integer lhDD
+      if lhDD begin
+        set phRootDD of (oTree(self)) to lhDD
+        send popup
+      end
+      else send obs "DD objects not found"
+    end_procedure
+    object oBtn is a aps.Multi_Button
+      on_item T.BTN.CLOSE send close_panel
+    end_object
+    send aps_locate_multi_buttons
+  end_object // oDbgPanel
+
+
+procedure Dbg_CurrentFocus global
+  send Focus_Analyze_Focus
+  send popup.i to (oDbgPanel(self)) (Focus_Info(FOCUS_DD))
+end_procedure
+on_key key_ctrl+key_F1 send Dbg_CurrentFocus
+
+//  Use ErrorHnd.nui // cErrorHandlerRedirector class and oErrorHandlerQuiet object (No User Interface)
+//
+//    function bIsDate string lsValue returns integer
+//      date ldDate
+//      send ErrorHnd_Quiet_Activate
+//      move lsValue to ldDate
+//      send ErrorHnd_Quiet_Deactivate
+//      ifnot (ErrorHnd_Quiet_ErrorCount()) function_return (integer(ldDate))
+//      function_return DFFALSE
+//    end_function
+//
+//    procedure testdate string lsDate
+//      integer lbOk
+//      date ldDate
+//      show lsDate " ->  "
+//      get bIsDate lsDate to lbOk
+//      show (if(lbOk,"Good","Bad"))
+//      if lbOk begin
+//        move lsDate to ldDate
+//        show " " ldDate
+//      end
+//      showln ""
+//    end_procedure

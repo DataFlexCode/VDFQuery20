@@ -1,0 +1,393 @@
+// Use SetDir.nui   // cSetOfDirectories class
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Files.nui    // Utilities for handling file related stuff (No User Interface)
+Use WildCard.nui // vdfq_WildCardMatch function
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+Use ItemProp.nui // ITEM_PROPERTY command for use within arrays
+
+//  cSetOfDirectories, interface:
+//  ------------------------------------
+//
+//  Reset the array
+//    procedure DoReset
+//
+//  Add a directory
+//    procedure DoAddDirectory string lsDir
+//
+//  Add a number of directories
+//    procedure DoAddSearchPath string lsPath
+//
+//  Add a directory and all its subdirectories
+//    procedure DoAddSubDirectories string lsDir
+//
+//  Remove a directory from the list
+//    procedure DoRemoveDirectory string lsDir
+//
+//  Search for a file (mask) in all directories and call back. Parameter
+//  lsFileMask determines whether the same file name is called back more
+//  than once (if present in more than one directory)
+//    procedure DoFindFileCallback string lsFileMask integer lbFirstOnly ;
+//                                        integer liMsg integer liObj
+//
+//  Search for all files included by a mask in a set of masks. Such a set
+//  must be defined using the cSetOfMasks class defined in WildCard.nui
+//
+//    procedure DoFindFileBySetOfMasksCallback integer lhSetOfMasks ;
+//                         integer lbFirstOnly integer liMsg integer liObj
+//
+//  Search for all source files included by compiler in a *.PR? file
+//  ("WebApp.prn" for example)
+//
+//    procedure DoFindFilesCompilerListingCallback string lsPrnFile ;
+//                         integer lbFirstOnly integer liMsg integer liObj
+//
+class cSetOfDirectories is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer piCbMessage   0
+    property integer piCbObject    0
+    property integer pbCbFirstOnly DFFALSE
+    object oDirStackTmp is a cStack 
+    end_object
+    object oDirTmp is a cArray
+    end_object
+    object oFileNameSet is a cSet 
+    end_object
+    object oWildCardMatcherArray is a cWildCardMatcherArray
+    end_object
+    property integer pi.prv.SuspendSentinelUpdate DFFALSE
+  end_procedure
+
+  procedure OnWait_On string lsCaption
+  end_procedure
+  procedure OnWait_SetText1 string lsValue
+  end_procedure
+  procedure OnWait_SetText2 string lsValue
+  end_procedure
+  procedure OnWait_Off
+  end_procedure
+
+  procedure DoReset
+    send delete_data
+  end_procedure
+
+            function iFindDir.s string lsDir returns integer
+              integer liMax liItem
+              move (lowercase(trim(lsDir))) to lsDir
+              get item_count to liMax
+              decrement liMax
+              for liItem from 0 to liMax
+                if (lowercase(value(self,liItem))=lsDir) function_return liItem
+              loop
+              function_return -1
+            end_function
+
+  procedure DoRemoveDirectory string lsDir
+    integer liItem
+    get iFindDir.s lsDir to liItem
+    if (liItem<>-1) send delete_item liItem
+  end_procedure
+
+  procedure DoAddDirectory string lsDir
+    integer liItem
+    move (trim(lsDir)) to lsDir
+    get SEQ_TranslatePathToAbsolute lsDir to lsDir
+    get iFindDir.s lsDir to liItem
+    if (liItem=-1) set value item (item_count(self)) to lsDir
+  end_procedure
+
+  procedure DoAddSearchPath string lsPath
+    send SEQ_CallBack_DirsInPath lsPath msg_DoAddDirectory self
+  end_procedure
+
+            procedure AddSubDirectories_Help3 string lsDir
+              integer lhDirTmp
+              move (oDirTmp(self)) to lhDirTmp
+              set value of lhDirTmp item (item_count(lhDirTmp)) to lsDir
+              send OnWait_SetText2 lsDir
+            end_procedure
+            procedure AddSubDirectories_Help2 string lsDir string lsPath
+              if (lsDir<>"[.]" and lsDir<>"[..]") begin
+                Move (Replace("[",lsDir,"")) to lsDir // replace "[" in lsDir with "" 
+                Move (Replace("]",lsDir,"")) to lsDir // replace "]" in lsDir with "" 
+                move (SEQ_ComposeAbsoluteFileName(lsPath,lsDir)) to lsPath
+                send push.s to (oDirStackTmp(self)) lsPath
+                send AddSubDirectories_Help3 (SEQ_TranslatePathToAbsolute(lsPath))
+              end
+            end_procedure
+            procedure AddSubDirectories_Help1 string lsDir
+              integer lhDirStack liItmStart liItmStop liItem
+              move (oDirStackTmp(self)) to lhDirStack
+              get item_count of lhDirStack to liItmStart
+              send SEQ_Load_ItemsInDir lsDir
+              send SEQ_CallBack_ItemsInDir SEQCB_DIRS_ONLY msg_AddSubDirectories_Help2 self
+              get item_count of lhDirStack to liItmStop
+              for liItem from liItmStart to (liItmStop-1)
+                send AddSubDirectories_Help1 (sPop(lhDirStack))
+              loop
+            end_procedure
+
+  procedure DoAddSubDirectories string lsDir
+    integer lhDirTmp liMax liItem
+    send OnWait_On "Adding sub-folders"
+    move (oDirTmp(self)) to lhDirTmp
+    send delete_data to lhDirTmp
+    send OnWait_SetText1 "Searching"
+    send AddSubDirectories_Help3 lsDir
+    send AddSubDirectories_Help1 lsDir
+    send OnWait_SetText1 "Sorting..."
+    send sort_items to lhDirTmp
+    get item_count of lhDirTmp to liMax
+    decrement liMax
+    send OnWait_SetText1 "Writing search result"
+    send OnWait_SetText2 ""
+    for liItem from 0 to liMax
+      send DoAddDirectory (value(lhDirTmp,liItem))
+    loop
+    send delete_data to lhDirTmp
+    send OnWait_Off
+  end_procedure
+
+            procedure DoFindFileCallback_Help string lsFileName string lsDir
+              integer liCbMessage liCbObject
+              if (iMatch.s(oWildCardMatcherArray(self),lowercase(lsFileName))) begin
+                if (pbCbFirstOnly(self)) begin
+                  if (element_find(oFileNameSet(self),lowercase(lsFileName))=-1) begin
+                    send element_add to (oFileNameSet(self)) (lowercase(lsFileName))
+                    get piCbMessage to liCbMessage
+                    get piCbObject  to liCbObject
+                    send liCbMessage to liCbObject lsFileName lsDir
+                    send OnWait_SetText2 ("Found "+lsFileName)
+                  end
+                end
+                else begin
+                  get piCbMessage to liCbMessage
+                  get piCbObject  to liCbObject
+                  send liCbMessage to liCbObject lsFileName lsDir
+                  send OnWait_SetText2 ("Found "+lsFileName)
+                end
+              end
+            end_procedure
+
+  procedure DoFindFileCallback string lsFileMask integer lbFirstOnly integer liMsg integer liObj
+    integer liMax liItem lhoWildCardMatcherArray liSentinalUpdate
+    string lsDir lsFileName
+
+    move (not(pi.prv.SuspendSentinelUpdate(self))) to liSentinalUpdate
+
+    move (oWildCardMatcherArray(self)) to lhoWildCardMatcherArray
+    send DoReset to lhoWildCardMatcherArray
+    send BreakDownMask to lhoWildCardMatcherArray (lowercase(lsFileMask))
+    get item_count to liMax
+    decrement liMax
+
+    if (iAnyWildCards(lhoWildCardMatcherArray)) begin // Wildcard search, slow way
+      set piCbMessage to liMsg
+      set piCbObject  to liObj
+      set pbCbFirstOnly to lbFirstOnly
+      send delete_data to (oFileNameSet(self))
+      if liSentinalUpdate send OnWait_On "Find file"
+      for liItem from 0 to liMax
+        if liSentinalUpdate send OnWait_SetText1 lsDir
+        get value item liItem to lsDir
+        send SEQ_Load_ItemsInDir lsDir
+        send SEQ_CallBack_ItemsInDir SEQCB_FILES_ONLY msg_DoFindFileCallback_Help self
+      loop
+      send delete_data to (oFileNameSet(self))
+      if liSentinalUpdate send OnWait_Off
+    end
+    else begin // No wildcards, fast way
+      if liSentinalUpdate send OnWait_On "Find file"
+      for liItem from 0 to liMax
+        get value item liItem to lsDir
+        if liSentinalUpdate send OnWait_SetText1 lsDir
+        //get SEQ_ComposeAbsoluteFileName lsDir lsFileMask to lsFileName
+        get Files_AppendPath lsDir lsFileMask to lsFileName
+        if (SEQ_FileExists(lsFileName)=SEQIT_FILE) begin
+          if liSentinalUpdate send OnWait_SetText2 lsFileMask
+          send liMsg to liObj lsFileMask lsDir
+          if lbFirstOnly begin
+            if liSentinalUpdate send OnWait_Off
+            procedure_return
+          end
+        end
+      loop
+      if liSentinalUpdate send OnWait_Off
+    end
+    send DoReset to lhoWildCardMatcherArray
+  end_procedure
+
+  procedure DoFindFileBySetOfMasksCallback integer lhSetOfMasks integer lbFirstOnly integer liMsg integer liObj
+    integer lhoWildCardMatcherArray liMax liItem
+    string lsDir
+    move (oWildCardMatcherArray(self)) to lhoWildCardMatcherArray
+    send DoReset to lhoWildCardMatcherArray
+    set piCbMessage to liMsg
+    set piCbObject  to liObj
+    set pbCbFirstOnly to lbFirstOnly
+    send delete_data to (oFileNameSet(self))
+    send BreakDownSetOfMasks to lhoWildCardMatcherArray lhSetOfMasks
+
+    get item_count to liMax
+    decrement liMax
+    send OnWait_On ("Special find: "+psName(lhSetOfMasks))
+    for liItem from 0 to liMax
+      get value item liItem to lsDir
+      send OnWait_SetText1 lsDir
+      send SEQ_Load_ItemsInDir lsDir
+      send SEQ_CallBack_ItemsInDir SEQCB_FILES_ONLY msg_DoFindFileCallback_Help self
+    loop
+    send OnWait_Off
+    send DoReset to lhoWildCardMatcherArray
+    send delete_data to (oFileNameSet(self))
+  end_procedure
+
+  procedure DoFindFilesCompilerListingCallback string lsPrnFile integer lbFirstOnly integer liMsg integer liObj
+    integer liChannel liSeqEof liPos
+    string lsLine
+    get SEQ_DirectInput lsPrnFile to liChannel
+    if liChannel ge 0 begin
+      send OnWait_On ("Scanning "+lsPrnFile)
+      set pi.prv.SuspendSentinelUpdate to DFTRUE
+      repeat
+        readln channel liChannel lsLine
+        move (SeqEof) to liSeqEof
+        ifnot liSeqEof begin
+          if (StringBeginsWith(lsLine,"INCLUDING FILE: ")) begin
+            replace "INCLUDING FILE: " in lsLine with ""
+            move (pos("(",lsLine)) to liPos
+            if liPos begin
+              move (left(lsLine,liPos-1)) to lsLine
+              move (trim(lsLine)) to lsLine
+            end
+            ifnot ".PKI" in lsLine begin
+              ifnot ".PKD" in lsLine begin
+                send OnWait_SetText1 ("Locating "+lsLine)
+                send DoFindFileCallback lsLine lbFirstOnly liMsg liObj
+              end
+            end
+          end
+        end
+      until liSeqEof
+      send OnWait_Off
+      set pi.prv.SuspendSentinelUpdate to DFFALSE
+      send SEQ_CloseInput liChannel
+    end
+  end_procedure
+end_class // cSetOfDirectories
+
+enumeration_list
+  define SOF_ORDERING_NAME
+  define SOF_ORDERING_TYPE
+  define SOF_ORDERING_PATH
+  define SOF_ORDERING_SIZE
+  define SOF_ORDERING_TIME
+end_enumeration_list
+
+class cSetOfFilesNew is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer piSOD_Object 0
+  end_procedure
+  item_property_list
+    item_property string  psFileName.i // File name
+    item_property string  psFileType.i // File extention
+    item_property string  psFilePath.i // Path to file
+    item_property integer piFileSize.i // File size
+    item_property number  pnFileTime.i // Time stamp
+  end_item_property_list cSetOfFilesNew
+  procedure DoReset
+    send delete_data
+  end_procedure
+//function item_property_type integer liColumn returns integer
+//  if liColumn eq 0 function_return ITMP_STRING
+//  if liColumn eq 1 function_return ITMP_STRING
+//  if liColumn eq 2 function_return ITMP_STRING
+//  if liColumn eq 3 function_return ITMP_INTEGER
+//  if liColumn eq 4 function_return ITMP_NUMBER
+//end_function
+  function iTotalSize returns integer
+    integer liRval liMax liRow
+    move 0 to liRval
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      move (liRval+piFileSize.i(self,liRow)) to liRval
+    loop
+    function_return liRval
+  end_function
+  function sFileName.i integer liRow returns string
+    string sName sExt
+    get psFileName.i liRow to sName
+    get psFileType.i liRow to sExt
+    if sExt eq "" function_return sName
+    function_return (sName+"."+sExt)
+  end_function
+  function iFindFile.ss string lsFileName string lsDir returns integer
+    integer liMax liRow
+    get row_count to liMax
+    decrement liMax
+    move (lowercase(lsFileName)) to lsFileName
+    move (lowercase(lsDir)) to lsDir
+    for liRow from 0 to liMax
+      if (lowercase(sFileName.i(self,liRow))=lsFileName and lowercase(psFilePath.i(self,liRow))=lsDir) function_return liRow
+    loop
+    function_return -1
+  end_function
+  function sFileNameIncPath.i integer iItm returns string
+    string sFile sDir
+    get sFileName.i iItm to sFile
+    get psFilePath.i iItm to sDir
+    function_return (SEQ_ComposeAbsoluteFileName(sDir,sFile))
+  end_function
+  procedure DoAddFile string lsFileName string lsDir
+    integer liRow
+    string lsFileRootName
+//    showln lsDir "/" lsFileName
+//    procedure_return
+    if (iFindFile.ss(self,lsFileName,lsDir)=-1) begin
+      get row_count to liRow
+      if "." in lsFileName move (StripFromLastOccurance(lsFileName,".")) to lsFileRootName
+      else move lsFileName to lsFileRootName
+      set psFileName.i liRow to lsFileRootName
+      set psFilePath.i liRow to lsDir
+      set psFileType.i liRow to (replace(".",replace(lsFileRootName,lsFileName,""),""))
+      move (SEQ_ComposeAbsoluteFileName(lsDir,lsFileName)) to lsFileName
+      set piFileSize.i liRow to (SEQ_FileSize(lsFileName))
+      set pnFileTime.i liRow to (SEQ_FileModTime(lsFileName))
+    end
+  end_procedure
+  procedure DoSort integer liOrdering
+    send ITMP_Sort_DoReset
+    if liOrdering eq SOF_ORDERING_NAME begin
+      send ITMP_Sort_DoAddSegment 0 DFTRUE
+      send ITMP_Sort_DoAddSegment 1 DFTRUE
+    end
+    if liOrdering eq SOF_ORDERING_TYPE begin
+      send ITMP_Sort_DoAddSegment 1 DFTRUE
+      send ITMP_Sort_DoAddSegment 0 DFTRUE
+    end
+    if liOrdering eq SOF_ORDERING_PATH send ITMP_Sort_DoAddSegment 2 DFTRUE
+    if liOrdering eq SOF_ORDERING_SIZE send ITMP_Sort_DoAddSegment 3 DFFALSE
+    if liOrdering eq SOF_ORDERING_TIME send ITMP_Sort_DoAddSegment 4 DFFALSE
+    send ITMP_Sort_DoSortData self
+  end_procedure
+  procedure DoFindFilesCompilerListing string lsPrnFile integer lbFirstOnly
+    send DoFindFilesCompilerListingCallback to (piSOD_Object(self)) lsPrnFile lbFirstOnly msg_DoAddFile self
+  end_procedure
+  procedure DoFindFileBySetOfMasks integer lhSetOfMasks integer lbFirstOnly
+    send DoFindFileBySetOfMasksCallback to (piSOD_Object(self)) lhSetOfMasks lbFirstOnly msg_DoAddFile self
+  end_procedure
+  procedure DoFindFile string lsFileMask integer lbFirstOnly
+    send DoFindFileCallback to (piSOD_Object(self)) lsFileMask lbFirstOnly msg_DoAddFile self
+  end_procedure
+
+  procedure DoCallback integer liMsg integer lhObj
+    integer liRow liMax
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      send liMsg to lhObj (sFileName.i(self,liRow)) (psFilePath.i(self,liRow))
+    loop
+  end_procedure
+end_class // cSetOfFilesNew

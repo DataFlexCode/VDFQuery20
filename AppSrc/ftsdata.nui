@@ -1,0 +1,119 @@
+// Use FTSData.nui // cFTS_TableAccess class.
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use DBMS.nui     // Basic DBMS functions (No User Interface)
+Use TblDynAc.nui // Table, dynamic access (cDynamicTableAccess class)
+
+enumeration_list
+  define FTSTABLE_WORD
+  define FTSTABLE_ARTWRD
+  define FTSTABLE_ARTPHR
+  define FTSTABLE_ARTICL
+  define FTSTABLE_SEARCH
+end_enumeration_list
+
+class cFTS_TableAccess is a cDynamicTableAccess
+  procedure construct_object
+    forward send construct_object
+
+    set pbAllowTemporaryFilelistEntries to FALSE
+
+    // These two properties are set automatically when tables are opened
+    property integer piArticleIdWidth 0 // NUMERIC 6.0
+    property integer piPhraseLength   0 // Minimum 6, maximum 14
+
+    set psRootNamePrefix to "ft"
+
+    set TableBaseData FTSTABLE_WORD    to "word"   "FTS - Words"         0
+    set TableBaseData FTSTABLE_ARTWRD  to "artwrd" "FTS - Article words" 2
+    set TableBaseData FTSTABLE_ARTPHR  to "artphr" "FTS - Phrases"       2
+    set TableBaseData FTSTABLE_ARTICL  to "articl" "FTS - Articles"      0
+    set TableBaseData FTSTABLE_SEARCH  to "search" "FTS - Searches"      0
+  end_procedure
+
+  function FTS_ValidatePrefix string lsPrefix returns integer
+    integer lbOK
+    move (lowercase(trim(lsPrefix))) to lsPrefix
+    if (length(lsPrefix)=2) begin
+      get StringConsistsOf (left(lsPrefix,1)) "abcdefghijklmnopqrstuvwxyz" to lbOK
+      if lbOK get StringConsistsOf (left(lsPrefix,2)) "abcdefghijklmnopqrstuvwxyz01234567890" to lbOK
+    end
+    else move 0 to lbOK
+    ifnot lbOK begin
+      error 209 "Prefix must be two letters (or a letter and a digit)"
+      function_return 0
+    end
+    function_return 1
+  end_function
+
+  function DoOpenTables returns integer
+    integer liRval liFile liLen
+    forward get DoOpenTables to liRval
+    if liRval begin // Tables opened succesfully
+      // If openened we must set the piArticleIdWidth and piPhraseLength properties
+
+      // First we will find the definition of the xxArticl.Article_Id field:
+      get piFile.i FTSTABLE_ARTICL to liFile
+      get_attribute DF_FIELD_LENGTH of liFile 1 to liLen // xxArticl.Article_Id
+      set piArticleIdWidth to liLen
+
+      // Secondly, determine the phrase length set by the xxArtPhr file
+      get piFile.i FTSTABLE_ARTPHR to liFile
+      get_attribute DF_FILE_NUMBER_FIELDS of liFile to liLen
+      set piPhraseLength to (liLen-1) // The first field of the xxArtPhr file is the Article_Id
+
+    end
+    function_return liRval
+  end_function
+            procedure DeclareOpenError string lsError
+              move (replace("#",lsError,psRootNamePrefix(self))) to lsError
+              send error 718 lsError
+            end_procedure
+  function DoZerofileAllTables returns integer // (Except the search table)
+    integer lbSuccess liFile
+    move DFFALSE to lbSuccess
+    if (pbAllTablesAreOpen(self)) begin
+      send DoCloseTables
+
+      if (DoOpenTablesExclusive(self)) begin
+        get piFile.i FTSTABLE_WORD to liFile
+        zerofile liFile
+        get piFile.i FTSTABLE_ARTWRD to liFile
+        zerofile liFile
+        get piFile.i FTSTABLE_ARTPHR to liFile
+        zerofile liFile
+        get piFile.i FTSTABLE_ARTICL to liFile
+        zerofile liFile
+        move DFTRUE to lbSuccess
+      end
+      else send DeclareOpenError "Exclusive access could not be obtained (#)"
+      ifnot (DoOpenTables(self)) send DeclareOpenError "FTS tables could not be re-opened (#)"
+    end
+    function_return lbSuccess
+  end_function
+  procedure DoCloseTables
+    forward send DoCloseTables
+    set piArticleIdWidth to 0
+    set piPhraseLength   to 0
+  end_procedure
+  function OpenDescription returns string
+    string lsValue
+    if (pbAllTablesAreOpen(self)) begin
+      move "# articles (art.id width: #, phrase length: #)" to lsValue
+      move (replace("#",lsValue,string(iMainFileRecords(self)))) to lsValue
+      move (replace("#",lsValue,string(piArticleIdWidth(self)))) to lsValue
+      move (replace("#",lsValue,string(piPhraseLength(self)))) to lsValue
+    end
+    else move "" to lsValue
+    function_return lsValue
+  end_function
+  procedure end_construct_object
+    integer lhSelf
+    forward send end_construct_object
+    move self to lhSelf
+    set phTableAccessObject to lhSelf // This is resolved in the encapsulating cFTS_System object
+    if (pbOpenTablesOnDefine(self)) begin
+      ifnot (DoOpenTables(self)) send DeclareOpenError "FTS tables could not be opened (#)" // Open the tables
+    end
+  end_procedure
+end_class // cFTS_TableAccess

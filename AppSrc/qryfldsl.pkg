@@ -1,0 +1,230 @@
+// Use QryFldSl.pkg // cFieldInf.Table_List and cFieldInf.Field_List classes
+
+Use FieldInf     // Global field info objects and abstract field types
+Use Fdx2.utl     // FDX aware object for displaying a table definition
+
+use aps.pkg
+class cFieldInf.Table_List is a aps.List
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer pbDisplayFileNamesUser DFTRUE
+    on_key KEY_CTRL+KEY_D send DisplayDefinition
+    on_key kuser send toggle_display
+    on_key kenter send Next
+    on_key KSWITCH send switch
+    on_key KSWITCH_BACK send switch_back
+    object oSet is a set
+    end_object
+  end_procedure
+
+  procedure GoToFile integer liFile
+    integer liMax liItm
+    get item_count to liMax
+    decrement liMax
+    for liItm from 0 to liMax
+      if (aux_value(self,liItm)=liFile) set current_item to liItm
+    loop
+  end_procedure
+               procedure DisplayDefinition
+                 integer liFile
+                 if (item_count(self)) begin
+                   get aux_value item CURRENT to liFile
+                   send FDX_ModalDisplayFileAttributes 0 liFile
+                 end
+               end_procedure
+               procedure toggle_display
+                 set pbDisplayFileNamesUser to (not(pbDisplayFileNamesUser(self)))
+                 send InsertFileNames
+               end_procedure
+               procedure InsertFileNames
+                 integer liType
+                 integer liItem liMax liFile
+                 string lsValue
+                 get pbDisplayFileNamesUser to liType
+                 get item_count to liMax
+                 for liItem from 0 to (liMax-1)
+                   get aux_value item liItem to liFile
+                   if liType get File_Display_Name liFile to lsValue
+                   else get_attribute DF_FILE_LOGICAL_NAME of liFile to lsValue
+                   set value item liItem to lsValue
+                 loop
+                 set dynamic_update_state to DFTRUE
+               end_procedure
+               procedure FileNamesLogical
+                 set pbDisplayFileNamesUser to DFFALSE
+                 send InsertFileNames
+               end_procedure
+               procedure FileNamesUser
+                 set pbDisplayFileNamesUser to DFTRUE
+                 send InsertFileNames
+               end_procedure
+
+  function bIncludeFile integer liFile returns integer
+    // function_return (DfQuery_ExcludeFile(liFile)<>DFQ_ALWAYS)
+    function_return DFTRUE
+  end_function
+
+               procedure add_file integer liFile
+                 integer liField liMax liRelFile
+
+                 if (DBMS_OpenFile(liFile,DF_SHARE,0)) begin
+                   get_attribute DF_FILE_NUMBER_FIELDS of liFile to liMax
+                   move (liMax min 255) to liMax
+
+                   if (find_element(oSet(self),liFile)=-1) begin
+                     send add_element to (oSet(self)) liFile
+                     send add_item msg_none ""
+                     set aux_value item (item_count(self)-1) to liFile
+
+                     for liField from 1 to liMax
+                       get_attribute DF_FIELD_RELATED_FILE of liFile liField to liRelFile
+                       if (liRelFile and bIncludeFile(self,liFile)) send add_file liRelFile
+                     loop
+                   end
+                 end
+                 else error 200 ("Related file could not be opened (entry: "+string(liFile)+")")
+               end_procedure
+
+  procedure fill_list.i integer liFile
+    send delete_data
+    send delete_data to (oSet(self))
+
+    if liFile send add_file liFile
+    send InsertFileNames
+    send OnNewFile liFile
+  end_procedure
+
+  procedure OnNewFile integer liFile
+    //send notify_filechange liFile
+  end_procedure
+
+  procedure OnChange
+    integer liFile
+    if (item_count(self)) begin
+      get aux_value item (current_item(self)) to liFile
+      send OnNewFile liFile
+    end
+  end_procedure
+  function iCurrentFile returns integer
+    function_return (aux_value(self,current_item(self)))
+  end_function
+end_class // cFieldInf.Table_List
+
+class cFieldInf.Field_List is a aps.list
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer pbDisplayFieldNamesUser DFTRUE
+    property integer piFile                  0
+    property integer priv.pbDisplayOverlaps  DFFALSE
+    on_key kuser send toggle_display
+    on_key KEY_CTRL+KEY_D send DisplayDefinition
+    on_key KSWITCH send switch
+    on_key KSWITCH_BACK send switch_back
+    on_key KEY_CTRL+KEY_O send ToggleDisplayOverlaps
+  end_procedure
+  procedure GoToField integer liField
+    integer liMax liItm
+    get item_count to liMax
+    decrement liMax
+    for liItm from 0 to liMax
+      if (aux_value(self,liItm)=liField) set current_item to liItm
+    loop
+  end_procedure
+                procedure ToggleDisplayOverlaps
+                  set priv.pbDisplayOverlaps to (not(priv.pbDisplayOverlaps(self)))
+                  send fill_list.i (piFile(self))
+                end_procedure
+                procedure DisplayDefinition
+                  if (item_count(self)) send FDX_ModalDisplayFileAttributes 0 (piFile(self))
+                end_procedure
+                procedure toggle_display
+                  set pbDisplayFieldNamesUser to (not(pbDisplayFieldNamesUser(self)))
+                  send InsertFieldNames
+                end_procedure
+
+                procedure InsertFieldNames
+                  integer liType
+                  integer liItem liMax fld# liFile
+                  string lsValue
+                  get piFile to liFile
+                  get pbDisplayFieldNamesUser to liType
+                  get item_count to liMax
+                  for liItem from 0 to (liMax-1)
+                    get aux_value item liItem to fld#
+                    if fld# lt 256 begin
+                      if liType get FieldInf_FieldLabel_Long liFile fld# to lsValue
+                      else get_attribute DF_FIELD_NAME of liFile fld# to lsValue
+                      set value item liItem to lsValue
+                    end
+                  loop
+                  set dynamic_update_state to true
+                end_procedure
+
+                procedure FieldNamesLogical
+                  set pbDisplayFieldNamesUser to DFFALSE
+                  send InsertFieldNames
+                end_procedure
+                procedure FieldNamesUser
+                  set pbDisplayFieldNamesUser to DFTRUE
+                  send InsertFieldNames
+                end_procedure
+
+                procedure OnFieldSelect
+                  // Send do_add_field
+                end_procedure
+
+                procedure mouse_click integer i1 integer i2
+                  send OnFieldSelect
+                end_procedure
+
+   procedure load_virtual_fields integer liFile
+     integer lhObj liField liMax
+     get FieldInf_VirtualFields_Object liFile to lhObj
+     if lhObj begin
+       get row_count of lhObj to liMax
+       decrement liMax
+       for liField from 0 to liMax
+         if (piFieldActive.i(lhObj,liField)) begin
+           send add_item MSG_OnFieldSelect (psFieldLabel.i(lhObj,liField))
+           set aux_value item (item_count(self)-1) to (liField+256)
+         end
+       loop
+     end
+   end_procedure
+
+   function bIncludeField integer liFile integer liField returns integer
+     // function_return (not(DfQuery_ExcludeField(liFile,liField)))
+     function_return DFTRUE
+   end_function
+
+   procedure fill_list.i integer liFile
+     integer liField liMax liType
+     string lsValue
+     send delete_data
+     set piFile to liFile
+
+     if liFile begin
+       get_attribute DF_FILE_NUMBER_FIELDS of liFile to liMax
+       move (liMax min 255) to liMax
+
+       for liField from 0 to liMax
+         get_attribute DF_FIELD_NAME of liFile liField to lsValue
+         move (FieldInf_FieldType(liFile,liField)) to liType
+         if ((priv.pbDisplayOverlaps(self) or liType<>DF_OVERLAP) and liType<>DF_BINARY) begin
+           ifnot (StringBeginsWith(lsValue,"@")) begin
+             if (bIncludeField(self,liFile,liField)) begin
+               send add_item MSG_OnFieldSelect ""
+               set aux_value item (item_count(self)-1) to liField
+             end
+           end
+         end
+       loop
+       send InsertFieldNames
+       send load_virtual_fields liFile
+     end
+   end_procedure
+   function iCurrentField returns integer
+     function_return (aux_value(self,current_item(self)))
+   end_function
+end_class // cFieldInf.Field_List
+

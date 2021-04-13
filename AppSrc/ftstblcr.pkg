@@ -1,0 +1,151 @@
+// Use FTSTblCr.pkg // Free text search - Create FTS tables
+
+Use FTSData.nui // cFTS_TableAccess class.
+Use TblCreate   // cTableCreator class
+
+object oFTS_TableDefinitions is a cArray
+  property integer piArticleIdWidth 0 // NUMERIC 6.0
+  property integer piPhraseLength   0 // Minimum 6, maximum 14
+
+  object oTable_word is a cTableCreator
+    procedure OnDefine
+      set piMaxRecords to 1000000 // 1 million
+      send DoAddField "WORD_ID"      DF_BCD   6
+      send DoAddField "WORD"         DF_ASCII 30
+      send DoAddField "FREQUENCY"    DF_BCD   8
+      send DoAddOnlineIndex 1 "word_id"
+      send DoAddOnlineIndex 2 "WORD" // Uppercase = Ignore case
+    end_procedure
+  end_object
+  object oTable_artwrd is a cTableCreator
+    procedure OnDefine
+      set piMaxRecords to 10000000 // 10 million
+      send DoAddField "ARTICLE_ID"   DF_BCD   (piArticleIdWidth(self))
+      send DoAddField "WORD_ID"      DF_BCD   6
+      send DoAddOnlineIndex 1 "article_id word_id"
+      send DoAddOnlineIndex 2 "word_id article_id"
+    end_procedure
+  end_object
+  object oTable_artphr is a cTableCreator
+    procedure OnDefine
+      integer liPhrLen liPhrPos
+      string lsIndex1 lsIndex2 lsFieldName
+
+      set piMaxRecords to 16700000 // 16.7 million
+
+      move "article_id" to lsIndex1
+      move "" to lsIndex2
+      get piPhraseLength to liPhrLen
+      send DoAddField "ARTICLE_ID"      DF_BCD   (piArticleIdWidth(self))
+
+      for liPhrPos from 1 to liPhrLen
+        move "WORD_ID" to lsFieldName
+        if (liPhrPos<>1) move (lsFieldName+"_S"+string(liPhrPos-1)) to lsFieldName
+        send DoAddField lsFieldName     DF_BCD   6
+        move (lsIndex1*lsFieldName) to lsIndex1
+        move (lsIndex2*lsFieldName) to lsIndex2
+      loop
+      move (lsIndex1*"recnum") to lsIndex1
+      move (lsIndex2*"recnum") to lsIndex2
+
+      send DoAddOnlineIndex 1 (lowercase(trim(lsIndex1)))
+      send DoAddOnlineIndex 2 (lowercase(trim(lsIndex2)))
+
+//    send DoAddField "WORD_ID"         DF_BCD   6
+//    send DoAddField "WORD_ID_S1"      DF_BCD   6
+//    send DoAddField "WORD_ID_S2"      DF_BCD   6
+//    send DoAddField "WORD_ID_S3"      DF_BCD   6
+//    send DoAddField "WORD_ID_S4"      DF_BCD   6
+//    send DoAddField "WORD_ID_S5"      DF_BCD   6
+//    send DoAddOnlineIndex 1 "article_id word_id word_id_s1 word_id_s2 word_id_s3 word_id_s4 word_id_s5 recnum"
+//    send DoAddOnlineIndex 2 "word_id word_id_s1 word_id_s2 word_id_s3 word_id_s4 word_id_s5 recnum"
+
+    end_procedure
+  end_object
+  object oTable_articl is a cTableCreator
+    procedure OnDefine
+      set piMaxRecords to 1000000 // 1 million
+
+      send DoAddField "ARTICLE_ID"     DF_BCD (piArticleIdWidth(self))
+      send DoAddField "DATE"           DF_DATE   0
+      send DoAddField "TIME"           DF_ASCII  8
+      send DoAddField "HIT_COUNT"      DF_BCD    6
+      send DoAddField "ARTICLE_CLASS"  DF_ASCII 20
+      send DoAddField "INDEXED_DATE"   DF_DATE   0
+      send DoAddField "INDEXED_TIME"   DF_ASCII  8
+      send DoAddOnlineIndex 1 "article_id"
+    end_procedure
+  end_object
+
+  object oTable_search is a cTableCreator
+    procedure OnDefine
+      set piMaxRecords to 1000000 // 1 million
+      send DoAddField "SEARCH_ID"       DF_BCD    8 //  1
+      send DoAddField "USER_ID"         DF_BCD    8 //  2
+      send DoAddField "SEARCH_STRING"   DF_ASCII 80 //  3
+      send DoAddField "SEARCH_DATE"     DF_DATE   0 //  4
+      send DoAddField "SEARCH_TIME"     DF_ASCII  8 //  5
+      send DoAddField "RESULT_COUNT"    DF_BCD    6 //  6
+      send DoAddField "EXECUTION_TIME"  DF_BCD    8 //  7
+      send DoAddField "LOW_DATE_LIMIT"  DF_DATE   0 //  8
+      send DoAddField "HIGH_DATE_LIMIT" DF_DATE   0 //  9
+      send DoAddField "ORDER_BY"        DF_BCD    2 // 10
+      send DoAddField "ERROR_CODE"      DF_BCD    2 // 11
+      send DoAddField "AUX_VALUE"       DF_ASCII 20 // 12
+      send DoAddOnlineIndex 1 "search_id"
+      send DoAddOnlineIndex 2 "user_id search_id"
+    end_procedure
+  end_object
+
+  procedure DoCreateTables integer lhTableAccess integer liArticleIdWidth integer liPhraseLength
+    integer liFile lhAppDbTable lbSuccess
+    string lsRoot lsLogical lsDisplay
+
+    set piArticleIdWidth to liArticleIdWidth
+    set piPhraseLength   to liPhraseLength
+
+    get piFile.i        of lhTableAccess FTSTABLE_WORD   to liFile
+    get psRootname.i    of lhTableAccess FTSTABLE_WORD   to lsRoot
+    get psLogicalName.i of lhTableAccess FTSTABLE_WORD   to lsLogical
+    get psUserName.i    of lhTableAccess FTSTABLE_WORD   to lsDisplay
+    set FileListValues of oTable_word to liFile lsRoot lsLogical lsDisplay
+    send DoDefine of oTable_word
+    send CreateTable of oTable_word
+
+    get piFile.i        of lhTableAccess FTSTABLE_ARTWRD to liFile
+    get psRootname.i    of lhTableAccess FTSTABLE_ARTWRD to lsRoot
+    get psLogicalName.i of lhTableAccess FTSTABLE_ARTWRD to lsLogical
+    get psUserName.i    of lhTableAccess FTSTABLE_ARTWRD to lsDisplay
+    set FileListValues of oTable_artwrd to liFile lsRoot lsLogical lsDisplay
+    send DoDefine of oTable_artwrd
+    send CreateTable of oTable_artwrd
+
+    get piFile.i        of lhTableAccess FTSTABLE_ARTPHR to liFile
+    get psRootname.i    of lhTableAccess FTSTABLE_ARTPHR to lsRoot
+    get psLogicalName.i of lhTableAccess FTSTABLE_ARTPHR to lsLogical
+    get psUserName.i    of lhTableAccess FTSTABLE_ARTPHR to lsDisplay
+    set FileListValues of oTable_artphr to liFile lsRoot lsLogical lsDisplay
+    send DoDefine of oTable_artphr
+    send CreateTable of oTable_artphr
+
+    get piFile.i        of lhTableAccess FTSTABLE_ARTICL to liFile
+    get psRootname.i    of lhTableAccess FTSTABLE_ARTICL to lsRoot
+    get psLogicalName.i of lhTableAccess FTSTABLE_ARTICL to lsLogical
+    get psUserName.i    of lhTableAccess FTSTABLE_ARTICL to lsDisplay
+    set FileListValues of oTable_articl to liFile lsRoot lsLogical lsDisplay
+    send DoDefine of oTable_articl
+    send CreateTable of oTable_articl
+
+    get piFile.i        of lhTableAccess FTSTABLE_SEARCH to liFile
+    get psRootname.i    of lhTableAccess FTSTABLE_SEARCH to lsRoot
+    get psLogicalName.i of lhTableAccess FTSTABLE_SEARCH to lsLogical
+    get psUserName.i    of lhTableAccess FTSTABLE_SEARCH to lsDisplay
+    set FileListValues of oTable_search to liFile lsRoot lsLogical lsDisplay
+    send DoDefine of oTable_search
+    send CreateTable of oTable_search
+  end_procedure
+end_object // oFTS_TableDefinitions
+
+procedure FTS_CreateTables global integer lhTableAccess integer liArticleIdWidth integer lhPhraseLength
+  send DoCreateTables of oFTS_TableDefinitions lhTableAccess liArticleIdWidth lhPhraseLength
+end_procedure

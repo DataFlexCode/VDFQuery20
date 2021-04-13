@@ -1,0 +1,161 @@
+﻿// Use SortUtil.utl // Basic code for reindexing a set of tables
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use DBMS.utl     // Basic DBMS functions
+Use Spec0008.utl // Small arrays with integer Codes (Dictionaries)
+Use OpenStat.nui // cTablesOpenStatus class (formely cFileAllFiles)
+Use SetTable.utl // cSetOfTables class
+Use Files.utl    // Utilities for handling file related stuff
+
+desktop_section
+  object oSortFilesStatusCodes is a cIntegerCodeToText
+    IntegerCodeList
+      Define_IntegerCode SC_TERMINATION_OK       "All is well"
+      Define_IntegerCode SC_UNINITIALISED        "Un-initialized"
+      Define_IntegerCode SC_NOT_A_DATAFLEX_FILE  "Not a DataFlex file"
+      Define_IntegerCode SC_COULD_NOT_OPEN       "File could not be opened"
+    End_IntegerCodeList
+  end_object
+  object oSortFileStatusCodes is a cIntegerCodeToText
+    IntegerCodeList
+      Define_IntegerCode SCB_UNINITIALISED        "Not sorted"
+      Define_IntegerCode SCB_NOT_A_DATAFLEX_FILE  "Not DataFlex file"
+      Define_IntegerCode SCB_COULD_NOT_OPEN       "Could not open"
+      Define_IntegerCode SCB_OK                   "Sorted OK"
+      Define_IntegerCode SCB_DUPLICATES           "Duplicate records"
+      Define_IntegerCode SCB_BAD                  "Bad data detected"
+    End_IntegerCodeList
+  end_object
+end_desktop_section
+
+function SU_TableStatusText global integer iStatus returns string
+  function_return (sText.i(oSortFileStatusCodes(self),iStatus))
+end_function
+
+desktop_section
+  object oSortProperties is a cArray
+    property integer piSortOptions (DF_SORT_OPTION_NO_DATA_CHECK+DF_SORT_OPTION_DUP_DATA_FILE)
+    property integer piSortBuffer  0
+    procedure DoDefault
+      integer liNull liBuffer
+      string lsNull
+      move 0 to liNull
+      move "" to lsNull
+      call_driver liNull "DATAFLEX" function FLEX_GET_MAX_SORT_BUFFER callback liNull passing lsNull liNull liNull result liBuffer
+      set piSortBuffer to liBuffer
+    end_procedure
+    send DoDefault
+  end_object
+end_desktop_section
+
+class cReIndexer is a cSetOfTables
+  procedure construct_object
+    forward send construct_object
+    property integer piCallbackObj    self
+    property integer piSortBuffer     0  // Means what ever it was set to already
+    property integer piBatchOnly      DFFALSE // The use of this is not implemented!
+    property integer piStatus         SC_UNINITIALISED
+    Property Integer piCurrentRow     "" // Row currently being sorted
+  end_procedure
+
+  procedure DoCaption string sCaption
+    // Apart from the call back function below this message MUST be
+    // understood by the callback object. (Per default we are our
+    // own callback object)
+  end_procedure
+
+  function callback string sText integer iType returns integer
+    If iType eq DF_MESSAGE_WARNING Set piAux1.i (piCurrentRow(Self)) to 1
+//  if (iType ge DF_MESSAGE_HEADING_1 and iType le DF_MESSAGE_HEADING_5) begin
+//  end
+//  else if iType eq DF_MESSAGE_PROGRESS_TITLE begin
+//  end
+//  else if iType eq DF_MESSAGE_PROGRESS_VALUE begin
+//  end
+//  else if iType eq DF_MESSAGE_WARNING begin
+//  end
+//  function_return 0
+  end_function
+
+  procedure priv.DoSortRow integer iRow
+    integer iOpen iFile iOptions iCallbackObj
+    string sRootName
+
+    set piCurrentRow to iRow
+    get psRootName.i iRow to sRootName
+    move 20 to iFile
+
+    move (DBMS_OpenFileAs(sRootName,iFile,DF_EXCLUSIVE,0)) to iOpen
+    if iOpen ne DBMS_DRIVER_ERROR begin
+      if iOpen eq DBMS_DRIVER_DATAFLEX begin // It must be a DataFlex file
+        get piSortOptions of (oSortProperties(self)) to iOptions
+        get piCallbackObj to iCallbackObj
+        send DoCaption to iCallbackObj sRootName
+        sort iFile '' iOptions iCallbackObj
+        set piStatus.i iRow to SCB_OK
+      end
+      else set piStatus.i iRow to SCB_NOT_A_DATAFLEX_FILE
+      close iFile
+    end
+    else set piStatus.i iRow to SCB_COULD_NOT_OPEN
+  end_procedure
+
+  procedure DoSort
+    integer iMax iRow
+    set piStatus to SC_UNINITIALISED
+    send OpenStat_RegisterFiles
+    send OpenStat_CloseAllFiles
+    send DoSetAllAux1 0 // Clear Aux1 column
+    get row_count to iMax
+    decrement iMax
+    for iRow from 0 to iMax
+      send priv.DoSortRow iRow
+    loop
+    send OpenStat_RestoreFiles
+  end_procedure
+
+  procedure Reset
+    forward send reset
+    set piStatus to SC_UNINITIALISED
+  end_procedure
+
+  procedure CloneTablesFromcReindexer integer iSourceObject
+    send Clone_Array iSourceObject self
+  end_procedure
+end_class // cReindexer
+
+// From here we just declare a default global thing and some
+// methods to operate it.
+
+integer gloReIndexer# // Global integer pointing to the default Reindexer object
+desktop_section
+  object oReIndexer is a cReIndexer
+    move self to gloReIndexer#
+  end_object
+end_desktop_section
+
+
+procedure SU_ResetTableList global
+  send Reset to gloReIndexer#
+end_procedure
+procedure SU_DoSort global
+  send DoSort to gloReIndexer#
+end_procedure
+procedure SU_Add_RootNamesInDirectory global string sDir
+  send Add_RootNamesInDirectory to gloReIndexer# sDir
+end_procedure
+procedure SU_Add_RootNamesInDirectories global string sDir
+  send Add_RootNamesInDirectories to gloReIndexer# sDir
+end_procedure
+procedure SU_Add_Rootname global string sFileRootName
+  send Add_Rootname to gloReIndexer# sFileRootName
+end_procedure
+procedure SU_Add_RootNamesInAllWS global
+  send Add_DataFilesInAllWS to gloReIndexer#
+end_procedure
+// Test:
+
+//  object oReindexer is a cReindexer
+//    send Add_Rootname "s_prtcmm" DFTRUE
+//    send DoSort
+//  end_object

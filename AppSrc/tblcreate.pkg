@@ -1,0 +1,332 @@
+// Use TblCreate   // cTableCreator class
+
+// Use this the cTableCreator class to store a table definition and have
+// the application create it when needed.
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use API_Attr.nui // Functions for querying API attributes
+Use FDX.nui      // cFDX class
+Use DBMS.nui     // Basic DBMS functions (No User Interface)
+Use StructEx.utl // Restructuring extensions
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+
+desktop_section
+  object oTableCreator_FdxFileDef is a cFdxFileDef
+  end_object
+end_desktop_section
+
+            class cTblCrFieldList is a cArray
+              item_property_list
+                item_property string  psName.i       // Field name
+                item_property integer piType.i       // Field type
+                item_property integer piLength.i
+                item_property integer piPrecision.i
+                item_property integer piOverlapFrom.i
+                item_property integer piOverlapTo.i
+                item_property integer piMainIndex.i
+                item_property integer piRelFile.i
+                item_property integer piRelField.i
+                item_property integer piOverlapOffset.i
+              end_item_property_list cTblCrFieldList
+              procedure DoReset
+                send delete_data
+              end_procedure
+              function iFindFieldName.s string lsFieldName returns integer
+                integer liMax liRow
+                get row_count to liMax
+                decrement liMax
+                move (uppercase(lsFieldName)) to lsFieldName
+                for liRow from 0 to liMax
+                  if (uppercase(psName.i(self,liRow))=lsFieldName) function_return liRow
+                loop
+                function_return -1
+              end_function
+              function iByteLengthFieldRange integer liFromRow integer liToRow returns integer
+                integer liRval liRow liType liLength
+                move 0 to liRval
+                for liRow from liFromRow to liToRow
+                  get piType.i liRow to liType
+                  if (liType<>DF_OVERLAP) begin
+                    get piLength.i liRow to liLength
+                    if liType eq DF_BCD move (liLength/2) to liLength
+                    move (liRval+liLength) to liRval
+                  end
+                loop
+                function_return liRval
+              end_function
+              procedure DoEndDefinition // Calculate field offsets
+                integer liRow liMax liFromRow liToRow liOffset liLength
+                get row_count to liMax
+                decrement liMax
+                // set length of date fields
+                for liRow from 0 to liMax // Dates
+                  if (piType.i(self,liRow)=DF_DATE) set piLength.i liRow to 3
+                loop
+                // having done that we may calculate overlap offsets:
+                for liRow from 0 to liMax
+                  if (piType.i(self,liRow)=DF_OVERLAP) begin
+                    move (piOverlapFrom.i(self,liRow)-1) to liFromRow
+                    move (piOverlapTo.i(self,liRow)-1) to liToRow
+                    get iByteLengthFieldRange 0 (liFromRow-1) to liOffset
+                    increment liOffSet
+                    get iByteLengthFieldRange liFromRow liToRow to liLength
+                    set piLength.i liRow to liLength
+                    set piOverlapOffset.i liRow to liOffset
+                  end
+                loop
+              end_procedure
+              procedure DoAddField string lsName integer liType number lnLength
+                integer liRow liPrecision
+            //    if (length(lsName)>15) error 254 ("Field name too long ("+lsName+")")
+                get row_count to liRow
+                set psName.i   liRow to lsName
+                set piType.i   liRow to liType
+                if liType eq DF_BCD begin
+                  move (lnLength-integer(lnLength)*10) to liPrecision
+                  move (integer(lnLength)) to lnLength
+                  set piLength.i liRow to (lnLength+liPrecision)
+                  set piPrecision to liPrecision
+                end
+                else set piLength.i liRow to lnLength
+              end_procedure
+              procedure Set piPrecision integer liPrecision
+                set piPrecision.i (row_count(self)-1) to liPrecision
+              end_procedure
+              procedure Set piMainIndex integer liIndex
+                set piMainIndex.i (row_count(self)-1) to liindex
+              end_procedure
+              procedure Set piOverlapFieldRange integer liFieldFrom integer liFieldTo
+                set piOverlapFrom.i (row_count(self)-1) to liFieldFrom
+                set piOverlapTo.i   (row_count(self)-1) to liFieldTo
+              end_procedure
+              procedure Set piRelation integer liFile integer liField
+                set piRelFile.i  (row_count(self)-1) to liFile
+                set piRelField.i (row_count(self)-1) to liField
+              end_procedure
+            end_class // cTblCrFieldList
+
+            class cTblCrIndexList is a cArray
+              procedure construct_object integer liImg
+                forward send construct_object liImg
+                property integer piCurrentDefiningIndex -1
+              end_procedure
+              item_property_list
+                item_property integer piOnline.i // On-line/Batch
+                item_property string  psFields.i
+                item_property string  psUppercase.i
+                item_property string  psDirection.i
+              end_item_property_list cTblCrIndexList
+              function iSegments.i integer liIndex returns integer
+                function_return (length(psFields.i(self,liIndex))/4)
+              end_function
+              procedure DoReset
+                send delete_data
+              end_procedure
+              procedure DoAddIndex integer liIndex integer liOnLine
+                set piCurrentDefiningIndex to liIndex
+                set piOnline.i liIndex to liOnline
+              end_procedure
+              procedure DoAddSegment integer liField integer lbUppercased integer liDirection
+                integer liIndex
+                get piCurrentDefiningIndex to liIndex
+                set psFields.i    liIndex to (psFields.i(self,liIndex)+pad(string(liField),4))
+                set psUppercase.i liIndex to (psUppercase.i(self,liIndex)+pad(string(lbUppercased),4))
+                set psDirection.i liIndex to (psDirection.i(self,liIndex)+pad(string(liDirection),4))
+              end_procedure
+              function iHelpExtract.si string lsValue integer liSegment returns integer
+                function_return (mid(lsValue,4,liSegment-1*4+1))
+              end_function
+              function iIndexSegmentField integer liIndex integer liSegment returns integer
+                function_return (iHelpExtract.si(self,psFields.i(self,liIndex),liSegment))
+              end_function
+              function iIndexSegmentUppercase integer liIndex integer liSegment returns integer
+                function_return (iHelpExtract.si(self,psUppercase.i(self,liIndex),liSegment))
+              end_function
+              function iIndexSegmentDirection integer liIndex integer liSegment returns integer
+                function_return (iHelpExtract.si(self,psDirection.i(self,liIndex),liSegment))
+              end_function
+            end_class // cTblCrIndexList
+
+class cTableCreator is a cTblCrFieldList
+  procedure construct_object
+    forward send construct_object
+    property integer piFile            0
+    property string  psRoot            ""
+    property string  psLogicalName     ""
+    property string  psUserName        ""
+    property integer piMaxRecords      10000
+    property integer piMultiuser       DF_FILE_USER_MULTI
+    property integer piReuse_deleted   DF_FILE_DELETED_REUSE
+    property integer piCompression     DF_FILE_COMPRESS_NONE
+    property integer piIntegrity_check DFTRUE
+    property integer piTransaction     DF_FILE_TRANSACTION_CLIENT_ATOMIC
+    property integer piLockType        DF_LOCK_TYPE_FILE
+    object oIndexList is a cTblCrIndexList
+    end_object
+
+    // If true filelist.cfg will be updated when tables are created:
+    property integer pbUpdateFilelist  DFTRUE
+
+  end_procedure
+
+  procedure OnDefine
+  end_procedure
+
+  procedure DoDefine
+    send DoReset_Help DFFALSE
+    send OnDefine
+    send DoEndDefinition // Calculate field offsets
+  end_procedure
+
+            procedure DoReset_Help integer lbAll
+              forward send DoReset
+              send DoReset to (oIndexList(self))
+              if lbAll begin
+                set piFile            to 0
+                set psRoot            to ""
+                set psLogicalName     to ""
+                set psUserName        to ""
+                set piMaxRecords      to 10000
+                set piMultiuser       to DF_FILE_USER_MULTI
+                set piReuse_deleted   to DF_FILE_DELETED_REUSE
+                set piCompression     to DF_FILE_COMPRESS_NONE
+                set piIntegrity_check to DF_FILE_INTEGRITY_CHECK
+                set piTransaction     to DF_FILE_TRANSACTION_CLIENT_ATOMIC
+              end
+            end_procedure
+
+  procedure DoReset
+    send DoReset_Help DFTRUE
+  end_procedure
+
+  procedure set FileListValues integer liFile string lsRoot string lsLogicalName string lsUserName
+    set piFile        to liFile
+    set psRoot        to lsRoot
+    set psLogicalName to lsLogicalName
+    set psUserName    to lsUserName
+  end_procedure
+
+            procedure DoAddIndex integer liIndex integer lbOnLine
+              send DoAddIndex to (oIndexList(self)) liIndex lbOnLine
+            end_procedure
+            procedure DoAddSegment integer liField integer lbUppercased integer liDirection
+              send DoAddSegment to (oIndexList(self)) liField lbUppercased liDirection
+            end_procedure
+
+  procedure DoAddOnlineIndex integer liIndex string lsFieldNames
+    integer liItem liSegments liField
+    integer lbUppercased lbDescending
+    string lsFieldName
+    send DoAddIndex liIndex DF_INDEX_TYPE_ONLINE
+    get HowManyWords lsFieldNames " ," to liSegments
+    for liItem from 1 to liSegments
+      get ExtractWord lsFieldNames " ," liItem to lsFieldName
+
+      if (left(lsFieldName,1)="-") begin
+        move (StringRightBut(lsFieldName,1)) to lsFieldName
+        move DFTRUE to lbDescending
+      end
+      else move DFFALSE to lbDescending
+
+      if (uppercase(lsFieldName)=lsFieldName) move DFTRUE to lbUppercased
+      else move DFFALSE to lbUppercased
+
+      get iFindFieldName.s lsFieldName to liField
+      increment liField
+
+      if (liField=0 and uppercase(lsFieldName)<>"RECNUM") move -1 to liField
+
+      if (liField<>-1) ;
+         send DoAddSegment liField ;
+           (if(lbUppercased,DF_CASE_IGNORED,DF_CASE_USED)) ;
+           (if(lbDescending,DF_DESCENDING,DF_ASCENDING))
+      else error 652 "Illegal fieldname in index spec (AppDB)"
+    loop
+  end_procedure
+           function iIndexSegmentField integer liIndex integer liSegment returns integer
+             function_return (iIndexSegmentField(oIndexList(self),liIndex,liSegment))
+           end_function
+           function iIndexSegmentUppercase integer liIndex integer liSegment returns integer
+             function_return (iIndexSegmentUppercase(oIndexList(self),liIndex,liSegment))
+           end_function
+           function iIndexSegmentDirection integer liIndex integer liSegment returns integer
+             function_return (iIndexSegmentDirection(oIndexList(self),liIndex,liSegment))
+           end_function
+           function iIndexSegments integer liIndex returns integer
+             function_return (iSegments.i(oIndexList(self),liIndex))
+           end_function
+           function iIndexType integer liIndex returns integer
+             function_return (piOnline.i(oIndexList(self),liIndex))
+           end_function
+
+  procedure TransferDefinitionToFDX
+    integer liRow liMax liFile liFieldType liIndex liSegment liMaxSegment lhAppDbTable lhFdx
+
+    move self to lhAppDbTable
+    move (oTableCreator_FdxFileDef(self)) to lhFdx
+
+    //send DoDefine to lhAppDbTable
+    send Reset to lhFdx
+    get piFile of lhAppDbTable to liFile
+    set piMainFile of lhFDX to liFile
+
+    set AttrValue_FILE of lhFDX DF_FILE_MAX_RECORDS     liFile to (piMaxRecords(self))
+    set AttrValue_FILE of lhFDX DF_FILE_MULTIUSER       liFile to (piMultiuser(self))
+    set AttrValue_FILE of lhFDX DF_FILE_REUSE_DELETED   liFile to (piReuse_deleted(self))
+    set AttrValue_FILE of lhFDX DF_FILE_COMPRESSION     liFile to (piCompression(self))
+    set AttrValue_FILE of lhFDX DF_FILE_INTEGRITY_CHECK liFile to (piIntegrity_check(self))
+    set AttrValue_FILE of lhFDX DF_FILE_TRANSACTION     liFile to (piTransaction(self))
+    set AttrValue_FILE of lhFDX DF_FILE_LOCK_TYPE       liFile to (piLockType(self))
+    set AttrValue_FILE of lhFDX DF_FILE_RECORD_LENGTH   liFile to 8 // Automatically incremented during field appending
+
+    get row_count of lhAppDbTable to liMax
+    set AttrValue_FILE of lhFDX DF_FILE_NUMBER_FIELDS liFile to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get piType.i of lhAppDbTable liRow to liFieldType
+      set AttrValue_FIELD of lhFDX DF_FIELD_NAME          liFile (liRow+1) to (psName.i(lhAppDbTable,liRow))
+      set AttrValue_FIELD of lhFDX DF_FIELD_TYPE          liFile (liRow+1) to liFieldType
+      set AttrValue_FIELD of lhFDX DF_FIELD_LENGTH        liFile (liRow+1) to (piLength.i(lhAppDbTable,liRow))
+      set AttrValue_FIELD of lhFDX DF_FIELD_PRECISION     liFile (liRow+1) to (piPrecision.i(lhAppDbTable,liRow))
+      set AttrValue_FIELD of lhFDX DF_FIELD_RELATED_FILE  liFile (liRow+1) to (piRelFile.i(lhAppDbTable,liRow))
+      set AttrValue_FIELD of lhFDX DF_FIELD_RELATED_FIELD liFile (liRow+1) to (piRelField.i(lhAppDbTable,liRow))
+      set AttrValue_FIELD of lhFDX DF_FIELD_INDEX         liFile (liRow+1) to (piMainIndex.i(lhAppDbTable,liRow))
+      if liFieldType eq DF_OVERLAP begin
+        set AttrValue_FIELD of lhFDX DF_FIELD_OFFSET      liFile (liRow+1) to (piOverlapOffset.i(lhAppDbTable,liRow))
+      end
+    loop
+
+    for liIndex from 1 to 15
+      get iIndexSegments of lhAppDbTable liIndex to liMaxSegment
+      if liMaxSegment begin
+        set AttrValue_INDEX of lhFDX DF_INDEX_TYPE            liFile liIndex to (iIndexType(lhAppDbTable,liIndex))
+        set AttrValue_INDEX of lhFDX DF_INDEX_NUMBER_SEGMENTS liFile liIndex to liMaxSegment
+        for liSegment from 1 to liMaxSegment
+          set AttrValue_IDXSEG of lhFDX DF_INDEX_SEGMENT_FIELD     liFile liIndex liSegment to (iIndexSegmentField(lhAppDbTable,liIndex,liSegment))
+          set AttrValue_IDXSEG of lhFDX DF_INDEX_SEGMENT_DIRECTION liFile liIndex liSegment to (iIndexSegmentDirection(lhAppDbTable,liIndex,liSegment))
+          set AttrValue_IDXSEG of lhFDX DF_INDEX_SEGMENT_CASE      liFile liIndex liSegment to (iIndexSegmentUppercase(lhAppDbTable,liIndex,liSegment))
+        loop
+      end
+    loop
+  //send FDX_ModalDisplayFileAttributes lhFdx liFile
+  end_procedure
+
+  procedure OnTableCreated
+  end_procedure
+
+  procedure CreateTable
+    integer liRval liFile
+    send TransferDefinitionToFDX
+    get RSX_CreateTableFromFDX (oTableCreator_FdxFileDef(self)) (piFile(self)) (psRoot(self)) to liRval
+    if liRval begin
+      if (pbUpdateFilelist(self)) begin
+        get piFile to liFile
+        set_attribute DF_FILE_ROOT_NAME of liFile to (psRoot(self))
+        set_attribute DF_FILE_LOGICAL_NAME of liFile to (psLogicalName(self))
+        set_attribute DF_FILE_DISPLAY_NAME of liFile to (rtrim(psUserName(self)))
+      end
+      send OnTableCreated
+    end
+  end_procedure
+end_class // cTableCreator
+

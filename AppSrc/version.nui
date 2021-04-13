@@ -1,0 +1,79 @@
+enumeration_list // _OS_ values
+  define _OS_WIN_
+  define _OS_DOS_
+  define _OS_UNIX_
+end_enumeration_list
+
+enumeration_list // _PRODUCT_ values
+  define _DF_
+  define _VDF_
+  define _WEBAPP_
+end_enumeration_list
+
+enumeration_list // _VERSION_ values
+  define _20_
+  define _30_
+  define _31_
+  define _32_
+  define _4_
+  define _5_
+  define _6_
+  define _7_
+  define _8_
+  define _91_
+  define _10_
+  define _11_
+  define _12_
+  define _14_
+  define _15_
+  define _16_
+  define _17_
+  define _18_
+  define _19_
+end_enumeration_list
+
+ define _OS_ for _OS_WIN_
+ define _PRODUCT_ for _VDF_ // or WebApp server
+
+#IF (FMAC_VERSION=19)
+  define _VERSION_ for _18_ // DF 2014
+#ELSE
+ #IF (FMAC_VERSION=18)
+    define _VERSION_ for _18_ // DF 2014
+ #ELSE
+  #IF (FMAC_VERSION=17)
+     define _VERSION_ for _17_ // VDF 2012
+  #ELSE
+   #IF (FMAC_VERSION=16)
+      define _VERSION_ for _16_ // VDF 2010
+   #ELSE
+    #IF (FMAC_VERSION=15)
+       define _VERSION_ for _15_ // VDF 2009
+    #ELSE
+     #IF (FMAC_VERSION=14)
+       define _VERSION_ for _14_ // VDF 2008
+     #ELSE
+      #IF (FMAC_VERSION=12)
+       define _VERSION_ for _12_ // VDF12
+      #ELSE
+       #IF (FMAC_VERSION=11)
+        define _VERSION_ for _11_ // VDF11
+       #ELSE
+        #IF (FMAC_VERSION=10)
+         define _VERSION_ for _10_ // VDF10 + VDF10.1
+        #ELSE
+         #IF (FMAC_VERSION=9)
+          define _VERSION_ for _91_ // VDF9.1
+         #ELSE
+          define _VERSION_ for _8_ // Vdf8x + VDF9.0
+         #ENDIF
+        #ENDIF
+       #ENDIF
+      #ENDIF
+     #ENDIF
+    #ENDIF
+   #ENDIF
+  #ENDIF
+ #ENDIF
+#ENDIF
+

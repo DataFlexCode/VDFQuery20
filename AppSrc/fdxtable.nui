@@ -1,0 +1,63 @@
+// Use FdxTable.nui // Procedure FDX_TablesCallback ...
+
+Use FDX.nui      // cFDX class
+Use FDX_Attr.nui // FDX compatible attribute functions
+
+//> Call back for all tables in filelist.cfg
+procedure FDX_TablesCallback global integer lhFDX integer lhMsg integer lhObj
+  integer liFile
+  string lsRoot lsLogical lsDisplay
+  move 0 to liFile
+  repeat
+    move (FDX_AttrValue_FLSTNAV(lhFDX,DF_FILE_NEXT_USED,liFile)) to liFile
+    if liFile begin
+      get FDX_AttrValue_FILELIST lhFDX DF_FILE_ROOT_NAME    liFile to lsRoot
+      get FDX_AttrValue_FILELIST lhFDX DF_FILE_LOGICAL_NAME liFile to lsLogical
+      get FDX_AttrValue_FILELIST lhFDX DF_FILE_DISPLAY_NAME liFile to lsDisplay
+      move (rtrim(lsDisplay)) to lsDisplay
+      send lhMsg to lhObj liFile lsRoot lsLogical lsDisplay
+      // procedure HandleTable integer liFile string lsRoot string lsLogical string lsDisplay
+    end
+  until liFile eq 0
+end_procedure
+
+          desktop_section
+            object oConstrainedTablesCallbackHelp is a cArray
+              property integer phFDX
+              procedure HandleRelation integer liType integer liFromFile integer liFromField integer liToFile integer liToField
+                // We assume that ToFile.ToField is uniquely indexed
+                integer liIndex lhFdx
+                get phFDX to lhFdx
+                get FDX_IndexFindMatching lhFDX liFromFile (FDX_FieldsTranslateOverlaps(lhFdx,liFromFile,liFromField)) 0 to liIndex
+                if liIndex set value item liFromFile to 1
+              end_procedure
+            end_object
+          end_desktop_section
+
+//> Call back for all tables relating to liConstrainFile and that have an index that
+//> allows for sensible constraining.
+procedure FDX_ConstrainedTablesCallback global integer lhFDX integer liConstrainFile integer lhMsg integer lhObj
+  integer lhTmp liFile liMax
+  string lsRoot lsLogical lsDisplay
+  move (oConstrainedTablesCallbackHelp(self)) to lhTmp
+  send delete_data of lhTmp
+  if lhFDX begin
+    set phFDX of lhTmp to lhFDX
+    send Callback_Relations to lhFDX MSG_HandleRelation lhFdx FDX_RELORIG_GENERIC 0 liConstrainFile
+    get item_count of lhTmp to liMax
+    decrement liMax
+    for liFile from 1 to liMax
+      if (integer(value(lhTmp,liFile))) begin
+        get FDX_AttrValue_FILELIST lhFDX DF_FILE_ROOT_NAME    liFile to lsRoot
+        get FDX_AttrValue_FILELIST lhFDX DF_FILE_LOGICAL_NAME liFile to lsLogical
+        get FDX_AttrValue_FILELIST lhFDX DF_FILE_DISPLAY_NAME liFile to lsDisplay
+        move (rtrim(lsDisplay)) to lsDisplay
+        send lhMsg to lhObj liFile lsRoot lsLogical lsDisplay
+        // procedure HandleTable integer liFile string lsRoot string lsLogical string lsDisplay
+      end
+    loop
+  end
+  else error 429 "lhFDX must be specified in FDX_ConstrainedTablesCallback call"
+  send delete_data of lhTmp
+end_procedure
+

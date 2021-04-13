@@ -1,0 +1,517 @@
+// **********************************************************************
+// Use MdiExt.utl   // MDI Extensions
+//
+// By Sture Andersen
+//
+// Create: Mon  15-12-1997
+//
+//
+// Usage:
+//
+//   Substitute:
+//
+//     Use dfStdBtn
+//
+//   for:
+//
+//     Object Tool_Bar is a cSturesToolBar
+//       send Add_Standard_Toolbar_Buttons         // Adds the standard buttons
+//     //send Add_Space
+//     //send Add_Calendar_tbButton self // Add calendar button
+//     //send Add_LinkView_tbButton self // Add link view button
+//     End_Object
+//
+//   and:
+//
+//     Use DfStdSbr
+//
+//   for:
+//
+//     Object Status_Bar is a cStatusBar
+//     End_Object
+//
+// ***********************************************************************
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+Use Dfmainbt.pkg  // Standard dfMain_ButtonBar (DAC)
+Use Dfmainst.pkg  // Standard Status bar class (DAC)
+Use fieldinf.pkg  // Global field info objects
+Use Msgbox.pkg    // DAC class
+Use language.pkg  // Set default languange if not set by compiler command line
+Use API_Attr.utl // Functions for querying API attributes
+
+Use Dfdeomnu.pkg // Defines class ViewPopupMenu
+
+#IF LNG_DEFAULT=LNG_DANISH
+ define t.TbBtn.Bgn.Tip      for "Find fõrste post"
+ define t.TbBtn.Bgn.StHlp    for "Find fõrste post (Ctrl+Home)"
+ define t.TbBtn.Prev.Tip     for "Find forrige"
+ define t.TbBtn.Prev.StHlp   for "Find forrige post (F7)"
+ define t.TbBtn.Next.Tip     for "Find nëste"
+ define t.TbBtn.Next.StHlp   for "Find nëste post (F8)"
+ define t.TbBtn.End.Tip      for "Find sidste post"
+ define t.TbBtn.End.StHlp    for "Find sidste post (Ctrl+End)"
+ define t.TbBtn.Prompt.Tip   for "Liste"
+ define t.TbBtn.Prompt.StHlp for "Vis valgliste (F4)"
+ define t.TbBtn.Print.Tip    for "Udskriv"
+ define t.TbBtn.Print.StHlp  for "Udskriv rapport (Skift+F4)"
+ define t.TbBtn.Clear.Tip    for "Blank"
+ define t.TbBtn.Clear.StHlp  for "Blank / Tilfõj ny post (F5)"
+ define t.TbBtn.ClearA.Tip   for "Blank alt"
+ define t.TbBtn.ClearA.StHlp for "Blank skërm for alle data (Ctrl+F5)"
+ define t.TbBtn.Save.Tip     for "Gem"
+ define t.TbBtn.Save.StHlp   for "Gem post (F2)"
+ define t.TbBtn.Del.Tip      for "Slet"
+ define t.TbBtn.Del.StHlp    for "Slet post (Skift+F2)"
+ define t.TbBtn.Cut.Tip      for "Klip"
+ define t.TbBtn.Cut.StHlp    for "Klipper markerede data til udklipsholderen"
+ define t.TbBtn.Copy.Tip     for "Kopier"
+ define t.TbBtn.Copy.StHlp   for "Kopierer markerede data til udklipsholderen"
+ define t.TbBtn.Paste.Tip    for "Indsët"
+ define t.TbBtn.Paste.StHlp  for "Indsëtter data fra udklipsholderen"
+ define t.LnkVw.NotDefined   for "Vindue for inddatering af '#' er ikke defineret"
+ define t.LnkVw.ToolTip      for "èbn overordnet register"
+ define t.LnkVw.StatusHelp   for "èbner overordnet register (Ctrl+O)"
+ define t.LnkVw.DoesNotExist for "Funktionen er ikke tilgëngelig (#)"
+#ELSE
+ #IF LNG_DEFAULT=LNG_NORWEGIAN
+  define t.TbBtn.Bgn.Tip      for "Finn fõrste post"
+  define t.TbBtn.Bgn.StHlp    for "Finn fõrste post (Ctrl+Home)"
+  define t.TbBtn.Prev.Tip     for "Finn forrige"
+  define t.TbBtn.Prev.StHlp   for "Finn forrige post (F7)"
+  define t.TbBtn.Next.Tip     for "Finn neste"
+  define t.TbBtn.Next.StHlp   for "Finn neste post (F8)"
+  define t.TbBtn.End.Tip      for "Finn siste post"
+  define t.TbBtn.End.StHlp    for "Finn siste post (Ctrl+End)"
+  define t.TbBtn.Prompt.Tip   for "Liste"
+  define t.TbBtn.Prompt.StHlp for "Vis valgliste (F4)"
+  define t.TbBtn.Print.Tip    for "Skriv ut"
+  define t.TbBtn.Print.StHlp  for "Skriv ut rapport (Skift+F4)"
+  define t.TbBtn.Clear.Tip    for "Blank"
+  define t.TbBtn.Clear.StHlp  for "Blank / Tilfõy ny post (F5)"
+  define t.TbBtn.ClearA.Tip   for "Blank alt"
+  define t.TbBtn.ClearA.StHlp for "Blank skjerm for alle data (Ctrl+F5)"
+  define t.TbBtn.Save.Tip     for "Lagre"
+  define t.TbBtn.Save.StHlp   for "Lagre post (F2)"
+  define t.TbBtn.Del.Tip      for "Slett"
+  define t.TbBtn.Del.StHlp    for "Slett post (Skift+F2)"
+  define t.TbBtn.Cut.Tip      for "Klipp"
+  define t.TbBtn.Cut.StHlp    for "Klipper markerte data til utklippsholderen"
+  define t.TbBtn.Copy.Tip     for "Kopier"
+  define t.TbBtn.Copy.StHlp   for "Kopierer markerte data til utklippsholderen"
+  define t.TbBtn.Paste.Tip    for "Sett inn"
+  define t.TbBtn.Paste.StHlp  for "Setter inn data fra utklippsholderen"
+  define t.LnkVw.NotDefined   for "Vindu for inndatering af '#' er ikke definert"
+  define t.LnkVw.ToolTip      for "èpn overordnet register"
+  define t.LnkVw.StatusHelp   for "èpner overordnet register (Ctrl+O)"
+  define t.LnkVw.DoesNotExist for "Funksjonen er ikke tilgengelig (#)"
+ #ELSE
+  #IF LNG_DEFAULT=LNG_FRENCH
+   Define t.TbBtn.Bgn.Tip      For "DÇbut de fichier"
+   Define t.TbBtn.Bgn.StHlp    For "Trouve le premier enregistrement (Ctrl+Home)"
+   Define t.TbBtn.Prev.Tip     For "PrÇcÇdent"
+   Define t.TbBtn.Prev.StHlp   For "Trouve l'enregistrement prÇcÇdent (F7)"
+   Define t.TbBtn.Next.Tip     For "Suivant"
+   Define t.TbBtn.Next.StHlp   For "Trouve l'enregistrement suivant (F8)"
+   Define t.TbBtn.End.Tip      For "Fin de fichier"
+   Define t.TbBtn.End.StHlp    For "Trouve le dernier enregistrement (Ctrl+End)"
+   Define t.TbBtn.Prompt.Tip   For "Liste"
+   Define t.TbBtn.Prompt.StHlp For "Affiche les sÇlections connues (F4)"
+   Define t.TbBtn.Print.Tip    For "Imprime"
+   Define t.TbBtn.Print.StHlp  For "Imprime rapport (Shift+F4)"
+   Define t.TbBtn.Clear.Tip    For "Efface"
+   Define t.TbBtn.Clear.StHlp  For "Efface enregistrement courrant / Nouvel enregistrement (F5)"
+   Define t.TbBtn.ClearA.Tip   For "Efface tout"
+   Define t.TbBtn.ClearA.StHlp For "Efface toute la vue (Ctrl+F5)"
+   Define t.TbBtn.Save.Tip     For "Enregistre"
+   Define t.TbBtn.Save.StHlp   For "Enregistre les donnÇes courrantes (F2)"
+   Define t.TbBtn.Del.Tip      For "Supprime"
+   Define t.TbBtn.Del.StHlp    For "Supprime l'enregistrement courrant (Shift+F2)"
+   Define t.TbBtn.Cut.Tip      For "Couper"
+   Define t.TbBtn.Cut.StHlp    For "Coupe la sÇlection et mÇmorise dans le presse papier"
+   Define t.TbBtn.Copy.Tip     For "Copier"
+   Define t.TbBtn.Copy.StHlp   For "Copie la selection dans le presse papier"
+   Define t.TbBtn.Paste.Tip    For "Coller"
+   Define t.TbBtn.Paste.StHlp  For "Colle le presse papier"
+   Define t.LnkVw.NotDefined   For "Vue liÇe non dÇfinie pour '#'"
+   Define t.LnkVw.ToolTip      For "Sauter Ö la vue liÇe"
+   Define t.LnkVw.StatusHelp   For "Sauter aux vues liÇes (Ctrl+O)"
+   Define t.LnkVw.DoesNotExist For "Vue liÇe n'existe pas (#)"
+  #ELSE
+   define t.TbBtn.Bgn.Tip      for "Beginning of file"
+   define t.TbBtn.Bgn.StHlp    for "Find the First record (Ctrl+Home)"
+   define t.TbBtn.Prev.Tip     for "Find Previous"
+   define t.TbBtn.Prev.StHlp   for "Find the Previous record (F7)"
+   define t.TbBtn.Next.Tip     for "Find Next"
+   define t.TbBtn.Next.StHlp   for "Find the Next record (F8)"
+   define t.TbBtn.End.Tip      for "End of File"
+   define t.TbBtn.End.StHlp    for "Find the Last record (Ctrl+End)"
+   define t.TbBtn.Prompt.Tip   for "Prompt"
+   define t.TbBtn.Prompt.StHlp for "Show available selections (F4)"
+   define t.TbBtn.Print.Tip    for "Print"
+   define t.TbBtn.Print.StHlp  for "Print report (Shift+F4)"
+   define t.TbBtn.Clear.Tip    for "Clear"
+   define t.TbBtn.Clear.StHlp  for "Clear current record / Add a new record (F5)"
+   define t.TbBtn.ClearA.Tip   for "Clear All"
+   define t.TbBtn.ClearA.StHlp for "Clear all data from view (Ctrl+F5)"
+   define t.TbBtn.Save.Tip     for "Save"
+   define t.TbBtn.Save.StHlp   for "Save the current record (F2)"
+   define t.TbBtn.Del.Tip      for "Delete"
+   define t.TbBtn.Del.StHlp    for "Delete the current record (Shift+F2)"
+   define t.TbBtn.Cut.Tip      for "Cut"
+   define t.TbBtn.Cut.StHlp    for "Cuts the selection and puts it on the Clipboard"
+   define t.TbBtn.Copy.Tip     for "Copy"
+   define t.TbBtn.Copy.StHlp   for "Copies the selection and puts it on the Clipboard"
+   define t.TbBtn.Paste.Tip    for "Paste"
+   define t.TbBtn.Paste.StHlp  for "Inserts Clipboard contents"
+   define t.LnkVw.NotDefined   for "Linked view not defined for '#'"
+   define t.LnkVw.ToolTip      for "Jump to linked view"
+   define t.LnkVw.StatusHelp   for "Jumps to linked view (Ctrl+O)"
+   define t.LnkVw.DoesNotExist for "Linked view does not exist (#)"
+  #ENDIF
+ #ENDIF
+#ENDIF
+
+// Return the object ID of the prompt list attached to obj#, if any:
+function iDDPrompt_Object global integer obj# returns integer
+  integer dm# svr# file# fld# rval#
+  get delegation_mode of obj# to dm#
+  set delegation_mode of obj# to no_delegate_or_error
+  get data_file  of obj# item CURRENT to file#
+  get data_field of obj# item CURRENT to fld#
+  set delegation_mode of obj# to dm#
+  if (file#*fld#) begin
+    get server of obj# to svr#
+    if svr# begin
+      if (main_file(svr#)<>file#) get which_data_set of svr# file# to svr#
+      if svr# begin // This way we will not error if we are dealing a data_set
+        get delegation_mode of svr# to dm#
+        set delegation_mode of svr# to no_delegate_or_error
+        get field_prompt_object of svr# fld# to rval#
+        set delegation_mode of svr# to dm#
+      end
+    end
+  end
+  function_return rval#
+end_function
+
+class cAvailableFileObjects is an array
+  // An object of this class is meant to hold an object and a corresponding
+  // access method per file in filelist.cfg. These objects are added to the
+  // list via the add_data_file_object message.
+
+  procedure construct_object
+    forward send construct_object
+    property string pErrMsgNotAvail ""
+  end_procedure
+
+  procedure add_data_file_object integer file# integer msg# integer tmp_obj#
+    integer obj#
+    if num_arguments gt 1 move tmp_obj# to obj#
+    else move 0 to obj#
+    set value item (file#*2)   to obj#
+    set value item (file#*2+1) to msg#
+  end_procedure
+
+  procedure exec_data_file_object integer file#
+    integer obj# msg#
+    string str# err#
+    get value item (file#*2)   to obj#
+    get value item (file#*2+1) to msg#
+    if msg# begin
+      if obj# send msg# to obj#
+      else send msg#
+    end
+    else begin
+      get File_Display_Name file# to str#
+      get pErrMsgNotAvail to err#
+      send Info_Box (replace("#",err#,str#))
+    end
+  end_procedure
+
+  function exists_data_file_object integer file# returns integer
+    function_return (integer(value(self,file#*2+1)))
+  end_function
+end_class // cAvailableFileObjects
+
+object oAvailableFileViews is a cAvailableFileObjects
+  set pErrMsgNotAvail to t.LnkVw.NotDefined
+end_object
+
+procedure Add_LinkView_File for cObject integer file# integer msg# integer tmp_obj#
+  integer obj#
+  if num_arguments gt 2 move tmp_obj# to obj#
+  else move self to obj#
+  send add_data_file_object to (oAvailableFileViews(self)) file# msg# obj#
+end_procedure
+
+register_function iLinkViewFile integer itm# returns integer
+procedure Activate_LinkView for cObject
+  integer file# dm# obj# itm#
+  move (focus(desktop)) to obj# // Which object has the focus?
+  if obj# gt desktop begin
+    get delegation_mode of obj# to dm# // Make sure that the object does not make
+    set delegation_mode of obj# to no_delegate_or_error // noise when asked below.
+    get current_item of obj# to itm#
+    get iLinkViewFile of obj# itm# to file#
+    ifnot file# get data_file of obj# item itm# to file# // Get 'filenumber'
+    set delegation_mode of obj# to dm# // Restore delegation mode.
+    send exec_data_file_object to (oAvailableFileViews(self)) file#
+  end
+end_procedure
+
+procedure Activate_LinkView_File integer file#
+  send exec_data_file_object to (oAvailableFileViews(self)) file#
+end_procedure
+
+function Exists_LinkView returns integer
+  integer rval# file# dm# obj# itm#
+  move (focus(desktop)) to obj# // Which object has the focus?
+  if obj# gt desktop begin
+    get delegation_mode of obj# to dm# // Make sure that the object does not make
+    set delegation_mode of obj# to no_delegate_or_error // noise when asked below.
+    get current_item of obj# to itm#
+    get iLinkViewFile of obj# itm# to file#
+    ifnot file# get data_file of obj# item current to file# // Get 'filenumber'
+    set delegation_mode of obj# to dm# // Restore delegation mode.
+    get exists_data_file_object of (oAvailableFileViews(self)) file# to rval#
+  end
+  function_return rval#
+end_function
+
+function Exists_LinkView_File integer file# returns integer
+  integer rval#
+  get exists_data_file_object of (oAvailableFileViews(self)) file# to rval#
+  function_return rval#
+end_function
+
+procedure Add_LinkView_tbButton integer oTb#
+  send Add_Toolbar_Button_Bitmap to oTb# "tbvwlnsm.bmp" t.LnkVw.ToolTip t.LnkVw.StatusHelp msg_Activate_LinkView
+end_procedure
+
+// For backwards compatibility:
+#REPLACE link_view     Activate_LinkView
+#REPLACE link_view.i   Activate_LinkView_File
+#REPLACE add_link_view Add_LinkView_File
+
+// If automatic promptlists (AutoPrmpt.utl) has been used prior to this package
+// we hook up on to it:
+#IFDEF U_aps_PromptListDynamo
+  Use AutoPrmt.utl // Automatic prompt lists for VDF, (DefaultPromptList(self))
+  class cLnkVw.dbModalPanel is a apl.dbModalPanel
+  end_class
+  class cLnkVw.dbList is a aps.dbList
+    procedure Activate_LinkView // If this message is sent while in a PromptList
+      integer file#       // the user wants to skip and go to the view
+      string str#         // where he can enter a new record.
+      get main_file to file#
+      if (Exists_LinkView_File(self,file#)) begin // Does such a view exist?
+        send close_panel
+        send Activate_LinkView_File file#
+      end
+      else begin // If not, here is an error
+        get File_Display_Name file# to str#
+        send Info_Box (replace("#",t.LnkVw.DoesNotExist,str#))
+      end
+    end_procedure
+  end_class
+  set value of (PromptListDynamo(self)) item class.dbModalPanel to U_cLnkVw.dbModalPanel
+  set value of (PromptListDynamo(self)) item class.dbList to U_cLnkVw.dbList
+#ENDIF
+
+integer oToolBar#
+move 0 to oToolBar#
+
+ Class cSturesToolBar is a ToolBar
+  Procedure construct_object
+    forward send construct_object
+    ifnot oToolBar# move self to oToolBar#
+    property integer pImageList_Item_Count 0
+    property integer pAutoShadow_State 1
+//    Set default_icons to (IDB_STANDARD IOR IDB_VIEW IOR IDB_LARGE)
+    Send ImageList_Add 'bgn.bmp'   // 0
+    Send ImageList_Add 'end.bmp'   // 1
+    Send ImageList_Add 'next.bmp'  // 2
+    Send ImageList_Add 'prev.bmp'  // 3
+    Send ImageList_Add 'clr.bmp'   // 4
+    Send ImageList_Add 'clra.bmp'  // 5
+  End_Procedure
+
+  Procedure end_construct_object
+    forward send end_construct_object
+    ifnot (item_count(self)) send Add_Standard_Toolbar_Buttons
+    send Update_Toolbar_Shadow_States
+  End_Procedure
+
+  Procedure ImageList_Add string bmp_fn#
+    forward send ImageList_Add bmp_fn#
+    set pImageList_Item_Count to (pImageList_Item_Count(self)+1)
+  End_Procedure
+
+  Procedure Add_Toolbar_Button integer ico# string Tip# string StHlp# integer msg# integer obj#
+    if num_arguments gt 4 send Add_button ico# msg# obj#
+    else                  send Add_button ico# msg#
+    send Add_ToolTip Tip#
+    set  Status_Help To StHlp#
+  End_Procedure
+
+  // If a "normal" prompt list object we send message prompt to the object.
+  // Otherwise we attempt to popup the default selection list.
+  register_procedure Request_Popup_DefaultPromptList
+  procedure Extended_Prompt
+    integer NormalPrompt# foc# obj#
+    move (focus(desktop)) to foc#
+    get iDDPrompt_Object foc# to NormalPrompt#
+    if NormalPrompt# send prompt to foc#
+    else send Request_Popup_DefaultPromptList
+  end_procedure
+
+  Procedure Print_Report
+    send Print_Report to (focus(desktop))
+  End_Procedure
+
+  Procedure Add_Toolbar_Button_Bitmap string bmp# string Tip# string StHlp# integer msg# integer obj#
+    integer ico#
+    send ImageList_Add bmp#
+    move (ICO_USER+pImageList_Item_Count(self)-1) to ico#
+    if num_arguments gt 4 send Add_Toolbar_Button ico# Tip# StHlp# msg# obj#
+    else                  send Add_Toolbar_Button ico# Tip# StHlp# msg#
+  End_Procedure
+
+  Procedure Add_Print_Button
+    send Add_Toolbar_Button ICO_STD_PRINT t.TbBtn.Print.Tip t.TbBtn.Print.StHlp  msg_Print_Report self
+  End_Procedure
+
+  // This procedure adds the standard tool bar buttons.
+  Procedure Add_Standard_Toolbar_Buttons
+    send Add_Space
+    send Add_Toolbar_Button (ICO_USER+0)     t.TbBtn.Bgn.Tip    t.TbBtn.Bgn.StHlp     msg_Beginning_Of_Data
+    send Add_Toolbar_Button (ICO_USER+3)     t.TbBtn.Prev.Tip   t.TbBtn.Prev.StHlp    msg_Find_Previous
+    send Add_Toolbar_Button (ICO_USER+2)     t.TbBtn.Next.Tip   t.TbBtn.Next.StHlp    msg_Find_Next
+    send Add_Toolbar_Button (ICO_USER+1)     t.TbBtn.End.Tip    t.TbBtn.End.StHlp     msg_End_Of_Data
+    send Add_Space
+    send Add_Toolbar_Button ICO_STD_FIND     t.TbBtn.Prompt.Tip t.TbBtn.Prompt.StHlp  msg_Extended_Prompt self
+    send Add_Toolbar_Button (ICO_USER+4)     t.TbBtn.Clear.Tip  t.TbBtn.Clear.StHlp   msg_Request_Clear
+    send Add_Toolbar_Button (ICO_USER+5)     t.TbBtn.ClearA.Tip t.TbBtn.ClearA.StHlp  msg_Request_Clear_All
+    send Add_Space
+    send Add_Toolbar_Button ICO_STD_FILESAVE t.TbBtn.Save.Tip   t.TbBtn.Save.StHlp    msg_Request_Save
+    send Add_Toolbar_Button ICO_STD_DELETE   t.TbBtn.Del.Tip    t.TbBtn.Del.StHlp     msg_Request_Delete
+    send Add_Space
+    send Add_Toolbar_Button ICO_STD_CUT      t.TbBtn.Cut.Tip    t.TbBtn.Cut.StHlp     msg_Cut
+    send Add_Toolbar_Button ICO_STD_COPY     t.TbBtn.Copy.Tip   t.TbBtn.Copy.StHlp    msg_Copy
+    send Add_Toolbar_Button ICO_STD_PASTE    t.TbBtn.Paste.Tip  t.TbBtn.Paste.StHlp   msg_Paste
+  End_Procedure
+End_Class
+
+#REPLACE FLDOPT_FIND     1
+#REPLACE FLDOPT_PROMPT   2
+#REPLACE FLDOPT_DATE     4
+#REPLACE FLDOPT_SAVE     8
+#REPLACE FLDOPT_DELETE  16
+#REPLACE FLDOPT_LINKVW  32
+
+register_function iAllowRequestFind returns integer
+register_function iDisAllowRequestFind returns integer
+function iFieldOptions.i integer obj# returns integer
+  integer rval# dm# file# fld# tmp# svr# findok# not_findok#
+  integer link_to_file#
+  get delegation_mode of obj# to dm#
+  set delegation_mode of obj# to no_delegate_or_error
+  get data_file of obj# item CURRENT to file#
+  get iLinkViewFile of obj# item CURRENT to link_to_file#
+  get data_field of obj# item CURRENT to fld#
+  get iAllowRequestFind of obj# to findok#
+  get iDisAllowRequestFind of obj# to not_findok#
+  move 0 to rval#
+  get form_datatype of obj# item CURRENT to tmp#
+  move (tmp#=DATE_WINDOW) to tmp#
+  if tmp# move (rval#+FLDOPT_DATE) to rval#
+  if (file#*fld#) begin
+    if (integer(API_AttrValue_FILE(DF_FILE_OPENED,file#))) begin
+      ifnot not_findok# ifnot findok# get_attribute DF_FIELD_INDEX of file# fld# to findok#
+      if (should_save(obj#)) move (rval#+FLDOPT_SAVE) to rval#
+      get server of obj# to svr#
+      if svr# move (current_record(svr#)) to tmp#
+      if tmp# move (rval#+FLDOPT_DELETE) to rval#
+      if link_to_file# get Exists_LinkView_File link_to_file# to tmp#
+      else get Exists_LinkView_File file# to tmp#
+      if tmp# move (rval#+FLDOPT_LINKVW) to rval#
+    end
+  end
+  if findok# move (rval#+FLDOPT_FIND) to rval#
+  set delegation_mode of obj# to dm#
+  function_return rval#
+end_function
+
+register_procedure Request_Popup_Calendar
+
+Procedure Update_Toolbar_Shadow_States
+  integer foc# itm# max# msg# opt#
+  if oToolBar# begin
+    if (pAutoShadow_State(oToolBar#)) begin
+      move (focus(desktop)) to foc#
+      if foc# gt desktop get iFieldOptions.i foc# to opt#
+      get item_count of oToolBar# to max#
+      for itm# from 0 to (max#-1)
+        get message of oToolBar# item itm# to msg#
+        if (msg#=msg_beginning_of_data or msg#=msg_find_previous or msg#=msg_find_next or msg#=msg_end_of_data) set shadow_state of oToolBar# item itm# to (not(opt# iAND FLDOPT_FIND))
+      //if (msg#=msg_Request_Save)           set shadow_state of oToolBar# item itm# to (not(opt# iAND FLDOPT_SAVE))
+      //if (msg#=msg_Request_Clear)          set shadow_state of oToolBar# item itm# to (not((opt# iAND FLDOPT_SAVE) or (opt# iAND FLDOPT_DELETE)))
+      //if (msg#=msg_Request_Delete)         set shadow_state of oToolBar# item itm# to (not(opt# iAND FLDOPT_DELETE))
+        if (msg#=msg_Request_Popup_Calendar) set shadow_state of oToolBar# item itm# to (not(opt# iAND FLDOPT_DATE))
+        if (msg#=msg_Activate_LinkView)      set shadow_state of oToolBar# item itm# to (not(opt# iAND FLDOPT_LINKVW))
+      loop
+    end
+  end
+End_Procedure
+
+Class cSturesStatusBar is a StatusBar
+  Procedure Show_Status_Help string str#
+    forward send Show_Status_Help str#
+    send Update_Toolbar_Shadow_States
+  End_Procedure
+End_Class
+
+class cViewPopupMenu is a ViewPopupMenu
+  procedure construct_object
+    forward send construct_object
+    property string pTitle       ""
+    property string pStatus_Help ""
+  end_procedure
+  procedure end_construct_object
+    integer itm# self#
+    string title# status_help#
+    get pTitle to title#
+    get pStatus_Help to status_help#
+    forward send end_construct_object
+    move self to self#
+    delegate send add_item 0 title# // 0 betyder aktiver child menu
+    get item_count of (parent(self)) to itm#
+    set aux_value of (parent(self)) item (itm#-1) to self#
+    set status_help of (parent(self)) item (itm#-1) to status_help#
+  end_procedure
+  function Message integer itm# returns integer
+     integer rVal#
+     Forward Get message item itm# to rVal#
+     // Apparantly global messages cannot be represented via the add_item
+     // message. Therefore we have to do this:
+     if rval# gt 10000 move (rval#-65536) to rval#
+     function_return rval#
+  end_function
+  procedure add_menu_item integer msg# string label# string status_help# integer tmp_aux#
+    integer aux#
+    if num_arguments begin
+      send add_item msg# label#
+      if num_arguments gt 3 move tmp_aux# to aux#
+      else move -1 to aux# // -1 will automatically get replaced with client_id
+      set aux_value item (item_count(self)-1) to aux#
+      set status_help item (item_count(self)-1) to status_help#
+    end
+    else send add_item msg_none ""
+  end_procedure
+  procedure add_standard_menu_items
+  end_procedure
+end_class

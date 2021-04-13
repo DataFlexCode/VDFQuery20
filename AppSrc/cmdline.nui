@@ -1,0 +1,45 @@
+// Use CmdLine.nui  // Simple thing for reading command line parameters
+
+use Base.nui
+
+desktop_section
+  object oCmdLineParameters is a cArray
+    send delete_data
+    procedure DoRead
+      string lsParam
+      repeat
+        cmdline lsParam
+        if lsParam ne "" set value item (item_count(self)) to lsParam
+      until lsParam eq ""
+    end_procedure
+    function iFindParamValue.si string lsValue integer lbUpperCase returns integer
+      integer liItem liMax
+      string lsTestValue
+      if lbUpperCase move (uppercase(lsValue)) to lsValue
+      get item_count to liMax
+      for liItem from 0 to liMax
+        get value item liItem to lsTestValue
+        if lbUpperCase move (uppercase(lsTestValue)) to lsTestValue
+        if (lsTestValue=lsValue) function_return liItem
+      loop
+      function_return -1 // not found
+    end_function
+  end_object // oCmdLineParameters
+end_desktop_section
+
+procedure DoReadCmdLine global
+  send DoRead to (oCmdLineParameters(self))
+end_procedure
+send DoReadCmdLine
+
+function CmdLineParamCount global returns integer
+  function_return (item_count(oCmdLineParameters(self)))
+end_function
+function CmdLineParamValue global integer liParam returns string
+  function_return (value(oCmdLineParameters(self),liParam))
+end_function
+function CmdLineFindParamValue global string lsValue integer lbUpperCase returns integer
+  integer liRval
+  get iFindParamValue.si of (oCmdLineParameters(self)) lsValue lbUpperCase to liRval
+  function_return liRval
+end_function

@@ -1,0 +1,180 @@
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+Use Buttons.utl  // Button texts
+object oFastView_WSOptions is a aps.ModalPanel label "Options for current WS"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult DFFALSE
+  object oTabs is a aps.TabDialog
+    object oTab1 is a aps.TabPage label "FastLoad"
+      set p_auto_column to 0
+      object oFinishText is an aps.Edit
+        set size to 100 250
+        set object_shadow_state to true
+        set border_style to BORDER_NONE
+        set scroll_bar_visible_state to false
+        set value item 0 to "If the current workspace takes a long time to load (slow server or a lot of tables) you may use the fastload feature to speed things up."
+        set value item 1 to ""
+        set value item 2 to "Enabling 'fast load' will create a file with table definitions (FastLoad.fdx) that will be read instead of opening all tables and reading their definitions that way."
+        set value item 3 to ""
+        set value item 4 to "The back draw is that you must remember to refresh this file when table definitions are changed."
+      end_object
+      send aps_goto_max_row
+      object oTimeStamp is a aps.Form abstract AFT_ASCII40
+        set enabled_state to false
+        set border_style to BORDER_NONE
+        procedure update integer lbHonest
+          number lnTime
+          string lsValue lsFile
+          if lbHonest begin
+            move "FastLoad.fdx timestamp:    #" to lsValue
+            get FastView_FileFullName "FastLoad.fdx" to lsFile
+            if (SEQ_FileExists(lsFile)=SEQIT_FILE) begin
+              get SEQ_FileModTime lsFile to lnTime
+              move (replace("#",lsValue,TS_ConvertToString(lnTime))) to lsValue
+            end
+            else move "Fastload is disabled" to lsValue
+          end
+          else move "" to lsValue
+          set value item 0 to lsValue
+        end_procedure
+      end_object
+      send aps_goto_max_row
+      set p_auto_column to 1
+      send tab_column_define 1 35 30 JMODE_LEFT
+      object oBtn1 is a aps.Button
+        on_item "Enable" send DoEnable
+      end_object
+      object oBtn2 is a aps.Button snap SL_RIGHT_SPACE
+        on_item "Disable" send DoDisable
+      end_object
+      object oBtn3 is a aps.Button snap SL_RIGHT_SPACE
+        on_item "Refresh" send DoRefresh
+      end_object
+      procedure DoEnable integer lbTemp
+        integer liChannel
+        get FastView_DirectOutput "FastLoad.fdx" to liChannel
+        if (liChannel>=0) begin
+          send cursor_wait to (cursor_control(self))
+          send Seq_Write to ghFdx liChannel
+          send SEQ_CloseOutput liChannel
+          send cursor_ready to (cursor_control(self))
+          send DoInit
+          if (num_arguments=0) send obs "Fastload enabled"
+        end
+      end_procedure
+      procedure DoDisable
+        integer liError
+        string lsFile
+        get FastView_FileFullName "FastLoad.fdx" to lsFile
+        if (lsFile<>"") begin
+          get wvaWin32_ShDeleteFile lsFile to liError
+          // Now read in the actual definitions:
+          send cursor_wait to (cursor_control(self))
+          send FDXGL_ReadCurrentFileList to ghFDX FDX_ALL_FILES
+          send cursor_ready to (cursor_control(self))
+          send obs "Fastload disabled"
+        end
+        send DoInit
+      end_procedure
+      procedure DoRefreshSilent
+        send cursor_wait to (cursor_control(self))
+        send FDXGL_ReadCurrentFileList to ghFDX FDX_ALL_FILES
+        send cursor_ready to (cursor_control(self))
+        send DoEnable DFFALSE
+        send DoInit
+      end_procedure
+      procedure DoRefresh
+        send DoRefreshSilent
+        send obs "Fastload file refreshed"
+      end_procedure
+      procedure DoInit
+        integer lbExists
+        string lsPath
+        get FastView_HomeDirectory to lsPath
+        if (lsPath="") begin
+          set enabled_state of (oBtn1(self)) to DFFALSE // Enable
+          set enabled_state of (oBtn2(self)) to DFFALSE // Disable
+          set enabled_state of (oBtn3(self)) to DFFALSE // Refresh
+          send update of oTimeStamp 0
+        end
+        else begin
+          get FastView_FileExists "FastLoad.fdx" to lbExists
+          set enabled_state of (oBtn1(self)) to (not(lbExists))// Enable
+          set enabled_state of (oBtn2(self)) to lbExists // Disable
+          set enabled_state of (oBtn3(self)) to lbExists // Refresh
+          send update of oTimeStamp 1
+        end
+      end_procedure
+    end_object // oTab1
+  //object oTab2 is a aps.TabPage label "Query folder"
+  //  set p_auto_column to 0
+  //  object oFinishText is an aps.Edit
+  //    set size to 100 250
+  //    set object_shadow_state to true
+  //    set border_style to BORDER_NONE
+  //    set scroll_bar_visible_state to false
+  //    set value item 0 to "In order for FastView to generate a menu of known query definitions you need to specify the 'query root folder'"
+  //    set value item 1 to ""
+  //    set value item 2 to "This is needed because the name of this folder may vary depending on your country."
+  //    set value item 3 to ""
+  //    set value item 4 to "The 'query root folder' is created automatically the first time you save a query definition. It is the folder under which a sub-folder (also automatically) is created for each windows user."
+  //    set value item 5 to ""
+  //    set value item 6 to ""
+  //    set value item 7 to "Enter query root folder:"
+  //  end_object
+  //  send aps_goto_max_row
+  //  object oFolder is a aps.SelectDirForm abstract AFT_ASCII80
+  //    set p_extra_internal_width to -160
+  //    set form_button item 0 to 0           // Manually do not add a prompt button
+  //  end_object
+  //  send aps_goto_max_row
+  //  object oBtn1 is a aps.Button
+  //    on_item "Browse" send prompt of oFolder
+  //  end_object
+  //end_object // oTab2
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.close send close_panel_ok
+  end_object
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    set piResult to DFTRUE
+    send close_panel
+  end_procedure
+  procedure aps_beautify
+    send APS_ALIGN_INSIDE_CONTAINER_BY_MOVING (oTimeStamp(oTab1(oTabs))) SL_ALIGN_CENTER
+//  send APS_ALIGN_INSIDE_CONTAINER_BY_MOVING (oFolder(oTab2(oTabs))) SL_ALIGN_CENTER
+//  send APS_ALIGN_INSIDE_CONTAINER_BY_MOVING (oBtn1(oTab2(oTabs))) SL_ALIGN_CENTER
+  end_procedure
+  procedure popup
+    set piResult to DFFALSE
+    send DoInit to (oTab1(oTabs(self)))
+    forward send popup
+    if (piResult(self)) begin
+    end
+  end_procedure
+  procedure DoRefreshSilent
+    send DoRefreshSilent of (oTab1(oTabs(self)))
+  end_procedure
+end_object // oFastView_WSOptions
+
+
+procedure FastView_WSOptions
+  send popup to (oFastView_WSOptions(self))
+end_procedure
+
+function FV_FastLoadEnabled global returns integer
+  integer lbExists
+  string lsFolder lsFile
+  get FastView_RootDirectory to lsFolder
+  if (lsFolder="") function_return 0
+  get Files_AppendPath lsFolder "FastLoad.fdx" to lsFile
+  get SEQ_FileExists lsFile to lbExists
+  function_return (lbExists=SEQIT_FILE)
+end_function
+
+procedure FV_FastLoadRefresh global
+  if (FV_FastLoadEnabled()) send DoRefreshSilent of oFastView_WSOptions
+end_procedure
+

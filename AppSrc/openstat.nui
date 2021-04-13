@@ -1,0 +1,323 @@
+// Use OpenStat.nui // cTablesOpenStatus class (formely cFileAllFiles) (No User Interface)
+
+//> Usually when a DataFlex program is running a number of data tables
+//> have been opened (with the open command). Each open table is assigned
+//> a number usually identical to the number of the entry in FILELIST.CFG.
+//>
+//> An object of the cTablesOpenStatus is capable of taking a snapshot
+//> of which tables are open. After a 'snapshop' has been taken you may
+//> open new tables or change the open mode of already open tables.
+//>
+//> At this point the object is capable of restoring the status to the
+//> the time of the snapshot.
+//>
+//>
+//>   object oOpenStat is a cTablesOpenStatus
+//>   end_object
+//>
+//>   send RegisterCurrentOpenFiles to (oOpenStat(self)) // Snap!
+//>   open this
+//>   close that
+//>   send RestoreFiles to (oOpenStat(self)) // Restore
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use DBMS.nui     // Basic DBMS functions
+
+          class cTablesOpenPrepareList is an cArray // This must be embedded in a cTablesOpenStatus object
+            item_property_list
+              item_property integer piFile.i
+              item_property integer piMode.i
+              item_property integer piIdx.i
+              item_property string  psRootName.i
+            end_item_property_list cTablesOpenPrepareList
+            procedure prepare_open integer liFile integer liMode integer liIndex string lsRootName
+              integer liRow
+              get row_count to liRow
+              set piFile.i     liRow to liFile
+              set piMode.i     liRow to liMode
+              set piIdx.i      liRow to liIndex
+              set psRootName.i liRow to lsRootName
+            end_procedure
+            //> Function iOpen_Prepared will return 0 if all tables in the set
+            //> was opened as specified. If this cannot be done the function
+            //> will return the number of the first table, that could not be
+            //> opened. If the function returns a non zero value, the number of
+            //> tables actually opened by the function is undefined.
+            function iOpen_Prepared.i integer lbQuiet returns integer
+              integer liRval liMax liRow lbStop
+              integer liFile liMode liIndex lbOpen
+              string lsRootName
+              get row_count to liMax
+              move 0 to liRval
+              move 0 to liRow
+              move 0 to lbStop
+              repeat
+                if liRow lt liMax begin
+                  get piFile.i     liRow to liFile
+                  get piMode.i     liRow to liMode
+                  get piIdx.i      liRow to liIndex
+                  get psRootName.i liRow to lsRootName
+                  if lsRootName eq "" get iOpen_File.ii liFile liMode to lbOpen
+                  else                get DBMS_OpenFileAs lsRootName liFile liMode liIndex to lbOpen
+
+                  ifnot lbOpen begin
+                    move 1 to lbStop
+                    ifnot lbQuiet error 772 ("File: "+string(liFile)+" can't be opened ("+lsRootName+")")
+                    move liFile to liRval
+                  end
+                  else increment liRow
+                end
+                else move 1 to lbStop
+              until lbStop
+              function_return liRval
+            end_function
+
+            function sRootName_Prepared integer liFile returns string
+              integer liRow liMax lbFin
+              string lsRval
+              get row_count to liMax
+              move 0 to lbFin
+              move 0 to liRow
+              move "" to lsRval
+              if liMax begin
+                repeat
+                  if (piFile.i(self,liRow)=liFile) begin
+                    move (psRootName.i(self,liRow)) to lsRval
+                    if lsRval eq "" get_attribute DF_FILE_ROOT_NAME of liFile to lsRval
+                    move 1 to lbFin
+                  end
+                  ifnot lbFin increment liRow
+                  if liRow ge liMax move 1 to lbFin
+                until lbFin
+              end
+              function_return lsRval
+            end_function
+          end_class // cTablesOpenPrepareList
+
+class cTablesOpenStatus is a cArray
+  procedure construct_object
+    forward send construct_object
+    object oFilesToOpen is a cTablesOpenPrepareList
+    end_object
+    Property Integer pbRestoreOpened private 0
+    Property Integer pbQuiet private 0
+  end_procedure
+
+  item_property_list
+    item_property integer piIsOpen.i         // 1=Yes, 0=No
+    item_property integer piOpenMode.i       // DF_SHARE, DF_EXCLUSIVE
+    item_property integer piFilemode.i       // DF_FILE_ALIAS_DEFAULT, DF_FILE_IS_MASTER, DF_FILE_IS_ALIAS
+    item_property integer piFileAlias.i      // Is it an alias file?
+    item_property string  psPhysicalName.i   // Runtimes idea of the root name of the file
+    item_property string  psRootName.i       // Filelist.cfg's idea of the root name
+    item_property integer piDriver.i         // Comes from the DBMS_FileDriverType function (dbms.nui)
+    item_property integer psWhereIsIt.i      // Sture's private investigation to figure out where the data file is.
+  end_item_property_list cTablesOpenStatus
+
+  //> This procedure resets the set of files to be openend by the
+  //> iOpen_Prepared function.
+  procedure reset_prepared
+    send delete_data to (oFilesToOpen(self))
+  end_procedure
+  procedure reset
+    send reset_prepared
+    send delete_data
+  end_procedure
+  //> When you want a set of files to be openend in exclusive mode or
+  //> if you want to open a set of files different the ones currently
+  //> opened you may use the Prepare_Open message to register which
+  //> files you want opened in what entries (1-4095).
+  procedure prepare_open integer liFile integer liMode integer liIndex string lsRootName
+    send prepare_open to (oFilesToOpen(self)) liFile liMode liIndex lsRootName
+  end_procedure
+
+  procedure prepare_open_all_registered_tables_exclusive
+    integer liMax liTable
+    get row_count to liMax
+    decrement liMax
+    for liTable from 0 to liMax
+      if (piIsOpen.i(self,liTable)) begin
+        if (piFileAlias.i(self,litable)<>DF_FILE_IS_ALIAS) begin
+          send prepare_open liTable DF_EXCLUSIVE 0 (psPhysicalName.i(self,liTable))
+        end
+      end
+    loop
+  end_procedure
+
+  function iOpen_Prepared returns integer
+    function_return (iOpen_Prepared.i(oFilesToOpen(self),0))
+  end_function
+  function iOpen_Prepared_Quiet returns integer
+    function_return (iOpen_Prepared.i(oFilesToOpen(self),1))
+  end_function
+  function sRootName_Prepared integer liFile returns string
+    function_return (sRootName_Prepared(oFilesToOpen(self),liFile))
+  end_function
+
+  //> Takes a snap shot of open files.
+  procedure RegisterCurrentOpenFiles
+    integer liFile lbOpen liFileOpenMode liFileMode liFileAlias
+    string lsPhysicalName lsRootName lsWhereIsIt
+    send delete_data
+    move 0 to liFile
+    repeat
+      get_attribute DF_FILE_NEXT_OPENED of liFile to liFile
+      if liFile begin
+        get_attribute DF_FILE_OPEN_MODE     of liFile to liFileOpenMode // DF_SHARE, DF_EXCLUSIVE
+        get_attribute DF_FILE_MODE          of liFile to liFileMode     // DF_FILE_ALIAS_DEFAULT, DF_FILE_IS_MASTER, DF_FILE_IS_ALIAS
+        get_attribute DF_FILE_ALIAS         of liFile to liFileAlias    // I don't know what this is!
+        get_attribute DF_FILE_PHYSICAL_NAME of liFile to lsPhysicalName // Runtimes idea of the root name of the file
+        get_attribute DF_FILE_ROOT_NAME     of liFile to lsRootName     // Filelist.cfg's idea of the root name
+
+        get DBMS_TablePath liFile to lsWhereIsIt
+
+        set piIsOpen.i       liFile to 1 // Open!
+        set piOpenMode.i     liFile to liFileOpenMode
+        set piFilemode.i     liFile to liFileMode
+        set piFileAlias.i    liFile to liFileAlias
+        set psPhysicalName.i liFile to lsPhysicalName
+        set psRootName.i     liFile to lsRootName
+        set piDriver.i       liFile to (DBMS_FileDriverType(liFile))
+        set psWhereIsIt.i    liFile to lsWhereIsIt
+      end
+    until liFile eq 0
+  end_procedure
+  procedure CloseAllFiles
+    Close DF_ALL
+  end_procedure
+  procedure CloseAllFilesOnDriver integer liDriver
+    integer liFile
+    move 0 to liFile
+    repeat
+      get_attribute DF_FILE_NEXT_OPENED of liFile to liFile
+      if liFile if (DBMS_FileDriverType(liFile)) eq liDriver close liFile
+    until liFile eq 0
+  end_procedure
+  //> Close the ones that weren't open at the time of the last snapshot
+  procedure RestoreClosed
+    integer liFile
+    move 0 to liFile
+    repeat
+      get_attribute DF_FILE_NEXT_OPENED of liFile to liFile
+      if liFile ifnot (piIsOpen.i(self,liFile)) close liFile
+    until liFile eq 0
+  end_procedure
+  //> Open the ones that were open at the time of the last snapshot
+  procedure RestoreOpened
+    integer liFile lbOpen liFileOpenMode liFileMode liFileAlias liMax lbQuiet
+    string lsPhysicalName lsRootName
+    get cTablesOpenStatus.pbQuiet to lbQuiet
+    get row_count to liMax
+    decrement liMax
+    for liFile from 1 to liMax
+      get piIsOpen.i liFile to lbOpen
+      if lbOpen begin
+        get piOpenMode.i     liFile to liFileOpenMode
+        get piFilemode.i     liFile to liFileMode
+        get piFileAlias.i    liFile to liFileAlias
+        get psPhysicalName.i liFile to lsPhysicalName
+        get psRootName.i     liFile to lsRootName
+        if (uppercase(lsPhysicalName)) ne (uppercase(lsRootName)) begin
+          move (DBMS_OpenFileAs(lsPhysicalName,liFile,liFileOpenMode,0)) to lbOpen
+          ifnot lbOpen begin
+            ifnot lbQuiet begin
+              error 666 ("Can't restore open files (file: "+string(liFile)+")")
+              error 666 ("Name: "+lsPhysicalName+"!")
+            end
+            set cTablesOpenStatus.pbRestoreOpened to false
+          end
+        end
+        else move (DBMS_OpenFile(liFile,liFileOpenMode,0)) to lbOpen
+        if lbOpen begin
+          set_attribute DF_FILE_MODE  of liFile to liFileMode
+          set_attribute DF_FILE_ALIAS of liFile to liFileAlias
+        //send obs "File Mode:" (string(liFileMode)) "File Alias:" (string(liFileAlias))
+        end
+        else begin
+          ifnot lbQuiet begin
+            error 668 "Error: Cannot reconnect to database!" //"(Sounds serious, but it isn't)" "Restart program (not the computer)" (uppercase(lsPhysicalName)) (uppercase(lsRootName)) (string(liFileOpenMode)) (string(liFileMode))
+          end
+          set cTablesOpenStatus.pbRestoreOpened to false
+        end
+      end
+    loop
+  end_procedure
+  function bRestoreOpened integer lbQuiet returns integer
+    integer lbRval
+    set cTablesOpenStatus.pbRestoreOpened to true
+    set cTablesOpenStatus.pbQuiet to lbQuiet
+    send RestoreOpened
+    get cTablesOpenStatus.pbRestoreOpened to lbRval
+    set cTablesOpenStatus.pbQuiet to false
+    function_return lbRval
+  end_function
+
+  // This may be used to make sure that the file_mode and file_alias attributes
+  // are identical before and after reindexing a file.
+  procedure write_file
+    integer liFile liChannel liFileMode liFileAlias
+    get Seq_New_Channel to liChannel
+    direct_output channel liChannel "openstat.txt"
+    move 0 to liFile
+    repeat
+      get_attribute DF_FILE_NEXT_OPENED of liFile to liFile
+      if liFile begin
+        get_attribute DF_FILE_MODE          of liFile to liFileMode
+        get_attribute DF_FILE_ALIAS         of liFile to liFileAlias
+        writeln channel liChannel ("File:"+string(liFile))
+        writeln "File Mode:" (string(liFileMode)) "File Alias:" (string(liFileAlias))
+      end
+    until liFile eq 0
+    close_output channel liChannel
+    send Seq_Release_Channel liChannel
+  end_procedure
+
+  procedure RestoreFiles
+    send RestoreClosed
+    send RestoreOpened
+  end_procedure
+  //> Open a file of the previous snapshot in a new and exciting mode.
+  function iOpen_File.ii integer liFile integer liMode returns integer
+    string lsPhysicalName
+    get psPhysicalName.i liFile to lsPhysicalName
+    if lsPhysicalName ne "" function_return (DBMS_OpenFileAs(lsPhysicalName,liFile,liMode,0))
+    function_return (DBMS_OpenFile(liFile,liMode,0))
+  end_function
+end_class // cTablesOpenStatus
+
+desktop_section
+  object oTablesOpenStatus_Global is a cTablesOpenStatus
+  end_object
+end_desktop_section
+
+procedure OpenStat_RegisterFiles global
+  send RegisterCurrentOpenFiles to (oTablesOpenStatus_Global(self))
+end_procedure
+procedure OpenStat_CloseAllFiles global
+  send CloseAllFiles to (oTablesOpenStatus_Global(self))
+end_procedure
+procedure OpenStat_RestoreFiles global
+  send RestoreFiles to (oTablesOpenStatus_Global(self))
+end_procedure
+
+function OpenStat_RestoreFilesFunction global integer lbQuiet returns integer
+  integer lbRval
+  send RestoreClosed to (oTablesOpenStatus_Global(self))
+  get bRestoreOpened of (oTablesOpenStatus_Global(self)) lbQuiet to lbRval
+  function_return lbRval
+end_function
+
+//> Calling this procedure will close and re-open all embedded database tables currently open
+//> by the application. I can't remember why I did it, but here it is.
+procedure FlushAllDataFlexBuffers global
+  integer lhObj
+  move (oTablesOpenStatus_Global(self)) to lhObj
+  send RegisterCurrentOpenFiles to lhObj
+  send CloseAllFilesOnDriver to lhObj DBMS_DRIVER_DATAFLEX
+  send RestoreOpened to lhObj
+end_procedure
+

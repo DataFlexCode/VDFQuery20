@@ -1,0 +1,721 @@
+//**********************************************************************
+// Use Fdx3.utl     // FDX aware cFileList_List selector class
+//
+// By Sture Andersen
+//
+// Create: Sun  16-01-2000
+// Update:
+//
+//**********************************************************************
+
+#HEADER
+Use Fdx_Attr.nui // FDX compatible attribute functions
+Use DBMS.utl     // Basic DBMS functions
+Use Strings.nui  // String manipulation for VDF
+Use FieldInf     // Global field info objects
+Use Fdx2.utl     // FDX aware object for displaying a table definiton
+Use Files.utl    // Utilities for handling file related stuff
+Use FDX.nui      // cFDX class
+#ENDHEADER
+
+#IF LNG_DEFAULT=LNG_DUTCH
+ define t.FDX.Btn.SelectOpen   for "Selecteer autom."          // PvM
+ define t.FDX.Btn.SelectAll    for "Selecteer alles"
+ define t.FDX.Btn.SelectNone   for "Selecteer niets"
+ define t.FDX.Btn.SelectInvert for "Selectie omkeren"
+ define t.FDX.Btn.SelectPhys   for "Selecteer master"
+ define t.FDX.Btn.SelectParent for "Selecteer parent"
+ define t.FDX.Btn.SelectChild  for "Selecteer children"
+ define t.FDX.UserName         for "Gebruikersnaam"
+ define t.FDX.DFname           for "Logische naam"
+ define t.FDX.RootName         for "Bestandsnaam"
+ define t.FDX.Selected         for "Geselecteerd:"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SPANISH        // 03/10/2002 25/01/2004 Pepe GuimarÆes Moose Software  pg@moose-software.com
+ define t.FDX.Btn.SelectOpen   for "Autoseleccionar"
+ define t.FDX.Btn.SelectAll    for "Seleccionar todos"
+ define t.FDX.Btn.SelectNone   for "No Seleccionar ninguno"
+ define t.FDX.Btn.SelectInvert for "Invertir selecci¢n"
+ define t.FDX.Btn.SelectPhys   for "Seleccionar Maestro"
+ define t.FDX.Btn.SelectParent for "Seleccionar Padre"
+ define t.FDX.Btn.SelectChild  for "Seleccionar Hijo"
+ define t.FDX.UserName         for "Usuario"
+ define t.FDX.DFname           for "Nombre dataflex"
+ define t.FDX.RootName         for "Nombre del Archivo"
+ define t.FDX.Selected         for "Seleccionados:"
+#ENDIF
+#IF LNG_DEFAULT=LNG_FRENCH
+ define t.FDX.Btn.SelectOpen   for "Auto select"
+ define t.FDX.Btn.SelectAll    for "Select all"
+ define t.FDX.Btn.SelectNone   for "Clear selection"
+ define t.FDX.Btn.SelectInvert for "Invert selection"
+ define t.FDX.Btn.SelectPhys   for "Select master"
+ define t.FDX.Btn.SelectParent for "Select parent"
+ define t.FDX.Btn.SelectChild  for "Select children"
+ define t.FDX.UserName         for "User name"
+ define t.FDX.DFname           for "Logical name"
+ define t.FDX.RootName         for "File name"
+ define t.FDX.Selected         for "Selected:"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ENGLISH
+ define t.FDX.Btn.SelectOpen   for "Auto select"
+ define t.FDX.Btn.SelectAll    for "Select all"
+ define t.FDX.Btn.SelectNone   for "Clear selection"
+ define t.FDX.Btn.SelectInvert for "Invert selection"
+ define t.FDX.Btn.SelectPhys   for "Select master"
+ define t.FDX.Btn.SelectParent for "Select parent"
+ define t.FDX.Btn.SelectChild  for "Select children"
+ define t.FDX.UserName         for "User name"
+ define t.FDX.DFname           for "Logical name"
+ define t.FDX.RootName         for "File name"
+ define t.FDX.Selected         for "Selected:"
+#ENDIF
+#IF LNG_DEFAULT=LNG_DANISH
+ define t.FDX.Btn.SelectOpen   for "Auto valg"
+ define t.FDX.Btn.SelectAll    for "V‘lg alle"
+ define t.FDX.Btn.SelectNone   for "Nulstil"
+ define t.FDX.Btn.SelectInvert for "Inverter valg"
+ define t.FDX.Btn.SelectPhys   for "V‘lg master"
+ define t.FDX.Btn.SelectParent for "Select parent"
+ define t.FDX.Btn.SelectChild  for "Select children"
+ define t.FDX.UserName         for "Bruger navn"
+ define t.FDX.DFname           for "Logisk navn"
+ define t.FDX.RootName         for "Fil navn"
+ define t.FDX.Selected         for "Antal valgt:"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SWEDISH
+ define t.FDX.Btn.SelectOpen   for "Automatiskt val"
+ define t.FDX.Btn.SelectAll    for "V„lj alla"
+ define t.FDX.Btn.SelectNone   for "Nollst„ll val"
+ define t.FDX.Btn.SelectInvert for "Invertera urval"
+ define t.FDX.Btn.SelectPhys   for "V„lj master"
+ define t.FDX.Btn.SelectParent for "V„lj parent"
+ define t.FDX.Btn.SelectChild  for "V„lj children"
+ define t.FDX.UserName         for "Anv„ndar namn"
+ define t.FDX.DFname           for "Logiskt namn"
+ define t.FDX.RootName         for "Fil namn"
+ define t.FDX.Selected         for "Antal valda:"
+#ENDIF
+#IF LNG_DEFAULT=LNG_NORWEGIAN   // 22.04.1999 torkild.resheim@emmaedb.no
+ define t.FDX.Btn.SelectOpen   for "Automatisk valg"
+ define t.FDX.Btn.SelectAll    for "Velg alle"
+ define t.FDX.Btn.SelectNone   for "Velg ingen"
+ define t.FDX.Btn.SelectInvert for "Inverter utvalg"
+ define t.FDX.Btn.SelectPhys   for "Velg master"
+ define t.FDX.Btn.SelectParent for "Velg forelder"
+ define t.FDX.Btn.SelectChild  for "Velg barn"
+ define t.FDX.UserName         for "Navn"
+ define t.FDX.DFname           for "Logisk navn"
+ define t.FDX.RootName         for "Filnavn"
+ define t.FDX.Selected         for "Utvalg:"
+#ENDIF
+#IF LNG_DEFAULT=LNG_GERMAN
+ define t.FDX.Btn.SelectOpen   for "Auto Auswahl"
+ define t.FDX.Btn.SelectAll    for "Alles ausw„hlen"
+ define t.FDX.Btn.SelectNone   for "Ausw. aufheben"
+ define t.FDX.Btn.SelectInvert for "Ausw. umkehren"
+ define t.FDX.Btn.SelectPhys   for "Ausw. Master"
+ define t.FDX.Btn.SelectParent for "Ausw. Stamm"
+ define t.FDX.Btn.SelectChild  for "Ausw. Kinder"
+ define t.FDX.UserName         for "User Name"
+ define t.FDX.DFname           for "Log. Name"
+ define t.FDX.RootName         for "File Name"
+ define t.FDX.Selected         for "Ausgew„hlt:"
+#ENDIF
+#IF LNG_DEFAULT=LNG_PORTUGUESE    // by Claudio Rossoni (SP-Brasil)
+ define t.FDX.Btn.SelectOpen   for "Auto seleciona"
+ define t.FDX.Btn.SelectAll    for "Seleciona tudo"
+ define t.FDX.Btn.SelectNone   for "Retira sele‡Æo"
+ define t.FDX.Btn.SelectInvert for "Inverter a sele‡Æo"
+ define t.FDX.Btn.SelectPhys   for "Seleciona principal"
+ define t.FDX.Btn.SelectParent for "Seleciona pais"
+ define t.FDX.Btn.SelectChild  for "Seleciona filhos"
+ define t.FDX.UserName         for "Nome para o Usu rio"
+ define t.FDX.DFname           for "Nome para o DataFlex"
+ define t.FDX.RootName         for "Nome Base"
+ define t.FDX.Selected         for "Selecionados:"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ITALIAN
+ define t.FDX.Btn.SelectOpen   for "Selezione automatica"
+ define t.FDX.Btn.SelectAll    for "Seleziona tutto"
+ define t.FDX.Btn.SelectNone   for "Pulisci selezioni"
+ define t.FDX.Btn.SelectInvert for "Inverti selezioni"
+ define t.FDX.Btn.SelectPhys   for "Select master"
+ define t.FDX.Btn.SelectParent for "Select parent"
+ define t.FDX.Btn.SelectChild  for "Select children"
+ define t.FDX.UserName         for "Nome Utente"
+ define t.FDX.DFname           for "Logical name"
+ define t.FDX.RootName         for "Nome File"
+ define t.FDX.Selected         for "Selezionati:"
+#ENDIF
+
+enumeration_list
+  define BAD_ENTRIES_NO_CHECK  // This one also defers check for DB-Driver
+  define BAD_ENTRIES_SHADOW
+  define BAD_ENTRIES_EXCLUDE
+end_enumeration_list
+
+class cFdxFileMultiSelector is a aps.Grid
+  procedure DoHeaderLabels integer by#
+    set header_label item 1 to "#"
+    set header_label item 2 to t.FDX.UserName
+    set header_label item 3 to t.FDX.DFname
+    set header_label item 4 to t.FDX.RootName
+    set header_label item by# to ("*"+header_label(self,by#)+"*")
+  end_procedure
+  procedure construct_object
+    forward send construct_object
+    set line_width to 5 0
+    on_key key_ctrl+key_a send select_all_not_bad
+    set form_margin item 0 to  2
+    set form_margin item 1 to  3
+    set form_margin item 2 to 30
+    set form_margin item 3 to 15
+    set form_margin item 4 to 15
+    set highlight_row_state to true
+    set CurrentCellColor     to clHighlight
+    set CurrentCellTextColor to clHighlightText
+    set CurrentRowColor      to clHighlight
+    set CurrentRowTextColor  to clHighlightText
+//   set highlight_row_color to (rgb(0,255,255))
+//   set current_item_color to (rgb(0,255,255))
+    on_key knext_item send switch
+    on_key kprevious_item send switch_back
+    on_key kswitch send switch
+    on_key kswitch_back send switch_back
+    set auto_top_item_state to false // Does not work!
+    send DoHeaderLabels 1
+    set select_mode to multi_select
+    object oSortArray is an cArray 
+      //           Sort value          fil ÄSelect?
+      // ÃÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÅÄÄÄÅÄ´
+      //               30               3  1
+      // The first 30 characters of each item in this array will be used for
+      // sorting the values.
+    end_object
+    object oRootNames is a cSet
+    end_object
+    property integer piNo_Alias_State             false
+    property integer piBad_Entries_State          BAD_ENTRIES_SHADOW
+    property integer piGeneric_Display_Name_State false
+    property integer piDriverFilter_State         false
+    property integer piFDX_Server                 0
+    object oDriversIncluded is a cArray
+    end_object
+    on_key key_ctrl+key_d send display_file_things
+    on_key key_ctrl+key_l send display_file_location
+    on_key key_ctrl+key_w send DoWriteToFile
+  end_procedure
+  procedure DoWriteToFile
+    send Grid_DoWriteToFile self
+  end_procedure
+  procedure wait_on
+    send cursor_wait to (cursor_control(self))
+  end_procedure
+  procedure wait_off
+    send cursor_ready to (cursor_control(self))
+  end_procedure
+  procedure DriverFilter_Add integer driver_type#
+    set piDriverFilter_State to true
+    set value of (oDriversIncluded(self)) item driver_type# to 1
+  end_procedure
+  procedure DriverFilter_Reset
+    send delete_data to (oDriversIncluded(self))
+    set piDriverFilter_State to false
+  end_procedure
+  function DriverFilter_Include integer driver_type# returns integer
+    if (piDriverFilter_State(self)) function_return (value(oDriversIncluded(self),driver_type#))
+    function_return 1
+  end_function
+  procedure update_select_display // Intended for augmentation
+    // Called everytime the number of selected entries changes.
+  end_procedure
+  function Row_Count returns integer
+    function_return (item_count(self)/5)
+  end_function
+  function Row_Shadow_State integer row# returns integer
+    integer select#
+    get shadow_state item (row#*5) to select#
+    function_return select#
+  end_function
+  procedure set File_Select_State integer file# integer select#
+    integer row# max#
+    get Row_Count to max#
+    for row# from 0 to (max#-1)
+      ifnot (Row_Shadow_State(self,row#)) if (integer(value(self,row#*5+1))=file#) set select_state item (row#*5) to select#
+    loop
+    set dynamic_update_state to true // Force repaint
+  end_procedure
+  function File_Select_State integer file# returns integer
+    integer row# max# select#
+    get Row_Count to max#
+    for row# from 0 to (max#-1)
+      if (integer(value(self,row#*5+1))=file#) begin
+        get select_state item (row#*5) to select#
+        function_return select#
+      end
+    loop
+  end_function
+  function Row_Select_State integer row# returns integer
+    integer select#
+    get select_state item (row#*5) to select#
+    function_return select#
+  end_function
+  procedure set Row_Select_State integer row# integer select#
+    ifnot (item_shadow_state(self,row#*5)) set select_state item (row#*5) to select#
+  end_procedure
+  function Row_File integer row# returns integer
+    function_return (value(self,row#*5+1))
+  end_function
+  function Row_DisplayName integer row# returns string
+    function_return (value(self,row#*5+2))
+  end_function
+  function Row_DfName integer row# returns string
+    function_return (value(self,row#*5+3))
+  end_function
+  function Row_RootName integer row# returns string
+    function_return (value(self,row#*5+4))
+  end_function
+  function Current_Row returns integer
+    integer itm#
+    get current_item to itm#
+    function_return (itm#/5)
+  end_function
+  function Current_Column returns integer
+    function_return (current_item(self)-(current_row(self)*5))
+  end_function
+  function Current_File returns integer
+    function_return (Row_File(self,Current_Row(self)))
+  end_function
+  function File_Select_Count returns integer
+    integer row# max# rval#
+    move 0 to rval#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      if (Row_Select_State(self,row#)) increment rval#
+    loop
+    function_return rval#
+  end_function
+  procedure sort.i integer by# // 1:Number 2:Display 3:DF 4:Root
+    integer row# max# arr# file# select#
+    string str#
+    if by# begin
+      send wait_on
+      move (oSortArray(self)) to arr#
+      send delete_data to arr#
+      get Row_Count to max#
+      for row# from 0 to (max#-1)
+        move (value(self,row#*5+by#)) to str#
+        if by# eq 1 move (IntToStrR(str#,4)) to str#
+        move (integer(value(self,row#*5+1))) to file#
+        move (select_state(self,row#*5)) to select#
+        move (pad(str#,30)+IntToStrR(file#,4)+IntToStrR(select#,1)) to str#
+        set value of arr# item row# to str#
+      loop
+      send sort_items to arr#
+      send DoHeaderLabels by#
+      send fill_list_from_sort_array
+      send delete_data to arr#
+      send wait_off
+    end
+  end_procedure
+  procedure header_mouse_click integer itm#
+    send sort.i itm#
+    forward send header_mouse_click itm#
+  end_procedure
+  procedure add_row.isssi integer file# string dn# string ln# string rn# integer shade#
+    integer base#
+    get item_count to base#
+    send add_item msg_none ""
+    set checkbox_item_state item base# to true
+    send add_item msg_none (string(file#))
+    send add_item msg_none dn#
+    send add_item msg_none ln#
+    send add_item msg_none rn#
+    set entry_state item (base#+1) to false
+    set entry_state item (base#+2) to false
+    set entry_state item (base#+3) to false
+    set entry_state item (base#+4) to false
+    if shade# begin
+      set item_shadow_state item  base#    to true
+      set item_shadow_state item (base#+1) to true
+      set item_shadow_state item (base#+2) to true
+      set item_shadow_state item (base#+3) to true
+      set item_shadow_state item (base#+4) to true
+    end
+  end_procedure
+  register_function iFile_loaded.i integer file# returns integer
+  function iFileAvailable.i integer file# returns integer
+    integer oFDX#
+    get piFDX_Server to oFDX#
+    function_return (FDX_CanOpenFile(oFDX#,file#))
+  end_function
+  procedure add_file.i integer file#
+    integer base# piNo_Alias_State# AddFile# bad# piBad_Entries_State# driver_type#
+    string dn# ln# rootname#
+    get piNo_Alias_State to piNo_Alias_State#
+    move (FDX_AttrValue_FILELIST(piFDX_Server(self),DF_FILE_ROOT_NAME,file#)) to RootName#
+    move 0 to bad#
+    get piBad_Entries_State to piBad_Entries_State#
+
+    if (piNo_Alias_State# and element_find(oRootNames(self),uppercase(RootName#))<>-1) move 0 to AddFile#
+    else begin
+      if piBad_Entries_State# ne BAD_ENTRIES_NO_CHECK begin
+        move (iFileAvailable.i(self,file#)) to driver_type#
+        move (not(driver_type#)) to bad#
+        ifnot bad# move (not(DriverFilter_Include(self,driver_type#))) to bad#
+      end
+
+      if (bad# and piBad_Entries_State#=BAD_ENTRIES_EXCLUDE) move 0 to AddFile#
+      else move 1 to AddFile#
+    end
+
+    if AddFile# begin
+      if (piGeneric_Display_Name_State(self)) move (rtrim(FDX_AttrValue_FILELIST(piFDX_Server(self),DF_FILE_DISPLAY_NAME,file#))) to dn#
+      else move (File_Display_Name(file#)) to dn#
+      //get_attribute DF_FILE_LOGICAL_NAME of file# to ln#
+      move (FDX_AttrValue_FILELIST(piFDX_Server(self),DF_FILE_LOGICAL_NAME,file#)) to ln#
+      if piNo_Alias_State# send element_add to (oRootNames(self)) (uppercase(rootname#))
+      send add_row.isssi file# dn# ln# rootname# (bad# and piBad_Entries_State#=BAD_ENTRIES_SHADOW)
+    end
+  end_procedure // add_file.i
+  procedure row_change integer row_from# integer row_to#
+  end_procedure
+  procedure item_change integer i1# integer i2# returns integer
+    integer rval# row_from# row_to#
+    forward get msg_item_change i1# i2# to rval#
+    if (i1#/5) ne (i2#/5) send row_change (i1#/5) (i2#/5)
+    procedure_return rval#
+  end_procedure
+  procedure select_toggling integer itm# integer i#
+    integer ci#
+    get current_item to ci#
+    move ((ci#/5)*5) to ci# // Redirect to first column
+    forward send select_toggling ci# i#
+    send update_select_display
+  end_procedure
+  procedure fill_list_all_files
+    integer file# oFDX#
+    set dynamic_update_state to false
+    get piFDX_Server to oFDX#
+    send delete_data
+    send delete_data to (oRootNames(self))
+    move 0 to file#
+    send wait_on
+    repeat
+      move (FDX_AttrValue_FLSTNAV(oFDX#,DF_FILE_NEXT_USED,file#)) to file#
+      if file# send add_file.i file#
+    until file# eq 0
+    send update_select_display
+    set dynamic_update_state to true
+    send wait_off
+  end_procedure
+  procedure fill_list_all_open // Only if we are working on real data
+    integer file# oFDX#
+    get piFDX_Server to oFDX#
+    set dynamic_update_state to false
+    ifnot oFDX# begin
+      send wait_on
+      send delete_data
+      send delete_data to (oRootNames(self))
+      move 0 to file#
+      repeat
+        move (FDX_AttrValue_FLSTNAV(oFDX#,DF_FILE_NEXT_OPENED,file#)) to file#
+        if file# send add_file.i file#
+      until file# eq 0
+      send update_select_display
+      send wait_off
+    end
+  end_procedure
+  procedure fill_list_from_sort_array
+    integer file# arr# itm# max# select# piNo_Alias_State#
+    string str#
+    set dynamic_update_state to false
+    get piNo_Alias_State to piNo_Alias_State#
+    set piNo_Alias_State to false
+    send delete_data
+    send delete_data to (oRootNames(self))
+    move (oSortArray(self)) to arr#
+    get item_count of arr# to max#
+    for itm# from 0 to (max#-1)
+      get value of arr# item itm# to str#
+      move (integer(mid(str#,4,31))) to file#
+      move (integer(mid(str#,1,35))) to select#
+      send add_file.i file#
+      if select# set select_state item (item_count(self)-5) to true
+    loop
+    set piNo_Alias_State to piNo_Alias_State# // Restore
+    set dynamic_update_state to true
+  end_procedure
+  procedure select_all
+    integer itm# max# row#
+    get Row_Count to max#
+    for row# from 0 to (max#-1)
+      set Row_Select_State Row# to true
+    loop
+    send update_select_display
+    set dynamic_update_state to true
+  end_procedure
+  procedure select_all_not_bad
+    integer itm# max# row# bad# file#
+    send wait_on
+    get Row_Count to max#
+    for row# from 0 to (max#-1)
+      if (uppercase(Row_RootName(self,row#))<>"FLEXERRS") begin
+        get Row_File row# to file#
+        move (not(iFileAvailable.i(self,file#))) to bad#
+        if (not(bad#)) set Row_Select_State Row# to true
+      end
+    loop
+    send update_select_display
+    send wait_off
+    set dynamic_update_state to true
+  end_procedure
+  procedure select_none
+    integer itm# max# row#
+    get Row_Count to max#
+    for row# from 0 to (max#-1)
+      set Row_Select_State Row# to false
+    loop
+    send update_select_display
+    set dynamic_update_state to true
+  end_procedure
+  procedure select_invert
+    integer max# row# st#
+    get Row_Count to max#
+    for row# from 0 to (max#-1)
+      ifnot (Row_Shadow_State(self,row#)) begin
+        get Row_Select_State Row# to st#
+        if (st# or uppercase(Row_RootName(self,row#))<>"FLEXERRS") set Row_Select_State Row# to (not(st#))
+      end
+    loop
+    send update_select_display
+    set dynamic_update_state to true
+  end_procedure
+
+  register_function sChildFiles.i integer file# returns string
+  register_function sParentFiles.i integer file# returns string
+  procedure select_parents
+    integer oFDX# itm# max# file#
+    string str#
+    get piFDX_Server to oFDX#
+    if oFDX# begin
+      ifnot (Row_Shadow_State(self,current_row(self))) begin
+        get sParentFiles.i of oFDX# (Current_File(self)) to str#
+        move (HowManyIntegers(str#)) to max#
+        for itm# from 1 to max#
+          set File_Select_State (ExtractInteger(str#,itm#)) to true
+        loop
+        set File_Select_State (Current_File(self)) to true
+        send update_select_display
+        set dynamic_update_state to true
+      end
+    end
+  end_procedure
+  procedure select_children
+    integer oFDX# itm# max# file#
+    string str#
+    get piFDX_Server to oFDX#
+    if oFDX# begin
+      ifnot (Row_Shadow_State(self,current_row(self))) begin
+        get sChildFiles.i of oFDX# (Current_File(self)) to str#
+        move (HowManyIntegers(str#)) to max#
+        for itm# from 1 to max#
+          set File_Select_State (ExtractInteger(str#,itm#)) to true
+        loop
+        set File_Select_State (Current_File(self)) to true
+        send update_select_display
+        set dynamic_update_state to true
+      end
+    end
+  end_procedure
+  procedure select_master
+    integer itm# max# row#
+    string rn# str#
+    get Row_Count to max#
+    move "³" to str#
+    for row# from 0 to (max#-1)
+      get Row_RootName row# to rn#
+      ifnot (uppercase(rn#)) eq "FLEXERRS" begin
+        ifnot ("³"+uppercase(rn#)+"³") in str# begin
+          set Row_Select_State Row# to true
+          move (str#+uppercase(rn#)+"³") to str#
+        end
+      end
+    loop
+    send update_select_display
+    set dynamic_update_state to true
+  end_procedure
+  procedure select_bad
+    integer max# row# file# bad#
+    set dynamic_update_state to false
+    send wait_on
+    get Row_Count to max#
+    for row# from 0 to (max#-1)
+      get Row_File row# to file#
+      move (not(iFileAvailable.i(self,file#))) to bad#
+      if bad# set Row_Select_State Row# to true
+    loop
+    set dynamic_update_state to true
+    send update_select_display
+    send wait_off
+  end_procedure
+  procedure select_open
+    integer max# row# open# file#
+    ifnot (piFDX_Server(self)) begin
+      get Row_Count to max#
+      for row# from 0 to (max#-1)
+        get Row_File row# to file#
+        if (DBMS_IsOpenFile(file#)) set Row_Select_State Row# to true
+      loop
+      send update_select_display
+      set dynamic_update_state to true
+    end
+  end_procedure
+
+  procedure Callback_Selected_Files integer msg# integer tmp_obj#
+    integer obj# max# row# open# file#
+    if num_arguments gt 1 move tmp_obj# to obj#
+    else move self to obj#
+    get Row_Count to max#
+    for row# from 0 to (max#-1)
+      if (Row_Select_State(self,row#)) begin
+        move (Row_File(self,row#)) to file#
+        send msg# to obj# file# (Row_DisplayName(self,row#)) (Row_DfName(self,row#)) (Row_RootName(self,row#))
+      end
+    loop
+  end_procedure
+
+  procedure Callback_All_Files integer msg# integer tmp_obj#
+    integer obj# max# row# open# file#
+    if num_arguments gt 1 move tmp_obj# to obj#
+    else move self to obj#
+    get Row_Count to max#
+    for row# from 0 to (max#-1)
+      move (Row_File(self,row#)) to file#
+      send msg# to obj# file# (Row_DisplayName(self,row#)) (Row_DfName(self,row#)) (Row_RootName(self,row#))
+    loop
+  end_procedure
+
+  //> Procedure Callback_General are used for calling back
+  //>
+  //>  Selected# =  0 => Only files not selected are called back
+  //>  Selected# =  1 => Only files that are selected are called back
+  //>  Selected# = -1 => Files are called back whether they are selected or not
+  //>
+  //>  Shaded#   =  0 => Only files not shaded are called back
+  //>  Shaded#   =  1 => Only shaded files are called back
+  //>  Shaded#   = -1 => Files are called back whether they are shaded or not
+  //>
+  //>  Master#   =  0 => All entries fulfilling the above are called back
+  //>  Master#   =  1 => If more entries have identical root names they are only called back once.
+  procedure Callback_General integer msg# integer obj# integer selected# integer shaded# integer master_tmp#
+    integer row# max# file# is_selected# is_shaded# master# ok#
+    string check# root#
+    if num_arguments lt 5 move 0 to master#
+    else move master_tmp# to master#
+    move ";" to check#
+    get Row_Count to max#
+    for row# from 0 to (max#-1)
+      move (Row_Select_State(self,row#)) to is_selected#
+      move (Row_Shadow_State(self,row#)) to is_shaded#
+      if ((selected#=-1 or selected#=is_selected#) and (shaded#=-1 or shaded#=is_shaded#)) begin
+        if master# begin
+          move (trim(lowercase(Row_RootName(self,row#)))) to root#
+          if (";"+root#+";") in check# move 0 to ok#
+          else begin
+            move (check#+root#+";") to check#
+            move 1 to ok#
+          end
+        end
+        else move 1 to ok#
+        if ok# begin
+          get Row_File row# to file#
+          send msg# to obj# file# is_selected# is_shaded#
+        end
+      end
+    loop
+  end_procedure
+
+  // Returns true if the function is completed
+  register_function iCallback_File.iii integer file# integer get# integer obj# returns integer
+  function iCallback_Selected_Files_Server integer get# integer obj# returns integer
+    integer max# row# open# file# rval# svr#
+    get piFDX_Server to svr#
+    get Row_Count to max#
+    move 1 to rval#
+    for row# from 0 to (max#-1)
+      if rval# begin
+        if (Row_Select_State(self,row#)) get iCallback_File.iii of svr# (Row_File(self,row#)) get# obj# to rval#
+      end
+      else function_return 0
+    loop
+    function_return 1
+  end_function
+  procedure load_current_selection string fn#
+    integer ch# row# max# file# st# fin#
+    string str#
+    get Seq_New_Channel to ch#
+    direct_input channel ch# fn#
+    if [~seqeof] begin
+      send wait_on
+      readln str#
+      ifnot str# eq "LFSELECT1.0" send obs "Incompatible format"
+      else begin
+        repeat
+          readln file#
+          readln st#
+          move (seqeof) to fin#
+          ifnot fin# if st# set file_select_state file# to st#
+        until fin#
+      end
+      send wait_off
+    end
+    else send obs "File not found"
+    close_input channel ch#
+    send Seq_Release_Channel ch#
+    send update_select_display
+  end_procedure
+  procedure load_current_selection.browse
+    string fn#
+    move (SEQ_SelectFile("Load filelist selection","Filelist selections (*.fsl)|*.FSL")) to fn#
+    if fn# ne "" send load_current_selection fn#
+  end_procedure
+  procedure save_current_selection string fn#
+    integer ch# row# max# file# st#
+    send wait_on
+    get Seq_New_Channel to ch#
+    direct_output channel ch# fn#
+    writeln "LFSELECT1.0"
+    get Row_Count to max#
+    for row# from 0 to (max#-1)
+      get Row_File row# to file#
+      get Row_Select_state row# to st#
+      writeln file#
+      writeln st#
+    loop
+    close_output channel ch#
+    send Seq_Release_Channel ch#
+    send wait_off
+  end_procedure
+  procedure save_current_selection.browse
+    string fn#
+    move (SEQ_SelectOutFile("Save filelist selection","Filelist selections (*.fsl)|*.FSL")) to fn#
+    if fn# ne "" send save_current_selection fn#
+  end_procedure
+  procedure display_file_things
+    if (item_count(self)) ifnot (Row_Shadow_State(self,Current_Row(self))) send FDX_ModalDisplayFileAttributes (piFDX_Server(self)) (Current_File(self))
+  end_procedure
+  procedure display_file_location
+    integer fdx# file#
+    number ts#
+    string path#
+    ifnot (Row_Shadow_State(self,Current_Row(self))) begin
+      get piFDX_Server to fdx#
+      get Current_File to file#
+      get sDatPath.i of fdx# file# to path#
+      get nTimeStamp.i of fdx# file# to ts#
+      send obs "Data path:" path# "Table data last modified:" (TS_ConvertToString(ts#))
+    end
+  end_procedure
+end_class // cFdxFileMultiSelector

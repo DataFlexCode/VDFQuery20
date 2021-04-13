@@ -1,0 +1,41 @@
+// Use SetOfFld.utl // cSetOfFields class
+Use Base.utl     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Strings.nui  // String manipulation for VDF
+
+class cSetOfFields is a cArray
+  item_property_list
+    item_property integer piFile.i
+    item_property integer piField.i
+  end_item_property_list cSetOfFields
+  procedure add_field integer file# integer field#
+    integer row#
+    get row_count to row#
+    set piFile.i  row# to file#
+    set piField.i row# to field#
+  end_procedure
+  function iFindField.ii integer file# integer field# returns integer
+    integer row# max#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      if (file#=piFile.i(self,row#) and field#=piField.i(self,row#)) function_return row#
+    loop
+    function_return -1
+  end_function
+  procedure reset
+    send delete_data
+  end_procedure
+  procedure CallBack_Files integer msg# integer obj#
+    integer row# max# file# itm#
+    string files#
+    move "" to files#
+    get row_count to max#
+    for row# from 0 to (max#-1)
+      get piFile.i row# to file#
+      ifnot (IsIntegerPresent(files#,file#)) move (AddIntegerToString(files#,file#)) to files#
+    loop
+    move (HowManyIntegers(files#)) to max#
+    for itm# from 1 to max#
+      send msg# to obj# (ExtractInteger(files#,itm#))
+    loop
+  end_procedure
+end_class

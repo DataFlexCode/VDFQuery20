@@ -1,0 +1,342 @@
+// Use FdxField.nui // FDX Field things
+//
+// Wed 10-09-2003 - Added FDX_ReadRecordBufferToArray_LD
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+Use Fdx_Attr.nui // FDX compatible attribute functions
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Strings.nui  // String manipulation for VDF
+Use Dates.nui    // Date manipulation for VDF
+
+//> Translates an overlap field into the sequence of fields that makes up
+//> the overlap field. The field sequence is returned in a string where each
+//> field in the sequence takes up four characters. The sequence of fields
+//> 2, 3 and 4 would return as "2   3   4   ".
+function FDX_FieldsInOverlap global integer lhFDX integer liFile integer liOverlapField returns string
+  integer liField liMax
+  string lsValue
+  move "" to lsValue
+  // Only go through this if liOverlapField is indeed an overlap field:
+  if (integer(FDX_AttrValue_FIELD(lhFDX,DF_FIELD_TYPE,liFile,liOverlapField))) eq DF_OVERLAP begin
+    move (FDX_AttrValue_FILE(lhFDX,DF_FILE_NUMBER_FIELDS,liFile)) to liMax
+    for liField from 1 to liMax
+      // Only check to see if field is part of the overlap if it is not itself an overlap field:
+      if (integer(FDX_AttrValue_FIELD(lhFDX,DF_FIELD_TYPE,liFile,liField))) ne DF_OVERLAP begin
+        if (integer(FDX_AttrValue_SPECIAL1(lhFDX,DF_FIELD_OVERLAP,liFile,liOverlapField,liField))) move (lsValue+pad(liField,4)) to lsValue
+      end
+    loop
+  end
+  else move (pad(liOverlapField,4)) to lsValue
+  function_return lsValue
+end_function // FDX_FieldsInOverlap
+
+//> The function returns a set of (overlap-) fields all overlapping
+//> the field passed as an arguments
+function FDX_FieldsOverlappingField global integer lhFDX integer liFile integer liField returns string
+  integer liMaxField liTestField
+  string lsRval
+  move "" to lsRval
+  move (FDX_AttrValue_FILE(lhFDX,DF_FILE_NUMBER_FIELDS,liFile)) to liMaxField
+  for liTestField from 1 to liMaxField
+    if (integer(FDX_AttrValue_FIELD(lhFDX,DF_FIELD_TYPE,liFile,liTestField))) eq DF_OVERLAP begin
+      if (integer(FDX_AttrValue_SPECIAL1(lhFDX,DF_FIELD_OVERLAP,liFile,liTestField,liField))) move (lsRval+pad(liTestField,4)) to lsRval
+    end
+  loop
+  function_return lsRval
+end_function // FDX_FieldsInOverlap
+
+//> Remove dublettes from a sequence of fields
+function FDX_FieldsRemoveDublettes global string lsFields returns string
+  integer liMaxPos liSegment
+  string lsValue liField
+  move "" to lsValue
+  move (length(lsFields)+3/4) to liMaxPos
+  for liSegment from 1 to liMaxPos
+    move (mid(lsFields,4,liSegment-1*4+1)) to liField
+    ifnot liField in lsValue move (lsValue+liField) to lsValue
+  loop
+  function_return lsValue
+end_function
+
+//> This function takes a sequence of fields translating each overlap field
+//> in the sequence to its underlying real fields and returns the translated
+//> sequence.
+function FDX_FieldsTranslateOverlaps global integer lhFDX integer liFile string lsFields returns string
+  integer liMaxPos liField liPos
+  string lsValue
+  move "" to lsValue
+  move (length(lsFields)+3/4) to liMaxPos
+  for liPos from 0 to (liMaxPos-1)
+    move (mid(lsFields,4,liPos*4+1)) to liField
+    if (integer(FDX_AttrValue_FIELD(lhFDX,DF_FIELD_TYPE,liFile,liField))) eq DF_OVERLAP move (lsValue+FDX_FieldsInOverlap(lhFDX,liFile,liField)) to lsValue
+    else move (lsValue+pad(liField,4)) to lsValue
+  loop
+  function_return lsValue
+end_function // FDX_FieldsTranslateOverlaps
+
+//> Use to check if two fields are identically defined
+function FDX_FieldIdenticalFieldDefinition global integer lhFDX integer liFile1 integer liField1 integer liFile2 integer liField2 returns integer
+  if (integer(FDX_AttrValue_FIELD(lhFDX,DF_FIELD_TYPE,liFile1,liField1))<>integer(FDX_AttrValue_FIELD(lhFDX,DF_FIELD_TYPE,liFile2,liField2))) function_return 0
+  if (integer(FDX_AttrValue_FIELD(lhFDX,DF_FIELD_LENGTH,liFile1,liField1))<>integer(FDX_AttrValue_FIELD(lhFDX,DF_FIELD_LENGTH,liFile2,liField2))) function_return 0
+  if (integer(FDX_AttrValue_FIELD(lhFDX,DF_FIELD_PRECISION,liFile1,liField1))<>integer(FDX_AttrValue_FIELD(lhFDX,DF_FIELD_PRECISION,liFile2,liField2))) function_return 0
+  function_return 1 // Yes, they are identical
+end_function
+
+//> Use to check if two sequences of fields are identically defined. Returns TRUE if identical
+function FDX_FieldIdenticalFieldSequenceDefinition global integer lhFDX integer liFile1 string lsFields1 integer liFile2 string lsFields2 returns integer
+  integer liMaxPos liField liPos liField1 liField2
+  if (length(lsFields1)<>length(lsFields2)) function_return 0
+  move (length(lsFields1)+3/4) to liMaxPos
+  for liPos from 0 to (liMaxPos-1)
+    move (mid(lsFields1,4,liPos*4+1)) to liField1
+    move (mid(lsFields2,4,liPos*4+1)) to liField2
+    ifnot (FDX_FieldIdenticalFieldDefinition(lhFDX,liFile1,liField1,liFile2,liField2)) function_return 0
+  loop
+  function_return 1 // Yes, they are identical
+end_function
+
+//> Use this to compare two overlap fields. Returns TRUE if identical.
+function FDX_FieldIdenticalOverlapStructures global integer lhFDX integer liFile1 integer liField1 integer liFile2 integer liField2 returns integer
+  string lsFields1 lsFields2
+  get FDX_FieldsInOverlap lhFDX liFile1 liField1 to lsFields1
+  get FDX_FieldsInOverlap lhFDX liFile2 liField2 to lsFields2
+  function_return (FDX_FieldIdenticalFieldSequenceDefinition(lhFDX,liFile1,lsFields1,liFile2,lsFields2))
+end_function
+
+function FDX_FieldName global integer lhFDX integer liFile integer liField integer lbIncludeTable returns string
+  string lsLogName lsFieldName
+  ifnot liFile function_return ""
+  move (FDX_AttrValue_FILELIST(lhFDX,DF_FILE_LOGICAL_NAME,liFile)) to lsLogName
+  if liField move (FDX_AttrValue_FIELD(lhFDX,DF_FIELD_NAME,liFile,liField)) to lsFieldName
+  else move "RECNUM" to lsFieldName
+  if lbIncludeTable function_return (lsLogName+"."+lsFieldName)
+  function_return lsFieldName
+end_function
+
+function FDX_FieldNames global integer lhFDX integer liFile string lsFields returns string
+  integer liMaxPos liSegment
+  string lsRval lsField
+  move "" to lsRval
+  move (length(lsFields)+3/4) to liMaxPos
+  for liSegment from 1 to liMaxPos
+    move (mid(lsFields,4,liSegment-1*4+1)) to lsField
+    move (lsRval+FDX_FieldName(lhFDX,liFile,lsField,0)) to lsRval
+    if liSegment ne liMaxPos move (lsRval+",") to lsRval
+  loop
+  function_return lsRval
+end_function
+
+function FDX_FieldTypeName global integer lhFDX integer liFile integer liField returns string
+  integer liType
+  move (FDX_AttrValue_FIELD(lhFDX,DF_FIELD_TYPE,liFile,liField)) to liType
+  function_return (StringFieldType(liType))
+end_function
+
+function FDX_FieldLength global integer lhFDX integer liFile integer liField returns string
+  integer liType liLen liDec lhObj
+  string lsRval
+  move (FDX_AttrValue_FIELD(lhFDX,DF_FIELD_TYPE,liFile,liField)) to liType
+  move (FDX_AttrValue_FIELD(lhFDX,DF_FIELD_LENGTH,liFile,liField)) to liLen
+  move liLen to lsRval
+  if liType eq DF_BCD begin
+    move (FDX_AttrValue_FIELD(lhFDX,DF_FIELD_PRECISION,liFile,liField)) to liDec
+    move "#.#" to lsRval
+    replace "#" in lsRval with (string(liLen-liDec))
+    replace "#" in lsRval with (string(liDec))
+  end
+  function_return lsRval
+end_function
+
+function FDX_FieldTypeAndLengthName global integer lhFDX integer liFile integer liField returns string
+  string lsRval
+  get FDX_FieldTypeName lhFDX liFile liField to lsRval
+  move (uppercase(left(lsRval,3))) to lsRval
+  function_return (lsRval+" "+FDX_FieldLength(lhFDX,liFile,liField))
+end_function
+
+function FDX_FieldTypeAndLengthName2 global integer lhFDX integer liFile integer liField returns string
+  string lsRval
+  get FDX_FieldTypeName lhFDX liFile liField to lsRval
+  function_return (lsRval+" "+FDX_FieldLength(lhFDX,liFile,liField))
+end_function
+
+//> Returns "Field Name (NUM 2.2)"
+function FDX_FieldNameAndType global integer lhFDX integer liFile integer liField returns string
+  string lsRval
+  get FDX_AttrValue_FIELD lhFDX DF_FIELD_NAME liFile liField to lsRval
+  move (StringUppercaseFirstLetters(replaces("_",lsRval," "))) to lsRval
+  function_return (lsRval+" ("+FDX_FieldTypeAndLengthName(lhFDX,liFile,liField)+")")
+end_function
+
+//> Returns the concatenated values of the fields in sFields parameter
+//> separated by space characters. Overlap fields are ignored. (and so
+//> are Text and Binary fields)
+function FDX_FieldValues global integer lhFDX integer iFile string sFields returns string
+  integer iMaxPos iField iPos iType iLen iDec
+  string sRval sFieldVal
+  move "" to sRval
+  ifnot lhFDX begin
+    move (length(sFields)+3/4) to iMaxPos
+    for iPos from 1 to iMaxPos
+      move (mid(sFields,4,iPos-1*4+1)) to iField
+      move (integer(FDX_AttrValue_FIELD(lhFDX,DF_FIELD_TYPE,iFile,iField))) to iType
+      get_field_value iFile iField to sFieldVal
+      if iType eq DF_ASCII move (sRval+rtrim(sFieldVal)) to sRval
+      if iType eq DF_BCD begin
+        get_attribute DF_FIELD_LENGTH of iFile iField to iLen
+        get_attribute DF_FIELD_PRECISION of iFile iField to iDec
+        if iDec increment iLen // Make room for comma
+        move (sRval+NumToStrR(sFieldVal,iDec,iLen)) to sRval
+      end
+      if iType eq DF_DATE move (sRval+string(DateToInteger(sFieldVal))) to sRval
+      if iPos ne iMaxPos move (sRval+" ") to sRval
+    loop
+  end
+  else function_return "Function FDX_FieldValues may only be called with lhFDX=0"
+  function_return sRval
+end_function
+
+//> Returns the concatenated values of the fields in sFields parameter
+//> separated by "-" characters. Overlap fields are ignored. (and so
+//> are Text and Binary fields). The returns value of this function is
+//> meant to be used as the a file name.
+function FDX_FieldValuesFileName_Help global string lsSource returns string
+  integer liPos liLen liByte
+  string lsChar lsRval
+  move "" to lsRval
+  move (length(lsSource)) to liLen
+  for liPos from 1 to liLen
+    move (mid(lsSource,1,liPos)) to lsChar
+    move (lsRval+vdfq_ByteToHex(ascii(lsChar))) to lsRval
+  loop
+  function_return lsRval
+end_function
+function FDX_FieldValuesFileName global integer lhFDX integer liFile string lsFields returns string
+  integer liMaxPos liField liPos liType liLen liDec
+  string lsRval lsFieldValue
+  move "" to lsRval
+  ifnot lhFDX begin
+    move (length(lsFields)+3/4) to liMaxPos
+    for liPos from 1 to liMaxPos
+      move (mid(lsFields,4,liPos-1*4+1)) to liField
+      move (integer(FDX_AttrValue_FIELD(lhFDX,DF_FIELD_TYPE,liFile,liField))) to liType
+      get_field_value liFile liField to lsFieldValue
+      if liType eq DF_ASCII move (lsRval+FDX_FieldValuesFileName_Help(lsFieldValue)) to lsRval
+      if liType eq DF_BCD begin
+        get_attribute DF_FIELD_LENGTH of liFile liField to liLen
+        get_attribute DF_FIELD_PRECISION of liFile liField to liDec
+        if liDec increment liLen // Make room for comma
+        move (lsRval+NumToStrRzf(lsFieldValue,liDec,liLen)) to lsRval
+      end
+      if liType eq DF_DATE move (lsRval+string(DateToInteger(lsFieldValue))) to lsRval
+      if liPos ne liMaxPos move (lsRval+"-") to lsRval
+    loop
+  end
+  else function_return "Function FDX_FieldValues may only be called with lhFDX=0"
+  move (replaces(".",lsRval,"")) to lsRval
+  move (replaces(",",lsRval,"")) to lsRval
+  move (replaces(" ",lsRval,"")) to lsRval
+  function_return lsRval
+end_function
+
+//
+// Recieving procedure should be defined like this:
+//
+// Procedure HandleField integer liFile integer liField string lsName integer liType integer liLen integer liPrec integer liRelFile integer liRelField integer liIndex integer liOffSet
+//
+//
+procedure FDX_FieldCallBack global integer lhFDX integer liFile integer liMsg integer lhObj
+  integer liMaxField liField
+  integer liType liLen liPrec liRelFile liRelField liIndex liOffSet
+  string lsName
+  move (FDX_AttrValue_FILE(lhFDX,DF_FILE_NUMBER_FIELDS,liFile)) to liMaxField
+  for liField from 1 to liMaxField
+
+    get FDX_AttrValue_FIELD lhFDX DF_FIELD_NAME          liFile liField to lsName
+    get FDX_AttrValue_FIELD lhFDX DF_FIELD_TYPE          liFile liField to liType
+    get FDX_AttrValue_FIELD lhFDX DF_FIELD_LENGTH        liFile liField to liLen
+    get FDX_AttrValue_FIELD lhFDX DF_FIELD_PRECISION     liFile liField to liPrec
+    get FDX_AttrValue_FIELD lhFDX DF_FIELD_RELATED_FILE  liFile liField to liRelFile
+    get FDX_AttrValue_FIELD lhFDX DF_FIELD_RELATED_FIELD liFile liField to liRelField
+    get FDX_AttrValue_FIELD lhFDX DF_FIELD_INDEX         liFile liField to liIndex
+    get FDX_AttrValue_FIELD lhFDX DF_FIELD_OFFSET        liFile liField to liOffSet
+    // procedure handle_field integer liFile integer liField string lsName integer liType integer liLen integer liPrec integer liRelFile integer liRelField integer liIndex integer liOffSet
+    send liMsg to lhObj liFile liField lsName liType liLen liPrec liRelFile liRelField liIndex liOffSet
+  loop
+end_procedure
+
+function FDX_FindField global integer lhFDX integer liFile string lsFieldName returns integer
+  integer liMax liField
+  string lsValue
+  move (uppercase(lsFieldName)) to lsFieldName
+  if (lsFieldName="RECNUM") function_return 0
+  move (FDX_AttrValue_FILE(lhFDX,DF_FILE_NUMBER_FIELDS,liFile)) to liMax
+  for liField from 1 to liMax
+    get FDX_AttrValue_FIELD lhFDX DF_FIELD_NAME liFile liField to lsValue
+    if (uppercase(lsValue)=lsFieldName) function_return liField
+  loop
+  function_return -1
+end_function
+
+//> Reads a record like the SEQ_ReadRecordBuffer_LD procedure but places the
+//> result in the array passed in the lhArray instead of directly in the
+//> record buffer.
+procedure FDX_ReadRecordBufferToArray_LD global integer lhFDX integer liChannel integer liFile integer lhArray
+  integer liMax liField liLen liType
+  string lsValue
+  send delete_data to lhArray
+  get FDX_AttrValue_FILE lhFDX DF_FILE_NUMBER_FIELDS liFile to liMax
+  read channel liChannel // Set channel
+  for liField from 1 to liMax
+    get FDX_AttrValue_FIELD lhFDX DF_FIELD_TYPE liFile liField to liType
+    if liType ne DF_OVERLAP begin
+      if (liType=DF_BINARY or liType=DF_TEXT) begin
+        readln liLen
+        read_block lsValue liLen
+      end
+      else readln lsValue
+    end
+    set value of lhArray item liField to lsValue
+  loop
+end_procedure
+
+//> Reads a record like the SEQ_ReadRecordBuffer_LD procedure but places the
+//> result in the array passed in the lhArray instead of directly in the
+//> record buffer.
+Procedure FDX_ReadRecordBufferToArray_LD_PA Global Integer lhFDX Integer liChannel Integer liFile Integer lhArray Boolean bProtectAscii
+  Integer liMax liField liLen liType
+  String lsValue
+  Send delete_data to lhArray
+  Get FDX_AttrValue_FILE lhFDX DF_FILE_NUMBER_FIELDS liFile to liMax
+  Read channel liChannel // Set channel
+  For liField from 1 to liMax
+    Get FDX_AttrValue_FIELD lhFDX DF_FIELD_TYPE liFile liField to liType
+    If liType ne DF_OVERLAP Begin
+      If (liType=DF_ASCII and bProtectAscii) Move DF_TEXT to liType // Dirty, I know
+      If (liType=DF_BINARY or liType=DF_TEXT) Begin
+        Readln liLen
+        Read_Block lsValue liLen
+      End
+      Else Readln lsValue
+    End
+    Set value of lhArray item liField to lsValue
+  Loop
+End_Procedure
+
+//> Returns set of (child table) fields that relates to parent table.
+function FDX_FieldsRelatingToParent global integer lhFDX integer liChild integer liParent returns string
+  integer liMax liField liTest
+  string lsValue
+  get FDX_AttrValue_FILE lhFDX DF_FILE_NUMBER_FIELDS liChild to liMax
+  move "" to lsValue
+
+  for liField from 1 to liMax
+    get FDX_AttrValue_FIELD lhFDX DF_FIELD_RELATED_FILE liChild liField to liTest
+    if (liTest=liParent) move (lsValue+pad(liField,4)) to lsValue
+  loop
+
+  function_return lsValue
+end_function

@@ -1,0 +1,2021 @@
+//**********************************************************************
+// Use vMachine.utl // Virtual machine class (heart of DFScript)
+//
+// By Sture Andersen
+//
+// Create: Fri  01-10-1999
+// Update: Fri  15-10-1999 - Now handles DBMS field
+//                         - Repeat/Until macro added
+//
+//
+//   Functions for dbQuery:
+//
+//               Strings
+//
+//     Simple    Left
+//               Right
+//               Mid
+//               Pos
+//               Uppercase
+//               Lowercase
+//
+//     Advanced
+//
+//
+//               Dates
+//
+//     Simple    DateCompose     integer liDay integer liMonth integer liYear returns date
+//               StrToDate    string lsDate integer liFormat integer lbLong string lsSep returns date
+//               DateToStr    date ldDate integer liFormat integer lbLong string lsSep returns string
+//               DateIncr        date ldDate integer liSegment integer liAmount returns date
+//               vdfq_DateSegment     date ldDate integer liSegment returns integer
+//               FirstDayInMonth date ldDate returns date
+//               LastDayInMonth  date ldDate returns date
+//               FirstDayInYear  date ldDate returns date
+//               LastDayInYear   date ldDate returns date
+//               DateWeekNumber  date ldDate returns integer
+//               DayName         integer liWeekDay returns string
+//               DateDayNumber   date ldDate returns integer
+//               DateDayName     date ldDate returns string
+//               WeekToDate      integer liYear integer liWeek returns date
+//               MonthName       integer liMonth returns string
+//               DateMonthName   date ldDate returns string
+//               DateAsText      date ldDate string lsFormat returns string
+//               SysDate         returns date
+//
+//**********************************************************************
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+Use Base.nui
+Use MsgBox.utl   // obs procedure
+Use Strings.nui  // String manipulation for VDF
+Use DBMS.utl     // Basic DBMS functions
+Use Focus.utl    // Retrieve basic information about object
+Use Structur.utl // Object for restructuring table definitions
+Use API_Attr.nui // Database API attributes characteristics
+Use Spec0006.utl // Function MakeStringConstant and MakeStringConstantMax255
+Use FdxField.utl // FDX Field things
+Use Dates.nui    // Date routines (No User Interface)
+Use Output.utl   // Sequential output to whatever
+Use ErrorHnd.nui // cErrorHandlerRedirector class and oErrorHandlerQuiet object (No User Interface)
+//  Use LogFile.nui  // Class for handling a log file (No User Interface)
+//
+//  object oVMLogFile is a cLogFile
+//    set psFileName to "vmachine.log"
+//    set piCloseOnWrite to DFTRUE
+//    set psPurpose to "Expression evaluation log"
+//    send DirectOutput
+//  end_object
+
+#SYM // Force inclusion of symbol table in compiled program
+
+Enumeration_List // Operation codes for Virtual Machine
+  define OP_NOP             // Do nothing!
+  define OP_ABORT           // Stop program execution
+  define OP_CLEARSCREEN     // Clear the screen
+  define OP_GOSUB           // Call subrutine
+  define OP_GOTO            // Goto label
+  define OP_RETURN          // Return from subrutine
+  define OP_PAUSE           // Pauses program execution
+  define OP_GOTOXY          // Positions the cursor on a character mode screen
+  define OP_INPUT           // Input from the keyboard
+  define OP_SHOW            // Display on virtual console
+  define OP_SHOWLN          // Display on virtual console
+  define OP_SEQFILE         // Open/close/append sequential file
+  define OP_WRITE           // Write to currently open sequential out file
+  define OP_WRITELN         // Write to currently open sequential out file
+  define OP_READ            // Read from currently open sequential in file
+  define OP_READLN          // Read from currently open sequential in file
+  define OP_MSGBOX          // Display a message box
+  define OP_ASSIGN          // Assign value to variable or a field
+  define OP_GVAR_INCR       // Increment integer variable by amount
+  define OP_GVAR_DISPLAY    // Display global variable (debug purposes)
+  define OP_IF_GOTO         // Conditioned jump (x<>0)
+  define OP_IF_GOSUB        // Conditioned gosub (x<>0)
+  define OP_IFTEST_GOTO     // Conditioned jump (x comp y)
+  define OP_IFTEST_GOSUB    // Conditioned gosub (x comp y)
+  define OP_DEBUG           // Turn debug on and off
+  define OP_LOG_OPEN        // Open file for logging
+  define OP_LOG_CLOSE       // Close log file
+  define OP_LOG_DISPLAY     // Display log file
+  define OP_LOG_FLUSH       // Flush log file (momentarily close/open)
+  define OP_LOG_WRITE       // Write something to log file
+  define OP_LOG_WRITELN     // WriteLn something to log file
+  define OP_API_FILELIST    // Set_Attribute (filelist)
+  define OP_API_FILE        // Set_Attribute (file)
+  define OP_API_FIELD       // Set_Attribute (field)
+  define OP_API_INDEX       // Set_Attribute (index)
+  define OP_API_IDXSEG      // Set_Attribute (idxseg)
+  define OP_API_STRUCTURE_ABORT // Structure abort
+  define OP_API_STRUCTURE_END   // Structure end
+  define OP_API_PROBE_END       // Probe end
+  define OP_API_DELETEINDEX     // Delete index
+  define OP_API_DELETEFIELD     // Delete field
+  define OP_API_APPENDFIELD     // Append field
+  define OP_API_CREATEFIELD     // Create field
+  define OP_API_SETFIELDNUMBER  // Set implicit field number
+  define cBasicVirtualMachine.NEXT_OP // Augmentation codes starts here
+End_Enumeration_List
+
+Enumeration_List // Variable types
+  define VARTYP_VOID     // Return type for procedures
+  define VARTYP_INTEGER
+  define VARTYP_DATE
+  define VARTYP_NUMBER
+  define VARTYP_STRING
+End_Enumeration_List
+
+Enumeration_List // Field types
+  define FLDTYP_DATE
+  define FLDTYP_NUMBER
+  define FLDTYP_STRING
+  define FLDTYP_BINARY
+  define FLDTYP_OVERLAP
+  define FLDTYP_TEXT
+End_Enumeration_List
+
+Enumeration_List // Comparison modes
+  define COMP_LT
+  define COMP_LE
+  define COMP_EQ
+  define COMP_GE
+  define COMP_GT
+  define COMP_NE
+End_Enumeration_List
+
+Enumeration_List // Argument types
+  define AT_NOT_VALID
+  define AT_CINT
+  define AT_CSTR
+  define AT_CNUM
+  define AT_CDAT
+  define AT_VAR
+  define AT_VARNO
+  define AT_EXPR
+  define AT_LBL
+  define AT_FIELD
+  define AT_FIELDNO
+  define AT_ARRAY_ID
+  define AT_ARRAY_ELEM
+End_Enumeration_List
+
+function iCompStringToInt.s global string lsComp returns integer
+  move (uppercase(lsComp)) to lsComp
+  if lsComp eq "LT" function_return COMP_LT
+  if lsComp eq "LE" function_return COMP_LE
+  if lsComp eq "EQ" function_return COMP_EQ
+  if lsComp eq "GE" function_return COMP_GE
+  if lsComp eq "GT" function_return COMP_GT
+  if lsComp eq "NE" function_return COMP_NE
+  function_return -1
+end_function
+
+function iArgType_Const.i global integer liType returns integer
+  if liType eq AT_CINT function_return 1
+  if liType eq AT_CSTR function_return 1
+  if liType eq AT_CNUM function_return 1
+  if liType eq AT_CDAT function_return 1
+  function_return 0
+end_function
+
+function sArgtype_Name.i global integer liType returns string
+  if liType eq AT_CINT  function_return "CnstInt"
+  if liType eq AT_CSTR  function_return "CnstStr"
+  if liType eq AT_CNUM  function_return "CnstNum"
+  if liType eq AT_CDAT  function_return "CnstDat"
+  if liType eq AT_VAR   function_return "VarName"
+  if liType eq AT_VARNO function_return "VarNo"
+  if liType eq AT_EXPR  function_return "Expr"
+  if liType eq AT_LBL   function_return "Lbl"
+  if liType eq AT_FIELD function_return "Field"
+  if liType eq AT_FIELDNO function_return "FieldNo"
+  if liType eq AT_ARRAY_ID function_return "Array ID"
+  if liType eq AT_ARRAY_ELEM function_return "Array Index"
+  function_return "Unknown argtype"
+end_function
+
+class cOpCodes is a cArray
+  item_property_list
+    item_property string  psName.i
+    item_property integer piMessage.i
+    item_property integer piParameters.i // Number of parameters
+    item_property integer psFormat.i     // Format of parameters
+    item_property integer piSpecialAddMsg.i
+  end_item_property_list cOpCodes
+  procedure add_opcode integer liOpCode string lsName integer lhMsg integer liParams integer lhSpecial_add_msg
+    set psName.i          liOpCode to lsName
+    set piMessage.i       liOpCode to lhMsg
+    set piParameters.i    liOpCode to liParams
+    set piSpecialAddMsg.i liOpCode to lhSpecial_add_msg
+  end_procedure
+end_class // cOpCodes
+
+function VmIntIf global integer lbCondition integer liTrue integer liFalse returns integer
+  if lbCondition function_return liTrue
+  function_return liFalse
+end_function
+function VmNumIf global integer lbCondition number lnTrue number lnFalse returns number
+  if lbCondition function_return lnTrue
+  function_return lnFalse
+end_function
+function VmStrIf global integer lbCondition string lsTrue string lsFalse returns string
+  if lbCondition function_return lsTrue
+  function_return lsFalse
+end_function
+function VmDatIf global integer lbCondition date ldTrue date ldFalse returns date
+  if lbCondition function_return ldTrue
+  function_return ldFalse
+End_Function
+Function VmTextToCSV Global String lsValue Returns String
+    Move (Trim(lsValue)) to lsValue
+    Move (Replaces(Character(10),lsValue,"|")) to lsValue
+    Move (Replaces(Character(13),lsValue,"|")) to lsValue
+    Move (Replaces('"',lsValue,"'")) to lsValue
+    Function_Return lsValue
+End_Function
+
+class cDeclaredArrays is a cArray
+  item_property_list
+    item_property string  psName.i
+    item_property integer piObject.i
+    item_property integer piType.i // VARTYP_INTEGER, VARTYP_NUMBER, VARTYP_DATE or VARTYP_STRING
+  end_item_property_list cDeclaredArrays
+  procedure reset
+    integer liRow max# obj#
+    get row_count to max#
+    for liRow from 0 to (max#-1)
+      get piObject.i liRow to obj#
+      if obj# send request_destroy_object to obj#
+    loop
+    send delete_data
+  end_procedure
+  function iRowToObjectID.i integer liRow returns integer
+    integer obj#
+    get piObject.i liRow to obj#
+    ifnot obj# begin
+      object oArray is an cArray
+        move self to obj#
+      end_object
+    end
+    function_return obj#
+  end_function
+  procedure Array_Reset integer liRow
+    send delete_data to (iRowToObjectID.i(self,liRow))
+  end_procedure
+  function iNameToNumber.s string lsName returns integer
+    integer liRow liMax
+    move (uppercase(lsName)) to lsName
+    get row_count to liMax
+    for liRow from 0 to (liMax-1)
+      if lsName eq (psName.i(self,liRow)) function_return liRow
+    loop
+    function_return -1
+  end_function
+  procedure declare_array string lsName integer liType
+    integer liRow
+    get row_count to liRow
+    set psName.i   liRow to (uppercase(lsName))
+    set piObject.i liRow to 0
+    set piType.i   liRow to liType
+  end_procedure
+  procedure Assign_Value integer liRow integer liItem string lsValue
+    integer liType lhObj
+    get piObject.i liRow to lhObj
+    get piType.i   liRow to liType
+    if liType eq VARTYP_INTEGER set value of lhObj item liItem to (integer(lsValue))
+    if liType eq VARTYP_NUMBER  set value of lhObj item liItem to (number(lsValue))
+    if liType eq VARTYP_DATE    set value of lhObj item liItem to (date(lsValue))
+    if liType eq VARTYP_STRING  set value of lhObj item liItem to (string(lsValue))
+  end_procedure
+  function sAssigned_Value.ii integer liRow integer liItem returns string
+    function_return (value(piObject.i(self,liRow),liItem))
+  end_function
+  procedure sort_array integer liRow
+    send sort_items to (piObject.i(self,liRow))
+  end_procedure
+  function iItem_Count.i integer liRow returns integer
+    function_return (item_count(piObject.i(self,liRow)))
+  end_function
+end_class // cDeclaredArrays
+
+//  Move MyArray(2) to YourArray(4)
+//  Move MyArray.Item_Count to WhatEver#
+//
+//
+enumeration_list // Function classes
+  define FTYPE.SCRIPT  // Functions declared in the script
+  define FTYPE.GET     // Globally declared functions
+  define FTYPE.BUILTIN // Predefined DF functions that are called automatically by the eval function
+end_enumeration_list
+
+register_object oParameterStack
+class cDeclaredFunctions is a cArray
+  procedure construct_object integer liImg
+    forward send construct_object liImg
+    object oParameterReverse is a cStack 
+    end_object
+    object oParameterStack is a cStack 
+    end_object
+  end_procedure
+  item_property_list
+    item_property string  psName.i
+    item_property string  psDisplayName.i
+    item_property integer piReturnType.i    // VT_Something
+    item_property string  psParameterList.i //
+    item_property string  psDisplayParameterList.i //
+    item_property integer piFuncClass.i     // FTYPE.SCRIPT/FTYPE.GET/FTYPE.EXPR
+    item_property integer piLineDeclared.i  // when FTYPE.SCRIPT
+    item_property integer piMessage.i       // when FTYPE.GET or FTYPE.EXPR
+  end_item_property_list cDeclaredFunctions
+
+  procedure declare_function string lsName integer liRtnType string lsParamList integer liFuncClass integer liLine integer lhMsg
+    integer liRow
+    get row_count to liRow
+    set psName.i          liRow to (uppercase(lsName))
+    set psDisplayName.i   liRow to lsName
+    set piReturnType.i    liRow to liRtnType
+    set psParameterList.i liRow to lsParamList
+    set piFuncClass.i     liRow to liFuncClass
+    set piLineDeclared.i  liRow to liLine
+    set piMessage.i       liRow to lhMsg
+  end_function
+
+  function MidFunction string lsValue integer liLen integer liPos returns string
+    function_return (mid(lsValue,liLen,liPos))
+  end_function
+
+  // procedure Handle_Function string lsName integer liReturnType string lsParamList string lsLongParamList
+  procedure CallBack_AllFunctions integer lhMsg integer lhObj
+    integer liRow liMax lhSelf
+    move self to lhSelf
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      send lhMsg to lhObj (psDisplayName.i(lhSelf,liRow)) (piReturnType.i(lhSelf,liRow)) (psParameterList.i(lhSelf,liRow)) (psDisplayParameterList.i(lhSelf,liRow))
+    loop
+  end_procedure
+
+  enumeration_list // Function groups
+    define FG_BEYOND_DESCRIPTION
+    define FG_STRING
+    define FG_DATETIME
+    define FG_LOGIC
+    define FG_TYPECONV
+    define FG_TRIG
+  end_enumeration_list
+
+  procedure reset
+    send delete_data
+    // STRINGS
+    send declare_function "Mid"             VARTYP_STRING  "SII"  FTYPE.GET     0 get_MidFunction FG_STRING
+    send declare_function "Left"            VARTYP_STRING  "SI"   FTYPE.BUILTIN 0 0               FG_STRING
+    send declare_function "Right"           VARTYP_STRING  "SI"   FTYPE.BUILTIN 0 0               FG_STRING
+    send declare_function "Uppercase"       VARTYP_STRING  "S"    FTYPE.BUILTIN 0 0               FG_STRING
+    send declare_function "Lowercase"       VARTYP_STRING  "S"    FTYPE.BUILTIN 0 0               FG_STRING
+    send declare_function "Length"          VARTYP_INTEGER "S"    FTYPE.BUILTIN 0 0               FG_STRING
+    send declare_function "Trim"            VARTYP_STRING  "S"    FTYPE.BUILTIN 0 0               FG_STRING
+    Send declare_function "Pos"             VARTYP_INTEGER "SS"   FTYPE.BUILTIN 0 0 FG_STRING
+    Send declare_function "Replace"         VARTYP_STRING  "SSS"  FTYPE.BUILTIN 0 0 
+    Send declare_function "Replaces"        VARTYP_STRING  "SSS"  FTYPE.BUILTIN 0 0 
+    Send declare_function "Character"       VARTYP_STRING  "I"    FTYPE.BUILTIN 0 0 
+    Send declare_function "TextToCSV"       VARTYP_STRING  "S"    FTYPE.Get     0 get_VmTextToCSV FG_STRING
+
+    if DFFALSE begin
+      send declare_function "Pad"             VARTYP_STRING "SI"    FTYPE.BUILTIN 0 0               FG_STRING
+      send declare_function "NumToStr"        VARTYP_STRING "NI"    FTYPE.GET     0 get_NumToStr    FG_STRING
+      send declare_function "NumToStrR"       VARTYP_STRING "NII"   FTYPE.GET     0 get_NumToStrR   FG_STRING
+      send declare_function "IntToStrR"       VARTYP_STRING "NI"    FTYPE.GET     0 get_IntToStrR   FG_STRING
+      send declare_function "IntToStrRzf"     VARTYP_STRING "NI"    FTYPE.GET     0 get_IntToStrRzf FG_STRING
+    end
+    // DATES
+    send declare_function "SysDate"         VARTYP_DATE    ""     FTYPE.GET     0 get_dSysDate        FG_DATETIME
+    send declare_function "DateIncrement"   VARTYP_DATE    "DII"  FTYPE.GET     0 get_DateIncr        FG_DATETIME
+    send declare_function "FirstDayInMonth" VARTYP_DATE    "D"    FTYPE.GET     0 get_FirstDayInMonth FG_DATETIME
+    if DFFALSE begin
+      send declare_function "SysYear"         VARTYP_INTEGER ""     FTYPE.GET     0 get_iSysYear         FG_DATETIME
+      send declare_function "SysTime"         VARTYP_STRING  ""     FTYPE.GET     0 get_sSysTime         FG_DATETIME
+      send declare_function "DateCompose"     VARTYP_DATE    "III"  FTYPE.GET     0 get_DateCompose      FG_DATETIME
+      send declare_function "StringToDate"    VARTYP_DATE    "SIIS" FTYPE.GET     0 get_StrToDate        FG_DATETIME
+      send declare_function "DateToString"    VARTYP_STRING  "DIIS" FTYPE.GET     0 get_DateToStr        FG_DATETIME
+      send declare_function "DateSegment"     VARTYP_INTEGER "DI"   FTYPE.GET     0 get_vdfq_DateSegment FG_DATETIME
+      send declare_function "LastDayInMonth"  VARTYP_DATE    "D"    FTYPE.GET     0 get_LastDayInMonth   FG_DATETIME
+      send declare_function "FirstDayInYear"  VARTYP_DATE    "D"    FTYPE.GET     0 get_FirstDayInYear   FG_DATETIME
+      send declare_function "LastDayInYear"   VARTYP_DATE    "D"    FTYPE.GET     0 get_LastDayInYear    FG_DATETIME
+    end
+    send declare_function "DateWeekNumber"  VARTYP_INTEGER "D"    FTYPE.GET     0 get_DateWeekNumber   FG_DATETIME
+    send declare_function "DateDayName"     VARTYP_STRING  "D"    FTYPE.GET     0 get_vdfq_DateDayName FG_DATETIME
+    send declare_function "DateMonthName"   VARTYP_STRING  "D"    FTYPE.GET     0 get_vdfq_DateMonthName    FG_DATETIME
+    send declare_function "DateAsText"      VARTYP_STRING  "DS"   FTYPE.GET     0 get_DateAsText       FG_DATETIME
+    if DFFALSE begin
+      send declare_function "DayName"         VARTYP_STRING  "I"    FTYPE.GET     0 get_vdfq_DayName    FG_DATETIME
+      send declare_function "DateDayNumber"   VARTYP_INTEGER "D"    FTYPE.GET     0 get_DateDayNumber   FG_DATETIME
+      send declare_function "WeekToDate"      VARTYP_DATE    "II"   FTYPE.GET     0 get_WeekToDate      FG_DATETIME
+      send declare_function "MonthName"       VARTYP_STRING  "I"    FTYPE.GET     0 get_vdfq_MonthName  FG_DATETIME
+    end
+//    if DFFALSE begin
+      // If
+      send declare_function "If_Int"      VARTYP_INTEGER "III" FTYPE.GET     0 get_VmIntIf     FG_LOGIC
+      send declare_function "If_Num"      VARTYP_NUMBER  "INN" FTYPE.GET     0 get_VmNumIf     FG_LOGIC
+      send declare_function "If_Str"      VARTYP_STRING  "ISS" FTYPE.GET     0 get_VmStrIf     FG_LOGIC
+      send declare_function "If_Dat"      VARTYP_DATE    "IDD" FTYPE.GET     0 get_VmDatIf     FG_LOGIC
+//    end
+    // TYPE CONVERSION
+    send declare_function "Integer"     VARTYP_INTEGER "I"   FTYPE.BUILTIN 0 0               FG_TYPECONV
+    send declare_function "String"      VARTYP_STRING  "S"   FTYPE.BUILTIN 0 0               FG_TYPECONV
+    send declare_function "Number"      VARTYP_NUMBER  "N"   FTYPE.BUILTIN 0 0               FG_TYPECONV
+    send declare_function "Date"        VARTYP_DATE    "D"   FTYPE.BUILTIN 0 0               FG_TYPECONV
+    // GEOMETRY (just for fun, shouldn't be here really)
+    if DFFALSE begin
+      send declare_function "sin"         VARTYP_NUMBER  "N"   FTYPE.BUILTIN 0 0               FG_TRIG
+      send declare_function "cos"         VARTYP_NUMBER  "N"   FTYPE.BUILTIN 0 0               FG_TRIG
+      send declare_function "tan"         VARTYP_NUMBER  "N"   FTYPE.BUILTIN 0 0               FG_TRIG
+    end
+    // LOGICAL
+    send declare_function "not"         VARTYP_INTEGER "I"   FTYPE.BUILTIN 0 0               FG_LOGIC
+
+    if DFFALSE begin
+      // DBMS
+      send declare_function "OpenFile" VARTYP_INTEGER "III" FTYPE.GET 0 get_DBMS_OpenFile FG_BEYOND_DESCRIPTION
+      // Restructuring
+      send declare_function "RS_TableOpenNumber"      VARTYP_INTEGER "I"    FTYPE.GET 0 get_RS_TableOpenNumber      FG_BEYOND_DESCRIPTION
+      send declare_function "RS_TableProbeNumber"     VARTYP_INTEGER "I"    FTYPE.GET 0 get_RS_TableProbeNumber     FG_BEYOND_DESCRIPTION
+      send declare_function "RS_TableCreateName"      VARTYP_INTEGER "S"    FTYPE.GET 0 get_RS_TableCreateName      FG_BEYOND_DESCRIPTION
+      send declare_function "RS_TableDropName"        VARTYP_INTEGER "S"    FTYPE.GET 0 get_RS_TableDropName        FG_BEYOND_DESCRIPTION
+      send declare_function "RS_TableExistsName"      VARTYP_INTEGER "S"    FTYPE.GET 0 get_RS_TableExistsName      FG_BEYOND_DESCRIPTION
+      send declare_function "RS_CurrentFieldCount"    VARTYP_INTEGER ""     FTYPE.GET 0 get_RS_CurrentFieldCount    FG_BEYOND_DESCRIPTION
+      send declare_function "RS_GetFileAttr"          VARTYP_STRING  "I"    FTYPE.GET 0 get_RS_GetFileAttr          FG_BEYOND_DESCRIPTION
+      send declare_function "RS_GetFieldAttr"         VARTYP_STRING  "II"   FTYPE.GET 0 get_RS_GetFieldAttr         FG_BEYOND_DESCRIPTION
+      send declare_function "RS_GetIndexAttr"         VARTYP_STRING  "II"   FTYPE.GET 0 get_RS_GetIndexAttr         FG_BEYOND_DESCRIPTION
+      send declare_function "RS_GetIndexSegAttr"      VARTYP_STRING  "III"  FTYPE.GET 0 get_RS_GetIndexSegAttr      FG_BEYOND_DESCRIPTION
+      send declare_function "RS_GetFileListAttr"      VARTYP_STRING  "I"    FTYPE.GET 0 get_RS_GetFileListAttr      FG_BEYOND_DESCRIPTION
+
+      send declare_function "API_AttrValue_GLOBAL"    VARTYP_STRING  "I"    FTYPE.GET 0 get_API_AttrValue_GLOBAL    FG_BEYOND_DESCRIPTION
+      send declare_function "API_AttrValue_FILELIST"  VARTYP_STRING  "II"   FTYPE.GET 0 get_API_AttrValue_FILELIST  FG_BEYOND_DESCRIPTION
+      send declare_function "API_AttrValue_FILE"      VARTYP_STRING  "II"   FTYPE.GET 0 get_API_AttrValue_FILE      FG_BEYOND_DESCRIPTION
+      send declare_function "API_AttrValue_FIELD"     VARTYP_STRING  "III"  FTYPE.GET 0 get_API_AttrValue_FIELD     FG_BEYOND_DESCRIPTION
+      send declare_function "API_AttrValue_INDEX"     VARTYP_STRING  "III"  FTYPE.GET 0 get_API_AttrValue_INDEX     FG_BEYOND_DESCRIPTION
+      send declare_function "API_AttrValue_IDXSEG"    VARTYP_STRING  "IIII" FTYPE.GET 0 get_API_AttrValue_IDXSEG    FG_BEYOND_DESCRIPTION
+      send declare_function "API_AttrValue_SPECIAL1"  VARTYP_STRING  "IIII" FTYPE.GET 0 get_API_AttrValue_SPECIAL1  FG_BEYOND_DESCRIPTION
+      send declare_function "API_AttrValue_FLSTNAV"   VARTYP_STRING  "II"   FTYPE.GET 0 get_API_AttrValue_FLSTNAV   FG_BEYOND_DESCRIPTION
+      send declare_function "API_AttrValue_DRIVER"    VARTYP_STRING  "II"   FTYPE.GET 0 get_API_AttrValue_DRIVER    FG_BEYOND_DESCRIPTION
+      send declare_function "API_AttrValue_DRVSRV"    VARTYP_STRING  "III"  FTYPE.GET 0 get_API_AttrValue_DRVSRV    FG_BEYOND_DESCRIPTION
+
+      send declare_function "API_Attr_ValueName"      VARTYP_STRING  "IS"   FTYPE.GET 0 get_API_Attr_ValueName      FG_BEYOND_DESCRIPTION
+    end
+    send delete_data to (oParameterStack(self))
+  end_procedure
+  procedure reverse_stack integer how_many#
+    integer obj1# obj2# itm#
+    move (oParameterStack(self))   to obj1#
+    move (oParameterReverse(self)) to obj2#
+    for itm# from 1 to how_many#
+      send push.s to obj2# (sPop(obj1#))
+    loop
+  end_procedure
+  function sExec_Function.i integer liRow returns string
+    integer msg# params# obj#
+    string rval#
+    get piMessage.i liRow to msg#
+    // Apparently the parameters to the get command are evaluated
+    // in reverse order, thus eliminating the need for me to reverse
+    // the parameters. What luck.
+  //move (oParameterReverse(self)) to obj#
+  //move (length(psParameterList.i(self,liRow))) to params#
+  //send reverse_stack params#
+    move (oParameterStack(self)) to obj#
+    move (length(psParameterList.i(self,liRow))) to params#
+    //send reverse_stack params#
+    if msg# begin //
+      if params# eq 0 get msg# to rval#
+      if params# eq 1 get msg# (sPop(obj#)) to rval#
+      if params# eq 2 get msg# (sPop(obj#)) (sPop(obj#)) to rval#
+      if params# eq 3 get msg# (sPop(obj#)) (sPop(obj#)) (sPop(obj#)) to rval#
+      if params# eq 4 get msg# (sPop(obj#)) (sPop(obj#)) (sPop(obj#)) (sPop(obj#)) to rval#
+      if params# eq 5 get msg# (sPop(obj#)) (sPop(obj#)) (sPop(obj#)) (sPop(obj#)) (sPop(obj#)) to rval#
+      if params# eq 6 get msg# (sPop(obj#)) (sPop(obj#)) (sPop(obj#)) (sPop(obj#)) (sPop(obj#)) (sPop(obj#)) to rval#
+      if (piReturnType.i(self,liRow)=VARTYP_DATE) begin
+//      showln "XXX: " rval#
+        function_return (date(rval#))
+      end
+    end
+    else begin // Script defined function
+    end
+    function_return rval#
+  end_function
+  function iNameToNumber.s string name# returns integer
+    integer liRow max#
+    move (uppercase(name#)) to name#
+    get row_count to max#
+    for liRow from 0 to (max#-1)
+      if name# eq (psName.i(self,liRow)) function_return liRow
+    loop
+    function_return -1
+  end_function
+  procedure push_param string param#
+    send Push.s to (oParameterStack(self)) param#
+  end_procedure
+end_class // cDeclaredFunctions
+
+class cResolvedLabels is a cArray // Help class for cLabels class below
+  item_property_list
+    item_property string  psLabelName.i
+    item_property integer piLabelLine.i
+  end_item_property_list cResolvedLabels
+  function iFindLabel.s string labelid# returns integer // Has label already been defined?
+    integer max# liRow
+    get row_count to max#
+    move 0 to liRow
+    while liRow lt max#
+      if labelid# eq (psLabelName.i(self,liRow)) function_return liRow
+      increment liRow
+    end
+    function_return -1 // Not found
+  end_function
+  function iLabelidToLine.s string labelid# returns integer
+    integer liRow line#
+    get iFindLabel.s labelid# to liRow
+    move -1 to line#
+    if liRow ne -1 get piLabelLine.i liRow to line#
+    function_return line#
+  end_function
+  procedure add_resolved_label string labelid# integer line#
+    integer liRow
+    if (iFindLabel.s(self,labelid#)=-1) begin
+      get row_count to liRow
+      set psLabelName.i liRow to labelid#
+      set piLabelLine.i liRow to line#
+    end
+    else send add_ct_error line# ("ERROR! Label already defined: "+labelid#)
+  end_procedure
+  procedure add_resolved_label_no_error string labelid# integer line#
+    integer liRow
+    if (iFindLabel.s(self,labelid#)=-1) begin
+      get row_count to liRow
+      set psLabelName.i liRow to labelid#
+      set piLabelLine.i liRow to line#
+    end
+  end_procedure
+end_class // cResolvedLabels
+
+class cLabels is a cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+    object oResolvedLabels is a cResolvedLabels
+    end_object
+    object oReferredLabels is a cSet
+    end_object
+  end_procedure
+  procedure reset
+    send delete_data
+    send delete_data to (oResolvedLabels(self))
+    send delete_data to (oReferredLabels(self))
+  end_procedure
+  procedure add_resolved_label string labelid# integer line#
+    send add_resolved_label to (oResolvedLabels(self)) labelid# line#
+  end_procedure
+  procedure add_resolved_label_no_error string labelid# integer line#
+    send add_resolved_label_no_error to (oResolvedLabels(self)) labelid# line#
+  end_procedure
+  procedure add_label_reference string labelid# integer obj# integer line#
+    integer labelno#
+    set value item (item_count(self)) to line#
+    get iAddOrFind_Element of (oReferredLabels(self)) labelid# to labelno#
+    set value of obj# item line# to labelno#
+  end_procedure
+  function sResolve_Labels.i integer obj# returns string // Obj# is the program array
+    integer itm# max# line# labelno# reflabels# reslabels# labelline#
+    string labelid# rval#
+    move "" to rval# // All is OK!
+    move (oResolvedLabels(self)) to reslabels#
+    move (oReferredLabels(self)) to reflabels#
+    get item_count to max#
+    for itm# from 0 to (max#-1)
+      get value item itm# to line#
+      get value of obj# item line# to labelno#
+      get value of reflabels# item labelno# to labelid#
+      get iLabelidToLine.s of reslabels# labelid# to labelline#
+      set value of obj# item line# to labelline#
+      if labelline# eq -1 move labelid# to rval#
+    loop
+    function_return rval#
+  end_function
+  function iIsLabelNameUsed.s string label# returns integer
+    integer rval#
+    get element_find of (oReferredLabels(self)) label# to rval#
+    if rval# eq -1 get iFindLabel.s of (oResolvedLabels(self)) label# to rval#
+    if rval# eq -1 function_return 0
+    function_return 1
+  end_function
+end_class // cLabels
+
+class cVariables is a cArray
+  item_property_list
+    item_property string  psName.i
+    item_property string  psValue.i
+    item_property integer piType.i
+  end_item_property_list cVariables
+  function iVarNameToVarNo string name# returns integer
+    integer liRow max# rval#
+    move (uppercase(name#)) to name#
+    get row_count to max#
+    move -1 to rval#
+    move 0 to liRow
+    while (liRow<max# and rval#=-1)
+      if name# eq (psName.i(self,liRow)) move liRow to rval#
+      increment liRow
+    end
+    function_return rval#
+  end_function
+  register_function piProgramCounter returns integer
+  procedure VarNameDeclare string name# integer type#
+    integer liRow
+    move (uppercase(name#)) to name#
+    get iVarNameToVarNo name# to liRow
+    if liRow eq -1 begin
+      get row_count to liRow
+      set psName.i  liRow to name#
+      set psValue.i liRow to ""
+      set piType.i  liRow to type#
+    end
+    else send add_ct_error (piProgramCounter(self)) ("Variable already defined ("+name#+")")
+  end_procedure
+  function sVarValue integer varno# returns string
+    function_return (psValue.i(self,varno#))
+  end_function
+  procedure VarIncrement integer varno# integer amount#
+    set psValue.i varno# to (psValue.i(self,varno#)+amount#)
+  end_procedure
+  procedure VarAssign integer varno# string value#
+    integer type#
+    get piType.i varno# to type#
+    if type# eq VARTYP_INTEGER set psValue.i varno# to (integer(value#))
+    if type# eq VARTYP_NUMBER  set psValue.i varno# to (number(value#))
+    if type# eq VARTYP_DATE    set psValue.i varno# to (date(value#))
+    if type# eq VARTYP_STRING  set psValue.i varno# to (string(value#))
+  end_procedure
+  procedure VarDisplay
+    integer liRow max#
+    string str#
+    move "" to str#
+    get row_count to max#
+    for liRow from 0 to (max#-1)
+      move (str#+psName.i(self,liRow)+": "+psValue.i(self,liRow)) to str#
+      if liRow ne (max#-1) move (str#+character(10)) to str#
+    loop
+    send obs str#
+  end_procedure
+end_class // cVariables
+
+#COMMAND define_exprop
+  define !1
+  if op# eq !1 function_return !2
+#ENDCOMMAND
+
+function sExprOp_Text.i global integer op# returns string
+  enumeration_list
+    define_exprop EXPROP.ERROR           "Error"            //  0
+    define_exprop EXPROP.TYPE            "TypeDef"          //  1
+    define_exprop EXPROP.APPEND          "Append"           //  2
+    define_exprop EXPROP.PUSH_EXPRESSION "PushExpr"         //  3
+    define_exprop EXPROP.PUSH_PARAM      "PushParam"        //  4
+    define_exprop EXPROP.EXEC_FUNCTION   "Exec&Pop&Append"  //  5
+    define_exprop EXPROP.EXEC_SFUNCTION  "Exec&sPop&Append" //  6
+    define_exprop EXPROP.GET_IVAR        "Get iVar"         //  7
+    define_exprop EXPROP.GET_DVAR        "Get dVar"         //  8
+    define_exprop EXPROP.GET_NVAR        "Get nVar"         //  9
+    define_exprop EXPROP.GET_SVAR        "Get sVar"         // 10
+    define_exprop EXPROP.GET_IFIELD      "Get iField"       // 11
+    define_exprop EXPROP.GET_DFIELD      "Get dField"       // 12
+    define_exprop EXPROP.GET_NFIELD      "Get nField"       // 13
+    define_exprop EXPROP.GET_SFIELD      "Get sField"       // 14
+    define_exprop EXPROP.END             "ExprEnd"          // 15
+  end_enumeration_list
+  function_return "Error"
+end_function
+
+desktop_section
+  integer ghExpressionErrorHandler
+  object oExpressionErrorHandler is a cErrorHandlerRedirector 
+    item_property_list
+      item_property integer piError.i
+      item_property string  psErrorText.i
+      item_property integer piErrorLine.i
+    end_item_property_list
+    procedure OnError integer liError string lsErrorText integer liErrorLine
+      integer liRow
+//    showln "Error: "  liError " " lsErrorText " " liErrorLine
+      get row_count to liRow
+      set piError.i     liRow to liError
+      set psErrorText.i liRow to lsErrorText
+      set piErrorLine.i liRow to liErrorLine
+    end_procedure
+    move self to ghExpressionErrorHandler
+  end_object
+end_desktop_section
+
+class cEvalSequence is a cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+    object oStack is a cStack 
+    end_object
+    property integer piFunctionObject 0
+  end_procedure
+  item_property_list
+    item_property integer piOpCode.i
+    item_property string  psVar.i
+  end_item_property_list cEvalSequence
+  function insert_and_append_quotes string str# returns string
+    function_return (MakeStringConstantMax255(str#))
+  end_function
+  register_function iVarValue integer varno# returns integer
+  register_function dVarValue integer varno# returns integer // date
+  register_function nVarValue integer varno# returns number
+  register_function sVarValue integer varno# returns string
+  function iFieldValue integer liFileField returns integer
+    integer liRval
+    get_field_value (liFileField/65536) (mod(liFileField,65536)) to liRval
+    function_return liRval
+  end_function
+  function dFieldValue integer liFileField returns integer //date
+    date ldRval
+    get_field_value (liFileField/65536) (mod(liFileField,65536)) to ldRval
+    function_return ldRval
+  end_function
+  function nFieldValue integer liFileField returns number
+    number lnRval
+    get_field_value (liFileField/65536) (mod(liFileField,65536)) to lnRval
+    function_return lnRval
+  end_function
+  function sFieldValue integer liFileField returns string
+    string lsRval
+    get_field_value (liFileField/65536) (mod(liFileField,65536)) to lsRval
+    function_return (rtrim(lsRval))
+  end_function
+  procedure Handle_ExprEvalError integer liExprId string lsExpr
+    integer liMax liRow
+    string lsValue
+    get row_count of ghExpressionErrorHandler to liMax
+    decrement liMax
+    showln ""
+    showln "DataFlex reported this error:"
+    for liRow from 0 to liMax
+      show (piError.i(ghExpressionErrorHandler,liRow)) ", "
+      get psErrorText.i of ghExpressionErrorHandler liRow to lsValue
+      show lsValue " on line "
+      showln (piErrorLine.i(ghExpressionErrorHandler,liRow))
+    loop
+    showln "while executing this expression:"
+    showln lsExpr
+  end_procedure
+  function sExec_Expression.i integer liExprId returns string
+    integer op# stack# funcobj# liDec liType liRow
+    string expression# lsRval
+    send DoReset to ghExpressionErrorHandler
+    send DoActivate to ghExpressionErrorHandler
+    move liExprId to liRow
+    get_attribute DF_DECIMAL_SEPARATOR to liDec
+    set_attribute DF_DECIMAL_SEPARATOR to 46 // "."
+    move (oStack(self)) to stack#
+    move (piFunctionObject(self)) to funcobj#
+ // showln "Hello "  liRow " " (value(self,liRow-1))
+ //
+ // direct_output channel 1 "c:\cc.ccc"
+ // for windowindex from 0 to (item_count(self)-1)
+ //   writeln channel 1 (value(self,windowindex))
+ // loop
+ // close_output channel 1
+ // send obs "OK!"
+
+    move "" to expression#
+    get psVar.i (liRow-1) to liType
+    repeat
+      get piOpCode.i liRow to op#
+      //showln (sExprOp_Text.i(op#)) " " (psVar.i(self,liRow)) " Expr: " expression#
+      if op# ne EXPROP.END begin
+        if op# eq EXPROP.GET_IVAR move (expression#+string(iVarValue(self,psVar.i(self,liRow)))) to expression#
+        if op# eq EXPROP.GET_DVAR move (expression#+string(dVarValue(self,psVar.i(self,liRow)))) to expression#
+        if op# eq EXPROP.GET_NVAR move (expression#+string(nVarValue(self,psVar.i(self,liRow)))) to expression#
+        if op# eq EXPROP.GET_SVAR move (expression#+MakeStringConstantMax255(sVarValue(self,psVar.i(self,liRow)))) to expression#
+        if op# eq EXPROP.GET_IFIELD move (expression#+string(iFieldValue(self,psVar.i(self,liRow)))) to expression#
+        if op# eq EXPROP.GET_DFIELD move (expression#+string(dFieldValue(self,psVar.i(self,liRow)))) to expression#
+        if op# eq EXPROP.GET_NFIELD move (expression#+string(nFieldValue(self,psVar.i(self,liRow)))) to expression#
+        if op# eq EXPROP.GET_SFIELD move (expression#+MakeStringConstantMax255(sFieldValue(self,psVar.i(self,liRow)))) to expression#
+        if op# eq EXPROP.APPEND move (expression#+psVar.i(self,liRow)) to expression#
+        if op# eq EXPROP.PUSH_EXPRESSION begin
+          send push.s to stack# expression#
+          move "" to expression#
+        end
+        if op# eq EXPROP.PUSH_PARAM begin
+          send push_param to funcobj# (eval(expression#))
+          move "" to expression#
+        end
+        if op# eq EXPROP.EXEC_FUNCTION begin // Exec, Pop Expr and Append
+          get sExec_Function.i of funcobj# (integer(psVar.i(self,liRow))) to expression#
+          move (sPop(stack#)+expression#) to expression#
+        end
+        if op# eq EXPROP.EXEC_SFUNCTION begin // Exec, Pop Expr and Append
+          // In this case we have to insert and append quotes
+          get sExec_Function.i of funcobj# (integer(psVar.i(self,liRow))) to expression#
+          get insert_and_append_quotes expression# to expression#
+          move (sPop(stack#)+expression#) to expression#
+        end
+      end
+      increment liRow
+//      showln ": " expression#
+    until op# eq EXPROP.END
+    if (expression#="()") move "" to lsRval
+    else move (eval(expression#)) to lsRval
+//  showln expression#
+    set_attribute DF_DECIMAL_SEPARATOR to liDec
+//  showln "After expr1: " liDec " " liType " Value: " lsRval
+
+    if (liType=VARTYP_DATE) begin
+      move (date(lsRval)) to lsRval
+    end
+    if (liType=VARTYP_NUMBER or liType=VARTYP_INTEGER) begin
+//    showln "Was number or integer " lsRval
+      if (liDec<>46) move (replace(".",lsRval,",")) to lsRval
+    end
+//    showln "After expr2: " liDec " " liType " Value: " lsRval
+    send DoDeactivate to ghExpressionErrorHandler
+    if (row_count(ghExpressionErrorHandler)) begin
+      // Af this point we know that there was an error while evaluating
+      // the expression.
+      send Handle_ExprEvalError liExprId expression#
+    end
+    function_return lsRval
+  end_function
+  procedure add_expr_instruction integer op# string item#
+    integer liRow
+    get row_count to liRow
+    set piOpCode.i liRow to op#
+    set psVar.i    liRow to item#
+  end_procedure
+  procedure RemoveSuperfluousPar
+//  integer max#
+//  get row_count to max#
+//  decrement max#
+//  decrement max#
+//  if (piOpCode.i(self,1)=EXPROP.APPEND and psVar.i(self,1)="(" and piOpCode.i(self,max#)=EXPROP.APPEND and psVar.i(self,max#)=")") begin
+//    send delete_row max#
+//    send delete_row 1
+//    send RemoveSuperfluousPar
+//  end
+  end_procedure
+  procedure Optimize
+    integer liRow
+    send RemoveSuperfluousPar
+    move 0 to liRow
+    while (liRow<row_count(self))
+      if (piOpCode.i(self,liRow)=EXPROP.APPEND and piOpCode.i(self,liRow+1)=EXPROP.APPEND) begin
+        set psVar.i liRow to (psVar.i(self,liRow)+psVar.i(self,liRow+1))
+        send delete_row (liRow+1)
+      end
+      else increment liRow
+    end
+  end_procedure
+  procedure reset
+    send delete_data
+    send delete_data to (oStack(self))
+  end_procedure
+  function iAppendToOtherSequence integer target_obj# returns integer
+    integer liRow remote_row# max#
+    get row_count of target_obj# to remote_row#
+    get row_count to max#
+    decrement max#
+    for liRow from 0 to max#
+      send add_expr_instruction to target_obj# (piOpCode.i(self,liRow)) (psVar.i(self,liRow))
+    loop
+    function_return remote_row#
+  end_function
+end_class // cEvalSequence
+
+register_procedure mthd_Nop
+register_procedure mthd_ClearScreen
+register_procedure mthd_Abort
+register_procedure mthd_Gosub
+register_procedure mthd_Goto
+register_procedure mthd_Return
+register_procedure mthd_ShowLn
+register_procedure mthd_Show
+register_procedure mthd_SeqFile
+register_procedure mthd_WriteLn
+register_procedure mthd_MsgBox
+register_procedure mthd_GotoXY
+register_procedure mthd_Input
+register_procedure mthd_Pause
+register_procedure mthd_Assign
+register_procedure mthd_gVar_Incr
+register_procedure mthd_gVar_Display
+register_procedure mthd_if_goto
+register_procedure mthd_if_gosub
+register_procedure mthd_iftest_goto
+register_procedure mthd_iftest_gosub
+register_procedure mthd_debug
+register_procedure mthd_log_open
+register_procedure mthd_log_close
+register_procedure mthd_log_display
+register_procedure mthd_log_flush
+register_procedure mthd_log_write
+register_procedure mthd_log_writeln
+register_procedure mthd_api_filelist
+register_procedure mthd_api_file
+register_procedure mthd_api_field
+register_procedure mthd_api_index
+register_procedure mthd_api_idxseg
+register_procedure mthd_api_structure_abort
+register_procedure mthd_api_structure_end
+register_procedure mthd_api_probe_end
+register_procedure mthd_api_deleteindex
+register_procedure mthd_api_deletefield
+register_procedure mthd_api_appendfield
+register_procedure mthd_api_createfield
+register_procedure mthd_api_setfieldnumber
+
+integer oVM_CurrentlyExecuting#
+class cBasicVirtualMachine is an cArray
+  procedure construct_object integer img#
+    forward send construct_object img#
+    property integer piProgramCounter      0
+    property integer piInvalidProgram      0
+    property integer piDebugState          0
+    property integer piDebugSingleStep     0
+    property string  psDebugLine           ""
+    property integer pCurrentOpCodeLine    0
+    property integer pProgramEnded         0
+    property integer private.piLogChannel  -1
+    property string  private.psLogFileName ""
+    property integer phFDX_Server          0
+    object oOpcodes is a cOpCodes // OpCodes -> messages id's
+      send add_opcode OP_NOP                 "No operation"    msg_mthd_Nop                 0 0
+      send add_opcode OP_ABORT               "EndProgram."     msg_mthd_Abort               0 0
+      send add_opcode OP_CLEARSCREEN         "ClearScreen"     msg_mthd_ClearScreen         0 0
+      send add_opcode OP_GOSUB               "Gosub"           msg_mthd_Gosub               1 0
+      send add_opcode OP_GOTO                "Goto"            msg_mthd_Goto                1 0
+      send add_opcode OP_RETURN              "Return"          msg_mthd_Return              0 0
+      send add_opcode OP_SHOWLN              "ShowLn"          msg_mthd_ShowLn              1 0
+      send add_opcode OP_SHOW                "Show"            msg_mthd_Show                1 0
+      send add_opcode OP_SEQFILE             "SeqFile"         msg_mthd_SeqFile             2 0
+      send add_opcode OP_WRITELN             "WriteLn"         msg_mthd_WriteLn             1 0
+      send add_opcode OP_MSGBOX              "MsgBox"          msg_mthd_MsgBox              1 0
+      send add_opcode OP_INPUT               "Input"           msg_mthd_Input               2 0
+      send add_opcode OP_GOTOXY              "GotoXY"          msg_mthd_GotoXY              2 0
+      send add_opcode OP_PAUSE               "Pause"           msg_mthd_Pause               0 0
+      send add_opcode OP_ASSIGN              "Assign"          msg_mthd_Assign              2 0
+      send add_opcode OP_GVAR_INCR           "gVarIncrement"   msg_mthd_gVar_Incr           2 0
+      send add_opcode OP_GVAR_DISPLAY        "gVarDisplay"     msg_mthd_gVar_Display        0 0
+      send add_opcode OP_IF_GOTO             "IfGoto"          msg_mthd_if_goto             2 0
+      send add_opcode OP_IF_GOSUB            "IfGoSub"         msg_mthd_if_gosub            2 0
+      send add_opcode OP_IFTEST_GOTO         "IfTestGoto"      msg_mthd_iftest_goto         4 0
+      send add_opcode OP_IFTEST_GOSUB        "IfTestGoSub"     msg_mthd_iftest_gosub        4 0
+      send add_opcode OP_DEBUG               "Debug"           msg_mthd_debug               1 0
+      send add_opcode OP_LOG_OPEN            "LogOpen"         msg_mthd_log_open            2 0
+      send add_opcode OP_LOG_CLOSE           "LogClose"        msg_mthd_log_close           0 0
+      send add_opcode OP_LOG_DISPLAY         "LogDisplay"      msg_mthd_log_display         0 0
+      send add_opcode OP_LOG_FLUSH           "LogFlush"        msg_mthd_log_flush           0 0
+      send add_opcode OP_LOG_WRITE           "LogWrite"        msg_mthd_log_write           1 0
+      send add_opcode OP_LOG_WRITELN         "LogWriteLn"      msg_mthd_log_writeln         1 0
+      send add_opcode OP_API_FILELIST        "SetAttrFileList" msg_mthd_api_filelist        3 0
+      send add_opcode OP_API_FILE            "SetAttrFile"     msg_mthd_api_file            2 0
+      send add_opcode OP_API_FIELD           "SetAttrField"    msg_mthd_api_field           3 0
+      send add_opcode OP_API_INDEX           "SetAttrIndex"    msg_mthd_api_index           3 0
+      send add_opcode OP_API_IDXSEG          "SetAttrIdxSeg"   msg_mthd_api_idxseg          4 0
+      send add_opcode OP_API_STRUCTURE_ABORT "StructureAbort"  msg_mthd_api_structure_abort 0 0
+      send add_opcode OP_API_STRUCTURE_END   "StructureEnd"    msg_mthd_api_structure_end   0 0
+      send add_opcode OP_API_PROBE_END       "ProbeEnd"        msg_mthd_api_probe_end       0 0
+      send add_opcode OP_API_DELETEINDEX     "DeleteIndex"     msg_mthd_api_deleteindex     1 0
+      send add_opcode OP_API_DELETEFIELD     "DeleteField"     msg_mthd_api_deletefield     1 0
+      send add_opcode OP_API_APPENDFIELD     "AppendField"     msg_mthd_api_appendfield     2 0
+      send add_opcode OP_API_CREATEFIELD     "CreateField"     msg_mthd_api_createfield     3 0
+      send add_opcode OP_API_SETFIELDNUMBER  "SetFieldNumber"  msg_mthd_api_setfieldnumber  1 0
+    end_object
+    object oLabels is a cLabels  // Used during program entry
+    end_object
+    object oReturnAddressStack is a cStack  // Return addresses (Gosub's)
+    end_object
+    object oVariables is a cVariables 
+    end_object
+    object oDeclaredArrays is a cDeclaredArrays 
+    end_object
+    object oDeclaredFunctions is a cDeclaredFunctions 
+    end_object
+    object oExprEvalSequences is a cEvalSequence
+      set piFunctionObject to (oDeclaredFunctions(self))
+    end_object
+  end_procedure
+
+  procedure add_opcode integer opcode# string name# integer msg# integer params# integer special_add_msg#
+    send add_opcode to (oOpcodes(self)) opcode# name# msg# params# special_add_msg#
+  end_procedure
+
+  function sEvalExpression integer id# returns string
+    function_return (sExec_Expression.i(oExprEvalSequences(self),id#))
+  end_function
+
+  function sArgValue.is integer type# string arg# returns string
+    if type# eq AT_VARNO get sVarValue arg# to arg#
+    if type# eq AT_EXPR  get sEvalExpression arg# to arg#
+    if type# eq AT_FIELDNO get_field_value (hi(integer(arg#))) (low(integer(arg#))) to arg#
+    if type# eq AT_ARRAY_ELEM get sAssigned_Value.ii of (oDeclaredArrays(self)) (hi(integer(arg#))) (low(integer(arg#))) to arg#
+    function_return arg#
+  end_function
+
+  function sArgType.is integer type# string arg# returns string
+    integer rval#
+    move -1 to rval# // Unknown type
+    if type# eq AT_CINT move VARTYP_INTEGER to rval#
+    if type# eq AT_CSTR move VARTYP_STRING to rval#
+    if type# eq AT_CNUM move VARTYP_NUMBER to rval#
+    if type# eq AT_CDAT move VARTYP_DATE to rval#
+    if type# eq AT_FIELDNO begin
+      get_attribute DF_FIELD_TYPE of (hi(integer(arg#))) (low(integer(arg#))) to type#
+      if type# eq DF_ASCII   move VARTYP_STRING to type#
+      if type# eq DF_BCD     move VARTYP_NUMBER to type#
+      if type# eq DF_DATE    move VARTYP_DATE   to type#
+      if type# eq DF_OVERLAP move VARTYP_STRING to type#
+      if type# eq DF_TEXT    move VARTYP_STRING to type#
+      if type# eq DF_BINARY  move VARTYP_STRING to type#
+    end
+    if type# eq AT_VARNO begin
+      get piType.i of (oVariables(self)) arg# to rval#
+      function_return rval#
+    end
+    if type# eq AT_EXPR function_return (psVar.i(oExprEvalSequences(self),integer(arg#)-1))
+    if type# eq AT_ARRAY_ELEM function_return (piType.i(oDeclaredArrays(self),hi(integer(arg#))))
+    function_return rval#
+  end_function
+
+  function iVarType.i integer varno# returns integer
+    function_return (piType.i(oVariables(self),varno#))
+  end_function
+  function iVarType.s string name# returns integer
+    integer varno#
+    get iVarNameToVarNo name# to varno#
+    if varno# eq -1 function_return -1
+    function_return (piType.i(oVariables(self),varno#))
+  end_function
+
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  // These procedures are used when EXECUTING each valid OP-code
+  procedure mthd_Nop
+  end_procedure
+  procedure mthd_ClearScreen
+    clearscreen
+  end_procedure
+  procedure mthd_Abort
+    send reset // Clean up variables and arrays
+    set pProgramEnded to 1
+  end_procedure
+  procedure mthd_Gosub integer type# integer line#
+    get sArgValue.is type# line# to line#
+    integer pc#
+    get piProgramCounter to pc#
+    send Push.i to (oReturnAddressStack(self)) pc#
+    set piProgramCounter to line#
+  end_procedure
+  procedure mthd_Goto integer type# integer line#
+    get sArgValue.is type# line# to line#
+    set piProgramCounter to line#
+  end_procedure
+  procedure mthd_Return
+    set piProgramCounter to (iPop(oReturnAddressStack(self)))
+  end_procedure
+  procedure mthd_ShowLn integer type# string str#
+    get sArgValue.is type# str# to str#
+    showln str#
+  end_procedure
+  procedure mthd_Show integer type# string str#
+    get sArgValue.is type# str# to str#
+    show str#
+  end_procedure
+  procedure mthd_SeqFile integer type1# integer op# integer type2# string fn#
+  end_procedure
+  procedure mthd_WriteLn integer type# string str#
+  end_procedure
+  procedure mthd_MsgBox integer type# string str#
+    get sArgValue.is type# str# to str#
+    send obs str#
+  end_procedure
+  procedure mthd_GotoXY integer t1# integer v1# integer t2# integer v2#
+    get sArgValue.is t1# v1# to v1#
+    get sArgValue.is t2# v2# to v2#
+    gotoxy v1# v2#
+  end_procedure
+  procedure mthd_Input integer type# integer varno# integer type2# string label#
+    string value#
+    get sArgValue.is type2# label# to label#
+    show label#
+    input value#
+    send VarAssign to (oVariables(self)) varno# value#
+  end_procedure
+  procedure mthd_Pause
+    string grb#
+    inkey grb#
+  end_procedure
+  procedure mthd_Assign integer type# string varno# integer type2# string value#
+//    send obs "mthd_Assign" type# varno# type2# value#
+    get sArgValue.is type2# value# to value# // Source value
+    if type# eq AT_FIELDNO set_field_value (hi(integer(varno#))) (low(integer(varno#))) to value#
+    else if type# eq AT_ARRAY_ELEM send Assign_Value to (oDeclaredArrays(self)) (hi(integer(varno#))) (low(integer(varno#))) value#
+    else send VarAssign to (oVariables(self)) varno# value#
+  end_procedure
+  procedure mthd_gVar_Incr integer type# integer varno# integer type2# integer amount#
+    get sArgValue.is type2# amount# to amount#
+    send VarIncrement to (oVariables(self)) varno# amount#
+  end_procedure
+  procedure mthd_gVar_Display
+    send VarDisplay to (oVariables(self))
+  end_procedure
+  procedure mthd_if_goto integer type# integer varno# integer type2# integer line#
+    integer bool#
+    get sArgValue.is type2# line# to line#
+    get psValue.i of (oVariables(self)) varno# to bool#
+    if bool# set piProgramCounter to line#
+  end_procedure
+  procedure mthd_if_gosub integer type# integer varno# integer type2# integer line#
+    integer bool# pc#
+    get sArgValue.is type2# line# to line#
+    get psValue.i of (oVariables(self)) varno# to bool#
+    if bool# begin
+      get piProgramCounter to pc#
+      send Push.i to (oReturnAddressStack(self)) pc#
+      set piProgramCounter to line#
+    end
+  end_procedure
+  function iIfTest_Help.iiiiii integer t1# string arg1# ;
+                               integer t2# integer comp# ;
+                               integer t3# string arg2# returns integer
+    integer vcomp# type# i1# i2# bool#
+    number n1# n2#
+    date   d1# d2#
+    move -1 to bool#
+    get sArgType.is t1# arg1# to type#
+    get sArgValue.is t1# arg1# to arg1#
+    get sArgValue.is t3# arg2# to arg2#
+    if type# eq VARTYP_INTEGER begin
+      move 0 to bool#
+      move arg1# to i1#
+      move arg2# to i2#
+      if comp# eq COMP_LT move (i1#<i2#)  to bool#
+      if comp# eq COMP_LE move (i1#<=i2#) to bool#
+      if comp# eq COMP_EQ move (i1#=i2#)  to bool#
+      if comp# eq COMP_GE move (i1#>=i2#) to bool#
+      if comp# eq COMP_GT move (i1#>i2#)  to bool#
+      if comp# eq COMP_NE move (i1#<>i2#) to bool#
+    end
+    if type# eq VARTYP_NUMBER begin
+      move 0 to bool#
+      move arg1# to n1#
+      move arg2# to n2#
+      if comp# eq COMP_LT move (n1#<n2#)  to bool#
+      if comp# eq COMP_LE move (n1#<=n2#) to bool#
+      if comp# eq COMP_EQ move (n1#=n2#)  to bool#
+      if comp# eq COMP_GE move (n1#>=n2#) to bool#
+      if comp# eq COMP_GT move (n1#>n2#)  to bool#
+      if comp# eq COMP_NE move (n1#<>n2#) to bool#
+    end
+    if type# eq VARTYP_DATE begin
+      move 0 to bool#
+      move arg1# to d1#
+      move arg2# to d2#
+      if comp# eq COMP_LT move (d1#<d2#)  to bool#
+      if comp# eq COMP_LE move (d1#<=d2#) to bool#
+      if comp# eq COMP_EQ move (d1#=d2#)  to bool#
+      if comp# eq COMP_GE move (d1#>=d2#) to bool#
+      if comp# eq COMP_GT move (d1#>d2#)  to bool#
+      if comp# eq COMP_NE move (d1#<>d2#) to bool#
+    end
+    if type# eq VARTYP_STRING begin
+      move 0 to bool#
+      if comp# eq COMP_LT if arg1# LT arg2# move 1 to bool#
+      if comp# eq COMP_LE if arg1# LE arg2# move 1 to bool#
+      if comp# eq COMP_EQ if arg1# EQ arg2# move 1 to bool#
+      if comp# eq COMP_GE if arg1# GE arg2# move 1 to bool#
+      if comp# eq COMP_GT if arg1# GT arg2# move 1 to bool#
+      if comp# eq COMP_NE if arg1# NE arg2# move 1 to bool#
+    end
+    if bool# eq -1 send obs "Bad comparison, if-test failed"
+    function_return bool#
+  end_function
+  procedure mthd_iftest_goto integer t1# string varno1# integer t2# integer comp# integer t3# string varno2# integer t4# integer line#
+    integer bool# pc#
+    get sArgValue.is t4# line# to line#
+    get iIfTest_Help.iiiiii t1# varno1# t2# comp# t3# varno2# to bool#
+    if bool# set piProgramCounter to line#
+  end_procedure
+  procedure mthd_iftest_gosub integer t1# string varno1# integer t2# integer comp# integer t3# string varno2# integer t4# integer line#
+    integer bool# pc#
+    get sArgValue.is t4# line# to line#
+    get iIfTest_Help.iiiiii t1# varno1# t2# comp# t3# varno2# to bool#
+    if bool# begin
+      get piProgramCounter to pc#
+      send Push.i to (oReturnAddressStack(self)) pc#
+      set piProgramCounter to line#
+    end
+  end_procedure
+  enumeration_list
+    define DBG.OFF
+    define DBG.ON
+    define DBG.SINGLESTEP
+    define DBG.VARDISPLAY
+  end_enumeration_list
+  procedure mthd_debug integer t1# string value#
+    get sArgValue.is t1# value# to value#
+    if (integer(value#)) eq DBG.OFF begin
+      set piDebugState to 0
+      set piDebugSingleStep to 0
+    end
+    if (integer(value#)) eq DBG.ON begin
+      set piDebugState to 1
+      set piDebugSingleStep to 0
+    end
+    if (integer(value#)) eq DBG.SINGLESTEP begin
+      set piDebugState to 1
+      set piDebugSingleStep to 1
+    end
+    if (integer(value#)) eq DBG.VARDISPLAY send VarDisplay to (oVariables(self))
+  end_procedure
+  procedure mthd_log_open integer t1# string fn# integer t2# string append#
+    integer ch#
+    get sArgValue.is t1# fn# to fn#
+    get sArgValue.is t2# append# to append#
+    get private.piLogChannel to ch#
+    if ch# eq -1 begin
+      if (integer(append#)) move (SEQ_AppendOutput(fn#)) to ch#
+      else move (SEQ_DirectOutput(fn#)) to ch#
+      set private.piLogChannel  to ch#
+      set private.psLogFileName to fn#
+    end
+    // else some kind of runtime error
+  end_procedure
+  procedure mthd_log_close
+    integer ch#
+    get private.piLogChannel to ch#
+    if (ch#>=0) begin
+      send SEQ_CloseOutput ch#
+      set private.piLogChannel to -1
+    end
+    // else some kind of runtime error
+  end_procedure
+  procedure mthd_log_display
+    send output.display_file (private.psLogFileName(self))
+  end_procedure
+  procedure mthd_log_flush
+    integer ch#
+    get private.piLogChannel to ch#
+    if (ch#>=0) begin
+      close_output channel ch#
+      append_output channel ch# (private.psLogFileName(self))
+    end
+    // else some kind of runtime error
+  end_procedure
+  procedure mthd_log_write integer type# string str#
+    integer ch#
+    get sArgValue.is type# str# to str#
+    get private.piLogChannel to ch#
+    if (ch#>=0) write channel ch# str#
+  end_procedure
+  procedure mthd_log_writeln integer type# string str#
+    integer ch#
+    get sArgValue.is type# str# to str#
+    get private.piLogChannel to ch#
+    if (ch#>=0) writeln channel ch# str#
+  end_procedure
+  procedure mthd_api_filelist integer t1# string a1# integer t2# string a2# integer t3# string a3#
+    get sArgValue.is t1# a1# to a1#
+    get sArgValue.is t2# a2# to a2#
+    get sArgValue.is t3# a3# to a3#
+    send RS_SetFileListAttr a1# a2# a3#
+  end_procedure
+  procedure mthd_api_file integer t1# string a1# integer t2# string a2#
+    get sArgValue.is t1# a1# to a1#
+    get sArgValue.is t2# a2# to a2#
+    send RS_SetFileAttr a1# a2#
+  end_procedure
+  procedure mthd_api_field integer t1# string a1# integer t2# string a2# integer t3# string a3#
+    get sArgValue.is t1# a1# to a1#
+    get sArgValue.is t2# a2# to a2#
+    get sArgValue.is t3# a3# to a3#
+    send RS_SetFieldAttr a1# a2# a3#
+  end_procedure
+  procedure mthd_api_index integer t1# string a1# integer t2# string a2# integer t3# string a3#
+    get sArgValue.is t1# a1# to a1#
+    get sArgValue.is t2# a2# to a2#
+    get sArgValue.is t3# a3# to a3#
+    send RS_SetIndexAttr a1# a2# a3#
+  end_procedure
+  procedure mthd_api_idxseg integer t1# string a1# integer t2# string a2# integer t3# string a3# integer t4# string a4#
+    get sArgValue.is t1# a1# to a1#
+    get sArgValue.is t2# a2# to a2#
+    get sArgValue.is t3# a3# to a3#
+    get sArgValue.is t4# a4# to a4#
+    send RS_SetIndexSegAttr a1# a2# a3# a4#
+  end_procedure
+  procedure mthd_api_structure_abort
+    send RS_Structure_Abort
+  end_procedure
+  procedure mthd_api_structure_end
+    send RS_Structure_End
+  end_procedure
+  procedure mthd_api_probe_end
+    send RS_Probe_End
+  end_procedure
+  procedure mthd_api_DeleteIndex integer t1# string a1#
+    get sArgValue.is t1# a1# to a1#
+    send RS_DeleteIndex a1#
+  end_procedure
+  procedure mthd_api_DeleteField integer t1# string a1#
+    get sArgValue.is t1# a1# to a1#
+    send RS_DeleteField a1#
+  end_procedure
+  procedure mthd_api_AppendField integer t1# string a1# integer t2# string a2#
+    get sArgValue.is t1# a1# to a1#
+    get sArgValue.is t2# a2# to a2#
+    send RS_AppendField a1# a2#
+  end_procedure
+  procedure mthd_api_CreateField integer t1# string a1# integer t2# string a2# integer t3# string a3#
+    get sArgValue.is t1# a1# to a1#
+    get sArgValue.is t2# a2# to a2#
+    get sArgValue.is t3# a3# to a3#
+    send RS_CreateField a1# a2# a3#
+  end_procedure
+  procedure mthd_api_SetFieldNumber integer t1# string a1#
+    get sArgValue.is t1# a1# to a1#
+    send RS_SetFieldNumber a1#
+  end_procedure
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  procedure add_ct_error integer line# string msg#
+    send obs ("Error in line "+string(line#)) msg#
+    set piInvalidProgram to true
+  end_procedure
+  procedure reset
+    send delete_data
+    send reset to (oLabels(self))
+    send reset to (oDeclaredArrays(self))
+    send reset to (oDeclaredFunctions(self))
+    send reset to (oExprEvalSequences(self))
+    send delete_data to (oReturnAddressStack(self))
+    send delete_data to (oVariables(self))
+    set piProgramCounter to 0
+    set piInvalidProgram to 0
+    set pCurrentOpCodeLine to 0
+    set pProgramEnded to 0
+    set private.piLogChannel  to -1
+    set private.psLogFileName to ""
+  end_procedure
+  procedure increment_pc integer tmp_amount#
+    integer amount#
+    if num_arguments move tmp_amount# to amount#
+    else move 1 to amount#
+    set piProgramCounter to (piProgramCounter(self)+amount#)
+  end_procedure
+  function sGetData returns string
+    string rval#
+    get value item (piProgramCounter(self)) to rval#
+    send increment_pc
+    function_return rval#
+  end_function
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  // These procedures are used for EXECUTING a program
+  procedure add_debug_line integer display# integer opcode# integer typ1# string arg1# integer typ2# string arg2# integer typ3# string arg3# integer typ4# string arg4# integer typ5# string arg5# integer typ6# string arg6#
+    integer num_arguments#
+    string grb# str#
+    get piParameters.i of (oOpcodes(self)) item opcode# to num_arguments#
+    move "Line #: #" to str#
+    replace "#" in str# with (IntToStrRzf(pCurrentOpCodeLine(self),length(string(item_count(self)-1))))
+    replace "#" in str# with (psName.i(oOpcodes(self),opcode#))
+    if num_arguments# ge 1 move (str#+" "+sArgtype_Name.i(typ1#)+"["+arg1#+"]") to str#
+    if num_arguments# ge 2 move (str#+" "+sArgtype_Name.i(typ2#)+"["+arg2#+"]") to str#
+    if num_arguments# ge 3 move (str#+" "+sArgtype_Name.i(typ3#)+"["+arg3#+"]") to str#
+    if num_arguments# ge 4 move (str#+" "+sArgtype_Name.i(typ4#)+"["+arg4#+"]") to str#
+    if num_arguments# ge 5 move (str#+" "+sArgtype_Name.i(typ5#)+"["+arg5#+"]") to str#
+    if num_arguments# ge 6 move (str#+" "+sArgtype_Name.i(typ6#)+"["+arg6#+"]") to str#
+    set psDebugLine to str#
+    if display# begin
+      showln str#
+      if (piDebugSingleStep(self)) inkey grb#
+    end
+  end_procedure
+  procedure illegal_opcode integer opcode#
+    send add_ct_error (piProgramCounter(self)-1) ("Illegal OPCODE ("+string(opcode#)+")")
+  end_procedure
+  procedure exec_instruction integer opcode# integer exec#
+    integer msg# num_arguments# oOpCodes#
+    integer typ1# typ2# typ3# typ4# typ5# typ6#
+    string arg1# arg2# arg3# arg4# arg5# arg6#
+    //send obs (psName.i(oOpCodes(self),opcode#))
+    move (oOpCodes(self)) to oOpCodes#
+    get piMessage.i    of oOpCodes# opcode# to msg#
+    get piParameters.i of oOpCodes# opcode# to num_arguments#
+    if num_arguments# ge 1 get sGetData to typ1#
+    if num_arguments# ge 1 get sGetData to arg1#
+    if num_arguments# ge 2 get sGetData to typ2#
+    if num_arguments# ge 2 get sGetData to arg2#
+    if num_arguments# ge 3 get sGetData to typ3#
+    if num_arguments# ge 3 get sGetData to arg3#
+    if num_arguments# ge 4 get sGetData to typ4#
+    if num_arguments# ge 4 get sGetData to arg4#
+    if num_arguments# ge 5 get sGetData to typ5#
+    if num_arguments# ge 5 get sGetData to arg5#
+    if num_arguments# ge 6 get sGetData to typ6#
+    if num_arguments# ge 6 get sGetData to arg6#
+    if (piDebugState(self)) ;
+      send add_debug_line exec# opcode# typ1# arg1# typ2# arg2# typ3# arg3# typ4# arg4# typ5# arg5# typ6# arg6#
+    if exec# begin
+      if num_arguments# eq 0 send msg#
+      if num_arguments# eq 1 send msg# typ1# arg1#
+      if num_arguments# eq 2 send msg# typ1# arg1# typ2# arg2#
+      if num_arguments# eq 3 send msg# typ1# arg1# typ2# arg2# typ3# arg3#
+      if num_arguments# eq 4 send msg# typ1# arg1# typ2# arg2# typ3# arg3# typ4# arg4#
+      if num_arguments# eq 5 send msg# typ1# arg1# typ2# arg2# typ3# arg3# typ4# arg4# typ5# arg5#
+      if num_arguments# eq 6 send msg# typ1# arg1# typ2# arg2# typ3# arg3# typ4# arg4# typ5# arg5# typ6# arg6#
+    end
+  end_procedure
+  function sExecutingLine returns string
+    integer opcode# st#
+    get piDebugState to st#
+    set piDebugState to true
+    set piProgramCounter to (pCurrentOpCodeLine(self))
+    get value item (pCurrentOpCodeLine(self)) to opcode#
+    send increment_pc
+    send exec_instruction opcode# 0
+    set piDebugState to st#
+    function_return (psDebugLine(self))
+  end_function
+  procedure run_script
+    integer pc# max# opcode# max_line#
+    ifnot (piInvalidProgram(self)) begin
+      set piProgramCounter to 0
+      set pProgramEnded to 0
+      move self to oVM_CurrentlyExecuting#
+      send delete_data to (oReturnAddressStack(self))
+      move 0 to max_line#
+      send DFScriptError_On
+      get piProgramCounter to pc#
+      get item_count to max#
+      screenmode 1
+      while (pc#<max# and not(pProgramEnded(self))) // Program ends if we reach the end of the array
+        get value item pc# to opcode#
+        set pCurrentOpCodeLine to pc#
+        send increment_pc
+        send exec_instruction opcode# 1
+        get piProgramCounter to pc#
+        increment max_line#
+        if max_line# gt 10000 begin
+          if (MB_Verify4("","Max lines encountered!","Execute another "+string(10000)+" instructions?","",1)) move 0 to max_line#
+          else set pProgramEnded to true
+        end
+      end
+      if (private.piLogChannel(self)<>-1) begin // Close log file and release channel
+        send SEQ_CloseOutput (private.piLogChannel(self))
+        set private.piLogChannel to -1
+      end
+      send DFScriptError_Off
+    end
+    else send obs "Errors where found during" "script interpretation." "The program will not execute!"
+    move 0 to oVM_CurrentlyExecuting#
+  end_procedure
+
+  procedure program_init
+    set private.piLogChannel  to -1
+    //intended for augmentation (Define SCREENEND and the like)
+  end_procedure
+
+  procedure AddOpcode.i integer opcode#
+    set value item (piProgramCounter(self)) to opcode#
+    send increment_pc
+  end_procedure
+  procedure script_begin
+    send reset
+    send program_init
+  end_procedure
+  procedure private.resolve_labels
+    integer self#
+    string unresolved_label#
+    move self to self#
+    get sResolve_Labels.i of (oLabels(self)) self# to unresolved_label#
+    if unresolved_label# ne "" send add_ct_error (piProgramCounter(self)-1) ("Unresolved label ("+unresolved_label#+")")
+  end_procedure
+  procedure script_end
+    send private.resolve_labels
+  end_procedure
+  procedure declare_label string name#
+    integer self#
+    move self to self#
+    send add_resolved_label to (oLabels(self)) name# (piProgramCounter(self#))
+  end_procedure
+  procedure declare_label_no_error string name# // Makes no error if label is already defined
+    integer self#
+    move self to self#
+    send add_resolved_label_no_error to (oLabels(self)) name# (piProgramCounter(self#))
+  end_procedure
+  function iIsLabelNameUsed.s string name# returns integer
+    function_return (iIsLabelNameUsed.s(oLabels(self),name#))
+  end_function
+  // ====== Variable procedures =======================================
+  function iVarValue integer varno# returns integer
+    function_return (psValue.i(oVariables(self),varno#))
+  end_function
+  function dVarValue integer varno# returns integer
+    function_return (psValue.i(oVariables(self),varno#))
+  end_function
+  function nVarValue integer varno# returns number
+    function_return (psValue.i(oVariables(self),varno#))
+  end_function
+  function sVarValue integer varno# returns string
+    function_return (psValue.i(oVariables(self),varno#))
+  end_function
+  procedure declare_var string varid# integer type#
+    send VarNameDeclare to (oVariables(self)) varid# type#
+  end_procedure
+  function iIsVarDeclared.s string varid# returns integer
+    integer rval#
+    get iVarNameToVarNo of (oVariables(self)) varid# to rval#
+    function_return (rval#<>-1)
+  end_function
+  procedure declare_var_cond string varid# integer type# // Declare if not already declared
+    ifnot (iIsVarDeclared.s(self,varid#)) send declare_var varid# type#
+  end_procedure
+  function iVarNameToVarNo string varid# returns integer
+    integer rval#
+    get iVarNameToVarNo of (oVariables(self)) varid# to rval#
+    function_return rval#
+  end_function
+  // ====== Field stuff ============================================
+  function iFileField.s string lsSymbol returns integer
+    string lsFile lsField
+    integer liFile liField lhFdx
+    move (uppercase(ExtractWord(lsSymbol,".",1))) to lsFile
+    move (uppercase(ExtractWord(lsSymbol,".",2))) to lsField
+    get phFDX_Server to lhFdx
+    if (lsFile<>"" and lsField<>"") begin
+      get FDX_FindLogicalName lhFdx lsFile 0 to liFile
+      if (liFile>-1) get FDX_FindField lhFdx liFile lsField to liField
+      else move -1 to liField
+      if (liField>-1) function_return (liFile*65536+liField)
+    end
+    function_return 0
+  end_function
+  function iFieldType.i integer liFileField returns integer
+    integer lhFdx liType
+    get phFDX_Server to lhFdx
+    get FDX_AttrValue_FIELD lhFdx DF_FIELD_TYPE (liFileField/65536) (mod(liFileField,65536)) to liType
+    if liType eq DF_ASCII   function_return FLDTYP_STRING
+    if liType eq DF_BCD     function_return FLDTYP_NUMBER
+    if liType eq DF_DATE    function_return FLDTYP_DATE
+    if liType eq DF_TEXT    function_return FLDTYP_STRING
+    if liType eq DF_BINARY  function_return FLDTYP_STRING
+    if liType eq DF_OVERLAP function_return FLDTYP_STRING
+  end_function
+
+  // ====== Function stuff ============================================
+  function iFuncNameToFuncNo.s string name# returns integer
+    function_return (iNameToNumber.s(oDeclaredFunctions(self),name#))
+  end_function
+  function iFuncType.i integer id# returns integer
+    function_return (piReturnType.i(oDeclaredFunctions(self),id#))
+  end_function
+  function sFuncParams.i integer id# returns string
+    function_return (psParameterList.i(oDeclaredFunctions(self),id#))
+  end_function
+  function sFuncClass.i integer id# returns string
+    function_return (piFuncClass.i(oDeclaredFunctions(self),id#))
+  end_function
+  // ====== Array stuff ===============================================
+  procedure declare_array string name# integer type#
+    send declare_array (oDeclaredArrays(self)) name# type#
+  end_procedure
+  // ====== Procedures used for entering a program ====================
+  procedure add_argument_label string labelid#
+    integer self# line#
+    move self to self#
+    send add_label_reference to (oLabels(self)) labelid# self# (piProgramCounter(self#))
+    send increment_pc
+  end_procedure
+  procedure add_argument_gvar string varid#
+    integer varno#
+    get iVarNameToVarNo of (oVariables(self)) varid# to varno#
+    if varno# eq -1 send add_ct_error (piProgramCounter(self)) ("Undefined variable name: "+varid#)
+    set value item (piProgramCounter(self)) to varno#
+    send increment_pc
+  end_procedure
+  procedure add_argument_field string lsFieldName
+    integer liFileField
+    get iFileField.s lsFieldName to liFileField
+    if liFileField eq 0 send add_ct_error (piProgramCounter(self)) ("Undefined field name: "+lsFieldName)
+    set value item (piProgramCounter(self)) to liFileField
+    send increment_pc
+  end_procedure
+  procedure AddData.s integer arg_type# string data#
+    if arg_type# eq AT_VAR begin
+      set value item (piProgramCounter(self)) to AT_VARNO
+      send increment_pc
+      send add_argument_gvar data#
+    end
+    if arg_type# eq AT_LBL begin
+      set value item (piProgramCounter(self)) to AT_LBL
+      send increment_pc
+      send add_argument_label data#
+    end
+    if (iArgType_Const.i(arg_type#)) begin
+      set value item (piProgramCounter(self)) to arg_type#
+      send increment_pc
+      set value item (piProgramCounter(self)) to data#
+      send increment_pc
+    end
+    if arg_type# eq AT_EXPR begin
+      set value item (piProgramCounter(self)) to arg_type#
+      send increment_pc
+      set value item (piProgramCounter(self)) to data#
+      send increment_pc
+    end
+    if arg_type# eq AT_FIELD begin
+      set value item (piProgramCounter(self)) to AT_FIELDNO
+      send increment_pc
+      send add_argument_field data#
+    end
+    if arg_type# eq AT_ARRAY_ELEM begin
+      set value item (piProgramCounter(self)) to AT_ARRAY_ELEM
+    end
+  end_procedure
+  procedure add_instruction integer opcode# string arg#
+    integer iArg num_arguments# special_add_msg# oOpCodes# argtype# count#
+    string data#
+    string arg1# arg2# arg3# arg4# arg5# arg6# arg7# arg8# arg9# arg10# arg11# arg12#
+    move (oOpcodes(self)) to oOpCodes#
+    get piParameters.i of oOpCodes# item opcode# to num_arguments#
+    if num_arguments# ne (num_arguments-1/2) begin
+      send add_ct_error (piProgramCounter(self)) "Wrong number of arguments"
+      send add_ct_error (piProgramCounter(self)) ("Command: "+psName.i(oOpcodes#,opcode#)+"(Gets "+string(num_arguments-1/2)+", expects "+string(num_arguments#)+")")
+    end
+    else begin
+      get piSpecialAddMsg.i of oOpCodes# item opcode# to special_add_msg#
+      if special_add_msg# begin
+        for iArg from 2 to num_arguments
+          if iArg eq  2 MoveStr iArg& to arg1#
+          if iArg eq  3 MoveStr iArg& to arg2#
+          if iArg eq  4 MoveStr iArg& to arg3#
+          if iArg eq  5 MoveStr iArg& to arg4#
+          if iArg eq  6 MoveStr iArg& to arg5#
+          if iArg eq  7 MoveStr iArg& to arg6#
+          if iArg eq  8 MoveStr iArg& to arg7#
+          if iArg eq  9 MoveStr iArg& to arg8#
+          if iArg eq 10 MoveStr iArg& to arg9#
+          if iArg eq 11 MoveStr iArg& to arg10#
+          if iArg eq 12 MoveStr iArg& to arg11#
+          if iArg eq 13 MoveStr iArg& to arg12#
+        loop
+        if num_arguments eq  1 send special_add_msg# opcode#
+        if num_arguments eq  2 send special_add_msg# opcode# arg1#
+        if num_arguments eq  3 send special_add_msg# opcode# arg1# arg2#
+        if num_arguments eq  4 send special_add_msg# opcode# arg1# arg2# arg3#
+        if num_arguments eq  5 send special_add_msg# opcode# arg1# arg2# arg3# arg4#
+        if num_arguments eq  6 send special_add_msg# opcode# arg1# arg2# arg3# arg4# arg5#
+        if num_arguments eq  7 send special_add_msg# opcode# arg1# arg2# arg3# arg4# arg5# arg6#
+        if num_arguments eq  8 send special_add_msg# opcode# arg1# arg2# arg3# arg4# arg5# arg6# arg7#
+        if num_arguments eq  9 send special_add_msg# opcode# arg1# arg2# arg3# arg4# arg5# arg6# arg7# arg8#
+        if num_arguments eq 10 send special_add_msg# opcode# arg1# arg2# arg3# arg4# arg5# arg6# arg7# arg8# arg9#
+        if num_arguments eq 11 send special_add_msg# opcode# arg1# arg2# arg3# arg4# arg5# arg6# arg7# arg8# arg9# arg10#
+        if num_arguments eq 12 send special_add_msg# opcode# arg1# arg2# arg3# arg4# arg5# arg6# arg7# arg8# arg9# arg10# arg11#
+        if num_arguments eq 13 send special_add_msg# opcode# arg1# arg2# arg3# arg4# arg5# arg6# arg7# arg8# arg9# arg10# arg11# arg12#
+      end
+      else begin
+        send AddOpcode.i opcode#
+        for count# from 1 to num_arguments#
+          move (count#-1*2+2) to iArg
+          MoveStr iArg& to argtype# // tricky way to parse passed arguments
+          increment iArg
+          MoveStr iArg& to data# // tricky way to parse passed arguments
+          send AddData.s argtype# data#
+        loop
+      end
+    end
+    //send display_array
+  end_procedure
+  // ==================================================================
+  procedure display_array
+    integer max# itm#
+    get item_count to max#
+    showln
+    show ">> "
+    for itm# from 0 to (max#-1)
+      show ("["+value(self,itm#)+"]")
+    loop
+    inkey itm#
+  end_procedure
+end_class // cBasicVirtualMachine
+
+// ========================================================================
+//  SEC2: =================================================================
+// ========================================================================
+
+Enumeration_List // Operation codes
+  Enumeration_List_Set_Enum_Value cBasicVirtualMachine.NEXT_OP
+  define OP_WHILE
+  define OP_FOR
+  define OP_LOOP
+  define OP_IF_BEGIN
+  define OP_ELSE
+  define OP_ENDIF
+  define OP_REPEAT
+  define OP_UNTIL
+  define cVirtualMachine.NEXT_OP // Augmentation codes starts here
+End_Enumeration_List
+
+register_procedure add_macro_while
+register_procedure add_macro_for
+register_procedure add_macro_loop
+register_procedure add_macro_if_begin
+register_procedure add_macro_else
+register_procedure add_macro_endif
+register_procedure add_macro_repeat
+register_procedure add_macro_until
+
+class cVirtualMachine is an cBasicVirtualMachine
+  procedure construct_object integer img#
+    forward send construct_object img#
+    send add_opcode OP_WHILE    "While"  0 3 msg_add_macro_while    //
+    send add_opcode OP_FOR      "For"    0 3 msg_add_macro_for      //
+    send add_opcode OP_LOOP     "Loop"   0 0 msg_add_macro_loop     //
+    send add_opcode OP_IF_BEGIN "If"     0 3 msg_add_macro_if_begin //
+    send add_opcode OP_ELSE     "Else"   0 0 msg_add_macro_else     //
+    send add_opcode OP_ENDIF    "End"    0 0 msg_add_macro_endif    //
+    send add_opcode OP_REPEAT   "Repeat" 0 0 msg_add_macro_repeat   //
+    send add_opcode OP_UNTIL    "Until"  0 3 msg_add_macro_until    //
+    object oIfStack is a cStack
+    end_object
+    property integer pUniqueLabelID 0 // Used for generating unique labels
+  end_procedure
+  procedure reset
+    forward send reset
+    set pUniqueLabelID to 0
+    send delete_data to (oIfStack(self))
+  end_procedure
+  function sNextUniqueLabel returns string // Returns next unique label
+    integer UniqueLabelID#
+    string rval#
+    get pUniqueLabelID to UniqueLabelID#
+    move ("Label$"+string(UniqueLabelID#)) to rval#
+    set pUniqueLabelID to (UniqueLabelID#+1)
+    function_return rval#
+  end_function
+
+  // Repeat/Until structure:
+  //
+  // Repeat:      LoopStart:
+  //
+  // Until:       If Var1 Comp Var2 Goto Loopend:
+  //              Goto LoopStart:
+  //              LoopEnd:
+  //
+  procedure add_macro_repeat
+    string lbl_LoopStart#
+    get sNextUniqueLabel to lbl_LoopStart#
+    send declare_label lbl_LoopStart#
+    send push.s to (oIfStack(self)) lbl_LoopStart#
+  end_procedure
+
+  procedure add_macro_until integer opcode# integer t1# integer varno1# integer t2# integer comp# integer t3# integer varno2#
+    string lbl_LoopStart# lbl_LoopEnd#
+    get sNextUniqueLabel to lbl_LoopEnd#
+    get sPop of (oIfStack(self)) to lbl_LoopStart#
+    send add_instruction OP_IFTEST_GOTO t1# varno1# t2# comp# t3# varno2# AT_LBL lbl_LoopEnd#
+    send add_instruction OP_GOTO AT_LBL lbl_LoopStart#
+    send declare_label lbl_LoopEnd#
+  end_procedure
+
+  // For/Loop structure:
+  //
+  // For:         VarAssign CtrlId VarFrom
+  //              Goto LoopStart
+  //              CtrlIncrement:
+  //              VarIncr CtrlId 1
+  //              LoopStart:
+  //              If CtrlId gt VarTo goto LoopEnd
+  //
+  // Loop:        Goto CtrlIncrement
+  //              LoopEnd:
+  //
+  procedure add_macro_for integer opcode# integer t1# string ctrlid# integer t2# string varfrom# integer t3# string varto#
+    string lbl_LoopStart# lbl_CtrlIncrement# lbl_LoopEnd#
+    get sNextUniqueLabel to lbl_LoopStart#
+    get sNextUniqueLabel to lbl_CtrlIncrement#
+    get sNextUniqueLabel to lbl_LoopEnd#
+    send add_instruction OP_ASSIGN AT_VAR ctrlid# t2# varfrom#
+    send add_instruction OP_GOTO AT_LBL lbl_LoopStart#
+    send declare_label lbl_CtrlIncrement#
+    send add_instruction OP_GVAR_INCR AT_VAR ctrlid# AT_CINT 1
+    send declare_label lbl_LoopStart#
+    send add_instruction OP_IFTEST_GOTO AT_VAR ctrlid# AT_CINT COMP_GT t3# varto# AT_LBL lbl_LoopEnd#
+    send push.s to (oIfStack(self)) lbl_CtrlIncrement#
+    send push.s to (oIfStack(self)) lbl_LoopEnd#
+  end_procedure
+  procedure add_macro_loop
+    string lbl_CtrlIncrement# lbl_LoopEnd#
+    get sPop of (oIfStack(self)) to lbl_LoopEnd#
+    get sPop of (oIfStack(self)) to lbl_CtrlIncrement#
+    send add_instruction OP_GOTO AT_LBL lbl_CtrlIncrement#
+    send declare_label lbl_LoopEnd#
+  end_procedure
+
+  // While/Loop structure:
+  //
+  // While:       LoopStart:
+  //              If Var1 Comp Var2 Goto Continue
+  //              Goto LoopEnd
+  //              Continue:
+  //
+  // Loop:        Goto LoopStart
+  //              LoopEnd:
+  //
+  procedure add_macro_while integer opcode# integer t1# integer varno1# integer t2# integer comp# integer t3# integer varno2#
+    string lbl_LoopStart# lbl_Continue# lbl_LoopEnd#
+    get sNextUniqueLabel to lbl_LoopStart#
+    get sNextUniqueLabel to lbl_Continue#
+    get sNextUniqueLabel to lbl_LoopEnd#
+    send declare_label lbl_LoopStart#
+    send add_instruction OP_IFTEST_GOTO t1# varno1# t2# comp# t3# varno2# AT_LBL lbl_Continue#
+    send add_instruction OP_GOTO AT_LBL lbl_LoopEnd#
+    send declare_label lbl_Continue#
+    send push.s to (oIfStack(self)) lbl_LoopStart#
+    send push.s to (oIfStack(self)) lbl_LoopEnd#
+  end_procedure
+
+  // If/Else/Endif structure:
+  //
+  // If:          If Var1 Comp Var2 Goto IfBranch
+  //              Goto ElseBranch
+  //              IfBranch:
+  //
+  // Else:        Goto EndIf
+  //              ElseBranch:
+  //
+  // EndIf:       EndIf:
+  //             (ElseBranch:)
+  procedure add_macro_if_begin integer opcode# integer t1# integer varno1# integer t2# integer comp# integer t3# integer varno2#
+    string lbl_IfBranch# lbl_ElseBranch# lbl_EndIf#
+    get sNextUniqueLabel to lbl_IfBranch#
+    get sNextUniqueLabel to lbl_ElseBranch#
+    get sNextUniqueLabel to lbl_EndIf#
+    send add_instruction OP_IFTEST_GOTO t1# varno1# t2# comp# t3# varno2# AT_LBL lbl_IfBranch#
+    send add_instruction OP_GOTO AT_LBL lbl_ElseBranch#
+    send declare_label lbl_IfBranch#
+    send push.s to (oIfStack(self)) lbl_ElseBranch#
+    send push.s to (oIfStack(self)) lbl_EndIf#
+  end_procedure
+  procedure add_macro_else integer opcode#
+    string lbl_ElseBranch# lbl_EndIf#
+    get sPop of (oIfStack(self)) to lbl_EndIf#
+    get sPop of (oIfStack(self)) to lbl_ElseBranch#
+    send add_instruction OP_GOTO AT_LBL lbl_EndIf#
+    send declare_label lbl_ElseBranch#
+    send push.s to (oIfStack(self)) lbl_ElseBranch#
+    send push.s to (oIfStack(self)) lbl_EndIf#
+  end_procedure
+  procedure add_macro_endif integer opcode#
+    string lbl_ElseBranch# lbl_EndIf#
+    get sPop of (oIfStack(self)) to lbl_EndIf#
+    get sPop of (oIfStack(self)) to lbl_ElseBranch#
+    send declare_label lbl_EndIf#
+    send declare_label_no_error lbl_ElseBranch# // Only ifnot already declared!
+  end_procedure
+end_class // cVirtualMachine
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+object oScriptError is a aps.ModalPanel label "DFScript runtime error"
+  set Locate_Mode to CENTER_ON_SCREEN
+  on_key kcancel send close_panel
+  property integer piOriginalErrorObject 0
+
+  object oTb1 is a aps.TextBox label "DataFlex reported this error:"
+  end_object
+  object oFrm1 is a aps.Form abstract AFT_ASCII50 snap sl_down
+    set object_shadow_state to true
+  end_object
+  object oFrm2 is a aps.Form abstract AFT_ASCII50 snap sl_down
+    set object_shadow_state to true
+  end_object
+  object oTb2 is a aps.TextBox label "While executing this DFScript instruction:" snap sl_down
+  end_object
+  object oFrm3 is a aps.Form abstract AFT_ASCII50 snap sl_down
+    set object_shadow_state to true
+  end_object
+  object oFrm4 is a aps.Form abstract AFT_ASCII50 snap sl_down
+    set object_shadow_state to true
+  end_object
+  object oFrm5 is a aps.Form abstract AFT_ASCII50 snap sl_down
+    set object_shadow_state to true
+  end_object
+  object oBtn1 is a aps.Multi_Button
+      on_item "End script"  send end_script
+  end_object
+  object oBtn2 is a aps.Multi_Button
+      on_item "Display def" send display_definition
+  end_object
+  object oBtn3 is a aps.Multi_Button
+      on_item "Continue" send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure Error_Report integer ErrNum integer Err_Line string str#
+    integer grb#
+    string str1# str2#
+    set value of (oFrm1(self)) item 0 to (Error_Description(self,ErrNum,str#))
+    set value of (oFrm2(self)) item 0 to ("(Error "+string(ErrNum)+" on line "+string(Err_Line)+")")
+    move (sExecutingLine(oVM_CurrentlyExecuting#)) to str1#
+    move (StringRightBut(str1#,64)) to str2#
+    set value of (oFrm3(self)) item 0 to str1#
+    set value of (oFrm4(self)) item 0 to str2#
+    set value of (oFrm5(self)) item 0 to Struc$ErrDescr
+    send popup
+  end_procedure
+
+  // Stolen right out of error.pkg:
+  //*** Build complete error description from Flexerrs and user error message.
+  function Error_Description integer Error# string ErrMsg returns string
+    string Full_Error_Text
+    move (trim(ErrMsg)) to ErrMsg // trim ErrMsg to ErrMsg
+    move (trim(error_text(DESKTOP,Error#))) to Full_Error_Text
+    if ErrMsg ne "" begin
+      if ((Full_Error_Text ne "") AND error_text_available(DESKTOP,Error#)) append Full_Error_Text " " ErrMsg
+      else move ErrMsg to Full_Error_Text
+    end
+    function_return Full_Error_Text
+  end_function
+
+  procedure end_script
+    set pProgramEnded of oVM_CurrentlyExecuting# to true
+    send close_panel
+  end_procedure
+
+  procedure display_definition
+    send RS_DisplayDef
+  end_procedure
+end_object
+
+procedure DFScriptError_On global // Set error trapping mode to DFScript
+  integer obj#
+  move (oScriptError(self)) to obj#
+  if Error_Object_Id ne obj# begin
+    set piOriginalErrorObject of obj# to Error_Object_Id
+    move obj# to Error_Object_Id
+  end
+end_procedure
+procedure DFScriptError_Off global // Set error trapping mode back to normal
+  integer obj#
+  move (oScriptError(self)) to obj#
+  if Error_Object_Id eq obj# ;
+    get piOriginalErrorObject of obj# to Error_Object_Id
+end_procedure
+
+
+//
+//  This is what the interface looks like if you don't put an interpreter
+//  object in front of the Virtual Machine
+//
+//  object oVM is a cVirtualMachine
+//    set piDebugState      to DFFALSE
+//    set piDebugSingleStep to DFFALSE
+//    send script_begin // Optag program
+//    send declare_var "i" VARTYP_INTEGER
+//    send declare_var "j" VARTYP_INTEGER
+//    send add_instruction OP_FOR AT_VAR "i" AT_CINT 1 AT_CINT 2
+//      send add_instruction OP_FOR AT_VAR "j" AT_CINT 1 AT_CINT 10
+//      send add_instruction   OP_SHOWLN AT_VAR "j"
+//      send add_instruction OP_LOOP
+//    send add_instruction OP_LOOP
+//    send declare_var "A" VARTYP_INTEGER
+//    send declare_var "B" VARTYP_INTEGER
+//    send declare_var "C" VARTYP_INTEGER
+//    send declare_var "D" VARTYP_INTEGER
+//    send add_instruction OP_ASSIGN AT_VAR "A" AT_CINT 7878
+//    send add_instruction OP_ASSIGN AT_VAR "B" AT_VAR "A"
+//    send add_instruction OP_GVAR_DISPLAY
+//    send add_instruction OP_GVAR_INCR   AT_VAR "B" AT_CINT 1
+//    send add_instruction OP_ASSIGN AT_VAR "C" AT_VAR "B"
+//    send add_instruction OP_GVAR_INCR   AT_VAR "C" AT_CINT 1
+//    send add_instruction OP_ASSIGN AT_VAR "D" AT_VAR "C"
+//    send add_instruction OP_GVAR_INCR   AT_VAR "D" AT_CINT 1
+//    send add_instruction OP_GVAR_DISPLAY
+//    send add_instruction OP_INPUT AT_VAR "D" AT_CSTR "Enter something: "
+//    send add_instruction OP_NOP // NOP means No OPeration (= do nothing)
+//    send add_instruction OP_NOP
+//    send add_instruction OP_NOP
+//    send add_instruction OP_GOSUB AT_LBL "MyFirstLabel"
+//    send add_instruction OP_ABORT // End program!
+//    send declare_label "MyFirstLabel"
+//    send add_instruction OP_NOP
+//    send add_instruction OP_NOP
+//    send add_instruction OP_IF_GOTO AT_VAR "A" AT_LBL "MySecondLabel"
+//    send add_instruction OP_SHOWLN AT_CSTR "Didn't jump"
+//    send declare_label "MySecondLabel"
+//    send add_instruction OP_SHOWLN AT_CSTR "Jumped"
+//    send add_instruction OP_RETURN
+//    send script_end
+//  end_object
+//
+//  send obs "Begin"
+//  send run_script to (oVM(self))
+//  inkey windowindex

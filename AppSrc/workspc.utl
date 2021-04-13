@@ -1,0 +1,101 @@
+// Use WorkSpc.utl  // cWorkSpace class (that features function sMakePath)
+                    // and object oAllWorkspaces that reads all WS paths
+
+
+Use Base.utl     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use Version.nui
+
+Use cApplication.pkg
+Use SelectWorkspace.dg
+
+desktop_section
+  object oAllWorkspaces is a cArray
+    property string psCurrentMakePath "" // Common to all WS
+    object oWorkSpaceTmp is a cWorkSpace
+    //procedure set kenter_next_state integer bNext
+    //end_procedure
+    //function kenter_next_state returns integer
+    //end_function
+    end_object
+    item_property_list
+      item_property string psKeyName.i
+      item_property string psName.i
+      item_property string psDataPath.i
+      item_property string psBitMapPath.i
+      item_property string psHelpPath.i
+      item_property string psAppSrcPath.i
+      item_property string psDDSrcPath.i
+      item_property string psProgramPath.i
+      item_property string psSystemDfPath.i
+      item_property string psFileListPath.i
+      item_property string psMakePath.i
+      // Since the SystemMakePath is the same for all WS we also provide
+      // the WS specific part of the MakePath:
+      item_property string psMakePathNoSysPath.i
+    end_item_property_list
+
+    procedure private.add_workspace string sWorkspace string sDescription string sPath
+      integer lhObj liRow liStatus
+      move (oWorkSpaceTmp(self)) to lhObj
+      send DoClearPaths to lhObj
+      get OpenWorkSpace of lhObj sWorkspace to liStatus
+      if (liStatus=WSWORKSPACEOPENED) begin
+        get row_count to liRow
+        set psKeyName.i      liRow to sWorkspace
+        set psName.i         liRow to sDescription
+        set psDataPath.i     liRow to (psDataPath(lhObj))
+        set psBitMapPath.i   liRow to (psBitmapPath(lhObj))
+        set psHelpPath.i     liRow to (psHelpPath(lhObj))
+        set psAppSrcPath.i   liRow to (psAppSrcPath(lhObj))
+        set psDDSrcPath.i    liRow to (psDdSrcPath(lhObj))
+        set psProgramPath.i  liRow to sPath
+        set psSystemDfPath.i liRow to (psSystemDfPath(lhObj))
+        set psFileListPath.i liRow to (psFileList(lhObj))
+        set psMakePathNoSysPath.i liRow to (psAppSrcPath(lhObj)+";"+sPath+";"+psDataPath(lhObj)+";"+psDdSrcPath(lhObj)+";"+psHelpPath(lhObj))
+        set psMakePath.i     liRow to (psMakePathNoSysPath.i(self,liRow)+";"+psSystemMakePath(lhObj))
+      end
+    end_procedure
+
+    procedure ReadAllWorkspaces global // Public
+
+      Integer iVOid iWorkspace
+      Handle hoSections
+      String sWorkspace sDescription sPath
+      String sVdfRootDir
+
+      Get_Profile_String "Defaults" "VDFRootDir" To sVDFRootDir
+      If (Right(sVDFRootDir,1) = "\") begin
+        Move (Left(sVDFRootDir,Length(sVDFRootDir)-1)) to sVDFRootDir // Left sVDFRootDir to sVDFRootDir (Length(sVDFRootDir)-1)
+      End
+
+      send delete_data
+
+      Object oSections is an cArray
+        Move self To hoSections
+      End_Object
+
+      Object oIni is a cIniFile
+        Set psFilename To (sVDFRootDir+"\bin\Workspaces.ini")
+
+        Send ReadSections hoSections
+
+        For iWorkspace from 0 to (Item_Count(hoSections) -1)
+          Get Value of hoSections iWorkspace To sWorkspace
+          Get ReadString sWorkspace "Description" "" To sDescription
+          Get ReadString sWorkspace "Path" ""        To sPath
+          send private.add_workspace sWorkspace sDescription sPath
+        Loop
+      End_Object
+    end_procedure
+  end_object // oAllWorkspaces
+end_desktop_section
+
+function WorkSpc_SelectWS global returns string
+  integer lhObj
+  move (oSelectWorkspace(self)) to lhObj
+  Set pbResult of lhObj To DFFALSE
+  send popup to lhObj
+  if (pbResult(lhObj)) function_return (psWorkspaceSelected(lhObj))
+  else function_return ""
+end_function
+

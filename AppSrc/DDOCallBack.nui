@@ -1,0 +1,102 @@
+// Use DDOCallBack.nui // Procedure DDO_Callback (that calls back for DDO's in a DDO structure)
+
+Use DataDict.pkg // DAW DataDictionary class
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+
+object oDDO_CallBacker is a cArray
+  property integer priv.phRootDDO
+  property integer priv.phMsg
+  property integer priv.phObj
+  property integer priv.pbExclAlreadyVisited
+
+            function iFindExcludedDDO integer lhDD returns integer
+              integer liItm liMax
+              get item_count to liMax
+              decrement liMax
+              for liItm from 0 to liMax
+                if (value(self,liItm)=lhDD) function_return liItm
+              loop
+              function_return -1
+            end_function
+
+  procedure add_dd_exclusion integer lhDD
+    integer liItm
+    get iFindExcludedDDO lhDD to liItm
+    if (liItm=-1) set value item (item_count(self)) to lhDD
+  end_procedure
+
+  procedure CallBack_Parents integer lhDD integer lbRecursive integer lbParentFirst
+    integer liMax lhParentDD liItm lbExcluded lhMsg lhObj
+    get priv.phMsg to lhMsg
+    get priv.phObj to lhObj
+    get Data_Set_Server_Count of lhDD to liMax
+    decrement liMax
+    for liItm from 0 to liMax
+      get Data_Set_Server of lhDD liItm to lhParentDD
+
+      if (priv.pbExclAlreadyVisited(self)) move (iFindExcludedDDO(self,lhParentDD)<>-1) to lbExcluded
+      else move FALSE to lbExcluded
+
+      ifnot lbExcluded begin
+        if (lbParentFirst and lbRecursive) send CallBack_Parents lhParentDD lbRecursive lbParentFirst
+        send lhMsg of lhObj lhParentDD (main_file(lhParentDD)) lhDD
+        if (not(lbParentFirst) and lbRecursive) send CallBack_Parents lhParentDD lbRecursive lbParentFirst
+        send add_dd_exclusion lhParentDD
+      end
+    loop
+  end_procedure
+
+  procedure CallBack_Children integer lhDD integer lbRecursive integer lbParentFirst
+    integer liMax lhChildDD liItm lbExcluded lhMsg lhObj
+    get priv.phMsg to lhMsg
+    get priv.phObj to lhObj
+    get Data_Set_Client_Count of lhDD to liMax
+    decrement liMax
+    for liItm from 0 to liMax
+      get Data_Set_Client of lhDD liItm to lhChildDD
+
+      if (priv.pbExclAlreadyVisited(self)) move (iFindExcludedDDO(self,lhChildDD)<>-1) to lbExcluded
+      else move FALSE to lbExcluded
+
+      ifnot lbExcluded begin
+        if (lbParentFirst and lbRecursive) send CallBack_Parents lhChildDD lbRecursive lbParentFirst
+        send lhMsg of lhObj lhChildDD (main_file(lhChildDD)) lhDD
+        if (not(lbParentFirst) and lbRecursive) send CallBack_Parents lhChildDD lbRecursive lbParentFirst
+        send add_dd_exclusion lhChildDD
+      end
+    loop
+  end_procedure
+
+  procedure Callback_DDs global integer lhRootDDO integer lbUpwards integer lbRecursive integer lbParentFirst integer lbExclAlreadyVisited integer lhMsg integer lhObj
+    set priv.phRootDDO to lhRootDDO
+    set priv.phMsg     to lhMsg
+    set priv.phObj     to lhObj
+    set priv.pbExclAlreadyVisited to lbExclAlreadyVisited
+    if lbUpwards send CallBack_Parents lhRootDDO lbRecursive lbParentFirst
+    else send CallBack_Children lhRootDDO lbRecursive lbParentFirst
+  end_procedure
+end_object
+
+procedure DDO_CallbackReset global
+  send delete_data of oDDO_CallBacker
+end_procedure
+
+procedure DDO_ExcludeDD global integer lhDD
+  send add_dd_exclusion of oDDO_CallBacker lhDD
+end_procedure
+
+// Define call back procedure like this:
+//
+//    procedure xxx integer lhDD integer liTable integer lhConnectedToDD
+//
+// where lhConnectedToDD is the Parent or child DD that included lhDD in the callback.
+
+procedure DDO_Callback global ;
+  integer lhRootDDO ;     //> The DD object from which the call back originates.
+  integer lbUpwards ;     //> Parent direction (TRUE) or child direction (FALSE)
+  integer lbRecursive ;   //> Recursive (TRUE) or just one level (FALSE)
+  integer lbParentFirst ; //> Should parent be called back before child (TRUE) or vice versa (FALSE)
+  integer lbExclAlreadyVisited ; //> Exclude DD object, that were called back since last DDO_CallbackReset
+  integer lhMsg integer lhObj
+  send Callback_DDs of oDDO_CallBacker lhRootDDO lbUpwards lbRecursive lbParentFirst lbExclAlreadyVisited lhMsg lhObj
+end_procedure

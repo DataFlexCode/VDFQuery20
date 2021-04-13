@@ -1,0 +1,174 @@
+// use XmlSequence.nui // cXmlSequence class (and cXmlParamArray)
+
+Use ExtendedItemProp.nui // cExtendedItemPropertyArray class
+Use XmlBuilder.nui // cXmlBuilder class
+
+enumeration_list
+  define XMLSEQ_CLOSED_ELEMENT
+  define XMLSEQ_CLOSED_ELEMENT_CDATA
+  define XMLSEQ_CLOSED_ELEMENT_NUMBER
+  define XMLSEQ_CLOSED_ELEMENT_DATE
+  define XMLSEQ_OPEN_ELEMENT
+  define XMLSEQ_CLOSE_ELEMENT
+  define XMLSEQ_ATTRIBUTE
+  define XMLSEQ_SUB_SEQUENCE
+end_enumeration_list
+
+class cXmlParamArray is a cExtendedItemPropertyArray
+  procedure construct_object
+    forward send construct_object
+    set column_xml_tag 0 to "name"
+    set column_xml_tag 1 to "value"
+    set psRowXmlTag to "parameter"
+  end_procedure
+  item_property_list
+    item_property string  psName.i
+//    item_property integer piType.i     // 0=string 1=number 2=date
+    item_property string  psValue.i
+  end_item_property_list cXmlParamArray
+
+  function param_row string lsName returns integer
+    integer liMax liRow
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      if (psName.i(self,liRow)=lsName) function_return liRow
+    loop
+    function_return -1
+  end_function
+
+  function param_row_verify string lsName integer liRow returns integer
+    if (liRow>=0 and psName.i(self,liRow)=lsName) function_return liRow
+    get param_row lsName to liRow
+    if (liRow>=0) function_return liRow
+    function_return -1
+  end_function
+
+  // The idea behind identifying a value by its name AND a row is that we
+  // first try to access it via the row. If that fails, we use the name.
+  function param_value string lsName integer liRow returns string
+    if (liRow>=0 and psName.i(self,liRow)=lsName) function_return (psValue.i(self,liRow))
+    get param_row lsName to liRow
+    if (liRow>=0) function_return (psValue.i(self,liRow))
+    function_return ""
+  end_function
+
+  procedure set param_value string lsName integer liRow string lsValue
+    if (liRow>=0 and psName.i(self,liRow)=lsName) set psValue.i liRow to lsValue
+    get param_row lsName to liRow
+    if (liRow>=0) set psValue.i liRow to lsValue
+  end_procedure
+end_class // cXmlParamArray
+
+//> An object of the cXmlSequence class is capable of defining a sequence of XML elements that may be added
+//> to an XML document using an cXmlBuilder object. To make this mechanism more flexible an cXmlSequence
+//> object may be used in conjunction with a cXmlParamArray object to enable blablabla
+
+class cXmlSequence is a cExtendedItemPropertyArray
+  procedure construct_object
+    forward send construct_object
+    set column_xml_tag 0 to "type"
+    set column_xml_tag 1 to "label"
+    set column_xml_tag 2 to "aux"
+    set column_xml_tag 3 to "param"
+    set column_xml_tag 4 to "value"
+    set column_xml_tag 5 to "paramname"
+    set column_xml_tag 6 to "paramrow"
+    set psRowXmlTag to "instruction"
+  end_procedure
+  item_property_list
+    item_property integer piType.i      // 0=closed element         XMLSEQ_CLOSED_ELEMENT
+                                        // 1=closed element cdata   XMLSEQ_CLOSED_ELEMENT_CDATA
+                                        // 2=closed element number  XMLSEQ_CLOSED_ELEMENT_NUMBER
+                                        // 3=closed element date    XMLSEQ_CLOSED_ELEMENT_DATE
+                                        // 4=open element           XMLSEQ_OPEN_ELEMENT
+                                        // 5=close element          XMLSEQ_CLOSE_ELEMENT
+                                        // 6=attribute              XMLSEQ_ATTRIBUTE
+                                        // 7=sub sequence           XMLSEQ_SUB_SEQUENCE
+
+    item_property string  psName.i      // Element name or attribute name (or nothing) (or label)
+    item_property integer piAux.i       // Used as an aux value when labelling sub sequences
+    item_property integer pbParameter.i // 0=constant value, 1=value from parameter array
+    item_property string  psValue.i     // Constant value
+    item_property string  psParamName.i
+    item_property integer piParamRow.i  // Used internally to store the row at which the parameter is assumingly stored
+  end_item_property_list cXmlSequence
+
+  procedure DoReset
+    send delete_data
+  end_procedure
+
+  // This procedure is called once for every XML sub-sequence. Meant to be overridden
+  procedure OnWriteSubSequence string lsLabel integer liAux integer lhBuilder
+    send add_closed_element of lhBuilder "div" (lsLabel+" ("+string(liAux)+")") // For test purposes.
+  end_procedure
+
+  procedure DoWriteXml integer lhParamArray integer lhBuilder
+    integer liMax liRow liType liParamRow
+    integer lbParam
+    string lsName lsParamName lsValue
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+
+      get piType.i      liRow to liType
+      get psName.i      liRow to lsName
+      get pbParameter.i liRow to lbParam
+
+      if lbParam begin // If the value should be taken from the lhParamArray
+        get psParamName.i liRow to lsParamName
+        get piParamRow.i liRow to liParamRow
+        get param_row_verify of lhParamArray lsParamName liParamRow to liParamRow
+        set piParamRow.i liRow to liParamRow
+        get param_value of lhParamArray lsParamName liParamRow to lsValue
+      end
+      else get psValue.i liRow to lsValue
+
+           if (liType=XMLSEQ_CLOSED_ELEMENT)        send add_closed_element of lhBuilder lsName lsValue
+      else if (liType=XMLSEQ_CLOSED_ELEMENT_CDATA)  send add_closed_element_cdata of lhBuilder lsName lsValue
+      else if (liType=XMLSEQ_CLOSED_ELEMENT_NUMBER) send add_closed_element_number of lhBuilder lsName (number(lsValue))
+      else if (liType=XMLSEQ_CLOSED_ELEMENT_DATE)   send add_closed_element_date of lhBuilder lsName (date(lsValue))
+      else if (liType=XMLSEQ_OPEN_ELEMENT)          send add_open_element of lhBuilder lsName
+      else if (liType=XMLSEQ_CLOSE_ELEMENT)         send close_element of lhBuilder
+      else if (liType=XMLSEQ_ATTRIBUTE)             send add_attribute of lhBuilder lsName lsValue
+      else if (liType=XMLSEQ_SUB_SEQUENCE)          send OnWriteSubSequence lsName (piAux.i(self,liRow)) lhBuilder
+    loop
+  end_procedure
+
+            procedure add_row integer liType string lsName string lsValue string lsParamName integer liAux
+              integer liRow
+              get row_count to liRow
+              set piType.i      liRow to liType
+              set psName.i      liRow to lsName
+              set piAux.i       liRow to liAux
+              set pbParameter.i liRow to (lsParamName<>"")
+              set psValue.i     liRow to lsValue
+              set psParamName.i liRow to lsParamName
+              set piParamRow.i  liRow to -1 // Not resolved
+            end_procedure
+
+  procedure add_open_element string lsElement
+    send add_row XMLSEQ_OPEN_ELEMENT lsElement "" "" 0
+  end_procedure
+  procedure add_closed_element string lsElement string lsValue string lsParamName
+    send add_row XMLSEQ_CLOSED_ELEMENT lsElement lsValue lsParamName 0
+  end_procedure
+  procedure add_closed_element_cdata string lsElement string lsValue string lsParamName
+    send add_row XMLSEQ_CLOSED_ELEMENT_CDATA lsElement lsValue lsParamName 0
+  end_procedure
+  procedure close_element
+    send add_row XMLSEQ_CLOSE_ELEMENT "" "" "" 0
+  end_procedure
+  procedure add_attribute string lsAttr string lsValue string lsParamName
+    send add_row XMLSEQ_ATTRIBUTE lsAttr lsValue lsParamName 0
+  end_procedure
+  procedure add_closed_element_number string lsElement number lnValue string lsParamName
+    send add_row XMLSEQ_CLOSED_ELEMENT_NUMBER lsElement lnValue lsParamName 0
+  end_procedure
+  procedure add_closed_element_date string lsElement date ldValue string lsParamName
+    send add_row XMLSEQ_CLOSED_ELEMENT_DATE lsElement (integer(ldValue)) lsParamName 0
+  end_procedure
+  procedure add_sub_sequence string lsLabel integer liAux
+    send add_row XMLSEQ_SUB_SEQUENCE lsLabel "" "" liAux
+  end_procedure
+end_class // cXmlSequence

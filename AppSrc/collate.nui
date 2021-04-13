@@ -1,0 +1,51 @@
+// Use Collate.nui  // A little collating thing
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use Strings.nui  // String manipulation for VDF (No User Interface)
+
+class cCollateArray is a cArray
+  procedure fill_current_sort_order
+    integer liCharacter
+    for liCharacter from 32 to 255
+      set value item (liCharacter-32) to (character(liCharacter))
+    loop
+    send sort_items
+  end_procedure
+  function sStringValue returns string
+    integer liMax liItem
+    string lsRval
+    get item_count to liMax
+    decrement liMax
+    move "" to lsRval
+    for liItem from 0 to liMax
+      move (lsRval+value(self,liItem)) to lsRval
+    loop
+    function_return lsRval
+  end_function
+end_class // cCollateArray
+
+desktop_section
+  object oCollateArray is a cCollateArray
+    property string psCollateString         ""
+    property string psCollateStringReversed ""
+    procedure Init
+      string lsValue
+      get sStringValue to lsValue
+      set psCollateString to lsValue
+      set psCollateStringReversed to (StringReverse(lsValue))
+    end_procedure
+    send fill_current_sort_order
+    send Init
+  end_object
+end_desktop_section
+
+function Collate_String global returns string
+  function_return (psCollateString(oCollateArray(self)))
+end_function
+function Collate_ReversedString global returns string
+  function_return (psCollateStringReversed(oCollateArray(self)))
+end_function
+
+string gs$ReversedCollateString 255
+move (repeat(" ",31)+Collate_ReversedString()) to gs$ReversedCollateString
+

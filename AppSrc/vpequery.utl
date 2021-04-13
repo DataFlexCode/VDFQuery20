@@ -1,0 +1,3 @@
+DEFINE USE$VPE for 1 // Define the symbol, never mind the value. This will make
+                     // VdfQuery.utl interface VPE instead of WinPrint
+Use VdfQuery.utl // DFQUERY for Visual DataFlex

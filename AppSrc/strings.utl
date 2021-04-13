@@ -1,0 +1,52 @@
+// Use Strings.utl  // String manipulation for VDF
+//
+//  NOTE that the bigger part of this package has been moved to STRINGS.NUI
+//
+Use Strings.nui  // String manipulation for VDF (Non User Interface)
+
+function Text_EditObjectValue global integer lhEdit returns string
+   integer liMax liItm liMargin liFormatSize lbActive
+   string lsRval lsLine
+   get active_state of lhEdit to lbActive       // In windows Edit objects behave
+   if lbActive begin                            // differently when they are
+     get format_size of lhEdit to liFormatSize  // active. If active we have to
+     set format_size of lhEdit to 32000 32000   // do some mysterious stuff to
+     set dynamic_update_state of lhEdit to true // get the correct value from it.
+   end                                          // Tsk tsk.
+   get line_count of lhEdit to liMax
+   move "" to lsRval
+   for liItm from 0 to (liMax-1)
+     get value of lhEdit item liItm to lsLine
+     move (replaces(character(10),lsLine,"")) to lsLine
+     move (replaces(character(13),lsLine,"")) to lsLine
+     move (lsRval+lsLine) to lsRval
+     if liItm ne (liMax-1) move (lsRval+character(10)) to lsRval
+   loop
+   if lbActive begin // Tsk tsk...
+     set format_size of lhEdit to (hi(liFormatSize)) (low(liFormatSize))
+     set dynamic_update_state of lhEdit to DFTRUE
+   end
+   function_return lsRval
+end_function
+
+procedure Text_SetEditObjectValue global integer lhEdit string lsValue
+   integer liLen liPos liMargin liItm
+   string lsLine lsChar lsTen
+   send delete_data to lhEdit
+   move (character(10)) to lsTen
+   move 0 to liItm
+   move "" to lsLine
+   move (length(lsValue)) to liLen
+   for liPos from 1 to liLen
+     move (mid(lsValue,1,liPos)) to lsChar
+     if lsChar eq lsTen begin
+       set value of lhEdit item liItm to lsLine
+       increment liItm
+       move "" to lsLine
+     end
+     else move (lsLine+lsChar) to lsLine
+   loop
+   if lsLine ne "" set value of lhEdit item liItm to lsLine
+end_procedure
+
+

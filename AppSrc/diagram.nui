@@ -1,0 +1,147 @@
+// Use Diagram.pkg  // This is just part of the grdemo.src
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray
+
+enumeration_list
+  define DCLS_NONE
+  define DCLS_SIMPLEBOX
+  define DCLS_SIMPLECIRCLE
+end_enumeration_list
+
+
+class cDiagramObject is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer piType        DCLS_SIMPLEBOX // What kind are you?
+    property integer piX           1000   // Current X position
+    property integer piY           1000   // Current Y position
+    property integer piSizeX       1000   // Size X
+    property integer piSizeY       1000   // Size Y
+    property integer piColor       clRed  // Color
+    property integer piSelectColor clBlue // Color when selected
+    property integer piObjectRow   1
+  end_procedure
+  procedure DoDrawData integer lbSelected integer lbOutLine
+    integer liColor liX1 liY1 liX2 liY2 liObjectID
+    if (piType(self)=DCLS_SIMPLECIRCLE) begin
+
+      if lbSelected get piSelectColor to liColor
+      else          get piColor to liColor
+      send SetFillColor liColor
+      get piObjectRow to liObjectID
+      get piX to liX1
+      get piY to liY1
+      move (liX1+piSizeX(self)) to liX2
+      move (liY1+piSizeY(self)) to liY2
+
+      send AddEllipse liX1 liY1 liX2 liY2
+      send MakeAreaTrackable GR_TRACK_RECTANGLE liX1 liY1 liX2 liY2 liObjectID
+
+      ifnot lbOutLine begin
+        send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_VCENTER)
+        send AddText (string(liObjectID)) (liX1+liX2/2) (liY1+liY2/2)
+      end
+    end
+    if (piType(self)=DCLS_SIMPLEBOX) begin
+      if lbSelected get piSelectColor to liColor
+      else          get piColor to liColor
+      send SetFillColor liColor
+      get piObjectRow to liObjectID
+      get piX to liX1
+      get piY to liY1
+      move (liX1+piSizeX(self)) to liX2
+      move (liY1+piSizeY(self)) to liY2
+      send AddRectangleTrack liX1 liY1 liX2 liY2 liObjectID
+      ifnot lbOutLine begin
+        send SetTextAlign (VDFGR_TA_CENTER+VDFGR_TA_VCENTER)
+        send AddText (string(liObjectID)) (liX1+liX2/2) (liY1+liY2/2)
+      end
+    end
+  end_procedure
+end_class // cDiagramObject
+
+class cDiagramObjectList is a cArray
+  procedure construct_object integer liImage
+    forward send construct_object liImage
+    property integer phCurrentObject 0
+    property integer piOriginX       0
+    property integer piOriginY       0
+  end_procedure
+
+  item_property_list
+    item_property integer phObjectId.i
+    item_property integer pbSelected.i
+    item_property integer piOriginalX.i
+    item_property integer piOriginalY.i
+  end_item_property_list cDiagramObjectList
+
+  procedure DoReset
+    integer liMax liRow lhObj
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get phObjectId.i liRow to lhObj
+      if lhObj send destroy of lhObj
+    loop
+    send delete_data
+  end_procedure
+
+  procedure DoAddDiagramObject integer lhObjectId
+    integer liRow
+    get row_count to liRow
+    set phObjectId.i liRow to lhObjectId
+    set piObjectRow of lhObjectId to liRow
+    set phCurrentObject to lhObjectId
+  end_procedure
+
+  procedure DoDrawData integer lbOutLine
+    integer liRow liMax
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      send DoDrawData to (phObjectId.i(self,liRow)) (pbSelected.i(self,liRow)) lbOutLine
+    loop
+  end_procedure
+
+  procedure DoDragBegin integer liOriginX integer liOriginY
+    integer liRow liMax
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      set piOriginalX.i liRow to (piX(phObjectId.i(self,liRow)))
+      set piOriginalY.i liRow to (piY(phObjectId.i(self,liRow)))
+    loop
+    set piOriginX to liOriginX
+    set piOriginY to liOriginY
+  end_procedure
+  procedure DoDrag integer liX integer liY
+    integer liRow liMax liDeltaX liDeltaY lhObj
+    move (liX-piOriginX(self)) to liDeltaX
+    move (liY-piOriginY(self)) to liDeltaY
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      get phObjectId.i liRow to lhObj
+      if (pbSelected.i(self,liRow)) begin
+        set piX of lhObj to (piOriginalX.i(self,liRow)+liDeltaX)
+        set piY of lhObj to (piOriginalY.i(self,liRow)+liDeltaY)
+      end
+    loop
+    //send DoDrawData DFTRUE
+  end_procedure
+  procedure DoDragEnd
+    send DoDrawData DFFALSE
+  end_procedure
+  procedure DoDragCancel
+    integer liRow liMax
+    get row_count to liMax
+    decrement liMax
+    for liRow from 0 to liMax
+      set piX of (phObjectId.i(self,liRow)) to (piOriginalX.i(self,liRow))
+      set piY of (phObjectId.i(self,liRow)) to (piOriginalY.i(self,liRow))
+    loop
+    send DoDrawData DFFALSE
+  end_procedure
+end_class // cDiagramObjectList
+
+

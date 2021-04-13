@@ -1,0 +1,246 @@
+// Use fvsystempounder //
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use DBMS.nui     // Basic DBMS functions (No User Interface)
+Use TblDynAc.nui // Table, dynamic access (cDynamicTableAccess class)
+Use Wait.utl     // Something to put on screen while batching.
+Use Dates.nui    // Dates
+Use OpenStat.nui // cTablesOpenStatus class (formely cFileAllFiles) (No User Interface)
+Use ToolUtilities.pkg // aps.YellowBox class
+Use tblcreate.pkg // cTableCreator class
+
+// The FastView Table Pounder is used to see if a table placed on a given
+// drive can handle massive updating from a number of clients at the same
+// time. The goal is to determine that this can be done without errors,
+// thereby demonstrating the locking and cashing is correctly setup.
+//
+// The test cycle consists of creating 50 records in a test table, then finding
+// 50 records and marking them for deletion and then deleting them. The time
+// it takes to complete one iteration is displayed in a list (i.e. the time
+// it takes to perform 150 updates to the test table).
+//
+
+class cFVSystemPounder_TableAccess is a cDynamicTableAccess
+  procedure construct_object
+    forward send construct_object
+
+    set pbAllowTemporaryFilelistEntries to TRUE
+
+    set psRootNamePrefix to ""
+
+    set TableBaseData 0 to "fvsyspnd" "FastView - System Pounder" 0
+  end_procedure
+
+  function DoOpenTables returns integer
+    integer liRval liFile liLen
+    forward get DoOpenTables to liRval
+    function_return liRval
+  end_function
+            procedure DeclareOpenError string lsError
+              move (replace("#",lsError,psRootNamePrefix(self))) to lsError
+              send error 718 lsError
+            end_procedure
+end_class // cFVSystemPounder_TableAccess
+
+object oSysPound_TableDefinitions is a cArray
+
+  object oTable_SysPound is a cTableCreator
+    procedure OnDefine
+      set piMaxRecords to 1000000 // 1 million
+      send DoAddField  "CREATE_TIME"  DF_BCD   14
+      send DoAddField  "CREATE_BY"    DF_BCD   14
+      send DoAddField  "DELETE_BY"    DF_BCD   14
+      send DoAddOnlineIndex 1 "create_time"
+      send DoAddOnlineIndex 2 "delete_by recnum"
+    end_procedure
+  end_object
+
+  procedure DoCreateTables integer lhTableAccess
+    integer liFile lhAppDbTable lbSuccess
+    string lsRoot lsLogical lsDisplay
+
+    get piFile.i        of lhTableAccess 0 to liFile
+    get psRootname.i    of lhTableAccess 0 to lsRoot
+    get psLogicalName.i of lhTableAccess 0 to lsLogical
+    get psUserName.i    of lhTableAccess 0 to lsDisplay
+    set FileListValues of oTable_SysPound to liFile lsRoot lsLogical lsDisplay
+    send DoDefine of oTable_SysPound
+    send CreateTable of oTable_SysPound
+  end_procedure
+end_object // oSysPound_TableDefinitions
+
+object oSystemPounder_TableAccess is a cFVSystemPounder_TableAccess
+  set pbOpenTablesOnDefine to false
+end_object // oSystemPounder_TableAccess
+
+procedure SysPound_CreateTables global
+  integer lhTableAccess
+  move (oSystemPounder_TableAccess(self)) to lhTableAccess
+  send DoCreateTables of oSysPound_TableDefinitions lhTableAccess
+end_procedure
+
+function SysPound_DropTables global returns integer
+  integer lbOK lhTableAccess
+  move (oSystemPounder_TableAccess(self)) to lhTableAccess
+  get DoEraseAllTables of lhTableAccess to lbOK
+  function_return lbOK
+end_function
+
+function SysPound_OpenTables global returns integer
+  function_return (DoOpenTables(oSystemPounder_TableAccess(self)))
+end_function
+
+object oSysPound_Panel is a aps.ModalPanel label "System pounder (network tester)"
+  set Window_Style to WS_MAXIMIZEBOX 1 // Enable maximize button (View's only)
+  set Border_Style to BORDER_THICK     // Make panel resizeable
+  set locate_mode to CENTER_ON_SCREEN
+  on_key kCancel send close_panel
+  object oYellow is a aps.YellowBox
+    set peAnchors to (anTop+anLeft+anRight)
+    set size to 38 300
+    set value item 0 to "Start this program from multiple clients to test that table updates are performed without errors."
+    set value item 1 to ""
+    set value item 2 to "Each iteration creates 50 records, then edits 50 records and finally deletes the records it edited. This is done in a table created for that purpose."
+  end_object
+  send aps_goto_max_row
+  object oEdit is a aps.Edit
+    set size to 200 300
+    set peAnchors to (anTop+anLeft+anRight+anBottom)
+  end_object
+
+  procedure WriteLn integer liIter string lsLine
+    set value of oEdit item (liIter-1) to lsLine
+  end_procedure
+
+  object oWait is a cBatchCompanion
+  end_object
+
+  function nSysTime returns number
+    integer liHour liMinute liSecond liMilli
+    string lsValue
+    get MilliSeconds_Systime to lsValue
+    getbuff from lsValue at Dates$SystemTime.iHour         to liHour
+    getbuff from lsValue at Dates$SystemTime.iMinute       to liMinute
+    getbuff from lsValue at Dates$SystemTime.iSecond       to liSecond
+    getbuff from lsValue at Dates$SystemTime.iMilliseconds to liMilli
+    function_return (liHour*10000+liMinute*10000+liSecond*10000+liMilli)
+  end_function
+  procedure Create100 number lnId integer liFile
+    integer liCount
+    number lnCreateTime
+    repeat
+      clear liFile
+      get nSysTime to lnCreateTime
+      set_field_value liFile 1 to lnCreateTime
+      lock
+        vFind liFile 1 EQ
+        ifnot (found) begin
+          set_field_value liFile 2 to lnId
+          saverecord liFile
+          increment liCount
+        end
+      unlock
+    until (liCount>=50)
+  end_procedure
+  procedure Mark100 number lnId integer liFile
+    integer liCount lbFound
+    number lnDeleteBy
+    clear liFile
+    repeat
+      lock
+        vFind liFile 1 GT
+        move (found) to lbFound
+        if (found) begin
+          get_field_value liFile 3 to lnDeleteBy
+          if (lnDeleteBy=0) begin
+            set_field_value liFile 3 to lnId
+            saverecord liFile
+            increment liCount
+          end
+        end
+      unlock
+    until (liCount>=50 or lbFound=0)
+  end_procedure
+  procedure Delete100 number lnId integer liFile
+    integer lbFound
+    number lnDeleteBy
+    clear liFile
+    set_field_value liFile 3 to lnId
+    repeat
+      vfind liFile 2 GT
+      get_field_value liFile 3 to lnDeleteBy
+      move (found) to lbFound
+      if lbFound move (lnDeleteBy=lnId) to lbFound
+      if lbFound delete liFile
+    until (not(lbFound))
+  end_procedure
+  procedure DoTest
+    integer liFile liCount lbBreak li1000
+    number lnId lnTime
+    string lsStart lsStop
+    get piFile.i of oSystemPounder_TableAccess 0 to liFile
+    get nSysTime to lnId
+    move 0 to liCount
+    send delete_data of oEdit
+    send batch_on of oWait lnId
+    get MilliSeconds_Systime to lsStart
+    move 0 to li1000
+    repeat
+      increment liCount
+      send batch_update of oWait (li1000*1000+liCount)
+      send WriteLn liCount ("Iteration "+string(liCount)+": Create")
+      send batch_update2 of oWait "Create"
+      send Create100 lnId liFile
+      send WriteLn liCount ("Iteration "+string(liCount)+": Mark")
+      send batch_update2 of oWait "Mark"
+      send Mark100   lnId liFile
+      send WriteLn liCount ("Iteration "+string(liCount)+": Delete")
+      send batch_update2 of oWait "Delete"
+      send Delete100 lnId liFile
+      get MilliSeconds_Systime to lsStop
+      get MilliSeconds_Elapsed lsStart lsStop to lnTime
+      send WriteLn liCount (sSysTime()+" Iteration "+string(li1000*1000+liCount)+":  "+NumToStrTS(lnTime/1000,3)+" s")
+
+      get Check_StatusPanel of oWait to lbBreak
+      move lsStop to lsStart
+      if (liCount=1000) begin
+        send delete_data of oEdit
+        move 0 to liCount
+        increment li1000
+      end
+    until lbBreak
+
+  end_procedure
+  object oBtn1 is a aps.Multi_Button
+    on_item "Run Test"      send DoTest
+    set peAnchors to (anRight+anBottom)
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item "Close"         send close_panel
+    set peAnchors to (anRight+anBottom)
+  end_object
+  send aps_locate_multi_buttons
+  procedure popup
+    integer lbOK
+    send OpenStat_RegisterFiles
+    send OpenStat_CloseAllFiles
+    get SysPound_OpenTables to lbOK
+    ifnot lbOK begin
+      send SysPound_CreateTables
+      get SysPound_OpenTables to lbOK
+      if lbOK send obs "Test table has been succesfully created"
+    end
+    ifnot lbOK error 772 "FvSysPnd could not be opened (or created)"
+    else begin
+      forward send popup
+      get SysPound_DropTables to lbOK
+      if lbOK send obs "Test table has been succesfully dropped"
+    end
+    send OpenStat_RestoreFiles
+  end_procedure
+end_object
+send aps_SetMinimumDialogSize (oSysPound_Panel(self)) // Set minimum size
+
+procedure popup_systempounder
+  send popup of oSysPound_Panel
+end_procedure

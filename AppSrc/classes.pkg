@@ -1,0 +1,84 @@
+// Use Classes.pkg  // UI Classes for class selection
+
+Use Classes.nui  // Class characteristics
+
+Use aps.pkg         // Auto Positioning and Sizing classes for VDF
+Use Buttons.utl  // Button texts
+
+object oSelectUiClass is a aps.ModalPanel label "Select class"
+  set locate_mode to CENTER_ON_SCREEN
+  on_key ksave_record send close_panel_ok
+  on_key kcancel send close_panel
+  property integer piResult DFFALSE
+  object oLst is a aps.List
+    set size to 200 200
+    procedure mouse_click integer liItem integer liGrb
+      if ((liItem-1)<item_count(self)) send close_panel_ok
+    end_procedure
+
+    procedure fill_list_help.i integer liClass
+      send add_item MSG_NONE (Cls_ClassName(liClass))
+      set aux_value item (item_count(self)-1) to liClass
+    end_procedure
+    procedure fill_list.iiii integer liClass integer liFieldType integer liLen integer liDec
+      integer liMax liItm
+      send delete_data
+      if (liFieldType=DF_ASCII) begin
+        send fill_list_help.i class.dbForm
+        send fill_list_help.i class.dbComboForm
+      end
+      if (liFieldType=DF_BCD) begin
+        send fill_list_help.i class.dbForm
+        send fill_list_help.i class.dbComboForm
+        send fill_list_help.i class.dbSpinForm
+        if (liDec=0) send fill_list_help.i class.dbCheckBox
+      end
+      if (liFieldType=DF_DATE) begin
+        send fill_list_help.i class.dbForm
+        send fill_list_help.i class.dbComboForm
+        send fill_list_help.i class.dbSpinForm
+      end
+      if (liFieldType=DF_TEXT) begin
+        send fill_list_help.i class.dbEdit
+      end
+      get item_count to liMax
+      decrement liMax
+      for liItm from 0 to liMax
+        if (liClass=integer(aux_value(self,liItm))) set current_item to liItm
+      loop
+    end_procedure
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure close_panel_ok
+    set piResult to DFTRUE
+    send close_panel
+  end_procedure
+  set Border_Style to BORDER_THICK   // Make panel resizeable
+  procedure aps_onResize integer delta_rw# integer delta_cl#
+    send aps_resize (oLst(self)) delta_rw# 0 // delta_cl#
+    send aps_register_multi_button (oBtn1(self))
+    send aps_register_multi_button (oBtn2(self))
+    send aps_locate_multi_buttons
+    send aps_auto_size_container
+  end_procedure
+  function iPopup.iiii integer liClass integer liFieldType integer liLen integer liDec returns integer
+    set piResult to DFFALSE
+    send fill_list.iiii to (oLst(self)) liClass liFieldType liLen liDec
+    send popup
+    if (piResult(self)) begin
+      get aux_value of (oLst(self)) item CURRENT to liClass
+      function_return liClass
+    end
+    function_return -1 // None selected
+  end_procedure
+end_object // oSelectUiClass
+
+function Cls_SelectForm global integer liClass integer liFieldType integer liLen integer liDec returns integer
+  function_return (iPopup.iiii(oSelectUiClass(self),liClass,liFieldType,liLen,liDec))
+end_function

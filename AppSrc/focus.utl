@@ -1,0 +1,177 @@
+// **********************************************************************
+// Use Focus.utl    // Retrieve basic information about object
+//
+// by Sture Andersen
+//
+// Create: Can't remember
+// Update: Fri  30-06-2000 - Changed and doc'ed
+//
+//
+// This package is able to perform a runtime analysis of the object that
+// currently holds the focus. The following information may be retrieved:
+//
+//
+//       Info-ID             Type       Description
+//      -----------------------------------------------------------
+//       FOCUS_OK            (Bool)     Did this work at all?
+//       FOCUS_DEO_ID        (Integer)  Who did we ask?
+//       FOCUS_ITEM_FILE     (Integer)  What's the data file of the current
+//                                      item.
+//       FOCUS_ITEM_FIELD    (Integer)  What's the data field of the
+//                                      current item.
+//       FOCUS_MAIN_INDEX    (Integer)  What's the main index (if any)
+//       FOCUS_DD            (Integer)  Who's the server
+//       FOCUS_INDIRECT_DD   (Integer)  Which DDO is taking care of
+//                                      FOCUS_ITEM_FILE
+//       FOCUS_DEO_MODAL     (Bool)     Is that panel modal?
+//       FOCUS_CLIENT_ID     (Integer)  What (if any) is the ID
+//                                      of the client area?
+//       FOCUS_DEO_ITEM      (Integer)  What's current item in
+//                                      that objects
+//       FOCUS_SCOPED_PARENT (Integer)  Object ID of scoped parent
+//       FOCUS_ITEM_VALUE    (String)   Value of current item
+//
+//
+// To retrieve all this wonderful information send message Focus_Analyse_Focus.
+// After that you must use the Focus_Info function to actually get hold of if:
+//
+//   procedure OnlyIfCustomer
+//     integer iFile
+//     send Focus_Analyse_Focus
+//     get Focus_Info FOCUS_ITEM_FILE to iFile
+//     if iFile eq Customer.File_Number begin
+//       // Something fantastic
+//     end
+//     else send stop_box "Only do this from a Customer field!"
+//   end_procedure
+//
+// interface:
+//
+//
+// * function Focus_Find_Scoped_Parent global integer iObj returns integer
+//
+//     This function returns the innermost scoped parent (Scope_State = True)
+//     of the object passed in parameter iObj. If no such object is found
+//     DESKTOP is returned. If 0 is passed as iObj, 0 will be returned.
+//
+//
+// * procedure Focus_Analyze_DEO global integer iDEO integer iItem
+//
+//     Analyse object passed in the iDEO. The iItem parameter should indicate
+//     which item in iDeo should be used for retrieving item based info.
+//     Subsequently use the Focus_Info function to retrieve the information.
+//
+//
+//
+// * procedure Focus_Analyze_Focus global
+//
+//     Analyse object that currently holds the focus. Subsequently use the
+//     Focus_Info function to retrieve the information.
+//
+//
+// * function Focus_Info global integer iItem returns string
+//
+//     Use this function to get hold of information previously recorded
+//     by the Focus_Analyze_Focus (or Focus_Analyze_DEO) function.
+//
+//     Parameter iItem may be any of the following values:
+//
+//                FOCUS_OK            (Boolean)
+//                FOCUS_DEO_ID        (Integer)
+//                FOCUS_ITEM_FILE     (Integer)
+//                FOCUS_ITEM_FIELD    (Integer)
+//                FOCUS_MAIN_INDEX    (Integer)
+//                FOCUS_DD            (Integer)
+//                FOCUS_INDIRECT_DD   (Integer)
+//                FOCUS_DEO_MODAL     (Boolean)
+//                FOCUS_CLIENT_ID     (Integer)
+//                FOCUS_DEO_ITEM      (Integer)
+//                FOCUS_SCOPED_PARENT (Integer)
+//                FOCUS_ITEM_VALUE    (String)
+//
+//     The return type of this function is String but the return value
+//     may be converted to the type indicated in parenthesis.
+
+
+use ui
+
+enumeration_list
+  define FOCUS_OK            // Bool     Did this work at all?
+  define FOCUS_DEO_ID        // Integer  Who did we ask?
+  define FOCUS_DEO_ITEM      // Integer  What's current item in that objects
+  define FOCUS_ITEM_FILE     // Integer  What's the data file
+  define FOCUS_ITEM_FIELD    // Integer  What's the data field
+  define FOCUS_MAIN_INDEX    // Integer  What's the main index (if any)
+  define FOCUS_DD            // Integer  Who's the server
+  define FOCUS_INDIRECT_DD   // Integer  Who's taking care of FOCUS_ITEM_FILE
+  define FOCUS_DEO_MODAL     // Bool     Is that panel modal?
+  define FOCUS_CLIENT_ID     // Integer  What (if any) is the ID of the client area?
+  define FOCUS_SCOPED_PARENT // Integer  Object ID of scoped parent
+  define FOCUS_ITEM_VALUE    // The current value of the focused field
+end_enumeration_list
+
+integer FocusInf_Array#
+object FocusInf_Array is an array
+  move self to FocusInf_Array#
+end_object
+
+function Focus_Find_Scoped_Parent global integer obj# returns integer
+  integer st#
+  repeat
+    get scope_state of obj# to st#
+    ifnot st# get parent of obj# to obj#
+  until (st# or obj#=desktop)
+  function_return obj#
+end_function
+
+procedure Focus_Analyze_DEO global integer deo# integer itm#
+  integer st# file# fld# dd# tmp# scoped_parent#
+  send delete_data to FocusInf_Array#
+  if deo# gt desktop begin
+    set value of FocusInf_Array# item FOCUS_OK to dfTrue
+    set value of FocusInf_Array# item FOCUS_DEO_ID to deo#
+    move (Focus_Find_Scoped_Parent(deo#)) to scoped_parent#
+    set value of FocusInf_Array# item FOCUS_SCOPED_PARENT to scoped_parent#
+    if scoped_parent# begin
+      set value of FocusInf_Array# item FOCUS_DEO_MODAL to (modal_state(scoped_parent#))
+    end
+    else set value of FocusInf_Array# item FOCUS_DEO_MODAL to dfFalse
+    get delegation_mode of deo# to st#
+    set delegation_mode of deo# to NO_DELEGATE_OR_ERROR
+    get server of deo# to dd#
+    get data_file  of deo# item itm# to file#
+    get data_field of deo# item itm# to fld#
+    if (file# and fld#) begin
+      get_attribute DF_FIELD_INDEX of file# fld# to tmp#
+      set value of FocusInf_Array# item FOCUS_MAIN_INDEX to tmp#
+    end
+
+    set delegation_mode of deo# to st#
+    set value of FocusInf_Array# item FOCUS_DEO_ITEM to itm#
+    set value of FocusInf_Array# item FOCUS_ITEM_FILE to file#
+    set value of FocusInf_Array# item FOCUS_ITEM_FIELD to fld#
+    set value of FocusInf_Array# item FOCUS_ITEM_VALUE to (value(deo#,itm#))
+    if dd# begin
+      set value of FocusInf_Array# item FOCUS_DD to dd#
+      get which_data_set of dd# file# to dd#
+      set value of FocusInf_Array# item FOCUS_INDIRECT_DD to dd#
+    end
+  end
+end_procedure
+
+procedure Focus_Analyze_Focus global
+  integer focus# itm# st#
+  get focus of desktop to focus#
+  if focus# gt desktop begin
+    get delegation_mode of focus# to st#
+    set delegation_mode of focus# to NO_DELEGATE_OR_ERROR
+    get current_item of focus# to itm#
+    set delegation_mode of focus# to st#
+  end
+  else move -1 to itm#
+  send Focus_Analyze_DEO focus# itm#
+end_procedure
+
+function Focus_Info global integer itm# returns string
+  function_return (value(FocusInf_Array#,itm#))
+end_function

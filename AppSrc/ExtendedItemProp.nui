@@ -1,0 +1,161 @@
+// Use ExtendedItemProp.nui // cExtendedItemPropertyArray class
+
+Use ItemProp.nui // ITEM_PROPERTY command for use within arrays
+Use XmlBuilder.nui // cXmlBuilder class
+
+desktop_section
+object oItemPropertyArrayXmlBuilder is a cXmlBuilder
+  property integer phRoot
+  property integer phxml
+  procedure RememberRootAndXmlHandle integer lhXml integer lhRoot
+    set phXml to lhXml
+    set phRoot to lhRoot
+  end_procedure
+  procedure DestroyXmlHandles
+    integer lhXml lhRoot
+    get phXml to lhXml
+    get phRoot to lhRoot
+    send Destroy of lhRoot
+    send Destroy of lhXml
+  end_procedure
+  procedure SaveAndDestroy
+    integer lhXml lhRoot lbTest
+    get phXml to lhXml
+    get phRoot to lhRoot
+    send Destroy of lhRoot
+    get SaveXmlDocument of lhXml to lbTest
+    send Destroy of lhXml
+  end_procedure
+end_object
+end_desktop_section
+
+      class cItemPropertyArrayColInfo is a cArray
+        item_property_list
+          // XML properties:
+          item_property string  psXmlTag.i
+          item_property integer pbXmlSubNode.i
+          item_property integer piXmlArrayClass.i // Which class do we instantiate to soak up subnodes?
+          // Grid related properties:
+          item_property string  psHeader.i
+          item_property integer pbDisplay.i
+          item_property integer piLength.i
+          item_property integer piDecimals.i
+        end_item_property_list cItemPropertyArrayColInfo
+      end_class // cItemPropertyArrayColInfo
+
+class cExtendedItemPropertyArray is a cArray
+  procedure construct_object
+    forward send construct_object
+    property string  psRowXmlTag  "record"
+    object oColInfo is a cItemPropertyArrayColInfo
+    end_object
+  end_procedure
+  procedure set column_xml_tag integer liColumn string lsValue
+    set psXmlTag.i of (oColInfo(self)) liColumn to lsValue
+  end_procedure
+  procedure set column_xml_subnode_array integer liColumn integer lbState
+    set pbXmlSubNode.i of (oColInfo(self)) liColumn to lbState
+  end_procedure
+  procedure set column_subnode_array_class integer liColumn integer liClass
+    set piXmlArrayClass.i of (oColInfo(self)) liColumn to liClass
+  end_procedure
+  procedure set column_header integer liColumn string lsValue
+    set psHeader.i of (oColInfo(self)) liColumn to lsValue
+  end_procedure
+  procedure set column_display integer liColumn integer lbState
+    set pbDisplay.i of (oColInfo(self)) liColumn to lbState
+  end_procedure
+  procedure set column_length integer liColumn integer liLen
+    set piLength.i of (oColInfo(self)) liColumn to liLen
+  end_procedure
+  procedure set column_decimals integer liColumn integer liDecs
+    set piDecimals.i of (oColInfo(self)) liColumn to liDecs
+  end_procedure
+
+  procedure WriteXml
+    integer lhBuilder liMax liRow liCol lhColInfo liColMax
+    integer lbXmlSubNode lhSubNodeArr liType
+    string lsValue lsXmlTag lsRowXmlTag
+    move oItemPropertyArrayXmlBuilder to lhBuilder
+    move (oColInfo(self)) to lhColInfo
+    get psRowXmlTag to lsRowXmlTag
+    get row_count to liMax
+    decrement liMax
+    get column_count to liColMax
+    decrement liColMax
+    for liRow from 0 to liMax
+
+      send add_open_element of lhBuilder lsRowXmlTag
+
+      for liCol from 0 to liColMax
+        get psXmlTag.i of lhColInfo liCol to lsXmlTag
+        if (lsXmlTag<>"") begin
+          get value item (liRow*(liColMax+1)+liCol) to lsValue
+
+          get pbXmlSubNode.i of lhColInfo liCol to lbXmlSubNode
+          if lbXmlSubNode begin
+            if (integer(lsValue)) begin
+              move lsValue to lhSubNodeArr
+              send add_open_element of lhBuilder lsXmlTag
+              send WriteXml of lhSubNodeArr
+              send close_element of lhBuilder
+            end
+          end
+          else begin
+            get item_property_type liCol to liType
+            if (liType=ITMP_INTEGER) send add_closed_element of lhBuilder lsXmlTag lsValue
+            if (liType=ITMP_STRING)  send add_closed_element of lhBuilder lsXmlTag lsValue
+            if (liType=ITMP_REAL)    send add_closed_element of lhBuilder lsXmlTag lsValue
+            if (liType=ITMP_NUMBER)  send add_closed_element_number of lhBuilder lsXmlTag lsValue
+            if (liType=ITMP_DATE)    send add_closed_element_date of lhBuilder lsXmlTag lsValue
+          end
+        end
+      loop
+
+      send close_element of lhBuilder // lsRowXmlTag
+    loop
+  end_procedure
+
+  procedure ReadXml integer hoNode
+    integer liLen liItm hoCollectionNode liCol liColMax lhColInfo liRow lbXmlSubNode liClass lhNewArray hoList
+    integer hoChildNode
+    string lsValue lsXmlTag lsRowXmlTag
+    get psRowXmlTag to lsRowXmlTag
+    move (oColInfo(self)) to lhColInfo
+    get column_count to liColMax
+    decrement liColMax
+
+    get FindNodeList of hoNode lsRowXmlTag To hoList
+
+    get NodeListLength of hoList to liLen
+    decrement liLen
+    for liItm from 0 to liLen
+      get CollectionNode of hoList liItm to hoCollectionNode
+      get row_count to liRow
+      for liCol from 0 to liColMax
+        get psXmlTag.i of lhColInfo liCol to lsXmlTag
+        if (lsXmlTag<>"") begin
+          get pbXmlSubNode.i of lhColInfo liCol to lbXmlSubNode  // Is this a sub-array thing?
+          if lbXmlSubNode begin
+            get FindNode of hoCollectionNode lsXmlTag to hoChildNode
+            if hoChildNode begin
+              get piXmlArrayClass.i of lhColInfo liCol to liClass
+              get create liClass to lhNewArray
+              set value item (liRow*(liColMax+1)+liCol) to lhNewArray
+              send ReadXml of lhNewArray hoChildNode
+              send destroy of hoChildNode
+            end
+          end
+          else begin
+            get ChildNodeValue of hoCollectionNode lsXmlTag to lsValue      // What's it's value?
+            set value item (liRow*(liColMax+1)+liCol) to lsValue
+          end
+        end
+      loop
+      send destroy of hoCollectionNode
+    loop
+    send destroy of hoList
+  end_procedure
+end_class // cItemPropertyArray
+
+

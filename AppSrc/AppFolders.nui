@@ -1,0 +1,56 @@
+// Use AppFolders.nui // Function AppFolder returns the absolute folder name of strategic folders
+//
+// Not very sophisticated! Everything is based on the location of filelist.cfg. Should really
+// examine the -ws file. Well, let's see how VDF 12 works before exhausting ourselves.
+
+use files.nui
+
+enumeration_list
+  define APPFOLDER_HTML
+  define APPFOLDER_FILELIST
+  define APPFOLDER_PROGRAM
+  define APPFOLDER_VDF_ROOT
+  define APPFOLDER_MAX
+end_enumeration_list
+
+
+function AppFolder global integer liWhich returns string
+  string lsValue
+  if (liWhich=APPFOLDER_VDF_ROOT) begin // VDF Root dir
+    get_profile_string "Defaults" "VdfRootDir" To lsValue
+  end
+  if (liWhich=APPFOLDER_FILELIST) begin // Filelist.cfg
+    get SEQ_FindFileAlongDFPath "filelist.cfg" to lsValue
+  end
+  if (liWhich=APPFOLDER_PROGRAM) begin // Filelist.cfg
+    get appfolder APPFOLDER_FILELIST to lsValue
+    get SEQ_ExtractPathFromFileName lsValue to lsValue
+    get Files_AppendPath lsValue "Programs" to lsValue
+  end
+  if (liWhich=APPFOLDER_HTML) begin // Filelist.cfg
+    get appfolder APPFOLDER_FILELIST to lsValue
+    get SEQ_ExtractPathFromFileName lsValue to lsValue
+    get Files_AppendPath lsValue "AppHtml" to lsValue
+  end
+  function_return lsValue
+end_function
+
+function AppSubFolder global integer liWhich string lsSubFolder returns string
+  string lsValue
+  get AppFolder liWhich to lsValue
+  get Files_AppendPath lsValue lsSubFolder to lsValue
+  function_return lsValue
+end_function
+
+// Translate absolute disk folder (or file) into relative HTML folder (or file).
+function AppFolder_DiskToHtml global string lsDiskFolder returns string
+  string lsHtmlRootFolder lsRelativeFolder
+  get AppFolder APPFOLDER_HTML to lsHtmlRootFolder
+  move (lowercase(lsDiskFolder)) to lsDiskFolder
+  move (lowercase(lsHtmlRootFolder)) to lsHtmlRootFolder
+  move (replace(lsHtmlRootFolder,lsDiskFolder,"")) to lsRelativeFolder
+
+  if (left(lsRelativeFolder,1)="\") move (replace("\",lsRelativeFolder,"")) to lsRelativeFolder
+  move (replaces("\",lsRelativeFolder,"/")) to lsRelativeFolder
+  function_return lsRelativeFolder
+end_function

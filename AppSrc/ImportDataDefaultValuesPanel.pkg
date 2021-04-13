@@ -1,0 +1,339 @@
+Use Windows.pkg
+Use DFClient.pkg
+Use gridutil.utl
+Use spec0015.nui
+Use strings.nui
+Use dates.utl
+
+Object oImportDataDefaultValuesPanel is a ModalPanel
+
+    Set Border_Style to Border_Thick
+    Set Size to 234 435
+    Set Location to 12 17
+    Set Label to "Column default values"
+
+    Object oGrid is a Grid
+        Set Location to 18 9
+
+        Set select_mode to MULTI_SELECT
+    
+        Set Size to 181 418
+        Set Line_Width to 5 0
+        Set Header_Label 0 to "Insert default value"
+        Set Form_Width 0 to 76
+        Set Header_Label 1 to "Column name"
+        Set Form_Width 1 to 77
+        Set Header_Label 2 to "Also if not blank"
+        Set Form_Width 2 to 71
+        Set Header_Label 3 to "Default value"
+        Set Form_Width 3 to 140
+        Set Header_Label 4 to "Type"
+        Set Form_Width 4 to 43
+        Set peAnchors to anAll
+        Set peResizeColumn to rcSelectedColumn
+        Set piResizeColumn to 3
+        
+        On_Key Key_Ctrl+Key_D Send PopupCal
+        
+        Procedure PopupCal
+            Integer iBase
+            Get Grid_BaseItem Self to iBase
+            If (Aux_Value(Self,iBase+1)=DF_DATE) Begin
+                If (Grid_CurrentColumn(Self)=3) Begin
+                    Send Popup of (popup_calendar(Self))
+                End
+            End
+        End_Procedure
+        
+        Procedure MoveToValueArray Integer iTable Integer hDefaultValues
+            Integer iRow iMax iBase
+            Send Delete_Data of hDefaultValues
+            Get Grid_RowCount Self to iMax
+            Decrement iMax
+            For iRow from 0 to iMax
+                Get Grid_RowBaseItem Self iRow to iBase
+                If (Select_State(Self,iBase)) Begin
+                    Send AddRow of hDefaultValues (Aux_Value(Self,iBase)) (Select_State(Self,iBase+2)) (Value(Self,iBase+3))
+                End
+            Loop
+        End_Procedure
+
+        Register_Function pbEvenIfNotEmpty.i Integer iRow Returns Integer
+        Register_Function psValue.i Integer iRow Returns String
+        
+        Procedure FillList Integer iTable Integer hDefaultValues
+            Integer iField iMaxField iType iDefaultRow iBase iPrecision iLength
+            String sName sTypeAndLen
+            
+            Set Dynamic_Update_State to False
+            Send Delete_Data
+            
+            Get_Attribute DF_FILE_NUMBER_FIELDS of iTable to iMaxField
+            For iField from 1 to iMaxField
+                Get_Attribute DF_FIELD_TYPE of iTable iField to iType
+                If (iType<>DF_OVERLAP and iType<>DF_TEXT and iType<>DF_BINARY) Begin
+                    Get Item_Count to iBase
+                    
+                    Get FindRow of hDefaultValues iField to iDefaultRow
+                    Send Grid_AddCheckBoxItem Self (iDefaultRow<>-1)
+                    
+                    Get_Attribute DF_FIELD_NAME of iTable iField to sName
+                    Send Add_Item MSG_NONE sName
+                    If (iDefaultRow=-1) Begin // 
+                        Send Grid_AddCheckBoxItem Self False // Even if not empty?
+                        Send Add_Item MSG_NONE "" // Default value
+                    End
+                    Else Begin
+                        Send Grid_AddCheckBoxItem Self (pbEvenIfNotEmpty.i(hDefaultValues,iDefaultRow)<>0) // Even if not empty?
+                        Send Add_Item MSG_NONE (psValue.i(hDefaultValues,iDefaultRow)) // Default value
+                    End
+                    
+                    Get FDX_FieldTypeAndLengthName 0 iTable iField to sTypeAndLen
+                    Send Add_Item MSG_NONE sTypeAndLen
+ 
+                    Set Entry_State (iBase+1) to False 
+                    Set Entry_State (iBase+4) to False 
+                    
+                    Set Aux_Value iBase to iField
+                    Set Aux_Value (iBase+1) to iType
+                    
+                    Send SetShadowStateForBaseItem iBase
+                    
+//                    Set Item_Shadow_State (iBase+2) to True
+//                    Set Item_Shadow_State (iBase+3) to True
+                    
+                    Get_Attribute DF_FIELD_LENGTH of iTable iField to iLength
+//                    If (iType=DF_BCD) Begin
+//                        Get_Attribute DF_FIELD_PRECISION of iTable iField to iPrecision
+//                        Set Form_Datatype (iBase+3) to iPrecision
+//                        Set Form_Margin   (iBase+3) to iLength
+//                    End
+//                    If (iType=DF_DATE) Begin
+//                        Set Form_Datatype (iBase+3) to date_window
+//                        Set Form_Margin   (iBase+3) to 10
+//                    End
+//                    If (iType=DF_ASCII) Begin
+//                        Set Form_Datatype (iBase+3) to Ascii_Window
+//                        Set Form_Margin   (iBase+3) to iLength 
+//                    End                    
+                End
+            Loop
+            Set Dynamic_Update_State to True
+        End_Procedure
+        
+        Procedure SetShadowStateForBaseItem Integer iItem
+            Integer iBase
+            Boolean bState
+            Get Grid_ItemBaseItem Self iItem to iBase
+            Get Select_State iBase to bState
+            Set Item_Shadow_State (iBase+2) to (bState=0)
+            Set Item_Shadow_State (iBase+3) to (bState=0)
+        End_Procedure
+
+        Procedure select_toggling Integer liItem Integer lbState
+            Integer liCurrentItem liColumn liBase liRow
+            Get Current_Item to liCurrentItem
+            If (liItem=-99) Begin
+                Move liCurrentItem to liItem
+            End
+            If (Checkbox_Item_State(Self,liItem)) Begin
+                Get Grid_ItemColumn Self liItem to liColumn
+                Forward Send select_toggling liCurrentItem lbState
+                If (liColumn=0) Begin
+                    Send SetShadowStateForBaseItem liItem
+//                    Get Grid_ItemRow Self liBase to liRow
+//                    If (lbState=0) Begin
+//                        Send Grid_SetRowColor Self liRow clBtnFace
+//                    End
+//                    Else Begin
+//                        Send Grid_SetRowColor Self liRow clWhite
+//                    End
+                End
+            End
+        End_Procedure
+        
+            
+            Property Date _pdRecentlyValidatedDate 
+            
+            Function _ValidateDate String sValue Returns Boolean
+                Integer iInt1 iInt2 iInt3 iFormat
+                Integer iDay iMonth iYear
+                If (sValue="") Begin
+                    Function_Return True
+                End
+                If (HowManyIntegers(sValue)=3) Begin
+                    Move (ExtractInteger(sValue,1)) to iInt1
+                    Move (ExtractInteger(sValue,2)) to iInt2
+                    Move (ExtractInteger(sValue,3)) to iInt3
+                    Get_Attribute DF_DATE_FORMAT to iFormat
+                    If (iFormat=DF_DATE_EUROPEAN) Begin
+                        Move iInt1 to iDay
+                        Move iInt2 to iMonth
+                        Move iInt3 to iYear
+                    End
+                    If (iFormat=DF_DATE_MILITARY) Begin
+                        Move iInt1 to iYear
+                        Move iInt2 to iMonth
+                        Move iInt3 to iDay
+                    End
+                    If (iFormat=DF_DATE_USA) Begin
+                        Move iInt1 to iMonth
+                        Move iInt2 to iDay
+                        Move iInt3 to iYear
+                    End
+                    If (iMonth=0 and iDay=0 and iYear=0) Begin
+                        Function_Return True
+                    End
+                    Else Begin
+                        If (DateIsLegalComponents(iDay,iMonth,iYear)) Begin
+                            Set _pdRecentlyValidatedDate to (DateCompose(iDay,iMonth,iYear))
+                            Function_Return True
+                        End
+                    End
+                End
+                Function_Return False
+            End_Function
+            
+            Property Number _pnRecentlyValidatedNumber
+            
+            Function _ValidateNumber String sValue Returns Boolean
+                Integer iSep iRval
+                Get_Attribute DF_DECIMAL_SEPARATOR to iSep
+                Get StringIsNumber sValue iSep to iRval
+                If (iRval<>0) Begin
+                    Set _pnRecentlyValidatedNumber to sValue
+                End
+                Function_Return (iRval<>0)
+            End_Function
+            
+        Function ValidateItem Integer iItem Returns Boolean
+            Boolean bOk
+            Integer iBase iType iField iTable
+            String sValue
+                         
+            Move False to bOk
+
+            Get Grid_ItemBaseItem Self iItem to iBase
+            If (Select_State(Self,iBase)) Begin
+                Get Aux_Value iBase to iField
+                Get _piTable to iTable
+                Get Value (iBase+3) to sValue
+                Get_Attribute DF_FIELD_TYPE of iTable iField to iType
+                If (iType=DF_DATE) Begin
+                    If (_ValidateDate(Self,sValue)) Begin
+                        Set Value (iBase+3) to (_pdRecentlyValidatedDate(Self))
+                        Move True to bOk
+                    End
+                End
+                If (iType=DF_BCD) Begin
+                    If (_ValidateNumber(Self,sValue)) Begin
+                        Set Value (iBase+3) to (_pnRecentlyValidatedNumber(Self))
+                        Move True to bOk
+                    End
+                End
+                If (iType=DF_ASCII) Begin
+                    Move True to bOk
+                End
+            End
+            Else Begin
+                Move True to bOk
+            End
+            Function_Return bOk
+        End_Function
+        
+        Function ValidateCurrentItem Returns Boolean
+            Boolean bRval
+            Integer iItem
+            If (Item_Count(Self)<>0) Begin
+                Get Current_Item to iItem
+                Get ValidateItem iItem to bRval
+                If (not(bRval)) Begin
+                    Error 244 "Illegal default value"
+                End
+            End
+            Else Begin
+                Move True to bRval
+            End
+            Function_Return bRval
+        End_Function
+        
+        Procedure Item_Change Integer iFromItem Integer iToItem Returns Integer
+            Boolean bOk
+            Integer iReturnItem
+            Get ValidateItem iFromItem to bOk
+            If (bOk) Begin
+                Forward Get MSG_Item_Change iFromItem iToItem to iReturnItem
+            End
+            Else Begin
+                Move iFromItem to iReturnItem
+                Error 242 "Illegal default value"
+            End
+            Procedure_Return iReturnItem
+        End_Procedure
+        
+//        Procedure Exiting Handle hoDestination Returns Integer
+//            Boolean bOk
+//            Integer iRval iItem
+//            Forward Get MSG_Exiting hoDestination to iRval
+//            If (iRval=0) Begin
+//                If (Item_Count(Self)<>0) Begin
+//                    Get Current_Item to iItem
+//                    Get ValidateItem iItem to bOk
+//                    If (bOk) Begin
+//                    End
+//                    Else Begin
+//                        Error 243 "Illegal default value"
+//                        Move 1 to iRval
+//                    End
+//                End
+//            End
+//            Function_Return iRval
+//        End_Procedure
+    End_Object
+    
+    Property Integer _piTable
+    Property Integer _phDefaultValues
+    Property Boolean _pbOk
+    
+    Procedure Request_Ok
+        If (ValidateCurrentItem(oGrid)) Begin
+            Set _pbOk to True
+            Send Close_Panel
+        End
+    End_Procedure
+
+    Object oButton2 is a Button
+        Set Location to 210 315
+        Set Label to "OK"
+        Set peAnchors to anBottomRight
+        Procedure OnClick
+            Send Request_ok
+        End_Procedure
+    End_Object
+
+    Object oButton3 is a Button
+        Set Location to 210 376
+        Set Label to "Cancel"
+        Set peAnchors to anBottomRight
+        Procedure OnClick
+            Send Close_Panel
+        End_Procedure
+    End_Object
+    
+    Procedure PopupDefaultValues Integer iTable Integer hDefaultValues
+        If (iTable<>0) Begin
+            Set _piTable to iTable
+            Set _phDefaultValues to hDefaultValues
+            Send FillList of oGrid iTable hDefaultValues
+            Set _pbOk to False
+            Send Popup
+            If (_pbOk(Self)) Begin
+                Send MoveToValueArray of oGrid iTable hDefaultValues
+            End
+        End
+        Else Begin
+            Send Info_Box "Target table not selected" "Message"
+        End
+    End_Procedure
+
+End_Object

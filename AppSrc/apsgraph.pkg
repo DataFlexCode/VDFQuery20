@@ -1,0 +1,29 @@
+Use APS.pkg      // Auto Position and Sizing classes for VDF
+Use VdfGraph.utl // Graphics for Visual DataFlex
+
+class aps.GraphicArea is a GraphicArea startmac APS.STARTMAC_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_auto_size_control_state to false
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+
+class aps.GraphicArea3D is a GraphicArea3D startmac APS.STARTMAC_SNAP
+  procedure construct_object
+    forward send construct_object
+    send define_aps_control_mx
+    set p_auto_size_control_state to false
+  end_procedure
+  import_class_protocol aps_control_mx
+  procedure end_construct_object
+    forward send end_construct_object
+    send end_define_aps_control_mx
+  end_procedure
+end_class
+

@@ -1,0 +1,123 @@
+
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
+Use FvHomDir.pkg // Dialogs for saving and opening FastViews
+
+string gsViewCollectionFileName
+move "Default.fvc" to gsViewCollectionFileName
+
+desktop_section
+  object oFastViewLayout is a cArray
+    item_property_list
+      item_property string  psFileName.i
+      item_property integer piMainFileRecnum.i
+      item_property integer piChildFileRecnum.i
+      item_property integer piPosX.i
+      item_property integer piPosY.i
+      item_property integer piViewMode.i
+    end_item_property_list
+    procedure WS_OnCloseWorkSpace string lsOldWS
+      send delete_data
+    end_procedure
+    procedure RegisterView integer lhView
+      integer liRow lhDef liRecnum lhDD liViewMode
+      string lsLabel
+      if (active_state(lhView)) begin
+        get row_count to liRow
+        get phDefinitionObject of lhView to lhDef
+        if (psDiskFileName(lhDef)<>"") begin
+          set psFileName.i liRow to (psDiskFileName(lhDef))
+          get server of lhView to lhDD
+          get current_record of lhDD to liRecnum
+          set piMainFileRecnum.i liRow to liRecnum
+          get phChildDD of lhView to lhDD
+          if lhDD begin
+            get current_record of lhDD to liRecnum
+            set piChildFileRecnum.i liRow to liRecnum
+          end
+          set piPosX.i liRow to (hi(location(lhView)))
+          set piPosY.i liRow to (low(location(lhView)))
+          get view_mode of lhView to liViewMode
+          set piViewMode.i liRow to liViewMode
+        end
+        else begin
+          get label of lhView to lsLabel
+          send obs ("View '"+lsLabel+"' can not be part of the collection") "because the definition has not been saved separately"
+        end
+      end
+    end_procedure
+    procedure OpenLayouts
+      integer liRow liMax lhDef lhView
+      string lsFileName lsPath
+      get FastView_HomeDirectory to lsPath
+      get row_count to liMax
+      decrement liMax
+      for liRow from 0 to liMax
+        get FastView_CreateViewDefinition to lhDef
+        get psFileName.i liRow to lsFileName
+        get SEQ_RemovePathFromFileName lsFileName to lsFileName
+        get SEQ_ComposeAbsoluteFileName lsPath lsFileName to lsFileName
+//        send SEQ_Read_FileName to lhDef (psFileName.i(self,liRow))
+        send SEQ_Read_FileName to lhDef lsFileName
+        get iCreateView of lhDef to lhView
+        if lhView begin
+          set location of lhView to (piPosX.i(self,liRow)) (piPosY.i(self,liRow))
+          send popup to lhView
+          set view_mode of lhView to (piViewMode.i(self,liRow))
+        end
+      loop
+    end_procedure
+    procedure WS_OnOpenWorkSpace
+      move "Default.fvc" to gsViewCollectionFileName
+    end_procedure
+  end_object // oFastViewLayout
+end_desktop_section
+
+procedure FastView_RegisterWithLayout global integer lhView
+  send RegisterView to (oFastViewLayout(self)) lhView
+end_procedure
+
+procedure FastView_OpenLayout
+  string lsPath lsFile
+  integer liChannel
+  get FastView_HomeDirectory to lsPath
+  if (lsPath="") send obs "FastView folder could not be located." "This feature is not available"
+  else begin
+    get FastView_OpenViewCollection to lsFile
+    if (lsFile<>"") begin
+      move lsFile to gsViewCollectionFileName
+      get SEQ_ComposeAbsoluteFileName lsPath lsFile to lsFile
+      get SEQ_DirectInput lsFile to liChannel
+      if (liChannel>=0) begin
+        send SEQ_ReadArrayItems liChannel (oFastViewLayout(self))
+        send SEQ_CloseInput liChannel
+        send OpenLayouts to (oFastViewLayout(self))
+      end
+    end
+  end
+end_procedure
+procedure FastView_SaveLayout
+  string lsPath lsFile
+  integer liChannel
+  send delete_data to (oFastViewLayout(self))
+  broadcast recursive send DoRegisterWithFvLayoutObjectReset to desktop
+  broadcast recursive send DoRegisterWithFvLayoutObject to desktop
+  if (row_count(oFastViewLayout(self))) begin
+//    send obs (row_count(oFastViewLayout(self)))
+    get FastView_HomeDirectory to lsPath
+    if (lsPath="") send obs "FastView folder fould not be located." "This feature is not available"
+    else begin
+      get FastView_SelectDiskFileName "Save view collection (of currently open views)" gsViewCollectionFileName "fvc" to lsFile
+      if (lsFile<>"") begin
+        get SEQ_ComposeAbsoluteFileName lsPath lsFile to lsFile
+        get SEQ_DirectOutput lsFile to liChannel
+        if (liChannel>=0) begin
+          send SEQ_WriteArrayItems liChannel (oFastViewLayout(self))
+          send SEQ_CloseOutput liChannel
+        end
+      end
+    end
+  end
+  else send obs "There are no active views to be part of a collection!"
+end_procedure
+
+

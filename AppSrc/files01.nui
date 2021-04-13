@@ -1,0 +1,75 @@
+// Use files01.nui // SEQ_DoChannelPositionsToLineCount - stuff
+use files.nui
+
+object oSEQ_DoChannelPositionsToLineCount is a cArray
+  item_property_list
+    item_property integer piPosition.i
+    item_property integer piLine.i
+  end_item_property_list
+  procedure add_position integer liRow integer liPos
+    set piPosition.i liRow to liPos
+    set piLine.i     liRow to -1
+  end_procedure
+end_object
+
+procedure SEQ_DoChannelPositionsToLineCount_Reset global
+  send delete_data to (oSEQ_DoChannelPositionsToLineCount(self))
+end_procedure
+procedure SEQ_DoChannelPositionsToLineCount_Add global integer liRow integer liPos // This only works if channel positions are added in ascending order
+  send add_position to (oSEQ_DoChannelPositionsToLineCount(self)) liRow liPos
+end_procedure
+procedure SEQ_DoChannelPositionsToLineCount_Resolve global string lsFileName
+  integer liChannel liLineCount liRow lhArray liMax
+  integer liTestPos liPos lbSeqEof
+  string lsValue
+  move (oSEQ_DoChannelPositionsToLineCount(self)) to lhArray
+  get SEQ_DirectInput lsFileName to liChannel
+  if (liChannel>=0) begin
+
+    get row_count of lhArray to liMax
+    decrement liMax
+    move 0 to liRow
+    move 0 to liLineCount
+    get piPosition.i of lhArray liRow to liPos
+
+    repeat
+      readln channel liChannel lsValue
+      move (seqeof) to lbSeqEof
+      get_channel_position liChannel to liTestPos
+      increment liLineCount
+      repeat
+        if (liTestPos>=liPos) begin
+          set piLine.i of lhArray liRow to liLineCount
+          increment liRow
+          if (liRow<=liMax) begin
+            get piPosition.i of lhArray liRow to liPos
+          end
+        end
+      until (liRow>liMax or liPos>liTestPos)
+
+    until (liRow>liMax or lbSeqEof<>0)
+
+    send SEQ_CloseInput liChannel
+  end
+end_procedure
+
+function SEQ_DoChannelPositionsToLineCount global integer liRow returns integer
+  integer lhArray
+  move (oSEQ_DoChannelPositionsToLineCount(self)) to lhArray
+  function_return (piLine.i(lhArray,liRow))
+end_function
+
+//procedure test
+//  send SEQ_DoChannelPositionsToLineCount_Reset
+//  send SEQ_DoChannelPositionsToLineCount_Add 0 1000
+//  send SEQ_DoChannelPositionsToLineCount_Add 1 1001
+//  send SEQ_DoChannelPositionsToLineCount_Add 2 2000
+//  send SEQ_DoChannelPositionsToLineCount_Add 3 3000
+//  send SEQ_DoChannelPositionsToLineCount_Resolve "\apps\newsgroups\data\importexport\dfm-eaddress.asc"
+//  showln (SEQ_DoChannelPositionsToLineCount(0))
+//  showln (SEQ_DoChannelPositionsToLineCount(1))
+//  showln (SEQ_DoChannelPositionsToLineCount(2))
+//  showln (SEQ_DoChannelPositionsToLineCount(3))
+//  inkey windowindex
+//end_procedure
+//send test

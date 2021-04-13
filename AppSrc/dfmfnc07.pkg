@@ -1,0 +1,65 @@
+Use DFMatrix.utl // DFMatrix application glue
+
+Object oDfmFnc07 is a fdxrpt.ModalClient label "Create selected DEF/FD files"
+  object oFrm1 is a aps.SelectDirForm label "Target directory:" abstract AFT_ASCII50
+    on_key kenter send next
+    set p_extra_internal_width to -40
+  end_object
+  send aps_goto_max_row
+  send make_column_space 70
+  object oCb1 is a aps.CheckBox label "Create FD files" snap SL_DOWN
+    set checked_state to true
+  end_object
+  object oCb2 is a aps.CheckBox label "Create DEF files" snap SL_DOWN
+    set checked_state to true
+  end_object
+  object oBtn1 is a aps.Multi_Button
+    on_item t.btn.ok send DoReport
+  end_object
+  object oBtn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  function sDestination returns string
+    function_return (value(oFrm1(self),0))
+  end_function
+  function iCreateFD returns integer
+    integer liCS
+    get checked_state of (oCb1(self)) to liCS
+    function_return liCS
+  end_function
+  function iCreateDEF returns integer
+    integer liCS
+    get checked_state of (oCb2(self)) to liCS
+    function_return liCS
+  end_function
+  set piDontRegister to dfTrue // Don't register with the main menu
+  procedure Callback_Filelist_Entry integer file# integer selected# integer shaded#
+    integer oFDX# grb#
+    string root# dir# dfname#
+    get sDestination to dir#
+    get piFDX_Server to oFDX#
+    move (FDX_AttrValue_FILELIST(oFDX#,DF_FILE_ROOT_NAME,file#)) to root#
+    move (FDX_AttrValue_FILELIST(oFDX#,DF_FILE_LOGICAL_NAME,file#)) to dfname#
+    if dir# ne "" move (SEQ_ComposeAbsoluteFileName(dir#,root#)) to root#
+    if (DBMS_OpenFileAs(root#,file#,DF_SHARE,0)) begin
+      if (iCreateDEF(self)) Output_Aux_File DF_AUX_FILE_DEF For file# Number file# to (dfname#+".DEF")
+      if (iCreateFD(self)) Output_Aux_File DF_AUX_FILE_FD For file# Number file# to (dfname#+".FD")
+      close file#
+    end
+  end_procedure
+  procedure DoReport
+    integer update_filelist# select_count#
+    string dir# filelist#
+    get File_Select_Count of (DFMatrix_SelectorObject()) to select_count#
+    ifnot select_count# send obs "No tables selected!"
+    else begin
+      send Callback_Filelist_Entries 1 0 // This does the actual work!
+      send obs "Done"
+    end
+  end_procedure
+end_object // oDfmFnc07
+
+procedure Popup_CreateDEF_FD
+  send popup to (oDfmFnc07(self))
+end_function

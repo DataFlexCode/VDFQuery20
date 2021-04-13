@@ -1,0 +1,5 @@
+
+enumeration_list
+  define WVA$FILE_HANDLING_1999
+  define WVA$FILE_HANDLING_2002
+end_enumeration_list

@@ -1,0 +1,193 @@
+// Use Conv2000.utl // Make date fields y2000
+
+//Use DfAllent.pkg
+Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use DBMS.utl     // Basic DBMS functions
+Use Spec0008.utl // Small arrays with integer Codes (Dictionaries)
+Use OpenStat.nui // cTablesOpenStatus class (formely cFileAllFiles)
+Use SetTable.utl // cSetOfTables class
+Use Files.utl    // Utilities for handling file related stuff
+Use Fdx_Attr.nui // FDX compatible attribute functions
+
+desktop_section
+  object oConv2000StatusCodes is a cIntegerCodeToText
+    IntegerCodeList
+      Define_IntegerCode Y2K_UNINITIALISED        "Not checked"
+      Define_IntegerCode Y2K_COULD_NOT_OPEN       "Could not open"
+      Define_IntegerCode Y2K_CONVERTED            "Converted"
+      Define_IntegerCode Y2K_NO_DATE_FIELDS       "No date fields"
+    End_IntegerCodeList
+  end_object
+end_desktop_section
+
+function Y2K_TableStatusText global integer iStatus returns string
+  function_return (sText.i(oConv2000StatusCodes(self),iStatus))
+end_function
+
+class cConv2000 is a cSetOfTables
+  procedure construct_object
+    forward send construct_object
+    // 0: One transaction
+    //-1: exclusive
+    //-2: means reread when necessary
+    property integer piUnlockRecordCount -2
+    property integer piCallbackObj       self
+    object oDateFields is a cArray
+    end_object
+    object oDateFieldValues is a cArray
+    end_object
+  end_procedure
+
+  // Find all fields of type DF_DATE and store them in the oDateFields array.
+  procedure priv.DoFindDateFields
+    integer hoDateFields iField iMax iType
+    move (oDateFields(self)) to hoDateFields
+    send delete_data to hoDateFields
+    move (FDX_AttrValue_FILE(0,DF_FILE_NUMBER_FIELDS,20)) to iMax
+    for iField from 1 to iMax
+      move (FDX_AttrValue_FIELD(0,DF_FIELD_TYPE,20,iField)) to iType
+      if iType eq DF_DATE set value of hoDateFields item (item_count(hoDateFields)) to iField
+    loop
+  end_procedure
+
+  function iCancel returns integer
+  end_function
+
+  procedure UpdateWait1 string sStr
+  end_procedure
+  procedure UpdateWait2 string sStr
+  end_procedure
+
+  procedure priv.DoConvRow integer iRow
+    integer iOpen iFile iUnlockCount iNeedsConverting
+    integer hoDateFields iField iMax iItm iFound hoDateFieldValues
+    integer iDate iDateConvCount iRecordUpdateCount iRecordCount
+    integer iRecCount iMaxRec iLockReccount
+    integer iCallbackObj iMaxRecord lbDate4State
+    string sRootName
+
+    GET_DATE_ATTRIBUTE Date4_State to lbDate4State
+    SET_DATE_ATTRIBUTE Date4_State to DFFALSE
+
+    move (oDateFields(self)) to hoDateFields
+    move (oDateFieldValues(self)) to hoDateFieldValues
+    get psRootName.i iRow to sRootName
+    get piCallbackObj to iCallbackObj
+    move 20 to iFile
+
+    move 0 to iRecordCount
+    move 0 to iDateConvCount
+    move 0 to iRecordUpdateCount
+
+    get piUnlockRecordCount to iUnlockCount
+
+    if iUnlockCount eq -1 move (DBMS_OpenFileAs(sRootName,iFile,DF_EXCLUSIVE,0)) to iOpen
+    else move (DBMS_OpenFileAs(sRootName,iFile,DF_SHARE,0)) to iOpen
+
+    if iOpen ne DBMS_DRIVER_ERROR begin
+      get FDX_AttrValue_FILE 0 DF_FILE_RECORDS_USED iFile to iMaxRec
+
+      send priv.DoFindDateFields
+      get item_count of hoDateFields to iMax
+      if iMax begin // If there's any date fields at all
+        send UpdateWait1 to iCallbackObj sRootName
+        decrement iMax
+        if iUnlockCount le 0 begin
+          clear 20
+          if (iUnlockCount=0 or iUnlockCount=-1) lock // 'One transaction' or 'exclusive'
+
+          repeat
+            vfind 20 0 gt
+            move (found) to iFound
+            if iFound move (not(iCancel(self))) to iFound
+            if iFound begin
+              // Sample values
+              move 0 to iNeedsConverting
+              for iItm from 0 to iMax
+                get value of hoDateFields item iItm to iField
+                get_field_value iFile iField to iDate
+                if (iDate and iDate<Jan1st100) begin
+                  move 1 to iNeedsConverting
+                  set value of hoDateFieldValues item iItm to (Date2to4(iDate))
+                  increment iDateConvCount
+                end
+                else set value of hoDateFieldValues item iItm to (date(iDate))
+              loop
+              if iNeedsConverting begin
+                if iUnlockCount eq -2 reread iFile
+                for iItm from 0 to iMax
+                  get value of hoDateFields item iItm to iField
+                  set_field_value iFile iField to (value(hoDateFieldValues,iItm))
+                loop
+                saverecord iFile
+                increment iRecordUpdateCount
+                if iUnlockCount eq -2 unlock
+              end
+              increment iRecordCount
+              if (iRecordCount/50*50) eq iRecordCount send UpdateWait2 to iCallbackObj (string(iRecordCount)+"/"+string(iMaxRec))
+            end
+          until (not(iFound))
+          if (iUnlockCount=0 or iUnlockCount=-1) unlock
+          send UpdateWait2 to iCallbackObj (string(iRecordCount)+"/"+string(iMaxRec))
+        end
+        set piStatus.i iRow to Y2K_CONVERTED
+      end
+      else set piStatus.i iRow to Y2K_NO_DATE_FIELDS
+      close iFile
+    end
+    else set piStatus.i iRow to Y2K_COULD_NOT_OPEN
+    set piAux1.i iRow to iMaxRec
+    set piAux2.i iRow to iDateConvCount
+    SET_DATE_ATTRIBUTE Date4_State to lbDate4State
+  end_procedure
+
+  procedure DoConv
+    integer iMax iRow
+    send OpenStat_RegisterFiles
+    send OpenStat_CloseAllFiles
+    send DoSetAllAux1 0 // Clear Aux1 column
+    send DoSetAllAux2 0 // Clear Aux2 column
+    get row_count to iMax
+    decrement iMax
+    for iRow from 0 to iMax
+      send priv.DoConvRow iRow
+    loop
+    send OpenStat_RestoreFiles
+  end_procedure
+end_class // cConv2000
+
+// From here we just declare a default global thing and some
+// methods to operate it.
+
+integer gloConv2000# // Global integer pointing to the default Reindexer object
+desktop_section
+  object oConv2000 is a cConv2000
+    move self to gloConv2000#
+  end_object
+end_desktop_section
+
+procedure Y2K_ResetTableList global
+  send Reset to gloConv2000#
+end_procedure
+procedure Y2K_DoConv global
+  send DoConv to gloConv2000#
+end_procedure
+procedure Y2K_Add_RootNamesInDirectory global string sDir
+  send Add_RootNamesInDirectory to gloConv2000# sDir
+end_procedure
+procedure Y2K_Add_RootNamesInDirectories global string sDir
+  send Add_RootNamesInDirectories to gloConv2000# sDir
+end_procedure
+procedure Y2K_Add_Rootname global string sFileRootName
+  send Add_Rootname to gloConv2000# sFileRootName
+end_procedure
+procedure Y2K_Add_RootNamesInAllWS global
+  send Add_DataFilesInAllWS to gloConv2000#
+end_procedure
+
+// Test:
+
+//  object oReindexer is a cConv2000
+//    send Add_Rootname "s_prtcmm" DFTRUE
+//    send DoConv
+//  end_object

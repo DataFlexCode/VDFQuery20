@@ -1,0 +1,257 @@
+// Use DirComp.nui  // Compare (and update) directory contents
+
+Use Compare.nui  // Abstract class for comparing item based information
+Use SetDir.nui   // cSetOfDirectories class
+Use Spec0008.utl // Small arrays with integer Codes (Dictionaries)
+Use Files.utl    // Utilities for handling file related stuff
+Use WildCard.nui // vdfq_WildCardMatch function
+
+//Use Array.dbg
+
+object oCopyActionArray is a cIntegerCodeToText
+  IntegerCodeList
+    Define_IntegerCode CA_NO_COPYING                     ""
+    Define_IntegerCode CA_COPY_ONE_LEFT_TO_RIGHT         "Copy left to right"
+    Define_IntegerCode CA_COPY_ONE_RIGHT_TO_LEFT         "Copy right to left"
+    Define_IntegerCode CA_COPY_ONE_NEWER                 "Update older file"
+    Define_IntegerCode CA_UPDATE_LEFT_DIR                "Update left folder"
+    Define_IntegerCode CA_UPDATE_RIGHT_DIR               "Update right folder"
+    Define_IntegerCode CA_UPDATE_BOTH_DIRS               "Update both folders"
+    Define_IntegerCode CA_UPDATE_LEFT_DIR_EXISTING_ONLY  "Update existing files in left folder"
+    Define_IntegerCode CA_UPDATE_RIGHT_DIR_EXISTING_ONLY "Update existing files in right folder"
+    Define_IntegerCode CA_UPDATE_BOTH_DIRS_EXISTING_ONLY "Update existing files in both folders"
+  End_IntegerCodeList
+end_object
+
+object oDirectoryCompareArray is a cArray
+  property string psPath1 ""
+  property string psPath2 ""
+  property number pnNewestFile1 0
+  property number pnNewestFile2 0
+  property number pnTimeTolerance 0
+  item_property_list
+    item_property string  psFileName.i
+    item_property integer piExists1.i
+    item_property integer piFileSize1.i
+    item_property number  pnFileTime1.i
+    item_property integer piExists2.i
+    item_property integer piFileSize2.i
+    item_property number  pnFileTime2.i
+  end_item_property_list
+  // Function iIsChanged.i returns 0 if no change, -1 if left side is
+  // newer and +1 if right side is newer.
+  function iIsChanged.i integer liRow returns integer
+    integer liLeftSize liRightSize
+    number lnLeftTime lnRightTime lnTolerance
+    get pnTimeTolerance to lnTolerance
+    get pnFileTime1.i liRow to lnLeftTime
+    get pnFileTime2.i liRow to lnRightTime
+    if (abs(lnLeftTime-lnRightTime)<=lnTolerance) begin
+      get piFileSize1.i liRow to liLeftSize
+      get piFileSize2.i liRow to liRightSize
+      if liLeftSize eq liRightSize function_return 0 // No Change
+    end
+    if (lnLeftTime>lnRightTime) function_return -1
+    function_return 1
+  end_function
+  procedure add_file string lsName integer liExists1 integer liSize1 number lnTime1 integer liExists2 integer liSize2 number lnTime2
+    integer liRow
+    get row_count to liRow
+    set psFileName.i  liRow to lsName
+    set piExists1.i   liRow to liExists1
+    set piFileSize1.i liRow to liSize1
+    set pnFileTime1.i liRow to lnTime1
+    set piExists2.i   liRow to liExists2
+    set piFileSize2.i liRow to liSize2
+    set pnFileTime2.i liRow to lnTime2
+    if lnTime1 gt (pnNewestFile1(self)) set pnNewestFile1 to lnTime1
+    if lnTime1 gt (pnNewestFile2(self)) set pnNewestFile2 to lnTime2
+  end_procedure
+  object oDir1 is a cSetOfFilesNew
+    object oSetOfDirectories is a cSetOfDirectories
+    end_object
+    set piSOD_Object to (oSetOfDirectories(self))
+    procedure DoReset
+      forward send DoReset
+      send DoReset to (oSetOfDirectories(self))
+    end_procedure
+  end_object
+  object oDir2 is a cSetOfFilesNew
+    object oSetOfDirectories is a cSetOfDirectories
+    end_object
+    set piSOD_Object to (oSetOfDirectories(self))
+    procedure DoReset
+      forward send DoReset
+      send DoReset to (oSetOfDirectories(self))
+    end_procedure
+  end_object
+  object oDirCompare is a cDoubleOrderedCompare
+    property integer piCurrentRow1 0
+    property integer piCurrentRow2 0
+    function iSeed1 returns integer
+      set piCurrentRow1 to 0
+      function_return (row_count(oDir1(self)))
+    end_function
+    function iSeed2 returns integer
+      set piCurrentRow2 to 0
+      function_return (row_count(oDir2(self)))
+    end_function
+    function sValue1 returns string
+      function_return (uppercase(sFileName.i(oDir1(self),piCurrentRow1(self))))
+    end_procedure
+    function sValue2 returns string
+      function_return (uppercase(sFileName.i(oDir2(self),piCurrentRow2(self))))
+    end_procedure
+    function iAdvance1 returns integer
+      set piCurrentRow1 to (piCurrentRow1(self)+1)
+      function_return (piCurrentRow1(self)<row_count(oDir1(self)))
+    end_function
+    function iAdvance2 returns integer
+      set piCurrentRow2 to (piCurrentRow2(self)+1)
+      function_return (piCurrentRow2(self)<row_count(oDir2(self)))
+    end_function
+    //> This is sent when items are found to be identical
+    procedure Match string value1# string value2#
+      integer liRow1 liRow2 liSize1 liSize2
+      number lnTime1 lnTime2
+      string lsName
+      get piCurrentRow1 to liRow1
+      get piCurrentRow2 to liRow2
+      get sFileName.i  of (oDir1(self)) liRow1 to lsName
+      get piFileSize.i of (oDir1(self)) liRow1 to liSize1
+      get pnFileTime.i of (oDir1(self)) liRow1 to lnTime1
+      get piFileSize.i of (oDir2(self)) liRow2 to liSize2
+      get pnFileTime.i of (oDir2(self)) liRow2 to lnTime2
+      send add_file lsName 1 liSize1 lnTime1 1 liSize2 lnTime2
+    end_procedure
+    //> This is sent when a right side (2) item cannot be matched
+    procedure NotMatched2 string value#
+      integer liRow liSize2
+      number lnTime2
+      string lsName
+      get piCurrentRow2 to liRow
+      get sFileName.i  of (oDir2(self)) liRow to lsName
+      get piFileSize.i of (oDir2(self)) liRow to liSize2
+      get pnFileTime.i of (oDir2(self)) liRow to lnTime2
+      send add_file lsName 0 0 0 1 liSize2 lnTime2
+    end_procedure
+    //> This is sent when a left side (1) item cannot be matched
+    procedure NotMatched1 string value#
+      integer liRow liSize1
+      number lnTime1
+      string lsName
+      get piCurrentRow1 to liRow
+      get sFileName.i  of (oDir1(self)) liRow to lsName
+      get piFileSize.i of (oDir1(self)) liRow to liSize1
+      get pnFileTime.i of (oDir1(self)) liRow to lnTime1
+      send add_file lsName 1 liSize1 lnTime1 0 0 0
+    end_procedure
+  end_object
+  procedure reset
+    set psPath1 to ""
+    set psPath2 to ""
+    set pnNewestFile1 to 0
+    set pnNewestFile2 to 0
+    send delete_data
+    send DoReset to (oDir1(self))
+    send DoReset to (oDir2(self))
+  end_procedure
+  procedure Fill_Array
+    integer iObj
+    move (oDirCompare(self)) to iObj
+    send run to iObj
+  end_procedure
+  procedure private.CopyFile integer iAction integer iRow
+    integer iOK
+    string sFileName sTargetFile sLeftPath sRightPath
+    get psFileName.i iRow to sFileName
+    get psPath1 to sLeftPath
+    get psPath2 to sRightPath
+    move -1 to iOK
+    if iAction eq CA_COPY_ONE_LEFT_TO_RIGHT begin
+      move (SEQ_ComposeAbsoluteFileName(sRightPath,sFileName)) to sTargetFile
+      move (SEQ_ComposeAbsoluteFileName(sLeftPath,sFileName)) to sFileName
+      get SEQ_CopyFile sFileName sTargetFile to iOK
+      if iOK begin
+        set piExists2.i   iRow to (piExists1.i(self,iRow))
+        set piFileSize2.i iRow to (piFileSize1.i(self,iRow))
+        set pnFileTime2.i iRow to (pnFileTime1.i(self,iRow))
+      end
+    end
+    if iAction eq CA_COPY_ONE_RIGHT_TO_LEFT begin
+      move (SEQ_ComposeAbsoluteFileName(sLeftPath,sFileName)) to sTargetFile
+      move (SEQ_ComposeAbsoluteFileName(sRightPath,sFileName)) to sFileName
+      get SEQ_CopyFile sFileName sTargetFile to iOK
+      if iOK begin
+        set piExists1.i   iRow to (piExists2.i(self,iRow))
+        set piFileSize1.i iRow to (piFileSize2.i(self,iRow))
+        set pnFileTime1.i iRow to (pnFileTime2.i(self,iRow))
+      end
+    end
+  end_procedure
+  procedure DoCopyFile integer iAction integer iRow
+    integer liChanged
+    if iRow ge 0 begin
+      if iAction eq CA_COPY_ONE_LEFT_TO_RIGHT send private.CopyFile CA_COPY_ONE_LEFT_TO_RIGHT iRow
+      if iAction eq CA_COPY_ONE_RIGHT_TO_LEFT send private.CopyFile CA_COPY_ONE_RIGHT_TO_LEFT iRow
+      if iAction eq CA_COPY_ONE_NEWER begin
+        get iIsChanged.i iRow to liChanged
+        if liChanged eq -1 send private.CopyFile CA_COPY_ONE_LEFT_TO_RIGHT iRow
+        if liChanged eq  1 send private.CopyFile CA_COPY_ONE_RIGHT_TO_LEFT iRow
+      end
+    end
+  end_procedure
+  procedure DoCopyFiles integer iAction
+    integer iRow iMax iExistingOnly iExists1 iExists2 liChanged
+    if (iAction=CA_UPDATE_LEFT_DIR or iAction=CA_UPDATE_RIGHT_DIR or iAction=CA_UPDATE_BOTH_DIRS) move 0 to iExistingOnly
+    else move 1 to iExistingOnly
+
+    if iAction eq CA_UPDATE_LEFT_DIR_EXISTING_ONLY  move CA_UPDATE_LEFT_DIR  to iAction
+    if iAction eq CA_UPDATE_RIGHT_DIR_EXISTING_ONLY move CA_UPDATE_RIGHT_DIR to iAction
+    if iAction eq CA_UPDATE_BOTH_DIRS_EXISTING_ONLY move CA_UPDATE_BOTH_DIRS to iAction
+
+    get row_count to iMax
+    decrement iMax
+
+    for iRow from 0 to iMax
+      get iIsChanged.i iRow to liChanged
+      if (liChanged<>0) begin
+        get piExists1.i iRow to iExists1
+        get piExists2.i iRow to iExists2
+        if iAction eq CA_UPDATE_LEFT_DIR  if (liChanged=1 and (not(iExistingOnly) or iExists1)) ;
+                 send DoCopyFile CA_COPY_ONE_RIGHT_TO_LEFT iRow
+        if iAction eq CA_UPDATE_RIGHT_DIR if (liChanged=-1 and (not(iExistingOnly) or iExists2)) ;
+                 send DoCopyFile CA_COPY_ONE_LEFT_TO_RIGHT iRow
+        if iAction eq CA_UPDATE_BOTH_DIRS if ((iExists1 and iExists2) or not(iExistingOnly)) ;
+                 send DoCopyFile CA_COPY_ONE_NEWER iRow
+      end
+    loop
+  end_function
+  procedure DoCompareDirectories string sPath1 string sPath2 integer lhSetOfMasks
+    send reset
+    set psPath1 to sPath1
+    set psPath2 to sPath2
+    send DoAddDirectory to (oSetOfDirectories(oDir1(self))) sPath1
+    send DoAddDirectory to (oSetOfDirectories(oDir2(self))) sPath2
+    if (lhSetOfMasks and row_count(lhSetOfMasks)) begin
+      send DoFindFileBySetOfMasks to (oDir1(self)) lhSetOfMasks DFFALSE
+      send DoFindFileBySetOfMasks to (oDir2(self)) lhSetOfMasks DFFALSE
+    end
+    else begin
+      send DoFindFile to (oDir1(self)) "*" DFFALSE
+      send DoFindFile to (oDir2(self)) "*" DFFALSE
+    end
+    send DoSort to (oDir1(self)) SOF_ORDERING_NAME
+    send DoSort to (oDir2(self)) SOF_ORDERING_NAME
+//    send Array_DoWriteToFile (oDir1(self)) "c:\Dir1.txt"
+//    send Array_DoWriteToFile (oDir2(self)) "c:\Dir2.txt"
+    send Fill_Array
+  end_procedure
+end_object // oDirectoryCompareArray
+
+procedure DirComp_DoCompare global string sLeftPath1 string sRightPath2 integer lhSetOfMasks
+  send DoCompareDirectories to (oDirectoryCompareArray(self)) sLeftPath1 sRightPath2 lhSetOfMasks
+end_procedure
+procedure DirComp_DoCopyFiles global integer iAction
+  send DoCopyFiles to (oDirectoryCompareArray(self)) iAction
+end_procedure

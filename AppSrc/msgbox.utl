@@ -1,0 +1,175 @@
+Use language.pkg
+
+#IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
+  CompilerWarnings Suspend
+#ENDIF
+
+#IF LNG_DEFAULT=LNG_DUTCH
+ #REPLACE t.MsgBox.Question "Vraag"
+ #REPLACE t.MsgBox.Message  "Mededeling"
+ #REPLACE t.MsgBox.Yes      "Ja"
+ #REPLACE t.MsgBox.No       "Nee"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SPANISH // 03/10/2002 25/01/2004 Pepe GuimarÆes Moose Software  pg@moose-software.com
+ #REPLACE t.MsgBox.Question "Pregunta"
+ #REPLACE t.MsgBox.Message  "Mensaje"
+ #REPLACE t.MsgBox.Yes      "Si"
+ #REPLACE t.MsgBox.No       "No"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ENGLISH
+ #REPLACE t.MsgBox.Question "Question"
+ #REPLACE t.MsgBox.Message  "Message"
+ #REPLACE t.MsgBox.Yes      "Yes"
+ #REPLACE t.MsgBox.No       "No"
+#ENDIF
+#IF LNG_DEFAULT=LNG_DANISH
+ #REPLACE t.MsgBox.Question "Sp›rgsm†l"
+ #REPLACE t.MsgBox.Message  "Besked"
+ #REPLACE t.MsgBox.Yes      "Ja"
+ #REPLACE t.MsgBox.No       "Nej"
+#ENDIF
+#IF LNG_DEFAULT=LNG_SWEDISH
+ #REPLACE t.MsgBox.Question "Fr†ga"
+ #REPLACE t.MsgBox.Message  "Meddelande"
+ #REPLACE t.MsgBox.Yes      "Ja"
+ #REPLACE t.MsgBox.No       "Nej"
+#ENDIF
+#IF LNG_DEFAULT=LNG_NORWEGIAN
+ #REPLACE t.MsgBox.Question "Sp›rsm†l"
+ #REPLACE t.MsgBox.Message  "Beskjed"
+ #REPLACE t.MsgBox.Yes      "Ja"
+ #REPLACE t.MsgBox.No       "Nei"
+#ENDIF
+#IF LNG_DEFAULT=LNG_GERMAN
+ #REPLACE t.MsgBox.Question "Frage"
+ #REPLACE t.MsgBox.Message  "Nachricht"
+ #REPLACE t.MsgBox.Yes      "Ja"
+ #REPLACE t.MsgBox.No       "Nein"
+#ENDIF
+#IF LNG_DEFAULT=LNG_PORTUGUESE
+ #REPLACE t.MsgBox.Question "QuestÆo"
+ #REPLACE t.MsgBox.Message  "Mensagem"
+ #REPLACE t.MsgBox.Yes      "Sim"
+ #REPLACE t.MsgBox.No       "NÆo"
+#ENDIF
+#If LNG_DEFAULT=LNG_FRENCH
+ #REPLACE t.MsgBox.Question "Question"
+ #REPLACE t.MsgBox.Message  "Message"
+ #REPLACE t.MsgBox.Yes      "Oui"
+ #REPLACE t.MsgBox.No       "Non"
+#ENDIF
+#IF LNG_DEFAULT=LNG_ITALIAN // 16/10/2002 Zanni Paolo
+ #REPLACE t.MsgBox.Question "Domanda"
+ #REPLACE t.MsgBox.Message  "Messaggio"
+ #REPLACE t.MsgBox.Yes      "Si"
+ #REPLACE t.MsgBox.No       "No"
+#ENDIF
+
+// ======================================================================
+//                           OBS MESSAGE
+// ======================================================================
+Use MsgBox      // DAC class
+Use Buttons.utl // Button texts
+
+procedure obs global string str#
+  integer iArg max# self# focus#
+  string msg# line#
+  move "" to msg#
+  for iArg from 1 to num_arguments
+    MoveStr iArg& to line# // tricky way to parse passed arguments
+    move (msg#+line#) to msg#
+    if iArg ne num_arguments move (msg#+character(10)) to msg#
+  loop
+  move self to self#
+  get focus of desktop to focus#
+  if focus# gt desktop move focus# to self
+  send info_box msg# t.MsgBox.Message
+  move self# to self
+end_procedure
+
+// ======================================================================
+//                          CONFIRM LIST
+// ======================================================================
+
+use aps.pkg
+object oConfirm_List is a aps.ModalPanel
+  set locate_mode to center_on_screen
+  property integer pResult 0
+  on_key kcancel send close_panel_ok
+  object lbl is a aps.textbox
+  end_object
+  send aps_goto_max_row
+  object lst is a aps.list
+    set size to 105 150
+    set select_mode to no_select
+  end_object
+  procedure close_panel_ok
+    set pResult to 1
+    send close_panel
+  end_procedure
+  object btn1 is a aps.Multi_Button
+    on_item t.btn.ok send close_panel_ok
+  end_object
+  object btn2 is a aps.Multi_Button
+    on_item t.btn.cancel send close_panel
+  end_object
+  send aps_locate_multi_buttons
+  procedure delete_data
+    send delete_data to (lst(self))
+  end_procedure
+  procedure run.ss string title# string header#
+    integer grb#
+    set label to title#
+    set value of (lbl(self)) to header#
+    send popup
+    send delete_data
+  end_procedure
+  function irun.ss string title# string header# returns integer
+    integer rval#
+    set label to title#
+    set value of (lbl(self)) to header#
+    set pResult to 0
+    send popup
+    get pResult to rval#
+    send delete_data
+    function_return rval#
+  end_function
+end_object
+
+procedure Confirm_List_Reset
+  send delete_data to (oConfirm_List(self))
+end_procedure
+procedure Confirm_List_Add string str#
+  integer obj#
+  move (lst(oConfirm_List(self))) to obj#
+  send add_item to obj# msg_none str#
+end_procedure
+procedure Confirm_List_Go string title# string header#
+  send run.ss to (oConfirm_List(self)) title# header#
+end_procedure
+function Confirm_List_Confirm global string title# string header# returns integer
+  function_return (irun.ss(oConfirm_List(self),title#,header#))
+end_function
+
+// ======================================================================
+//                          YES/NO OBJECT
+// ======================================================================
+
+
+function MB_Verify global string str# integer def# returns integer
+  integer rval#
+  if def# move MB_DEFBUTTON1 to def#
+  else move MB_DEFBUTTON2 to def#
+  move (yesno_box(str#,t.MsgBox.Question,def#)) to rval#
+  function_return (rval#=mbr_yes)
+end_function
+
+function MB_Verify4 global string str1# string str2# string str3# string str4# integer def# returns integer
+  string lf#
+  move (character(10)) to lf#
+  function_return (MB_verify(str1#+lf#+str2#+lf#+str3#+lf#+str4#,def#))
+end_function
+
+function MB_CancelOnKeypress global string str# returns integer
+end_function
+

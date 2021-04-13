@@ -1,0 +1,148 @@
+// Use SetTable.utl // cSetOfTables class
+
+Use Base.utl     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
+Use API_Attr.utl // Functions for querying API attributes
+Use SetFiles.utl // SetOfFiles class (for disk files)
+Use Files.utl    // Utilities for handling file related stuff
+Use WorkSpc.utl  // cWorkSpace class (that features function sMakePath)
+desktop_section
+  object oSortSetFiles1 is a cSetOfFiles 
+  end_object
+  object oSortSetFiles2 is a cSetOfFiles
+  end_object
+end_desktop_section
+
+class cSetOfTables is a cArray
+  item_property_list
+    item_property string  psRootName.i
+    item_property integer piStatus.i // These are for optional use by sub-classes
+    item_property integer piAux1.i   //
+    item_property integer piAux2.i   //
+  end_item_property_list cSetOfTables
+  procedure reset
+    send delete_data
+  end_procedure
+  function sFindRoot.s string sRoot returns integer
+    integer iMax iRow
+    move (uppercase(sRoot)) to sRoot
+    get row_count to iMax
+    decrement iMax
+    for iRow from 0 to iMax
+      if sRoot eq (uppercase(psRootName.i(self,iRow))) function_return iRow
+    loop
+    function_return -1
+  end_function
+
+  procedure DoSetAllStatus integer iVal
+    integer iMax iRow
+    get row_count to iMax
+    decrement iMax
+    for iRow from 0 to iMax
+      set piStatus.i iRow to iVal
+    loop
+  end_procedure
+  procedure DoSetAllAux1 integer iVal
+    integer iMax iRow
+    get row_count to iMax
+    decrement iMax
+    for iRow from 0 to iMax
+      set piAux1.i iRow to iVal
+    loop
+  end_procedure
+  procedure DoSetAllAux2 integer iVal
+    integer iMax iRow
+    get row_count to iMax
+    decrement iMax
+    for iRow from 0 to iMax
+      set piAux2.i iRow to iVal
+    loop
+  end_procedure
+
+  procedure Add_Rootname string sRoot
+    integer iRow
+    get SEQ_FindDataFileFromRootName sRoot to sRoot
+    if sRoot ne "" begin
+      if (sFindRoot.s(self,sRoot)) eq -1 begin
+        get row_count to iRow
+        set psRootName.i iRow to sRoot
+      end
+    end
+  end_procedure
+
+  procedure Add_FileListEntry integer iFile
+    string sRoot
+    get API_AttrValue_FILELIST DF_FILE_ROOT_NAME iFile to sRoot
+    send Add_Rootname sRoot
+  end_procedure
+
+  procedure Add_AllFileListEntries
+    integer iFile
+    move 0 to iFile
+    repeat
+      move (API_AttrValue_FLSTNAV(DF_FILE_NEXT_USED,iFile)) to iFile
+      if iFile send Add_FileListEntry iFile
+    until iFile eq 0
+  end_procedure
+
+  procedure Add_RootNamesInDir_Help string sDir integer iIncSubDir
+    integer iFileObj1 iFileObj2 iRow iMax
+    string sFile
+    move (oSortSetFiles1(self)) to iFileObj1
+    move (oSortSetFiles2(self)) to iFileObj2
+    send reset to iFileObj1
+    send reset to iFileObj2
+
+    if iIncSubDir send AddSubDirectories to iFileObj1 sDir
+    else send AddDir to iFileObj1 sDir
+
+    send SnapShot_Build to iFileObj1
+    send CopyFilesFromObject to iFileObj2 "*.dat" iFileObj1
+
+    get row_count of iFileObj2 to iMax
+    decrement iMax
+    for iRow from 0 to iMax
+      get sFileNameIncPath.i of iFileObj2 iRow to sFile
+      send Add_Rootname sFile
+    loop
+
+    send reset to iFileObj1
+    send reset to iFileObj2
+  end_procedure
+  // Add all tables in directory
+  procedure Add_RootNamesInDirectory string sDir
+    send Add_RootNamesInDir_Help sDir 0
+  end_procedure
+  // Add all tables in directory and subdirectories
+  procedure Add_RootNamesInDirectories string sDir
+    send Add_RootNamesInDir_Help sDir 1
+  end_procedure
+  // Add all table found in any directory in path
+  procedure Add_RootNamesInPath string sPath
+    send SEQ_CallBack_DirsInPath sPath msg_Add_RootNamesInDirectory self
+  end_procedure
+
+  procedure Add_DataFilesInWS string sKeyName
+  end_procedure
+  procedure Add_DataFilesInAllWS
+    // Note: This procedure does not add all tables in a VDF 7 installation.
+    //       Some tables are used for copying to new projects. They are not
+    //       themselves member of a workspace. In addition there are some
+    //       tables in directories /global and under /demo that must be
+    //       included by other means. Look in SortUtil.vw in procedure
+    //       DoGetTablesAllWS to see how to include everything.
+    //       However, tables in directories pointed to by the registry
+    //       key /WorkSpaces/SystemMakePath are included (these are
+    //       common to all WorkSpaces should any tables reside there).
+    integer iAllWorkspaces iRow iMax
+    move (oAllWorkspaces(self)) to iAllWorkspaces
+    send ReadAllWorkspaces to iAllWorkspaces
+    get row_count of iAllWorkspaces to iMax
+    decrement iMax
+    for iRow from 0 to iMax
+      send Add_RootNamesInPath (psMakePathNoSysPath.i(iAllWorkspaces,iRow))
+//      send Add_RootNamesInPath (psDataPath.i(iAllWorkspaces,iRow))
+    loop
+    send Add_RootNamesInPath (psCurrentMakePath(iAllWorkspaces))
+  end_procedure
+end_class // cSetOfTables
+

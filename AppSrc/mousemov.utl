@@ -1,0 +1,44 @@
+// Use MouseMov.utl // Procedure Mouse_MoveToObject
+
+procedure Mouse_MoveToObject global integer lhObject
+  integer liLoc liCol liRow liSzCol liSzRow
+
+  Get Absolute_GUIOrigin of lhObject to liLoc //
+  move (Hi(liLoc)) to liRow // row
+  move (Low(liLoc)) to liCol // col
+
+  // I found this correction somewhere in DAW classes, so I have replicated
+  // it here:
+  if (liCol>32767) move (liCol-65536) to liCol
+  if (liRow>32767) move (liRow-65536) to liRow
+
+  get GUISize of lhObject to liLoc
+  move (Hi(liLoc)/2)  to liSzRow // Strange, Hi/Low is opposite of
+  move (Low(liLoc)/2) to liSzCol // Absolute_GUIOrigin
+
+  // Set absolute_mouse_location takes horizontal before vertial.
+  // On a 1024x768 monitor 512,384 will place the mouse in the
+  // exact center (well, as close as possible since the monitor
+  // ranges are dividable by two).
+  set absolute_mouse_location to (liSzCol+liCol) (liSzRow+liRow)
+
+//// Alternative: (doesn't work)
+//
+//integer xyButton
+//handle hWnd iVoid
+//string sPoint xScreen yScreen
+//
+//Get GuiLocation of lhObject To xyButton
+//
+//ZeroType tPoint To sPoint
+//Put (Hi(xyButton)) To sPoint At tPoint.y
+//Put (Low(xyButton)) To sPoint At tPoint.x
+//
+//Get Window_Handle of lhObject To hWnd
+//
+//Move (ClientToScreen(hWnd, AddressOf(sPoint))) To iVoid
+//
+//GetBuff From sPoint At tPoint.x To xScreen
+//GetBuff From sPoint At tPoint.y To yScreen
+//set absolute_mouse_location to xScreen yScreen
+end_procedure
