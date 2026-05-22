@@ -30,7 +30,7 @@ DEFINE_OBJECT_GROUP OG_VpePreview
     Send Aps_Init
     if gsVdfQuery_Icon# ne "" set icon to gsVdfQuery_Icon#
 
-    Property Integer phDoc 0
+    Property Handle phDoc 0
     on_key kCancel send close_panel
 
     Object oCont is a VPE_Preview //aps.Container3D
@@ -38,7 +38,8 @@ DEFINE_OBJECT_GROUP OG_VpePreview
       Send Aps_Auto_Locate_Control Self
 
       Procedure Key Integer iKey
-        Integer hDoc iJunk
+        Integer iJunk
+		Handle hDoc
 
         Forward Send Key iKey
 
@@ -73,7 +74,8 @@ DEFINE_OBJECT_GROUP OG_VpePreview
       End_Procedure // Key
 
       Procedure KeyEnter
-        Integer hDoc iJunk
+        Integer iJunk
+		Handle hDoc
         Get phDoc to hDoc
         Move (VpeSendKey(hDoc,VKEY_GOTO_PAGE)) to iJunk
       End_Procedure // KeyEnter
@@ -102,7 +104,8 @@ DEFINE_OBJECT_GROUP OG_VpePreview
     send Make_Invisible
 
     Procedure Aps_OnResize integer delta_rw# integer delta_cl#
-      Integer hwnd# junk# size#
+      Integer junk# size#
+	  Handle hwnd# 
 
       send aps_resize (oCont(Self)) delta_rw# delta_cl#
       send aps_auto_size_container

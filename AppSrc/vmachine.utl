@@ -1,4 +1,4 @@
-//**********************************************************************
+﻿//**********************************************************************
 // Use vMachine.utl // Virtual machine class (heart of DFScript)
 //
 // By Sture Andersen
@@ -642,11 +642,16 @@ class cVariables is a cArray
     end
     else send add_ct_error (piProgramCounter(self)) ("Variable already defined ("+name#+")")
   end_procedure
-  function sVarValue integer varno# returns string
-    function_return (psValue.i(self,varno#))
-  end_function
-  procedure VarIncrement integer varno# integer amount#
-    set psValue.i varno# to (psValue.i(self,varno#)+amount#)
+  Function sVarValue Integer varno# Returns String
+    String sValue
+    Get psValue.i varno# to sValue
+    Function_Return sValue
+//    Function_Return (psValue.i(Self,varno#))
+  End_Function
+  Procedure VarIncrement Integer varno# Integer amount#
+    Number nValue
+    Get psValue.i varno# to nValue
+    Set psValue.i varno# to (nValue+amount#)
   end_procedure
   procedure VarAssign integer varno# string value#
     integer type#

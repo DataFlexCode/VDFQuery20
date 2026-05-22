@@ -1,4 +1,4 @@
-//    * Show only commented fields
+﻿//    * Show only commented fields
 //    * Field_Not_Found are now colored red
 //    * Ctrl+N Now creates a new view.
 //
@@ -6,7 +6,7 @@
 //
 //      VPE interface til rapport
 //      Impl. af ubenyttede felter (i DB*.DAT)
-//      Hj�lpeklasse med benyttelse af IE
+//      Hjælpeklasse med benyttelse af IE
 //      Mulighed for at fjerne entries fra filelist.cfg
 //
 
@@ -21,7 +21,7 @@ Use TrckBr.pkg   // TrackBar class
 Use DeoCnfrm.pkg // DEO confirm save/delete functions
 Use dbd.rv // DBD - Report object
 
-Use Language     // Set default languange if not set by compiler command line
+Use Language.pkg     // Set default languange if not set by compiler command line
 
 Use FdxSet.nui   // cFdxSetOfTables, cFdxSetOfFields, cFdxSetOfIndices
 Use FdxSet.pkg   // cFdxSetOfFieldsList class

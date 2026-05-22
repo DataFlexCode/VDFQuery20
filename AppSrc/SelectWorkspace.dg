@@ -1,0 +1,603 @@
+﻿// Register all objects
+Register_Object oBrowse
+Register_Object oCancel
+Register_Object oCurrentWorkspace
+Register_Object oCurrentWorkspace_lb
+Register_Object oDescription
+Register_Object oHelp
+Register_Object oImages
+Register_Object oIni
+Register_Object oLineControl2
+Register_Object oName
+Register_Object oOpenDialog
+Register_Object oOrderBy
+Register_Object oSections
+Register_Object oSelect
+Register_Object oSelectedWorkspace
+Register_Object oSelectNewWorkspace_lb
+Register_Object oSelectWorkspace
+Register_Object oWorkspaces
+Register_Object oWorkspacesList
+
+//  Returns 0 if user press cancel
+//  Returns 1 if a new WS was created
+//
+External_Function32 StartDFWSWizard "StartDFWSWizard" DFWSWIZ.DLL Handle MyHnd Returns Integer
+
+// Change types Supported.
+Enum_list
+   Define WSNotChanged    // no change that we know of
+   Define WSNewWorkSpace  // selected New WS, No known editing
+   Define WSModified      // We may have edited, should be reinitialized
+End_Enum_list
+ 
+Procedure SetCurrentUserWorkspace GLOBAL String sWorkspace
+    Handle hoRegistry
+    Integer iError
+
+    Get Create U_cRegistry To hoRegistry
+
+    Get CreateKey of hoRegistry (C_DFVersionRegistryRoot + "\Workspaces") to iError
+    If (iError =0) Begin
+        Send WriteString of hoRegistry "Current Workspace" sWorkspace
+        Send CloseKey of hoRegistry
+    End
+
+    Send Destroy of hoRegistry
+End_Procedure
+
+Function GetCurrentUserWorkspace GLOBAL Returns String
+    Handle hoRegistry
+    String sWorkspace
+    Boolean bOpened
+
+    Get Create U_cRegistry To hoRegistry
+
+    Get OpenKey of hoRegistry (C_DFVersionRegistryRoot + "\Workspaces") to bOpened
+    If bOpened Begin
+        If (ValueExists(hoRegistry, "Current Workspace")) ;
+            Get ReadString of hoRegistry "Current Workspace" To sWorkspace
+        Send CloseKey of hoRegistry
+    End
+
+    Send Destroy of hoRegistry
+    Function_Return sWorkspace
+End_Function
+
+
+Use Windows.pkg
+Use DfTreeVw.pkg
+Use DfLine.Pkg
+Use File_dlg.Pkg
+
+
+
+Object oSelectWorkspace is a ModalPanel
+
+    On_Key kCancel Send Close_Panel
+    Property Integer pbSortByName True
+    
+    Property String  psWorkspaceSelected // what is the Name of the newly-selected Workspace
+    Property String  psOriginalWorkspace // what was the Name of Workspace when the dialog was displayed?
+    Property Boolean pbChangeSystemCurrent
+    Property Boolean pbResult
+    Property String  psCurrentWorkspaceDescription // description of Current Workspace at start of dialog
+    
+    Set Locate_Mode To CENTER_ON_SCREEN
+    
+    Object oWorkspacesList is an Array
+        Procedure DoAddWorkspace String sName String sDescription String sPath
+            Set Value (Item_Count(self)) To sName
+            Set Value (Item_Count(self)) To sDescription
+            Set Value (Item_Count(self)) To sPath
+        End_Procedure
+    End_Object
+    
+    Function GetVdfRootDir Returns String
+        String sVdfRootDir
+    
+        Get_Profile_String "Defaults" "VDFRootDir" To sVDFRootDir
+        If (Right(sVDFRootDir,1) = "\") Begin
+            Move (Left(sVdfRootDir, Length(sVDFRootDir)-1)) to sVDFRootDir
+        End
+    
+        Function_Return sVdfRootDir
+    End_Function
+    
+
+    Set Border_Style to Border_Thick
+    Set Minimize_Icon to FALSE
+    Set Label to "Select Workspace"
+    Set Location to 2 3
+    Set Size to 252 281
+    Set piMinSize to 252 281
+
+
+
+
+    Object oImages is a cImageList
+
+        //Set Focus_Mode To NonFocusable
+
+
+        Procedure OnCreate
+            Integer iVoid
+             Get AddTransparentImage "WorkspaceSelector.bmp" clFuchsia To iVoid
+        End_Procedure
+
+    End_Object    
+
+    Object oWorkspaces is a TreeView
+
+        Set TreeSortedState To True
+        
+        
+        Procedure DoShowWorkspaces
+            Integer iVOid iWorkspace
+            Handle hoSections
+            String sWorkspace sDescription sPath
+        
+            Move oSections To hoSections
+        
+            Send DoDeleteItem 0 // remove all items
+        
+            Send Delete_Data of hoSections
+            Send Delete_Data of oWorkspacesList // remove list of Names&Descriptions
+        
+            Object oIni is a cIniFile
+                // JVH - [VDF 8.3] cIniFile does not currently support delegation so
+                // the call to GetVdfRootDir must explicitly delegate to oSelectWorkspaces
+                // Set psFilename To (GetVdfRootDir(Self) +"\bin\Workspaces.ini")
+                Set psFilename To (GetVdfRootDir(oSelectWorkspace) + "\bin\Workspaces.ini")
+        
+                Send ReadSections hoSections
+        
+                For iWorkspace from 0 to (Item_Count(hoSections) -1)
+                    Get Value of hoSections iWorkspace To sWorkspace
+                    Get ReadString sWorkspace "Description" "" To sDescription
+                    Get ReadString sWorkspace "Path" ""        To sPath
+        
+                    // JVH - [VDF 8.3] cIniFile does not currently support delegation so
+                    // the we must explicitly delegate to oSelectWorkspaces
+                    If (Uppercase(sWorkspace) = Uppercase(psOriginalWorkspace(oSelectWorkspace))) ;
+                        Set psCurrentWorkspaceDescription of oSelectWorkspace To sDescription
+        
+                    Send DoAddWorkspace of oWorkspacesList sWorkspace sDescription sPath // store the Name, Description & Path
+        
+                    If (pbSortByName(parent(self))) ;
+                        Delegate Get AddHierarchy 0 sWorkspace   To iVoid
+                    Else ;
+                        Delegate Get AddHierarchy 0 sDescription To iVoid
+                Loop
+            End_Object
+        
+            Send Destroy of oIni
+        
+            Send DoShowCurrentWorkspace of oCurrentWorkspace
+        End_Procedure  
+        
+        
+        Set ImageListObject To (oImages(self))
+        
+        Function IsWorkspace Handle hItem Returns Integer
+            Function_Return (ItemChildCount(self, hItem) =0)
+        End_Function
+        
+        Procedure OnCreateTree
+            Send DoShowWorkspaces
+        End_Procedure
+        
+
+        Set peAnchors to anAll
+        Set Size to 151 197
+        Set Location to 56 5
+        Set pbFullRowSelect to TRUE
+        Set TreeRetainSelState to TRUE
+
+                
+        Procedure OnWorkspaceSelected Handle hItem
+            Integer iItem
+        
+            Get ItemData hItem To iItem
+            Set psWorkspaceSelected To (Value(oWorkspacesList(self), iItem*3))
+            Send Stop_Modal_Ui //Close_Panel
+        End_Procedure  
+        
+        
+        Procedure OnItemDblClick Handle hItem
+            Set pbResult To True
+            Send DoWorkspaceSelected
+        End_Procedure
+        
+        
+        Procedure DoWorkspaceSelected
+            Handle hItem
+            Get CurrentTreeItem To hItem
+            If (IsWorkspace(self, hItem)) ;
+                Send OnWorkspaceSelected hItem
+        End_Procedure  
+        
+        
+        Procedure OnItemChanged Handle hItemNew Handle hItemOld
+            Boolean bWorkspace
+            Integer iItem
+            String sName sDescription
+        
+            Get IsWorkspace hItemNew To bWorkspace
+        
+            Set Enabled_State of oSelect To bWorkspace
+        
+            If bWorkspace Begin
+                Get ItemData hItemNew To iItem
+                Get Value of oWorkspacesList (iItem *3)    To sName
+                Get Value of oWorkspacesList (iItem *3 +1) To sDescription
+        
+                Set value of oSelectedWorkspace To (sDescription * "- [" +sName +"]")
+            End
+            Else ;
+                Set value of oSelectedWorkspace to ("<None selected>")
+        End_Procedure
+        
+        Function AddHierarchy Handle hiParent String sHierarchy Returns Handle
+            // Returns item-handle that was added. 0=not added (already exists)
+            Integer iPos bMoreLevels bFound icItem
+            Handle hiLevel hiSearch hoWorkspaces
+            String sLevel sSearchLabel
+        
+            Move oWorkspacesList To hoWorkspaces
+        
+            // treat the ".." as a literal "." in a label and not as a "double delimeter"
+            //Move (Replaces("..", sHierarchy, character(8))) To sHierarchy
+        
+        
+            Move (Pos(".",sHierarchy)) to iPos
+            If iPos Begin
+                Move (Left(sHierarchy, iPos -1)) To sLevel
+                Move (Right(sHierarchy, length(sHierarchy) - iPos)) To sHierarchy
+                Move (True) To bMoreLevels
+            End
+            Else Begin // no more levels
+                Move sHierarchy To sLevel
+                Move (False) To bMoreLevels
+            End
+        
+            Move (Replaces(character(8), sLevel, ".")) To sLevel
+        
+            Get ChildItem hiParent To hiSearch
+        
+            Repeat
+                Get ItemLabel hiSearch To sSearchLabel
+                If (Uppercase(sSearchLabel) = Uppercase(sLevel)) Begin
+                    Move (True) To bFound
+                End
+                Else ;
+                    Get NextSiblingItem hiSearch To hiSearch
+            Until (hiSearch =0 or bFound)
+        
+        
+            If (bFound = 0) Begin
+                Get Item_Count of hoWorkspaces To icItem
+                Get AddTreeItem sLevel hiParent (icItem /3 -1) (bMoreLevels=0) (bMoreLevels=0) To hiLevel
+                If (Value(hoWorkspaces, icItem-3) = psWorkspaceSelected(self)) ;
+                    Set CurrentTreeItem To hiLevel
+                If bMoreLevels ;
+                    Get AddHierarchy hiLevel sHierarchy To hiLevel // recurse and ignore the result
+            End
+            Else If bMoreLevels ;
+                Get AddHierarchy hiSearch sHierarchy To hiLevel // recurse and ignore the result
+        
+            Function_Return hiLevel
+        End_Function
+
+    End_Object    
+
+    Object oSelect is a Button
+        Set Label to "C_$Select"
+        Set Location to 137 216
+        Set peAnchors to anBottomRight
+        Set Default_State to TRUE
+
+        Set Label to C_$Select
+        
+        Procedure OnClick
+            Set pbResult To True
+            Send DoWorkspaceSelected of oWorkspaces
+        End_Procedure 
+
+    End_Object    
+
+    Object oBrowse is a Button
+        Set Label to "Browse..."
+        Set Location to 155 216
+        Set peAnchors to anBottomRight
+
+        Set Label to "Browse..."
+        
+        Function DoStripExtension String sFile Returns String
+            // Description
+            // -----------
+            //  Returns a filename without its extension.
+            //  e.g. C:\TMP\STUFF.TXT will become C:\TMP\STUFF
+            //
+            Integer iPos
+        
+            If Not '.' In sFile ;
+                Function_Return sFile //optimized
+        
+            Move (Length(sFile)) To iPos
+            While (iPos >0)
+                If (Mid(sFile, 1, iPos) = '.') Break
+                Decrement iPos
+            Loop
+        
+            Function_Return (Left(sFile, iPos -1))
+        End_Function  
+        
+        
+        Procedure OnClick
+            // Description
+            // -----------
+            // use the open file dialog to select a workspace .ws file. If the selected file is
+            // registered, then open the workspace. If it is not registered, then offer to register
+            // it before opening it....
+            Boolean bFileSelected bFound
+            String  sWorkspaceFile
+            String  sWorkspaceName
+            String  sTestName
+            String  sVDFRootDir sWsRegCommand
+            Integer iWorkspace  icWorkspace
+            Integer eRetVal
+        
+            Get Show_Dialog of oOpenDialog To bFileSelected
+        
+            If (bFileSelected) Begin
+                // get the full path & filename....
+                Get File_Name  of oOpenDialog To sWorkspaceFile
+        
+                // determine the workspace name by removing the file
+                // extension from the filename....
+                Get File_Title of oOpenDialog       To sWorkspaceName
+                Get DoStripExtension sWorkspaceName To sWorkspaceName
+        
+                // Test if the workspace has been registered yet...
+                Get Item_Count of oSections To icWorkspace
+                Move (0)                    To iWorkspace
+                Move (False)                To bFound
+        
+                While (Not(bFound) and iWorkspace < (icWorkspace - 1))
+                    Get String_Value of oSections iWorkspace To sTestName
+                    Move (Uppercase(sTestName) = Uppercase(sWorkspaceName)) To bFound
+                    Increment iWorkspace
+                Loop
+        
+                // If the Workspace hasn't been registered, then ask
+                // if they would like to register it....
+                If (Not(bFound)) Begin
+                    // Run wsReg to register the selected workspace....
+                    Send Info_Box ("The selected workspace\n\n" + ;
+                                   sWorkspaceName + "\n\n" + ;
+                                   "Must be registered before it can be opened.\n\n" + ;
+                                   "The Workspace Registration utility will now be launched\n" + ;
+                                   "so that you can register this workspace.") "Select Workspace"
+        
+                    Get_Profile_String "Defaults" "VDFRootDir" To sVDFRootDir
+                    If (Right(sVDFRootDir,1) = "\") ;
+                        Move (Left(sVDFRootDir, Length(sVDFRootDir)-1))  to sVDFRootDir
+                    Move (sVDFRootDir + "\Bin\WsReg.exe ")            To sWsRegCommand
+                    Move (sWsRegCommand + '"' + sWorkspaceFile + '"') To sWsRegCommand
+                    Runprogram Wait sWsRegCommand
+                End
+        
+                // Now have the workspace opened....
+                Delegate Set pbResult            To True
+                Delegate Set psWorkspaceSelected To sWorkspaceName
+                Send Stop_Modal_Ui //Close_Panel
+            End
+        End_Procedure 
+
+    End_Object    
+
+    Object oCancel is a Button
+        Set Label to "C_$Cancel"
+        Set Location to 173 216
+        Set peAnchors to anBottomRight
+
+        Set Label to C_$Cancel
+        
+        Procedure OnClick
+            Send Close_Panel
+        End_Procedure 
+
+    End_Object    
+
+    Object oHelp is a Button
+        Set Label to "C_$Help"
+        Set Location to 191 216
+        Set peAnchors to anBottomRight
+
+        Set Label to C_$Help
+        
+        Procedure OnClick
+            Send Help
+        End_Procedure 
+
+    End_Object    
+
+    Object oOrderBy is a RadioGroup
+        Set Size to 57 58
+        Set Location to 53 208
+        Set peAnchors to anRight
+        Set Label to "Order by"
+        Object oName is a Radio
+            Set Label to "Name"
+            Set Size to 10 35
+            Set Location to 19 3
+
+            Set Label to "Name"
+
+        End_Object    
+
+        Object oDescription is a Radio
+            Set Label to "C_$Description"
+            Set Size to 10 52
+            Set Location to 32 3
+
+            Set Label to C_$Description
+
+        End_Object    
+
+
+        Set Label to "Order by"
+        
+        Procedure Notify_Select_State integer iToItem integer iFromItem
+            Integer iWorkspace
+            Handle hoWorkspaces
+        
+            Set pbSortByName To (iToItem =0)
+        
+            Get ItemData of oWorkspaces (CurrentTreeItem(oWorkspaces(self))) To iWorkspace
+            Set psWorkspaceSelected To (Value(oWorkspacesList(self), iWorkspace *3))
+            Set CurrentTreeItem of oWorkspaces To -1 // stops all the item-changing events
+        
+            Send DoShowWorkspaces of oWorkspaces
+        End_Procedure
+
+    End_Object    
+
+    Object oCurrentWorkspace_lb is a Textbox
+        Set Label to "Current Workspace"
+        Set Location to 5 8
+        Set Size to 10 63
+        Set FontWeight to 800
+
+        Set Label to "Current Workspace"
+
+    End_Object    
+
+    Object oCurrentWorkspace is a Textbox
+        Set Label to "oTextBox2"
+        Set Auto_Size_State to FALSE
+        Set Location to 17 5
+        Set Size to 14 261
+        Set Border_Style to Border_StaticEdge
+        Set peAnchors to anLeftRight
+
+        Procedure DoShowCurrentWorkspace
+            String sDescription sName
+        
+            Delegate Get psOriginalWorkspace To sName
+            Delegate Get psCurrentWorkspaceDescription to sDescription
+        
+            If (sDescription = "") ;
+                Move ("<" + C_$Undefined + ">") To sDescription
+            If (sName = "") ;
+                Move ("<" + C_$Undefined + ">") To sName
+        
+            Set Value To (sDescription * "- [" +sName +"]")
+        End_Procedure
+
+    End_Object    
+
+    Object oLineControl2 is a LineControl
+        Set Size to 2 267
+        Set Location to 39 2
+        Set peAnchors to anLeftRight
+
+        Procedure Set GuiSize Integer cy Integer cx
+            Forward Set GuiSize To 2 cx
+        End_Procedure
+
+    End_Object    
+
+    Object oSelectedWorkspace is a Textbox
+        Set Label to "Selected Workspace"
+        Set Auto_Size_State to FALSE
+        Set Location to 212 5
+        Set Size to 14 261
+        Set Border_Style to Border_StaticEdge
+        Set peAnchors to anBottomLeftRight
+
+        Set Label to "Selected Workspace"
+
+    End_Object    
+
+    Object oSelectNewWorkspace_lb is a Textbox
+        Set Label to "Select New Workspace"
+        Set Location to 44 8
+        Set Size to 10 78
+        Set FontWeight to 800
+
+        Set Label to "Select New Workspace"
+
+    End_Object    
+
+    Object oOpenDialog is a OpenDialog
+        Set Dialog_Caption to "Select a Workspace File"
+        Set Filter_String to "Workspace Files (*.ws)|*.ws"
+
+                
+        Procedure Default_Initial_Folder
+            // Description
+            // -----------
+            // Determine the default Initial_Folder.
+            String sDefaultWorkspacePath
+            Get_Profile_String "Defaults" "DefaultWorkspacePath" To sDefaultWorkspacePath
+            If (Right(sDefaultWorkspacePath,1) = "\") Begin
+                Move (Left(sDefaultWorkspacePath, Length(sDefaultWorkspacePath)-1)) to sDefaultWorkspacePath
+            End
+        
+            Set Initial_Folder To sDefaultWorkspacePath
+        End_Procedure  
+        
+        Send Default_Initial_Folder
+        
+
+    End_Object    
+
+    Object oSections is a Array
+
+        // This array contains the list of Workspace Names.
+        
+
+
+                
+                
+
+    End_Object    
+
+
+    Set Label to "Select Workspace"
+    
+    // === PUBLIC INTERFACE ===
+    Function SelectWorkspace Returns Boolean // new WS selected?
+        Boolean bWorkspaceSelected
+        String sWorkspaceName
+    
+        Set pbResult To False
+        Get psWorkspaceName Of (phoWorkspace (ghoApplication)) To sWorkspaceName
+        If (sWorkspaceName = "") Begin
+            Move (GetCurrentUserWorkspace()) To sWorkspaceName
+        End
+        Set psOriginalWorkspace To sWorkspaceName
+        Set psWorkspaceSelected To (psOriginalWorkspace(self))
+    
+        Set Enabled_State of oHelp To (Help_Id(self)) // disable if no Help_Id set (by calling program)
+    
+        Send Popup_Modal
+    
+        Move (pbResult(self) = True and psOriginalWorkspace(self) <> psWorkspaceSelected(self)) To bWorkspaceSelected
+    
+        If bWorkspaceSelected Begin
+            If (pbChangeSystemCurrent(self)) Begin
+                Send SetCurrentUserWorkspace (psWorkspaceSelected(self))
+            End
+        End
+    
+        Function_Return bWorkspaceSelected
+    End_Function
+
+End_Object    
+
+
+
+

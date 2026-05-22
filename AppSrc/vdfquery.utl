@@ -1,4 +1,4 @@
-//**********************************************************************
+ï»¿//**********************************************************************
 // Use VdfQuery.utl // DFQUERY for Visual DataFlex
 //
 // Version: 2.5 beta
@@ -779,10 +779,10 @@ object oReport_info is an cReport_info
   property integer next_current_row      0
   property string  pDeferredHeader       t.DfQuery.RightHeader
   property string  pCurDeferredHeader    ""
-  property integer pLeftMargin           200
-  property integer pRightMargin          2000
-  property integer pTopMargin            150
-  property integer pBottomMargin         2750
+  Property Real    pLeftMargin           200
+  Property Real    pRightMargin          2000
+  Property Real    pTopMargin            150
+  Property Real    pBottomMargin         2750
   property integer pColumnHeaderRowStart 0
   property integer pTotalsOnly           0
   property integer pLandscape            0
@@ -888,7 +888,7 @@ object oReport_info is an cReport_info
       #IFDEF USE$VPE
        send vpe_SetAlign to oVPE# ALIGN_CENTER
        send vpe_SelectFont to oVPE# "Arial" ((4-level#*2+10) max 10)
-       send vpe_Write to oVPE# (pLeftMargin(self)) VBOTTOM (pRightMargin(self)) VFREE ("[IO ]"+str#)
+       Send vpe_Write to oVPE# (pLeftMargin(Self)) VBOTTOM (pRightMargin(Self)) VFREE ("[IO ]"+str#)
        get vpe_Get of oVPE# VBOTTOM to vbottom#
      //set current_row to (vbottom#+50)
        set next_current_row to (vbottom#+00)
@@ -2045,7 +2045,7 @@ object oReport_info is an cReport_info
                  move (NumToStr(value#,dec#)) to value#
                  //send obs value# dec#
                end
-               else move (replaces(" ",value#,"ÿ")) to value#
+               else move (replaces(" ",value#,"Â ")) to value#
                send print_column ("[IO ]"+value#) (if(type#=DF_BCD,ALIGN_RIGHT,ALIGN_LEFT)) (start#*100+pLeftMargin#) (width#*100)
              end
              else set value of (oValues(self)) item (item_count(oValues(self))) to value#
@@ -2195,7 +2195,7 @@ object oReport_info is an cReport_info
   function sXmlRootElementName string lsValue returns string
     integer liPos liLen
     string lsIllegal lsChar
-    move (" .,;:/()&%Ï#[]{}=?+^@$\'"+'"') to lsIllegal
+    move (" .,;:/()&%Â¤#[]{}=?+^@$\'"+'"') to lsIllegal
     move (length(lsIllegal)) to liLen
     for liPos from 1 to liLen
       move (mid(lsIllegal,1,liPos)) to lsChar

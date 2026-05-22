@@ -1,4 +1,4 @@
-//**********************************************************************
+ï»¿//**********************************************************************
 // Use FieldInf     // Global field info objects and abstract field types
 //
 // By Sture Andersen
@@ -67,6 +67,8 @@ Use ui
 Use seq_chnl.pkg // Defines global sequential device management operations (DAW)
 Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes
 Use Strings.nui  // String manipulation for VDF
+Use tVDFQOrderSegmentInfo.pkg
+
 #SET J$ 0
 
 class cFieldInfoStuff is a cArray
@@ -456,10 +458,10 @@ function iDD_Object global integer file# returns integer
   ifnot rval# begin
     get DataDictionary_Class file# to class#
     if class# begin
-      name class# U_fieldinf_class             // ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¿
-      move self to self#                       // Push self                 ³
-      move desktop to self                     // Create at desktop         ³
-      object dynamo_object is a fieldinf_class // Create an object of classÄÙ
+      name class# U_fieldinf_class             // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+      move self to self#                       // Push self                 â”‚
+      move desktop to self                     // Create at desktop         â”‚
+      object dynamo_object is a fieldinf_class // Create an object of classâ”€â”˜
         move self to rval#                     // Get the object ID to rval#
       end_object                               //
       move self# to self   // Pop self
@@ -719,7 +721,25 @@ class cVirtualIndex is a cArray
     item_property integer piField.i
     item_property string  psValue.i
   end_item_property_list cVirtualIndex
-  procedure ReadValues
+
+  // This can be called as an alternative to ReadValues
+  Function RowSortValues Returns tVDFQOrderSegmentInfo[]
+    Integer row# max# file# field# 
+    String value#
+    tVDFQOrderSegmentInfo[] aOrderSegments
+    Get row_count to max#
+    For row# from 0 to (max#-1)
+        Get piFile.i  row# to file#
+        Get piField.i row# to field#
+        Get FieldInf_FieldValue file# field# to aOrderSegments[row#].sValue
+        Get FieldInf_FieldType file# field# to aOrderSegments[row#].iValueType
+        Move False to aOrderSegments[row#].bReverse
+        Move False to aOrderSegments[row#].bCapslock
+    Loop
+    Function_Return aOrderSegments
+  End_Function
+
+  Procedure ReadValues
     integer row# max# file# field# type# dec#
     string rval# value#
     move "" to rval#
@@ -740,7 +760,7 @@ class cVirtualIndex is a cArray
       set psValue.i row# to value#
     loop
   end_procedure
-  function sIndexValue returns string
+  function IndexStringValue returns string
     integer row# max#
     string rval#
     move "" to rval#

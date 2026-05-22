@@ -1,4 +1,4 @@
-// **********************************************************************
+Ôªø// **********************************************************************
 // Use QryOrder.utl // Ad-hoc index thing for query classes
 //
 // By Sture Andersen
@@ -13,6 +13,7 @@ Use Collate.nui  // A little collating thing
 Use QryExpr.utl  // Expression handling for queries
 Use Query.nui    // Basic things needed for a query tool
 Use FdxIndex.utl // Index analysing functions
+Use tVDFQOrderSegmentInfo.pkg
 
 #IF LNG_DEFAULT=LNG_DUTCH
  define t.QryOrder.Break      for "Break"
@@ -22,13 +23,13 @@ Use FdxIndex.utl // Index analysing functions
  define t.QryOrder.Reverse    for "Omgekeerd"
  define t.QryOrder.Specify    for "Specificeer ad hoc index"
 #ENDIF
-#IF LNG_DEFAULT=LNG_SPANISH   // 03/10/2002 to 31/01/2005 for 2.3 Pepe Guimar∆es Moose Software  pg@moose-software.com
+#IF LNG_DEFAULT=LNG_SPANISH   // 03/10/2002 to 31/01/2005 for 2.3 Pepe Guimar√£es Moose Software  pg@moose-software.com
  define t.QryOrder.Break      for "Romper"
  define t.QryOrder.Segment    for "Segmento"
  define t.QryOrder.Fields     for "Columnas"
- define t.QryOrder.Caps       for "May£sculas"
+ define t.QryOrder.Caps       for "May√∫sculas"
  define t.QryOrder.Reverse    for "Invertir"
- define t.QryOrder.Specify    for "Especificar °ndice ad hoc"
+ define t.QryOrder.Specify    for "Especificar √≠ndice ad hoc"
 #ENDIF
 #IF LNG_DEFAULT=LNG_ENGLISH
  define t.QryOrder.Break      for "Break"
@@ -43,7 +44,7 @@ Use FdxIndex.utl // Index analysing functions
  define t.QryOrder.Segment    for "Segment"
  define t.QryOrder.Fields     for "Felter"
  define t.QryOrder.Caps       for "Caps"
- define t.QryOrder.Reverse    for "Baglëns"
+ define t.QryOrder.Reverse    for "Bagl√¶ns"
  define t.QryOrder.Specify    for "Specify ad hoc index"
 #ENDIF
 #IF LNG_DEFAULT=LNG_SWEDISH
@@ -95,8 +96,6 @@ Use FdxIndex.utl // Index analysing functions
  define t.QryOrder.Specify    for "Specifica indice"
 #ENDIF
 
-
-
 class cQueryOrderExpression is a cArray
   procedure construct_object integer liImage
     forward send construct_object liImage
@@ -114,6 +113,34 @@ class cQueryOrderExpression is a cArray
     item_property integer pbBreak.i
     item_property string  psLabel.i
   end_item_property_list_extended cQueryOrderExpression
+  
+  // This can be called as an alternative to ReadValues
+  Function RowSortValues Returns tVDFQOrderSegmentInfo[]
+    Integer liRow liMax liFile liField 
+    Integer lhExprArr liExprRow 
+    String lsValue
+    tVDFQOrderSegmentInfo[] aOrderSegments
+
+    Get Row_Count to liMax
+    For liRow from 0 to (liMax-1)
+        Get pbReverse.i liRow to aOrderSegments[liRow].bReverse
+        Get pbCapsLock.i liRow to aOrderSegments[liRow].bCapslock
+        
+        Get piFile.i  liRow to liFile
+        If liFile Begin
+            Get piField.i liRow to liField
+            Get FieldInf_FieldValue liFile liField to aOrderSegments[liRow].sValue
+            Get FieldInf_FieldType liFile liField to aOrderSegments[liRow].iValueType
+        End
+        Else Begin // Aha! Expression:
+            Get phExprArr to lhExprArr
+            Get piExprRow.i liRow to liExprRow
+            Get sEvalExpression of (Query_ExprEvaluator(Self)) (piExprId.i(lhExprArr,liExprRow)) to aOrderSegments[liRow].sValue
+            Get piType.i of lhExprArr liExprRow to aOrderSegments[liRow].iValueType
+        End
+    Loop
+    Function_Return aOrderSegments
+  End_Function
 
   procedure DoCopyFromOtherObject integer lhObj
     set phExprArr to (phExprArr(lhObj))
@@ -125,12 +152,14 @@ class cQueryOrderExpression is a cArray
     get row_count to liRow
     set piFile.i  liRow to liFile
     set piField.i liRow to liField
-  end_procedure
+  End_Procedure
+  
   procedure Add_Expr integer liExprRow
     integer liRow
     get row_count to liRow
     set piExprRow.i liRow to liExprRow
-  end_procedure
+  End_Procedure
+  
   procedure ReadValues // Of the record buffer
     integer liRow liMax liFile liField liType liDec
     integer lhExprArr liExprRow lbNegative
@@ -193,7 +222,7 @@ class cQueryOrderExpression is a cArray
     loop
     function_return lsRval
   end_function
-  function sIndexValue returns string
+  Function IndexStringValue Returns String
     integer liRow liMax liLen liPos liChar
     string lsValue lsSegmentValue lsgr
     move "" to lsValue

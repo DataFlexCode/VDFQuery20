@@ -1,9 +1,9 @@
-// Use QryFolde.pkg // Directory setup for VDFQuery and DbQuery (defs and out)
+﻿// Use QryFolde.pkg // Directory setup for VDFQuery and DbQuery (defs and out)
 Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
 Use Files.utl    // Utilities for handling file related stuff (No User Interface)
 Use DfDir.nui    // Identify the location DF files and directories
 Use WinUser.nui  // User_Windows_User_Name function
-Use Language     // Set default languange if not set by compiler command line
+Use Language.pkg     // Set default languange if not set by compiler command line
 Use WildCard.nui // vdfq_WildCardMatch function
 
 #IF LNG_DEFAULT=LNG_DUTCH
@@ -12,7 +12,7 @@ Use WildCard.nui // vdfq_WildCardMatch function
   define t.qryfolder.name.QueryOut     for "Query output"
   define t.qryfolder.name.OutPostFix   for "Output"
 #ENDIF
-#IF LNG_DEFAULT=LNG_SPANISH                 // 26/01/2004 Pepe Guimar�es Moose Software  pg@moose-software.com
+#IF LNG_DEFAULT=LNG_SPANISH                 // 26/01/2004 Pepe Guimarães Moose Software  pg@moose-software.com
   define t.qryfolder.name.QueryDef     for "Definiciones de Query"
   define t.qryfolder.name.DefPostFix   for "Definiciones"
   define t.qryfolder.name.QueryOut     for "Salida Query"

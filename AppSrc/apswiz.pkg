@@ -1,8 +1,8 @@
-// Use ApsWiz.pkg   // APS wizard classes
+Ôªø// Use ApsWiz.pkg   // APS wizard classes
 Use aps.pkg         // Auto Positioning and Sizing classes for VDF
 Use Set.utl      // cArray, cSet and cStack classes
 Use Buttons.utl  // Button texts
-Use Language     // Default language setup
+Use Language.pkg     // Default language setup
 
 #IF LNG_DEFAULT=LNG_ENGLISH
  define t.wizbtn.back   for "< Back"
@@ -16,8 +16,8 @@ Use Language     // Default language setup
 #ENDIF
 #IF LNG_DEFAULT=LNG_DANISH
  define t.wizbtn.back   for "< Tilbage"
- define t.wizbtn.next   for "Nëste >"
- define t.wizbtn.finish for "Udfõr"
+ define t.wizbtn.next   for "N√¶ste >"
+ define t.wizbtn.finish for "Udf√∏r"
 #ENDIF
 #IF LNG_DEFAULT=LNG_SWEDISH
  define t.wizbtn.back   for "< Back"
@@ -39,7 +39,7 @@ Use Language     // Default language setup
  define t.wizbtn.next   for "Next >"
  define t.wizbtn.finish for "Finish"
 #ENDIF
-#IF LNG_DEFAULT=LNG_SPANISH  // 03/10/2002  to 31/01/2005 for 2.3 Pepe Guimar∆es Moose Software  pg@moose-software.com
+#IF LNG_DEFAULT=LNG_SPANISH  // 03/10/2002  to 31/01/2005 for 2.3 Pepe Guimar√£es Moose Software  pg@moose-software.com
  define t.wizbtn.back   for "< Anterior"
  define t.wizbtn.next   for "Siguiente >"
  define t.wizbtn.finish for "Finalizar"

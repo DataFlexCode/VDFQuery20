@@ -1,0 +1,6 @@
+﻿Struct tVDFQOrderSegmentInfo
+    Boolean bReverse
+    Boolean bCapslock
+    Integer iValueType
+    String sValue
+End_Struct

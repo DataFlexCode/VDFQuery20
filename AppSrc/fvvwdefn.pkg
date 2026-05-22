@@ -1,4 +1,4 @@
-// Use FvVwDefn.pkg // FastView, View definition cls (cFastView_ViewDefinition)
+﻿// Use FvVwDefn.pkg // FastView, View definition cls (cFastView_ViewDefinition)
 
 Use Files.utl    // Utilities for handling file related stuff
 Use Base.nui     // Item_Property command, Various macros (FOR_EX...), cArray, cSet and cStack classes (No User Interface)
@@ -50,9 +50,9 @@ class cFastView_Fields is a cArray
     item_property integer piExtraIntWidth.i     // Sizing information
     item_property integer piExtraExtWidth.i     // Sizing information
     item_property integer pbForceNoenter.i      // Make item noenter
-    item_property string  pbCapslock.i          // Capslock this field
-    item_property string  pbDefaultSL.i         // Prompt button for DefaultPromptList
-    item_property string  phObjectID.i          // Object ID's after creation
+    item_property Integer pbCapslock.i          // Capslock this field
+    item_property Integer pbDefaultSL.i         // Prompt button for DefaultPromptList
+    item_property Integer phObjectID.i          // Object ID's after creation
 
     item_property string  piTmpViewRow.i        // Temporary for applying
     item_property string  piTmpViewAnchor.i     // anchoring stuff.

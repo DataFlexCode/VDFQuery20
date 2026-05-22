@@ -1,4 +1,4 @@
-// **********************************************************************
+﻿// **********************************************************************
 // Use DataScan.utl // Data scan classes
 //
 // By Sture Andersen
@@ -33,6 +33,7 @@ Use FieldInf.pkg // Global field info objects
 Use Strings.nui  // String manipulation for VDF
 Use Dates.nui    // Date manipulation for VDF and DF3.2
 Use QryExpr.utl  // Expression handling for queries
+Use tVDFQOrderSegmentInfo.pkg
 
 #REPLACE DATASCAN$TEST        0
 
@@ -79,6 +80,128 @@ Function iTranslate_DFTYPE Integer iType Returns Integer
   If (iType=DF_BINARY)  Function_Return SC_TYPE_ASCII
 End_Function
 
+
+Struct tVDFRecordSortValue
+    Integer iRecordId
+    tVDFQOrderSegmentInfo[] aValues
+End_Struct
+
+Class cNewQuerySortArray is a cArray // cObject
+    Procedure construct_object
+        Forward Send Construct_Object
+        Property tVDFRecordSortValue[] paRecords
+    End_Procedure
+    Procedure delete_array_data
+        Set paRecords to (ResizeArray(paRecords(Self),0))
+    End_Procedure
+    Procedure AddRecord tVDFQOrderSegmentInfo[] aSegments
+        tVDFRecordSortValue stRecord
+    End_Procedure                                          
+    
+    Procedure add_array_value Integer iRecId tVDFQOrderSegmentInfo[] aValues 
+        tVDFRecordSortValue stRecordSortValue
+        Move iRecId to stRecordSortValue.iRecordId
+        Move aValues to stRecordSortValue.aValues
+        Set paRecords to (InsertInArray(paRecords(Self),-1,stRecordSortValue))
+    End_Procedure
+    
+    Function RecordId Integer iItem Returns Integer
+        tVDFRecordSortValue[] aRecords
+        Get paRecords to aRecords
+        Function_Return aRecords[iItem].iRecordId
+    End_Function
+
+                    Function _CompareSortingSegmentValues String sValue1 String sValue2 Integer iType Returns Integer
+                        Date dValue1 dValue2
+                        DateTime dtValue1 dtValue2
+                        Number nValue1 nValue2
+                        If (iType=DF_BCD) Begin
+                            Move sValue1 to nValue1
+                            Move sValue2 to nValue2
+                            If (nValue1>nValue2) Begin
+                                Function_Return (GT)
+                            End
+                            If (nValue1<nValue2) Begin
+                                Function_Return (LT)
+                            End
+                        End
+                        Else If (iType=DF_DATE) Begin
+                            Move sValue1 to dValue1
+                            Move sValue2 to dValue2
+                            If (dValue1>dValue2) Begin
+                                Function_Return (GT)
+                            End
+                            If (dValue1<dValue2) Begin
+                                Function_Return (LT)
+                            End
+                        End
+                        Else If (iType=DF_DATETIME) Begin
+                            Move sValue1 to dtValue1
+                            Move sValue2 to dtValue2
+                            If (dtValue1>dtValue2) Begin
+                                Function_Return (GT)
+                            End
+                            If (dtValue1<dtValue2) Begin
+                                Function_Return (LT)
+                            End
+                        End
+                        Else If (iType=DF_ASCII) Begin
+                            If (sValue1>sValue2) Begin
+                                Function_Return (GT)
+                            End
+                            If (sValue1<sValue2) Begin
+                                Function_Return (LT)
+                            End
+                        End
+                        Else Begin
+                            Send OnError 726 ("Unknown column type ("+String(iType))
+                        End
+                        Function_Return (EQ)
+                    End_Function
+
+    
+    Function _CompareSortValues tVDFRecordSortValue stVal1 tVDFRecordSortValue stVal2 Returns Integer
+        Integer iSegmentMax iSegment iComp
+        
+        Move (SizeOfArray(stVal1.aValues)-1) to iSegmentMax
+        For iSegment from 0 to iSegmentMax
+            Get _CompareSortingSegmentValues stVal1.aValues[iSegment].sValue stVal2.aValues[iSegment].sValue stVal1.aValues[iSegment].iValueType to iComp
+            If (stVal1.aValues[iSegment].bReverse) Begin
+                If (iComp=(LT)) Begin
+                    Move (GT) to iComp
+                End
+                Else If (iComp=(GT)) Begin
+                    Move (LT) to iComp
+                End
+            End
+            If (iComp<>(EQ)) Begin
+                If (iComp=(LT)) Begin
+                    Function_Return (LT)
+                End
+                Else Begin
+                    Function_Return (GT)
+                End
+            End
+        Loop
+        
+        Function_Return (EQ)
+    End_Function
+    
+    Function Item_Count Returns Integer
+        Function_Return (SizeOfArray(paRecords(Self)))
+    End_Function
+    
+    Procedure Sort_Items Boolean bDescending
+        tVDFRecordSortValue[] aRecords
+        Get paRecords to aRecords
+        Move (SortArray(aRecords,Self,RefFunc(_CompareSortValues))) to aRecords
+        If (bDescending) Begin
+            Move (ReverseArray(aRecords)) to aRecords
+        End
+        Set paRecords to aRecords
+    End_Procedure
+End_Class
+
 // A cBasicDataScanner sets up the sceleton for more complex scanning
 // classes. It was not meant for instantiation. It allows for setting
 // up pMainFile, search order and custom sort order for outputting.
@@ -96,8 +219,8 @@ Class cBasicDataScanner is a cArray
     property integer pCustom_Sort_State   0
     property integer pCustom_Sort_Object  0
     property integer pFixedLengthRowID    8 // Enough to hold a record number
-    property integer pCustom_Sort_Dir     ASCENDING
-    object Custom_Sort_Array is a cArray
+    Property Integer pCustom_Sort_Dir     ASCENDING
+    Object Custom_Sort_Array is a cNewQuerySortArray //  cArray
     end_object
   end_procedure
 
@@ -105,7 +228,7 @@ Class cBasicDataScanner is a cArray
     set pRecordCount to 0
     set pScanCount   to 0
     set pInterrupted to 0
-    send delete_data to (Custom_Sort_Array(self))
+    Send delete_array_data to (Custom_Sort_Array(Self))
   end_procedure
 
   procedure reset
@@ -150,13 +273,22 @@ Class cBasicDataScanner is a cArray
    integer obj#
    get pCustom_Sort_Object to obj#
    send ReadValues to obj#
-   function_return (sIndexValue(obj#))
-  end_function
-
+   function_return (IndexStringValue(obj#))
+  End_Function
+  
+  Function RecordSortValues Returns tVDFQOrderSegmentInfo[]
+    Integer obj#
+    tVDFQOrderSegmentInfo[] aSortValues
+      
+    Get pCustom_Sort_Object to obj#
+    Get RowSortValues of obj# to aSortValues
+    Function_Return aSortValues
+  End_Function
+  
   procedure Custom_Relate
   end_procedure
 
-  function sRecordID returns integer
+  Function RecordUniqueID Returns Integer
     // This function should return a unik identification of the active record.
     integer rec#
     get_field_value (pMainFile(self)) 0 to rec#
@@ -228,7 +360,9 @@ Class cBasicDataScanner is a cArray
         if Custom_Relate_Select# send Custom_Relate
 
         if (iSelect(self)) begin
-          if Custom_Sort_State# set value of Custom_Sort_Array# item (item_count(Custom_Sort_Array#)) to (Custom_Sort_Value(self)+pad(sRecordID(self),FixedLengthRowID#))
+          If Custom_Sort_State# Begin
+            Send add_array_value of Custom_Sort_Array# (RecordUniqueID(Self)) (RecordSortValues(Self))
+          End
           else begin
             if Generic_Relate# relate file#
             if Custom_Relate# send Custom_Relate
@@ -247,18 +381,18 @@ Class cBasicDataScanner is a cArray
     until fin#
     if Custom_Sort_State# begin
       ifnot (pInterrupted(self)) begin
-        send sort_items to Custom_Sort_Array# (pCustom_Sort_Dir(self))
+        Send sort_items to Custom_Sort_Array# (pCustom_Sort_Dir(Self)=Descending)
         get item_count of Custom_Sort_Array# to max#
         for itm# from 0 to (max#-1)
           clear file#
-          set_field_value file# 0 to (right(value(Custom_Sort_Array#,itm#),FixedLengthRowID#))
+Set_Field_Value file# 0 to (RecordId(Custom_Sort_Array#,itm#)) // (Integer(Right(array_string_value(Custom_Sort_Array#,itm#),FixedLengthRowID#)))
           vfind file# 0 eq
           if Generic_Relate# relate file#
           if Custom_Relate# send Custom_Relate
           send record_selected
         loop
       end
-      send delete_data to Custom_Sort_Array# // Release memory
+      Send delete_array_data to Custom_Sort_Array# // Release memory
     end
     send scan_ended
     if (pInterrupted(self)) send scan_pInterrupted

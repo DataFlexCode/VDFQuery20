@@ -1,5 +1,6 @@
-// Compile this program to get a stand alone query tool for Visual DataFlex
+﻿// Compile this program to get a stand alone query tool for Visual DataFlex
 
+Use VdfBase.pkg
 Use DfAllEnt.pkg
 
 #IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
@@ -27,7 +28,7 @@ set AppInfo AI_TITLE       to "DBQuery"
 set AppInfo AI_SUBTITLE    to "for Windows"
 Set AppInfo AI_VERSION     to "2.5 Beta"
 set AppInfo AI_REVISION    to ""
-set AppInfo AI_AUTHOR      to "Sture ApS"
+set AppInfo AI_AUTHOR      to "Sture Andersen"
 set AppInfo AI_WATERMARK   to ""
 set AppInfo AI_RELEASEDATE to ""
 
@@ -49,10 +50,10 @@ End_Object // oApplication
 Use WsFunctions.pkg // Workspace functions encapsulated in WsFunctions object (VdfQueryLib)
 
 // If you Use WinPrint:
-//Use VDFQuery.utl // DFQUERY for Visual DataFlex (WinPrint version)
+Use VDFQuery.utl // DFQUERY for Visual DataFlex (WinPrint version)
 
 // If you Use VPE:
-Use VpeQuery.utl // DFQUERY for Visual DataFlex (VPE version)
+//Use VpeQuery.utl // DFQUERY for Visual DataFlex (VPE version)
 
 use OpenStat.pkg
 Use Login.utl

@@ -1,4 +1,6 @@
-﻿// Program for demoing the VdfGraph.utl package.
+﻿Use VdfBase.pkg
+
+// Program for demoing the VdfGraph.utl package.
 Use aps.pkg         // Auto Positioning and Sizing classes for VDF
 
 #IF ((FMAC_VERSION*10+FMAC_REVISION)>190)
